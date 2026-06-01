@@ -7,6 +7,7 @@ Authors: Gaspard Reghem
 import Mathlib.Probability.ProbabilityMassFunction.Monad
 import Mathlib.Probability.ProbabilityMassFunction.Constructions
 import Mathlib.Data.Seq.Defs
+import Mathlib.Data.Seq.Basic
 
 /-!
 # Probabilistic Labelled Transition System (PLTS)
@@ -15,6 +16,65 @@ PLTS are the basic model used to represent protocols.
 -/
 
 open Stream'
+
+namespace Stream'.Seq
+
+variable {α : Type*}
+
+/-- For `n` the *exact* length of `s` (i.e. `s.TerminatedAt n` and `s` is not
+terminated at any smaller index), positions in `s.append s'` past `n` reduce
+to positions in `s'`: `(s.append s').get? (n + k) = s'.get? k`. -/
+theorem get?_append_after_length {s s' : Seq α} {n : ℕ}
+    (h_min : ∀ k < n, ¬ s.TerminatedAt k)
+    (h_done : s.TerminatedAt n) (k : ℕ) :
+    (s.append s').get? (n + k) = s'.get? k := by
+  induction n generalizing s with
+  | zero =>
+    rw [terminatedAt_zero_iff] at h_done
+    subst h_done
+    rw [nil_append, Nat.zero_add]
+  | succ j ih =>
+    have h_not_term_0 : ¬ s.TerminatedAt 0 := h_min 0 (Nat.zero_lt_succ _)
+    cases s with
+    | nil => exact absurd terminatedAt_nil h_not_term_0
+    | cons a t =>
+      rw [cons_append, show j + 1 + k = (j + k) + 1 from by ring, get?_cons_succ]
+      apply ih
+      · intro k' hk'
+        have h_succ_lt : k' + 1 < j + 1 := by omega
+        have h_not := h_min (k' + 1) h_succ_lt
+        rwa [cons_terminatedAt_succ_iff] at h_not
+      · rwa [cons_terminatedAt_succ_iff] at h_done
+
+/-- Specialization: `(s.append s').get? (Nat.find h + k) = s'.get? k`. -/
+theorem get?_append_find {s : Seq α} (h : s.Terminates) (s' : Seq α) (k : ℕ) :
+    (s.append s').get? (Nat.find h + k) = s'.get? k :=
+  get?_append_after_length (fun _ hk => Nat.find_min h hk) (Nat.find_spec h) k
+
+/-- Before `s` terminates at position `k`, append's `get?` agrees with `s`'s. -/
+theorem get?_append_before_length {s s' : Seq α} {k : ℕ}
+    (h_not_term : ¬ s.TerminatedAt k) :
+    (s.append s').get? k = s.get? k := by
+  induction k generalizing s with
+  | zero =>
+    cases s with
+    | nil => exact absurd terminatedAt_nil h_not_term
+    | cons a t => rw [cons_append]; rfl
+  | succ k' ih =>
+    cases s with
+    | nil => exact absurd terminatedAt_nil h_not_term
+    | cons a t =>
+      rw [cons_append, get?_cons_succ, get?_cons_succ]
+      exact ih (by rwa [← cons_terminatedAt_succ_iff (x := a)])
+
+/-- `(s.append s').TerminatedAt (Nat.find h + n)` when `s'.TerminatedAt n`. -/
+theorem terminatedAt_append_find {s : Seq α} (h : s.Terminates) {s' : Seq α}
+    {n : ℕ} (h_s' : s'.TerminatedAt n) :
+    (s.append s').TerminatedAt (Nat.find h + n) := by
+  change (s.append s').get? _ = none
+  rw [get?_append_find h s' n]; exact h_s'
+
+end Stream'.Seq
 
 namespace PLTS
 
@@ -39,39 +99,36 @@ def stateAt (e : AlterSeq State Label) : ℕ → Option State
   | 0     => some e.init
   | n + 1 => (e.trans.get? n).map Prod.snd
 
-/-- For a finite alternating sequence, there is a position `n` and a state `s`
-such that the underlying transition sequence terminates at `n` and the state at
-position `n` is `s`. The pair `(n, s)` is the length and last state of the
-trace. -/
-lemma exists_endpoint (e : AlterSeq State Label) (h : e.trans.Terminates) :
-    ∃ n s, e.trans.TerminatedAt n ∧ e.stateAt n = some s := by
-  refine ⟨Nat.find h, ?_⟩
-  have hT : e.trans.TerminatedAt (Nat.find h) := Nat.find_spec h
+/-- At the canonical terminating position `Nat.find h`, the state is defined. -/
+lemma stateAt_find_isSome (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    (e.stateAt (Nat.find h)).isSome := by
   rcases Nat.eq_zero_or_pos (Nat.find h) with h0 | hpos
-  · exact ⟨e.init, hT, by rw [h0]; rfl⟩
+  · rw [h0]; rfl
   · obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hpos.ne'
     have hNotT : ¬ e.trans.TerminatedAt k :=
       Nat.find_min h (by rw [hk]; exact Nat.lt_succ_self k)
-    have hNotNone : e.trans.get? k ≠ none := hNotT
-    obtain ⟨⟨l, s⟩, hls⟩ := Option.ne_none_iff_exists'.mp hNotNone
-    refine ⟨s, hT, ?_⟩
     rw [hk]
-    change (e.trans.get? k).map Prod.snd = some s
-    rw [hls]; rfl
+    change ((e.trans.get? k).map Prod.snd).isSome
+    rw [Option.isSome_map]
+    exact Option.isSome_iff_ne_none.mpr hNotT
+
+lemma exists_endpoint (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    ∃ n s, e.trans.TerminatedAt n ∧ e.stateAt n = some s :=
+  ⟨Nat.find h, (e.stateAt (Nat.find h)).get (stateAt_find_isSome e h),
+    Nat.find_spec h, Option.eq_some_of_isSome _⟩
 
 /-- The end-state of a finite alternating sequence: the state reached after
-the last transition (or `e.init` if there are no transitions). Extracted via
-`exists_endpoint` and `Classical.choose`. -/
+the last transition (or `e.init` if there are no transitions). Defined as
+the state at the canonical terminating position `Nat.find h`. -/
 noncomputable def endState (e : AlterSeq State Label) (h : e.trans.Terminates) :
     State :=
-  (exists_endpoint e h).choose_spec.choose
+  (e.stateAt (Nat.find h)).get (stateAt_find_isSome e h)
 
-/-- The end-state's defining property: at some terminated position the
-alterSeq is in this state. -/
-theorem endState_spec (e : AlterSeq State Label) (h : e.trans.Terminates) :
-    ∃ n, e.trans.TerminatedAt n ∧ e.stateAt n = some (e.endState h) := by
-  refine ⟨(exists_endpoint e h).choose, ?_⟩
-  exact (exists_endpoint e h).choose_spec.choose_spec
+/-- The end-state is the state at `Nat.find h`. -/
+theorem stateAt_find_eq_endState (e : AlterSeq State Label)
+    (h : e.trans.Terminates) :
+    e.stateAt (Nat.find h) = some (e.endState h) :=
+  Option.eq_some_of_isSome _
 
 end AlterSeq
 
@@ -214,10 +271,62 @@ noncomputable def continuationFrom (pe : ProbabilisticExecution sys)
         else
           none
       valid := by
-        -- The extended prefix `⟨history.init, history.trans ++ e'.trans⟩`
-        -- terminates at `(Nat.find h_term) + n` with the same end-state `s`,
-        -- so `pe.scheduler.valid` at that position transfers.
-        sorry }
+        classical
+        intro e' n s h_term_e' h_state_e' d h_some l μ h_supp
+        by_cases h_init : e'.init = history.endState h_term
+        swap
+        · rw [if_neg h_init] at h_some; exact absurd h_some (by simp)
+        rw [if_pos h_init] at h_some
+        set m := Nat.find h_term with hm_def
+        -- Extended prefix: ⟨history.init, history.trans.append e'.trans⟩.
+        -- Apply `pe.scheduler.valid` at position `m + n`.
+        refine pe.scheduler.valid
+          ⟨history.init, history.trans.append e'.trans⟩ (m + n) s ?_ ?_ d h_some l μ h_supp
+        · -- TerminatedAt (m + n).
+          exact Stream'.Seq.terminatedAt_append_find h_term h_term_e'
+        · -- stateAt (m + n) = some s.
+          rcases Nat.eq_zero_or_pos n with hn0 | hn_pos
+          · subst hn0
+            -- s = e'.init = history.endState h_term.
+            have h_e'_init : s = e'.init := by
+              have : e'.stateAt 0 = some e'.init := rfl
+              rw [this] at h_state_e'
+              exact (Option.some.inj h_state_e').symm
+            have h_s_eq : s = history.endState h_term := by rw [h_e'_init]; exact h_init
+            rcases Nat.eq_zero_or_pos m with hm0 | hm_pos
+            · -- m = 0: extended.stateAt 0 = some history.init = some endState = some s.
+              rw [Nat.add_zero, hm0]
+              change some history.init = some s
+              have h_endState_eq : history.endState h_term = history.init := by
+                have h_eq := history.stateAt_find_eq_endState h_term
+                rw [← hm_def, hm0] at h_eq
+                have h_zero : history.stateAt 0 = some history.init := rfl
+                rw [h_zero] at h_eq
+                exact (Option.some.inj h_eq).symm
+              rw [h_s_eq, h_endState_eq]
+            · -- m ≥ 1: extended.stateAt m = history.stateAt m = some endState = some s.
+              obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hm_pos.ne'
+              have hj' : m = j + 1 := hj
+              rw [Nat.add_zero, hj']
+              change ((history.trans.append e'.trans).get? j).map Prod.snd = some s
+              have h_lt_find : j < Nat.find h_term := by
+                rw [← hm_def]; rw [hj']; exact Nat.lt_succ_self j
+              have h_before : (history.trans.append e'.trans).get? j = history.trans.get? j :=
+                Stream'.Seq.get?_append_before_length (Nat.find_min h_term h_lt_find)
+              rw [h_before]
+              change history.stateAt (j + 1) = some s
+              rw [← hj', hm_def, history.stateAt_find_eq_endState h_term, h_s_eq]
+          · -- n ≥ 1: extended.stateAt (m + n) = e'.stateAt n = some s.
+            obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hn_pos.ne'
+            have hk' : n = k + 1 := hk
+            rw [hk']
+            change ((history.trans.append e'.trans).get? (m + k)).map Prod.snd = some s
+            have h_after : (history.trans.append e'.trans).get? (m + k) =
+                e'.trans.get? k :=
+              Stream'.Seq.get?_append_find h_term e'.trans k
+            rw [h_after]
+            change e'.stateAt (k + 1) = some s
+            rw [← hk']; exact h_state_e' }
 
 end ProbabilisticExecution
 
