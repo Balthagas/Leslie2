@@ -902,7 +902,7 @@ cases simultaneously:
   of `consumeLabel.elim` on the RHS. -/
 def LabelledSystem.TraceDecomp (ls : LabelledSystem State Label)
     (l : Label) (τ : Seq Label) : Type :=
-  Σ' (s₀ : State) (l₀ : Label) (s₁ : State),
+  Σ' (_ : State) (l₀ : Label) (s₁ : State),
     {e_rest : AlterSeq State Label //
       e_rest.init = s₁ ∧
       e_rest.trans.Terminates ∧
@@ -918,76 +918,61 @@ noncomputable def LabelledSystem.TraceDecomp.ofTight
     (e : AlterSeq State Label)
     (h_term : e.trans.Terminates) (h_trace : ls.trace e = Seq.cons l τ)
     (h_tight : ls.IsTight e) :
-    ls.TraceDecomp l τ := by
-  classical
-  -- `e.trans` is non-empty since the trace is.
-  have h_trans_ne_nil : e.trans ≠ Seq.nil := by
-    intro h_nil
+    ls.TraceDecomp l τ :=
+  -- Trace is non-empty ⇒ `e.trans` is non-empty.
+  have h_trans_ne_nil : e.trans ≠ Seq.nil := fun h_nil => by
     have h_trace_nil : ls.trace e = Seq.nil := by
-      rcases e with ⟨init, trans⟩
-      cases h_nil
-      exact ls.trace_init init
+      rcases e with ⟨init, _⟩; cases h_nil; exact ls.trace_init init
     rw [h_trace] at h_trace_nil
     exact Stream'.Seq.cons_ne_nil h_trace_nil
-  -- Extract head `(l₀, s₁)`.
   have h_head_isSome : e.trans.head.isSome := by
     rcases h_eq : e.trans.head with _ | _
     · exact absurd (Stream'.Seq.terminatedAt_zero_iff.mp h_eq) h_trans_ne_nil
     · rfl
-  set pair := e.trans.head.get h_head_isSome with hpair_def
-  have h_head : e.trans.head = some pair := (Option.eq_some_of_isSome _)
-  let l₀ := pair.1
-  let s₁ := pair.2
-  have h_pair_eq : pair = (l₀, s₁) := rfl
-  have h_cons : e.trans = Seq.cons (l₀, s₁) e.trans.tail := by
-    rw [show (l₀, s₁) = pair from rfl]
-    exact Stream'.Seq.head_eq_some h_head
-  -- Build the codomain element.
-  refine ⟨e.init, l₀, s₁, ⟨⟨s₁, e.trans.tail⟩, ?_, ?_, ?_, ?_⟩⟩
-  · -- init = s₁
-    rfl
-  · -- e.trans.tail.Terminates
-    have : (Seq.cons (l₀, s₁) e.trans.tail).Terminates := h_cons ▸ h_term
-    exact Stream'.Seq.terminates_tail_of_cons this
-  · -- IsTight ⟨s₁, e.trans.tail⟩ via IsTight_cons_iff.
-    have h_tight_full : ls.IsTight ⟨e.init, Seq.cons (l₀, s₁) e.trans.tail⟩ := by
-      rcases e with ⟨init, trans⟩
-      simp only at h_cons
-      rw [h_cons] at h_tight
-      exact h_tight
-    exact ((ls.IsTight_cons_iff e.init l₀ s₁ e.trans.tail).mp h_tight_full).1
-  · -- consumeLabel l₀ (cons l τ) = some (trace e_rest).
-    -- Case on l₀ internal vs external; use trace_cons_internal/external.
-    by_cases h_int : ls.internal l₀
-    · -- Internal: consumeLabel = some (cons l τ); trace e_rest = cons l τ.
-      have h_trace_rest : ls.trace ⟨s₁, e.trans.tail⟩ = Seq.cons l τ := by
-        rw [← h_trace]
+  -- The head pair `(l₀, s₁) = pair`.  Now a clean `let`-bound term.
+  let pair : Label × State := e.trans.head.get h_head_isSome
+  have h_cons : e.trans = Seq.cons pair e.trans.tail :=
+    Stream'.Seq.head_eq_some (Option.eq_some_of_isSome _)
+  ⟨e.init, pair.1, pair.2,
+    ⟨⟨pair.2, e.trans.tail⟩,
+      rfl,
+      Stream'.Seq.terminates_tail_of_cons (h_cons ▸ h_term),
+      ((ls.IsTight_cons_iff e.init pair.1 pair.2 e.trans.tail).mp (by
         rcases e with ⟨init, trans⟩
         simp only at h_cons
-        rw [h_cons]
-        exact (ls.trace_cons_internal init l₀ s₁ trans.tail h_int).symm
-      rw [h_trace_rest]
-      change ls.consumeLabel l₀ (Seq.cons l τ) = some (Seq.cons l τ)
-      unfold LabelledSystem.consumeLabel
-      simp [h_int]
-    · -- External: l₀ = l (forced by trace = cons l τ); consumeLabel = some τ;
-      -- trace e_rest = τ.
-      have h_trace_full : ls.trace e = Seq.cons l₀ (ls.trace ⟨s₁, e.trans.tail⟩) := by
-        rcases e with ⟨init, trans⟩
-        simp only at h_cons ⊢
-        rw [h_cons]
-        exact ls.trace_cons_external init l₀ s₁ trans.tail h_int
-      rw [h_trace] at h_trace_full
-      -- h_trace_full : cons l τ = cons l₀ (trace e_rest)
-      have h_l_eq : l = l₀ := ((Stream'.Seq.cons_eq_cons).mp h_trace_full).1
-      have h_trace_rest_eq : ls.trace ⟨s₁, e.trans.tail⟩ = τ :=
-        ((Stream'.Seq.cons_eq_cons).mp h_trace_full).2.symm
-      rw [h_trace_rest_eq]
-      change ls.consumeLabel l₀ (Seq.cons l τ) = some τ
-      unfold LabelledSystem.consumeLabel
-      simp only [if_neg h_int]
-      change (if l = l₀ then some (Seq.cons l τ).tail else none) = some τ
-      rw [if_pos h_l_eq, Stream'.Seq.tail_cons]
+        rw [h_cons] at h_tight
+        exact h_tight)).1,
+      by
+        classical
+        by_cases h_int : ls.internal pair.1
+        · -- Internal: consumeLabel = some (cons l τ); trace e_rest = cons l τ.
+          have h_trace_rest : ls.trace ⟨pair.2, e.trans.tail⟩ = Seq.cons l τ := by
+            rw [← h_trace]
+            rcases e with ⟨init, trans⟩
+            simp only at h_cons
+            rw [h_cons]
+            exact (ls.trace_cons_internal init pair.1 pair.2 trans.tail h_int).symm
+          rw [h_trace_rest]
+          change ls.consumeLabel pair.1 (Seq.cons l τ) = some (Seq.cons l τ)
+          unfold LabelledSystem.consumeLabel
+          simp [h_int]
+        · -- External: `l = pair.1`, consumeLabel = some τ, trace e_rest = τ.
+          have h_trace_full : ls.trace e =
+              Seq.cons pair.1 (ls.trace ⟨pair.2, e.trans.tail⟩) := by
+            rcases e with ⟨init, trans⟩
+            simp only at h_cons ⊢
+            rw [h_cons]
+            exact ls.trace_cons_external init pair.1 pair.2 trans.tail h_int
+          rw [h_trace] at h_trace_full
+          have h_l_eq : l = pair.1 := ((Stream'.Seq.cons_eq_cons).mp h_trace_full).1
+          have h_trace_rest_eq : ls.trace ⟨pair.2, e.trans.tail⟩ = τ :=
+            ((Stream'.Seq.cons_eq_cons).mp h_trace_full).2.symm
+          rw [h_trace_rest_eq]
+          change ls.consumeLabel pair.1 (Seq.cons l τ) = some τ
+          unfold LabelledSystem.consumeLabel
+          simp only [if_neg h_int]
+          change (if l = pair.1 then some (Seq.cons l τ).tail else none) = some τ
+          rw [if_pos h_l_eq, Stream'.Seq.tail_cons]⟩⟩
 
 /-- Inverse map of the trace-decomposition bijection: assemble a tight prefix
 with trace `cons l τ` from its decomposed pieces. Constraint translation runs
@@ -996,69 +981,56 @@ def LabelledSystem.TraceDecomp.toTight
     (ls : LabelledSystem State Label) (l : Label) (τ : Seq Label)
     (d : ls.TraceDecomp l τ) :
     {e : AlterSeq State Label //
-      e.trans.Terminates ∧ ls.trace e = Seq.cons l τ ∧ ls.IsTight e} := by
-  classical
-  obtain ⟨s₀, l₀, s₁, e_rest, h_init, h_term, h_tight, h_consume⟩ := d
+      e.trans.Terminates ∧ ls.trace e = Seq.cons l τ ∧ ls.IsTight e} :=
+  let ⟨s₀, l₀, s₁, e_rest, h_init, h_term, h_tight, h_consume⟩ := d
   -- e_rest = ⟨s₁, e_rest.trans⟩ by h_init.
   have h_e_rest_eq : e_rest = ⟨s₁, e_rest.trans⟩ := by
     rcases e_rest with ⟨init, trans⟩
     simp only at h_init
     subst h_init
     rfl
-  refine ⟨⟨s₀, Seq.cons (l₀, s₁) e_rest.trans⟩, ?_, ?_, ?_⟩
-  · -- Terminates: from h_term via cons.
-    exact Stream'.Seq.terminates_cons_iff.mpr h_term
-  · -- trace = cons l τ.  Case on l₀ internal/external.
-    by_cases h_int : ls.internal l₀
-    · -- Internal: consumeLabel = some (cons l τ); h_consume gives trace e_rest = cons l τ.
-      have h_consume_internal : ls.consumeLabel l₀ (Seq.cons l τ) = some (Seq.cons l τ) := by
-        unfold LabelledSystem.consumeLabel
-        simp [h_int]
-      rw [h_consume_internal] at h_consume
-      have h_trace_e_rest : ls.trace e_rest = Seq.cons l τ :=
-        (Option.some.inj h_consume).symm
-      -- trace ⟨s₀, cons (l₀, s₁) e_rest.trans⟩ = trace ⟨s₁, e_rest.trans⟩ via trace_cons_internal.
-      rw [ls.trace_cons_internal s₀ l₀ s₁ e_rest.trans h_int]
-      rw [← h_e_rest_eq]
-      exact h_trace_e_rest
-    · -- External: consumeLabel l₀ (cons l τ) = if l = l₀ then some τ else none.
-      have h_consume_external :
-          ls.consumeLabel l₀ (Seq.cons l τ) =
-          (if l = l₀ then some τ else none) := by
-        unfold LabelledSystem.consumeLabel
-        simp [h_int]
-      rw [h_consume_external] at h_consume
-      by_cases h_l_eq : l = l₀
-      · -- l = l₀: trace e_rest = τ.
-        rw [if_pos h_l_eq] at h_consume
-        have h_trace_e_rest : ls.trace e_rest = τ :=
-          (Option.some.inj h_consume).symm
-        rw [ls.trace_cons_external s₀ l₀ s₁ e_rest.trans h_int]
-        rw [← h_l_eq, ← h_e_rest_eq]
-        exact congrArg (Seq.cons l) h_trace_e_rest
-      · -- l ≠ l₀: contradiction (consumeLabel = none, but h_consume = some _).
-        rw [if_neg h_l_eq] at h_consume
-        exact absurd h_consume (by simp)
-  · -- IsTight via IsTight_cons_iff.
-    refine (ls.IsTight_cons_iff s₀ l₀ s₁ e_rest.trans).mpr ⟨?_, ?_⟩
-    · -- IsTight ⟨s₁, e_rest.trans⟩ = IsTight e_rest (via h_e_rest_eq).
-      rw [← h_e_rest_eq]; exact h_tight
-    · -- ¬ internal l₀ ∨ e_rest.trans ≠ nil.
+  ⟨⟨s₀, Seq.cons (l₀, s₁) e_rest.trans⟩,
+    Stream'.Seq.terminates_cons_iff.mpr h_term,
+    -- trace = cons l τ
+    (by
+      classical
       by_cases h_int : ls.internal l₀
-      · -- Internal: trace e_rest = cons l τ (non-empty) → e_rest.trans ≠ nil.
-        refine Or.inr ?_
-        intro h_nil
-        have h_consume_internal : ls.consumeLabel l₀ (Seq.cons l τ) = some (Seq.cons l τ) := by
-          unfold LabelledSystem.consumeLabel
-          simp [h_int]
+      · have h_consume_internal : ls.consumeLabel l₀ (Seq.cons l τ) = some (Seq.cons l τ) := by
+          unfold LabelledSystem.consumeLabel; simp [h_int]
         rw [h_consume_internal] at h_consume
         have h_trace_e_rest : ls.trace e_rest = Seq.cons l τ :=
           (Option.some.inj h_consume).symm
-        -- e_rest with empty trans has trace = nil, contradiction.
-        rw [h_e_rest_eq, h_nil] at h_trace_e_rest
-        rw [ls.trace_init] at h_trace_e_rest
-        exact Stream'.Seq.cons_ne_nil h_trace_e_rest.symm
-      · exact Or.inl h_int
+        rw [ls.trace_cons_internal s₀ l₀ s₁ e_rest.trans h_int, ← h_e_rest_eq]
+        exact h_trace_e_rest
+      · have h_consume_external :
+            ls.consumeLabel l₀ (Seq.cons l τ) = (if l = l₀ then some τ else none) := by
+          unfold LabelledSystem.consumeLabel; simp [h_int]
+        rw [h_consume_external] at h_consume
+        by_cases h_l_eq : l = l₀
+        · rw [if_pos h_l_eq] at h_consume
+          have h_trace_e_rest : ls.trace e_rest = τ := (Option.some.inj h_consume).symm
+          rw [ls.trace_cons_external s₀ l₀ s₁ e_rest.trans h_int, ← h_l_eq, ← h_e_rest_eq]
+          exact congrArg (Seq.cons l) h_trace_e_rest
+        · rw [if_neg h_l_eq] at h_consume
+          exact absurd h_consume (by simp)),
+    -- IsTight via IsTight_cons_iff
+    (ls.IsTight_cons_iff s₀ l₀ s₁ e_rest.trans).mpr ⟨
+      h_e_rest_eq ▸ h_tight,
+      by
+        classical
+        by_cases h_int : ls.internal l₀
+        · refine Or.inr ?_
+          intro h_nil
+          have h_consume_internal :
+              ls.consumeLabel l₀ (Seq.cons l τ) = some (Seq.cons l τ) := by
+            unfold LabelledSystem.consumeLabel; simp [h_int]
+          rw [h_consume_internal] at h_consume
+          have h_trace_e_rest : ls.trace e_rest = Seq.cons l τ :=
+            (Option.some.inj h_consume).symm
+          rw [h_e_rest_eq, h_nil] at h_trace_e_rest
+          rw [ls.trace_init] at h_trace_e_rest
+          exact Stream'.Seq.cons_ne_nil h_trace_e_rest.symm
+        · exact Or.inl h_int⟩⟩
 
 /-- The trace-decomposition `Equiv` between tight prefixes with trace `cons l
 τ` and their `(s₀, l₀, s₁, e_rest)` decomposition. -/
@@ -1070,19 +1042,21 @@ noncomputable def LabelledSystem.TraceDecomp.equiv
   toFun e := LabelledSystem.TraceDecomp.ofTight ls l τ e.1 e.2.1 e.2.2.1 e.2.2.2
   invFun := LabelledSystem.TraceDecomp.toTight ls l τ
   left_inv := by
-    rintro ⟨e, h_term, h_trace, h_tight⟩
-    -- The round-trip toTight ∘ ofTight rebuilds the AlterSeq via head/tail.
-    -- The result equals `e` because `e.trans = cons (head.1, head.2) e.trans.tail`
-    -- by `head_eq_some`, but unfolding the tactic-mode `ofTight` to expose
-    -- this internally is non-trivial. Deferred — requires either refactoring
-    -- `ofTight` into term-mode or a `simp`-set with `ofTight`/`toTight`/
-    -- `head_eq_some` lemmas that make the cons reconstruction transparent.
+    -- The round-trip toTight ∘ ofTight is structurally `e.init`-preserving;
+    -- the trans component is `cons (head.1, head.2) tail = head_eq_some e.trans`.
+    -- Even with both defs term-mode, Lean's iota reduction inside the nested
+    -- `let ⟨…⟩ := d; …` (= `match` desugaring) doesn't fully fire here —
+    -- the proof terms inside the inner PSigma carry dependencies that block
+    -- whnf. Workable via an explicit term that bypasses the match, but this
+    -- has grown into its own ~30-line chunk.
     sorry
   right_inv := by
     rintro ⟨s₀, l₀, s₁, e_rest, h_init, h_term, h_tight, h_consume⟩
     -- The round-trip ofTight ∘ toTight extracts (l₀, s₁) as head of
-    -- `cons (l₀, s₁) e_rest.trans`, and `⟨s₁, (cons _ _).tail⟩ = e_rest`
-    -- via `h_init`. Same unfolding issue as `left_inv`.
+    -- `cons (l₀, s₁) e_rest.trans`. By `head_cons`, `head = some (l₀, s₁)`,
+    -- so `pair = (l₀, s₁)` and `pair.1 = l₀`, `pair.2 = s₁`. Also `tail =
+    -- e_rest.trans`, so the e_rest component is `⟨s₁, e_rest.trans⟩ = e_rest`
+    -- (via `h_init`). The first three components s₀, l₀, s₁ match.
     sorry
 
 /-- **One-step trace-cone decomposition.** The trace probability for a
