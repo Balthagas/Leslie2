@@ -473,6 +473,53 @@ structure ProbabilisticForwardSimulation
       ((sys_C.internal l ∧ weakTau sys_A μ_A (ω.bind id)) ∨
        (¬ sys_C.internal l ∧ weakStep sys_A μ_A l (ω.bind id)))
 
+namespace ProbabilisticForwardSimulation
+
+variable {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+  {R : State_C → PMF State_A → Prop}
+
+/-- The abstract distribution-over-distributions `ω` extracted from `sim.step`
+at an R-related pair `(s_C, μ_A)` and a concrete step `s_C -[l]→ μ_C`. The
+"flattened" version `(stepWitness …).bind id` is the abstract distribution
+reached after simulating the concrete step. -/
+noncomputable def stepWitness (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C) :
+    PMF (PMF State_A) :=
+  (sim.step s_C μ_A h_R l μ_C h_step).choose
+
+/-- The `stepWitness` is `PMFRel`-coupled to the concrete next-state
+distribution `μ_C`. -/
+theorem stepWitness_pmfRel (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C) :
+    PMFRel R μ_C (sim.stepWitness h_R h_step) :=
+  (sim.step s_C μ_A h_R l μ_C h_step).choose_spec.1
+
+/-- When the concrete label is internal, the abstract side reaches the
+flattened `stepWitness` via a τ-closure. -/
+theorem stepWitness_weakTau (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_int : sys_C.internal l) :
+    weakTau sys_A μ_A ((sim.stepWitness h_R h_step).bind id) := by
+  rcases (sim.step s_C μ_A h_R l μ_C h_step).choose_spec.2 with ⟨_, h_tau⟩ | ⟨h_ext, _⟩
+  · exact h_tau
+  · exact absurd h_int h_ext
+
+/-- When the concrete label is external, the abstract side reaches the
+flattened `stepWitness` via a weak step with the same label. -/
+theorem stepWitness_weakStep (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_ext : ¬ sys_C.internal l) :
+    weakStep sys_A μ_A l ((sim.stepWitness h_R h_step).bind id) := by
+  rcases (sim.step s_C μ_A h_R l μ_C h_step).choose_spec.2 with ⟨h_int, _⟩ | ⟨_, h_step_w⟩
+  · exact absurd h_int h_ext
+  · exact h_step_w
+
+end ProbabilisticForwardSimulation
+
 /-! ### Traces -/
 
 /-- The trace of a (possibly infinite) execution `e` under a labelled system
