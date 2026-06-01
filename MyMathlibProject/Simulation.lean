@@ -1113,18 +1113,21 @@ theorem LabelledSystem.traceProb_first_step
             (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1 from
     ((LabelledSystem.TraceDecomp.equiv ls l τ).symm.tsum_eq
       (fun e => pe.probOf e.1 e.2.1)).symm]
-  -- Step 2: factor each summand via `probOf_cons` (a TraceDecomp `d`
-  -- destructures into `(s₀, l₀, s₁, e_rest)` and `(toTight d).1` is
-  -- `⟨s₀, cons (l₀, s₁) e_rest.trans⟩`). The remaining work:
-  -- (a) match the iterated-tsum structure on the RHS via `tsum_sigma`,
-  -- (b) push the `consumeLabel.elim` into the sum (the `none` branch
-  -- has no matching TraceDecomp elements, so contributes 0 on both
-  -- sides; `some τ'` matches the constraint `consumeLabel = some
-  -- (ls.trace e_rest)`),
-  -- (c) collapse the inner `traceProb (continuationFrom) τ'` to the
-  -- per-`d` sum via `Equiv.tsum_eq` again (between
-  -- `(continuationFrom).traceProb`'s underlying subtype and the
-  -- e_rest slice of `TraceDecomp`).
+  -- Step 2: factor each summand via `probOf_cons`.
+  rw [tsum_congr (fun d : ls.TraceDecomp l τ =>
+    show pe.probOf (LabelledSystem.TraceDecomp.toTight ls l τ d).1
+        (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1 =
+      pe.init d.1 * pe.kernel ⟨d.1, Seq.nil⟩ (d.2.1, d.2.2.1) *
+        (pe.continuationFrom ⟨d.1, Seq.cons (d.2.1, d.2.2.1) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+        ⟨d.2.2.1, d.2.2.2.1.trans⟩
+        (Stream'.Seq.terminates_tail_of_cons
+          (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1)
+    from ProbabilisticExecution.probOf_cons pe d.1 d.2.1 d.2.2.1 d.2.2.2.1.trans _)]
+  -- Step 3: collapse the iterated sum on the RHS into the same shape.
+  -- The remaining work matches the TraceDecomp sum against:
+  --   ∑' (s₀, l₀, s₁) ∑' (e_rest with constraints), init * kernel * probOf e_rest
+  -- via `tsum_sigma` on both sides, handling the `consumeLabel.elim` case.
   sorry
 
 /-- The trace probability of any trace is at most `1`.
