@@ -822,6 +822,31 @@ theorem LabelledSystem.traceProb_nil_eq_one
         pe.init a.1.init) = ∑' s, pe.init s from e_equiv.tsum_eq pe.init]
   exact pe.init.tsum_coe
 
+/-- The `traceProb` of a `continuationFrom`-execution restricts to the
+sub-subtype where `e.init = history.endState`: the other elements have
+`probOf = 0` via `probOf_continuationFrom_zero_of_init_ne`.
+
+Proof strategy options (both blocked on Mathlib API gaps in this codebase):
+1. Fiber-by-init Sigma decomposition + `ENNReal.tsum_sigma` + `tsum_eq_single`.
+   Blocker: Equiv.tsum_eq's LHS pattern (`f (e_fiber a)`) doesn't match
+   `probOf a.1 a.2.1` syntactically; needs a `tsum_congr` bridge.
+2. `Equiv.sumCompl`-based split into `B' ⊕ A_no` and decompose `tsum`
+   over `Sum`. Blocker: no `tsum_sum_type` / `HasSum.sum_elim`-style
+   lemma found in Mathlib for splitting `∑' (x : α ⊕ β), f x` into
+   `∑' a, f (Sum.inl a) + ∑' b, f (Sum.inr b)`.
+
+Either path is mechanical but needs a small bridging helper. -/
+theorem LabelledSystem.traceProb_continuationFrom_init_restrict
+    (ls : LabelledSystem State Label) (pe : ProbabilisticExecution ls.toSystem)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates)
+    (τ : Seq Label) :
+    ls.traceProb (pe.continuationFrom history h_term) τ =
+      ∑' (e : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e ∧
+          e.init = history.endState h_term}),
+        (pe.continuationFrom history h_term).probOf e.1 e.2.1 := by
+  sorry
+
 /-- "After the scheduler emits a transition with label `l₀`, the remaining
 trace becomes…": internal labels drop out (trace unchanged); external labels
 must match the next external label of `τ` and are consumed; an external
