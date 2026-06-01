@@ -1101,38 +1101,30 @@ theorem LabelledSystem.traceProb_first_step
                 exact Stream'.Seq.terminatedAt_nil⟩)
             τ') := by
   classical
-  -- Proof outline:
-  --
-  -- Build an `Equiv` between:
-  --   LHS_subtype := {e // e.trans.Terminates ∧ ls.trace e = cons l τ ∧ ls.IsTight e}
-  -- and a "decomposed" type that mirrors the RHS sum structure.
-  --
-  -- Each LHS `e` has `e.trans` non-empty (trace ≠ nil), so
-  --   e.trans = cons (l₀, s₁) e_rest_trans
-  -- for unique `(l₀, s₁, e_rest_trans)`, with `s₀ := e.init`.
-  --
-  -- Key forward map:
-  --   e  ↦  (e.init, l₀, s₁, e_rest = ⟨s₁, e_rest_trans⟩)
-  --
-  -- Constraint translation (via `LabelledSystem.IsTight_cons_iff` and the
-  -- `trace_cons_internal` / `trace_cons_external` lemmas):
-  --   * `e.trans.Terminates`  ↔  `e_rest.trans.Terminates`
-  --   * `ls.trace e = cons l τ`  ↔  one of:
-  --       - `ls.internal l₀` ∧ `ls.trace e_rest = cons l τ`
-  --       - `¬ ls.internal l₀` ∧ `l₀ = l` ∧ `ls.trace e_rest = τ`
-  --     (i.e. `ls.consumeLabel l₀ (cons l τ) = some (ls.trace e_rest)`)
-  --   * `ls.IsTight e`  ↔  `ls.IsTight e_rest`  (via `IsTight_cons_iff`,
-  --     since the trace constraint already excludes the `e_rest_trans = nil
-  --     ∧ ls.internal l₀` case).
-  --
-  -- Algebraic match (via `ProbabilisticExecution.probOf_cons`):
-  --   pe.probOf e = pe.init s₀ * pe.kernel ⟨s₀, nil⟩ (l₀, s₁)
-  --                * (continuationFrom history).probOf e_rest
-  --
-  -- After applying `Equiv.tsum_eq` and `tsum_sigma` / `tsum_prod`, the
-  -- inner sum over `e_rest` collapses to `(continuationFrom).traceProb τ'`
-  -- where `τ' = ls.consumeLabel l₀ (cons l τ)`. The `(consumeLabel).elim`
-  -- on the RHS captures the `none` case (external mismatch) as 0.
+  -- Step 1: Use the trace-decomposition Equiv to reindex the LHS tsum
+  -- from the LHS subtype over TraceDecomp.
+  unfold LabelledSystem.traceProb
+  rw [show
+      (∑' (e : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.cons l τ ∧ ls.IsTight e}),
+        pe.probOf e.1 e.2.1)
+      = ∑' (d : ls.TraceDecomp l τ),
+          pe.probOf (LabelledSystem.TraceDecomp.toTight ls l τ d).1
+            (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1 from
+    ((LabelledSystem.TraceDecomp.equiv ls l τ).symm.tsum_eq
+      (fun e => pe.probOf e.1 e.2.1)).symm]
+  -- Step 2: factor each summand via `probOf_cons` (a TraceDecomp `d`
+  -- destructures into `(s₀, l₀, s₁, e_rest)` and `(toTight d).1` is
+  -- `⟨s₀, cons (l₀, s₁) e_rest.trans⟩`). The remaining work:
+  -- (a) match the iterated-tsum structure on the RHS via `tsum_sigma`,
+  -- (b) push the `consumeLabel.elim` into the sum (the `none` branch
+  -- has no matching TraceDecomp elements, so contributes 0 on both
+  -- sides; `some τ'` matches the constraint `consumeLabel = some
+  -- (ls.trace e_rest)`),
+  -- (c) collapse the inner `traceProb (continuationFrom) τ'` to the
+  -- per-`d` sum via `Equiv.tsum_eq` again (between
+  -- `(continuationFrom).traceProb`'s underlying subtype and the
+  -- e_rest slice of `TraceDecomp`).
   sorry
 
 /-- The trace probability of any trace is at most `1`.
