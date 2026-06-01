@@ -598,11 +598,24 @@ theorem TraceCoupled.of_nil_and_cons
   | nil => exact h_nil
   | cons l τ' => exact h_cons l τ'
 
-/-- The trace probability of any trace is at most `1`. Proof requires
-summing over finite executions and bounding by `pe.init`'s mass, plus
-arguing that the conditional probabilities along the kernel sum to `≤ 1`
-at each step. (Currently unproved — needed for Session C's quantitative
-arguments.) -/
+/-- The trace probability of any trace is at most `1`.
+
+The bound holds because: (i) `probOfRemaining ≤ 1` (each kernel value
+≤ 1, so a product of them is `≤ 1`); (ii) `probOf e ≤ pe.init e.init`
+(direct corollary); (iii) tight prefixes with a given trace correspond
+to *disjoint* trace-cone cylinders, so the sum over them is bounded by
+the measure of the cone, which is in `[0, 1]`.
+
+The disjoint-cylinder argument (iii) is non-trivial without explicit
+measure theory. A combinatorial route: split the sum by the `e.init`
+factor, then bound the resulting per-state sums over interleavings of
+internal transitions and external label transitions by inducting on the
+length of `τ`. (Currently sorry — to be discharged once we have
+either a measure-theoretic framework or the kernel-sum lemmas needed
+for the induction.)
+
+The supporting lemmas `probOfRemaining_le_one` and `probOf_le_init` are
+proved in `MyMathlibProject.Basic`. -/
 theorem LabelledSystem.traceProb_le_one
     (ls : LabelledSystem State Label)
     (pe : ProbabilisticExecution ls.toSystem) (τ : Seq Label) :

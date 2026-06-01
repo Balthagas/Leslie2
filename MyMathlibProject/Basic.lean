@@ -124,6 +124,43 @@ noncomputable def probOf (pe : ProbabilisticExecution sys)
     (e : AlterSeq State Label) (hFin : e.trans.Terminates) : ENNReal :=
   pe.init e.init * pe.probOfRemaining ⟨e.init, Seq.nil⟩ (e.trans.toList hFin)
 
+/-- Auxiliary: the first component of `probOfRemaining`'s `foldl` stays `≤ 1`
+when started from any value `≤ 1`. -/
+private theorem probOfRemaining_aux_le_one (pe : ProbabilisticExecution sys)
+    (xs : List (Label × State)) :
+    ∀ acc : ENNReal × AlterSeq State Label, acc.1 ≤ 1 →
+    (xs.foldl
+      (fun (acc : ENNReal × AlterSeq State Label) hd =>
+        (acc.1 * pe.kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩)) acc).1 ≤ 1 := by
+  induction xs with
+  | nil => intro acc h_acc; exact h_acc
+  | cons hd rest ih =>
+    intro acc h_acc
+    apply ih
+    change acc.1 * pe.kernel acc.2 hd ≤ 1
+    calc acc.1 * pe.kernel acc.2 hd
+        ≤ 1 * 1 := by
+          gcongr
+          exact PMF.coe_le_one _ _
+      _ = 1 := one_mul 1
+
+/-- `probOfRemaining` is always at most `1` — a product of PMF values each ≤ 1. -/
+theorem probOfRemaining_le_one (pe : ProbabilisticExecution sys)
+    (pre : AlterSeq State Label) (xs : List (Label × State)) :
+    pe.probOfRemaining pre xs ≤ 1 :=
+  pe.probOfRemaining_aux_le_one xs (1, pre) (le_refl _)
+
+/-- `probOf e ≤ pe.init e.init`: a finite execution's probability is bounded by
+the mass on its starting state. -/
+theorem probOf_le_init (pe : ProbabilisticExecution sys)
+    (e : AlterSeq State Label) (hFin : e.trans.Terminates) :
+    pe.probOf e hFin ≤ pe.init e.init := by
+  unfold probOf
+  calc pe.init e.init * pe.probOfRemaining ⟨e.init, Seq.nil⟩ (e.trans.toList hFin)
+      ≤ pe.init e.init * 1 := by gcongr; exact pe.probOfRemaining_le_one _ _
+    _ = pe.init e.init := mul_one _
+
 end ProbabilisticExecution
 
 end PLTS
