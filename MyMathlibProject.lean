@@ -1,1 +1,3 @@
 import MyMathlibProject.Basic
+import MyMathlibProject.Composition
+import MyMathlibProject.Simulation
