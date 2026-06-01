@@ -935,6 +935,16 @@ theorem ProbabilisticForwardSimulation.exists_coupling
   -- `weakStep` / `hyperStep` extractors). The "matching concrete prefix" is
   -- chosen by `Classical.choose`; the abstract single-step is then the
   -- appropriate stage of the weak transition for that concrete step.
+  --
+  -- BLOCKER: `Scheduler.valid` requires *every* finite `e_A` (including
+  -- `⟨s, Seq.nil⟩` for any `s : State_A`) to have valid steps in support of
+  -- `compute_next e_A`. Since `PMF.support` is non-empty, this forces
+  -- `sys_A` to be reactive: `∀ s_A, ∃ l_A μ_A, sys_A.step s_A l_A μ_A`.
+  -- `sim.step` provides this only for abstract states `s_A` related (via `R`)
+  -- to some concrete state with a step — not for unreachable abstract states.
+  -- Resolving this requires either (a) a reactivity assumption on `sys_A`,
+  -- (b) weakening `Scheduler.valid` (e.g. partial scheduler), or
+  -- (c) restricting validity to reachable prefixes. Design decision pending.
   have h_construct_next :
       ∃ compute_next : AlterSeq State_A Label → PMF (Label × PMF State_A),
         ∀ (e_A : AlterSeq State_A Label) (n : ℕ) (s_A : State_A),
