@@ -521,66 +521,75 @@ noncomputable def LabelledSystem.traceProb (ls : LabelledSystem State Label)
   ∑' e : {e : AlterSeq State Label // e.trans.Terminates ∧ ls.trace e = τ},
     pe.probOf e.1 e.2.1
 
-/-! ### Segala's trace inclusion theorem -/
+/-! ### Trace coupling and Segala's trace inclusion theorem -/
 
-/-- **Segala's main theorem (trace inclusion)**: if `R` is a probabilistic
-forward simulation from `sys_C` to `sys_A`, then every concrete probabilistic
-execution `pe_C` starting from initial states of `sys_C` is matched, trace by
-trace, by some abstract probabilistic execution `pe_A` over `sys_A`.
+/-- Two probabilistic executions over labelled systems are *trace-coupled* if
+they assign equal probability to every finite trace. -/
+def TraceCoupled
+    (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (pe_A : ProbabilisticExecution sys_A.toSystem) : Prop :=
+  ∀ τ : Seq Label, sys_C.traceProb pe_C τ = sys_A.traceProb pe_A τ
 
-Informally: the simulation suffices to transport the entire trace distribution
-of any concrete adversary to a matching abstract adversary.
+/-- A *coupling* extending a concrete probabilistic execution along a
+probabilistic forward simulation: an abstract probabilistic execution whose
+init is supported on `sys_A`-initial states and which is trace-coupled to the
+concrete one. This is the data produced by Segala's trace-inclusion
+construction. -/
+structure Coupling
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (_sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem) where
+  /-- The abstract probabilistic execution paired with `pe_C`. -/
+  pe_A : ProbabilisticExecution sys_A.toSystem
+  /-- The abstract initial distribution is supported on `sys_A`-initial states. -/
+  init_initial : ∀ s_A ∈ pe_A.init.support, sys_A.init s_A
+  /-- The two executions assign equal probability to every finite trace. -/
+  trace_coupled : TraceCoupled sys_C sys_A pe_C pe_A
 
-Proof sketch (not yet formalised):
-* lift `sim.init` to build `pe_A.init` as a bind of the `R`-related abstract
-  distributions over `pe_C.init.support`;
-* construct `pe_A.scheduler` step-by-step from `pe_C.scheduler` using
-  `sim.step` at each prefix. The finite-scheduler restriction on `weakTau` is
-  what makes the inductive construction effective: each abstract weak-step
-  witness has a bounded `runtime`, so each step adds finitely many abstract
-  transitions and the recursion is well-founded;
-* the trace-equality conclusion then follows by tracking the
-  `PMFRel`-coupling at every step and using the fact that internal
-  transitions don't affect `LabelledSystem.trace`.
+/-- **Coupling existence (heart of Segala's theorem)**: every probabilistic
+forward simulation extends a `sys_C`-rooted concrete probabilistic execution
+to a trace-coupled abstract one. This is the main content; `traceInclusion`
+follows by projecting the `pe_A` out of a `Coupling`.
 
-Compared to Segala's original statement, ours is restricted to finite-runtime
-schedulers on the abstract side (our `weakTau` is finite-bounded, whereas
-Segala admits AS-terminating ones). The conclusion is consequently stated on
-finite-trace `traceProb`; the infinite-trace measure-theoretic version awaits
-a later upgrade to `MeasureTheory.Measure`. -/
-theorem traceInclusion
+Proof strategy (Session B + Session C, not yet formalised):
+* **Session B (construction)**: build `pe_A` by composing `pe_C` with `sim`.
+  - `pe_A.init` is `pe_C.init.bind init_match` where `init_match` is built from
+    `sim.init` via `Classical.choose` (STEP 1, done in `traceInclusion`).
+  - `pe_A.scheduler` is constructed step-by-step. At each abstract prefix `e_A`,
+    `σ_A.next e_A` is determined by:
+    * identifying the "concrete trajectory class" matching `e_A`
+      (via `Classical.choose` on the trajectories whose `obs`-projection
+      yields the same trace as `e_A`);
+    * applying `pe_C.scheduler` at a representative concrete prefix to get the
+      next concrete step `(l, μ_C)`;
+    * using `sim.step` to derive a weak abstract transition matching `(l, μ_C)`;
+    * extracting the *current* abstract step of the weak transition (the
+      transition spans multiple abstract steps; `e_A` records which one we're
+      on, so we can pick the right one).
+  - Validity of `σ_A` (every step in support is a valid `sys_A.step`) follows
+    from `sim.step`'s conclusions about `sys_A.step` inside the `hyperStep`
+    and `weakTau` components of `weakStep`/`weakTau`.
+* **Session C (trace equality)**: prove `TraceCoupled` by induction on
+  trace length, using `PMFRel`-coupling preservation at each step and the
+  fact that the `internal` half of the case split contributes nothing to
+  the external trace. -/
+theorem ProbabilisticForwardSimulation.exists_coupling
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (h_init : ∀ s_C ∈ pe_C.init.support, sys_C.init s_C) :
-    ∃ pe_A : ProbabilisticExecution sys_A.toSystem,
-      ∀ τ : Seq Label, sys_C.traceProb pe_C τ = sys_A.traceProb pe_A τ := by
-  -- ───────────────────────────────────────────────────────────────────────────
-  -- STEP 0: Establish `Nonempty State_A`.
-  --
-  -- `pe_C.init : PMF State_C` has nonempty support (PMFs sum to 1). Pick any
-  -- `s_C₀ ∈ pe_C.init.support`; by `h_init`, `sys_C.init s_C₀`; then
-  -- `sim.init s_C₀ _` gives a `μ_A : PMF State_A` whose support contains some
-  -- `s_A`, so `State_A` is inhabited.
-  -- ───────────────────────────────────────────────────────────────────────────
+    Nonempty (Coupling sim pe_C) := by
+  -- STEP 0: `Nonempty State_A` (extract a witness from `sim.init` applied to
+  -- any element of `pe_C.init.support`).
   haveI hne_A : Nonempty State_A := by
     obtain ⟨s_C₀, h_s_C₀⟩ := pe_C.init.support_nonempty
     obtain ⟨μ_A, _, _⟩ := sim.init s_C₀ (h_init s_C₀ h_s_C₀)
     obtain ⟨s_A, _⟩ := μ_A.support_nonempty
     exact ⟨s_A⟩
-
-  -- ───────────────────────────────────────────────────────────────────────────
-  -- STEP 1: Build the initial-distribution matching function
-  --     `init_match : State_C → PMF State_A`
-  -- with the property: for each `s_C ∈ pe_C.init.support`,
-  --   • `init_match s_C` is supported on `sys_A.init`,
-  --   • `R s_C (init_match s_C)`.
-  --
-  -- Construction: classically, for each `s_C` with `sys_C.init s_C`, pick
-  -- `(sim.init s_C _).choose`. For `s_C` not initial (irrelevant to `pe_C`
-  -- support), use a default `PMF State_A` from `hne_A`.
-  -- ───────────────────────────────────────────────────────────────────────────
+  -- STEP 1: Build the initial-distribution matching function.
   obtain ⟨init_match, h_match_R, h_match_init⟩ :
       ∃ f : State_C → PMF State_A,
         (∀ s_C ∈ pe_C.init.support, R s_C (f s_C)) ∧
@@ -599,62 +608,51 @@ theorem traceInclusion
       dsimp only at h_s_A
       rw [dif_pos h] at h_s_A
       exact (sim.init s_C h).choose_spec.1 s_A h_s_A
-
-  -- ───────────────────────────────────────────────────────────────────────────
-  -- STEP 2: Define `pe_A.init` as the bind of `pe_C.init` with `init_match`.
-  --
-  -- This is the abstract initial distribution: sample a concrete init state
-  -- from `pe_C.init`, then sample its R-matched abstract state from
-  -- `init_match s_C`. Every state in its support is in `sys_A.init` by
-  -- `h_match_init`.
-  -- ───────────────────────────────────────────────────────────────────────────
+  -- STEP 2: `pe_A.init`.
   let pe_A_init : PMF State_A := pe_C.init.bind init_match
-
-  -- ───────────────────────────────────────────────────────────────────────────
-  -- STEP 3: Construct the abstract scheduler `pe_A_scheduler`.
-  --
-  -- This is the heart of the proof. We need
-  --     `pe_A_scheduler : Scheduler sys_A.toSystem`
-  -- with the property that the resulting probabilistic execution has the
-  -- same trace probabilities as `pe_C`.
-  --
-  -- High-level construction:
-  --   (i)   Define a "coupling" relation on prefixes:
-  --             `Coupled : AlterSeq State_C Label → AlterSeq State_A Label → Prop`
-  --         such that empty prefixes are coupled if init dists are R-related,
-  --         and the coupling is preserved by `sim.step`.
-  --   (ii)  For each abstract prefix `e_A`, classically pick a concrete prefix
-  --         `e_C` coupled to `e_A` (using `Classical.choose` on existence).
-  --   (iii) Apply `pe_C.scheduler.next e_C` to get a concrete step distribution.
-  --         For each `(l, μ_C)` in the support, use `sim.step` to extract a
-  --         matching abstract step `(l_A, μ_A)` (which may be a `weakStep` or
-  --         `weakTau` depending on `sys_C.internal l`).
-  --   (iv)  Aggregate the matching abstract steps into a PMF over
-  --         `Label × PMF State_A`.
-  --
-  -- This is the part that needs ~hundreds of lines of Lean, plus a clean
-  -- auxiliary "Coupling" structure to carry the matching data.
-  --
-  -- Needed infrastructure (in rough order):
-  --   - `Coupling` predicate / structure on prefix pairs.
-  --   - Step lemmas: `Coupled e_C e_A → sys_C.step (last_state e_C) l μ_C →
-  --                   ∃ e_A_next, Coupled (extend e_C) e_A_next` and similar.
-  --   - The actual scheduler construction via Classical.
-  --   - Validity proof using `sim.step`'s `sys_A.step` conclusions.
-  -- ───────────────────────────────────────────────────────────────────────────
-  obtain ⟨pe_A_scheduler, h_scheduler_traces⟩ :
+  -- STEP 3 (sorry — the core scheduler construction + trace-equality proof):
+  -- build `σ_A : Scheduler sys_A.toSystem` such that the resulting
+  -- `⟨pe_A_init, σ_A⟩` is trace-coupled to `pe_C`.
+  obtain ⟨pe_A_scheduler, h_traces⟩ :
       ∃ σ_A : Scheduler sys_A.toSystem,
-        ∀ τ : Seq Label,
-          sys_C.traceProb pe_C τ =
-          sys_A.traceProb (⟨pe_A_init, σ_A⟩ : ProbabilisticExecution _) τ := by
+        TraceCoupled sys_C sys_A pe_C ⟨pe_A_init, σ_A⟩ := by
     sorry
+  -- Assemble the `Coupling`.
+  refine ⟨{
+    pe_A := ⟨pe_A_init, pe_A_scheduler⟩
+    init_initial := ?_
+    trace_coupled := h_traces
+  }⟩
+  intro s_A h_s_A
+  rw [PMF.mem_support_bind_iff] at h_s_A
+  obtain ⟨s_C, h_s_C, h_s_A_in⟩ := h_s_A
+  exact h_match_init s_C h_s_C s_A h_s_A_in
 
-  -- ───────────────────────────────────────────────────────────────────────────
-  -- STEP 4: Assemble `pe_A` and conclude.
-  --
-  -- `pe_A` is just `⟨pe_A_init, pe_A_scheduler⟩`. The trace-equality
-  -- conclusion is directly from `h_scheduler_traces`.
-  -- ───────────────────────────────────────────────────────────────────────────
-  exact ⟨⟨pe_A_init, pe_A_scheduler⟩, h_scheduler_traces⟩
+/-- **Segala's main theorem (trace inclusion)**: if `R` is a probabilistic
+forward simulation from `sys_C` to `sys_A`, then every concrete probabilistic
+execution `pe_C` starting from initial states of `sys_C` is matched, trace by
+trace, by some abstract probabilistic execution `pe_A` over `sys_A`.
+
+Informally: the simulation suffices to transport the entire trace distribution
+of any concrete adversary to a matching abstract adversary.
+
+This is now an immediate corollary of `exists_coupling` — projecting the
+`pe_A` field of a `Coupling` and using its `trace_coupled` witness.
+
+Compared to Segala's original statement, ours is restricted to finite-runtime
+schedulers on the abstract side (our `weakTau` is finite-bounded, whereas
+Segala admits AS-terminating ones). The conclusion is consequently stated on
+finite-trace `traceProb`; the infinite-trace measure-theoretic version awaits
+a later upgrade to `MeasureTheory.Measure`. -/
+theorem traceInclusion
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (h_init : ∀ s_C ∈ pe_C.init.support, sys_C.init s_C) :
+    ∃ pe_A : ProbabilisticExecution sys_A.toSystem,
+      ∀ τ : Seq Label, sys_C.traceProb pe_C τ = sys_A.traceProb pe_A τ := by
+  obtain ⟨c⟩ := sim.exists_coupling pe_C h_init
+  exact ⟨c.pe_A, c.trace_coupled⟩
 
 end PLTS
