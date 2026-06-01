@@ -121,8 +121,8 @@ structure WeakScheduler (sys : LabelledSystem State Label) where
     e.trans.TerminatedAt n → e.stateAt n = some s →
     ∀ lμ, some lμ ∈ (next e).support → sys.step s lμ.1 lμ.2
   runtime : ℕ
-  stops : ∀ (e : AlterSeq State Label) (n : ℕ),
-    e.trans.TerminatedAt n → n ≥ runtime → next e = PMF.pure none
+  stops : ∀ (e : AlterSeq State Label) (h : e.trans.Terminates),
+    e.trans.length h ≥ runtime → next e = PMF.pure none
 
 namespace WeakScheduler
 
@@ -144,6 +144,19 @@ starting from the trivial prefix `⟨s, Seq.nil⟩`. -/
 noncomputable def run (σ : WeakScheduler sys) (s : State) : PMF State :=
   σ.runFromState σ.runtime ⟨s, Seq.nil⟩ s
 
+/-- The weak scheduler that immediately stops on every prefix. Used to witness
+reflexivity of weak transitions: it takes no τ-steps, so its run from any state
+`s` is the Dirac `PMF.pure s`. -/
+noncomputable def stop (sys : LabelledSystem State Label) : WeakScheduler sys where
+  next _ := PMF.pure none
+  internal_only e lμ h := by simp at h
+  valid e n s _ _ lμ h := by simp at h
+  runtime := 0
+  stops _ _ _ := rfl
+
+@[simp] theorem run_stop (sys : LabelledSystem State Label) (s : State) :
+    (stop sys).run s = PMF.pure s := rfl
+
 end WeakScheduler
 
 /-- Weak (internal) transition `μ_init ⇒^τ μ` on initial distributions: there
@@ -153,6 +166,16 @@ produces the distribution `μ`. The "from a single state" case is recovered as
 def weakTau (sys : LabelledSystem State Label)
     (μ_init : PMF State) (μ : PMF State) : Prop :=
   ∃ σ : WeakScheduler sys, μ_init.bind σ.run = μ
+
+/-- Reflexivity of `weakTau`: every distribution is weak-τ-related to itself,
+witnessed by the stop-everywhere weak scheduler. -/
+theorem weakTau_refl (ls : LabelledSystem State Label) (μ : PMF State) :
+    weakTau ls μ μ := by
+  refine ⟨WeakScheduler.stop ls, ?_⟩
+  show μ.bind _ = μ
+  have heq : (WeakScheduler.stop ls).run = PMF.pure := funext fun _ => rfl
+  rw [heq]
+  exact PMF.bind_pure μ
 
 /-- The lifting of `sys.step` from `State → Label → PMF State → Prop` to a
 relation on initial and final distributions, parameterised by a label, *closed
@@ -181,6 +204,20 @@ def hyperStep (sys : System State Label)
     (∀ s ∈ μ_pre.support, ∀ μ ∈ (p s).support, sys.step s l μ) ∧
     μ_post = μ_pre.bind (fun s => (p s).bind id)
 
+/-- A strong system step lifts to a hyper-step on a singleton initial
+distribution: if `sys.step s l μ`, then `hyperStep sys (PMF.pure s) l μ`. -/
+theorem hyperStep_pure_of_step
+    {sys : System State Label} {s : State} {l : Label} {μ : PMF State}
+    (h : sys.step s l μ) :
+    hyperStep sys (PMF.pure s) l μ := by
+  refine ⟨fun _ => PMF.pure μ, ?_, ?_⟩
+  · intro s' h_s' μ' h_μ'
+    rw [PMF.mem_support_pure_iff] at h_s' h_μ'
+    subst h_s'
+    subst h_μ'
+    exact h
+  · simp [PMF.pure_bind]
+
 /-- The weak external step `μ_init ⇒^l μ_final`, composing the three layers
 `τ-closure → hyper-step with label l → τ-closure`. Concretely there exist
 intermediate distributions `μ, μ'` with
@@ -199,6 +236,16 @@ def weakStep (sys : LabelledSystem State Label)
     weakTau sys μ_init μ ∧
     hyperStep sys.toSystem μ l μ' ∧
     weakTau sys μ' μ_final
+
+/-- A strong system step lifts to a weak step on a singleton initial
+distribution: if `sys.step s l μ`, then `weakStep sys (PMF.pure s) l μ`. Both
+τ-closure layers are trivial reflexivities. -/
+theorem weakStep_strong {ls : LabelledSystem State Label}
+    {s : State} {l : Label} {μ : PMF State}
+    (h_step : ls.step s l μ) :
+    weakStep ls (PMF.pure s) l μ :=
+  ⟨PMF.pure s, μ, weakTau_refl ls (PMF.pure s),
+    hyperStep_pure_of_step h_step, weakTau_refl ls μ⟩
 
 /-- A *weak* probabilistic forward simulation from `sys_C` to `sys_A` along the
 state relation `R : State_C → State_A → Prop`. Both systems carry an
@@ -319,6 +366,105 @@ theorem traceInclusion
     (h_init : ∀ s_C ∈ pe_C.init.support, sys_C.init s_C) :
     ∃ pe_A : ProbabilisticExecution sys_A.toSystem,
       ∀ τ : Seq Label, sys_C.traceProb pe_C τ = sys_A.traceProb pe_A τ := by
-  sorry
+  -- ───────────────────────────────────────────────────────────────────────────
+  -- STEP 0: Establish `Nonempty State_A`.
+  --
+  -- `pe_C.init : PMF State_C` has nonempty support (PMFs sum to 1). Pick any
+  -- `s_C₀ ∈ pe_C.init.support`; by `h_init`, `sys_C.init s_C₀`; then
+  -- `sim.init s_C₀ _` gives a `μ_A : PMF State_A` whose support contains some
+  -- `s_A`, so `State_A` is inhabited.
+  -- ───────────────────────────────────────────────────────────────────────────
+  haveI hne_A : Nonempty State_A := by
+    obtain ⟨s_C₀, h_s_C₀⟩ := pe_C.init.support_nonempty
+    obtain ⟨μ_A, _, _⟩ := sim.init s_C₀ (h_init s_C₀ h_s_C₀)
+    obtain ⟨s_A, _⟩ := μ_A.support_nonempty
+    exact ⟨s_A⟩
+
+  -- ───────────────────────────────────────────────────────────────────────────
+  -- STEP 1: Build the initial-distribution matching function
+  --     `init_match : State_C → PMF State_A`
+  -- with the property: for each `s_C ∈ pe_C.init.support`,
+  --   • `init_match s_C` is supported on `sys_A.init`,
+  --   • `R s_C (init_match s_C)`.
+  --
+  -- Construction: classically, for each `s_C` with `sys_C.init s_C`, pick
+  -- `(sim.init s_C _).choose`. For `s_C` not initial (irrelevant to `pe_C`
+  -- support), use a default `PMF State_A` from `hne_A`.
+  -- ───────────────────────────────────────────────────────────────────────────
+  obtain ⟨init_match, h_match_R, h_match_init⟩ :
+      ∃ f : State_C → PMF State_A,
+        (∀ s_C ∈ pe_C.init.support, R s_C (f s_C)) ∧
+        (∀ s_C ∈ pe_C.init.support, ∀ s_A ∈ (f s_C).support, sys_A.init s_A) := by
+    classical
+    refine ⟨fun s_C =>
+      if h : sys_C.init s_C then (sim.init s_C h).choose
+      else PMF.pure (Classical.arbitrary _), ?_, ?_⟩
+    · intro s_C h_s_C
+      have h := h_init s_C h_s_C
+      dsimp only
+      rw [dif_pos h]
+      exact (sim.init s_C h).choose_spec.2
+    · intro s_C h_s_C s_A h_s_A
+      have h := h_init s_C h_s_C
+      dsimp only at h_s_A
+      rw [dif_pos h] at h_s_A
+      exact (sim.init s_C h).choose_spec.1 s_A h_s_A
+
+  -- ───────────────────────────────────────────────────────────────────────────
+  -- STEP 2: Define `pe_A.init` as the bind of `pe_C.init` with `init_match`.
+  --
+  -- This is the abstract initial distribution: sample a concrete init state
+  -- from `pe_C.init`, then sample its R-matched abstract state from
+  -- `init_match s_C`. Every state in its support is in `sys_A.init` by
+  -- `h_match_init`.
+  -- ───────────────────────────────────────────────────────────────────────────
+  let pe_A_init : PMF State_A := pe_C.init.bind init_match
+
+  -- ───────────────────────────────────────────────────────────────────────────
+  -- STEP 3: Construct the abstract scheduler `pe_A_scheduler`.
+  --
+  -- This is the heart of the proof. We need
+  --     `pe_A_scheduler : Scheduler sys_A.toSystem`
+  -- with the property that the resulting probabilistic execution has the
+  -- same trace probabilities as `pe_C`.
+  --
+  -- High-level construction:
+  --   (i)   Define a "coupling" relation on prefixes:
+  --             `Coupled : AlterSeq State_C Label → AlterSeq State_A Label → Prop`
+  --         such that empty prefixes are coupled if init dists are R-related,
+  --         and the coupling is preserved by `sim.step`.
+  --   (ii)  For each abstract prefix `e_A`, classically pick a concrete prefix
+  --         `e_C` coupled to `e_A` (using `Classical.choose` on existence).
+  --   (iii) Apply `pe_C.scheduler.next e_C` to get a concrete step distribution.
+  --         For each `(l, μ_C)` in the support, use `sim.step` to extract a
+  --         matching abstract step `(l_A, μ_A)` (which may be a `weakStep` or
+  --         `weakTau` depending on `sys_C.internal l`).
+  --   (iv)  Aggregate the matching abstract steps into a PMF over
+  --         `Label × PMF State_A`.
+  --
+  -- This is the part that needs ~hundreds of lines of Lean, plus a clean
+  -- auxiliary "Coupling" structure to carry the matching data.
+  --
+  -- Needed infrastructure (in rough order):
+  --   - `Coupling` predicate / structure on prefix pairs.
+  --   - Step lemmas: `Coupled e_C e_A → sys_C.step (last_state e_C) l μ_C →
+  --                   ∃ e_A_next, Coupled (extend e_C) e_A_next` and similar.
+  --   - The actual scheduler construction via Classical.
+  --   - Validity proof using `sim.step`'s `sys_A.step` conclusions.
+  -- ───────────────────────────────────────────────────────────────────────────
+  obtain ⟨pe_A_scheduler, h_scheduler_traces⟩ :
+      ∃ σ_A : Scheduler sys_A.toSystem,
+        ∀ τ : Seq Label,
+          sys_C.traceProb pe_C τ =
+          sys_A.traceProb (⟨pe_A_init, σ_A⟩ : ProbabilisticExecution _) τ := by
+    sorry
+
+  -- ───────────────────────────────────────────────────────────────────────────
+  -- STEP 4: Assemble `pe_A` and conclude.
+  --
+  -- `pe_A` is just `⟨pe_A_init, pe_A_scheduler⟩`. The trace-equality
+  -- conclusion is directly from `h_scheduler_traces`.
+  -- ───────────────────────────────────────────────────────────────────────────
+  exact ⟨⟨pe_A_init, pe_A_scheduler⟩, h_scheduler_traces⟩
 
 end PLTS
