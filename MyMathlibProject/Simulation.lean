@@ -982,20 +982,26 @@ def LabelledSystem.TraceDecomp.toTight
     (d : ls.TraceDecomp l τ) :
     {e : AlterSeq State Label //
       e.trans.Terminates ∧ ls.trace e = Seq.cons l τ ∧ ls.IsTight e} :=
-  let ⟨s₀, l₀, s₁, e_rest, h_init, h_term, h_tight, h_consume⟩ := d
+  -- Projection-based to make iota reduction transparent.
+  let s₀ := d.1
+  let l₀ := d.2.1
+  let s₁ := d.2.2.1
+  let e_rest := d.2.2.2.1
+  let h_init : e_rest.init = s₁ := d.2.2.2.2.1
+  let h_term : e_rest.trans.Terminates := d.2.2.2.2.2.1
+  let h_tight : ls.IsTight e_rest := d.2.2.2.2.2.2.1
+  let h_consume : ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest) :=
+    d.2.2.2.2.2.2.2
   -- e_rest = ⟨s₁, e_rest.trans⟩ by h_init.
   have h_e_rest_eq : e_rest = ⟨s₁, e_rest.trans⟩ := by
-    rcases e_rest with ⟨init, trans⟩
-    simp only at h_init
-    subst h_init
-    rfl
+    rw [← h_init]
   ⟨⟨s₀, Seq.cons (l₀, s₁) e_rest.trans⟩,
     Stream'.Seq.terminates_cons_iff.mpr h_term,
-    -- trace = cons l τ
     (by
       classical
       by_cases h_int : ls.internal l₀
-      · have h_consume_internal : ls.consumeLabel l₀ (Seq.cons l τ) = some (Seq.cons l τ) := by
+      · have h_consume_internal :
+            ls.consumeLabel l₀ (Seq.cons l τ) = some (Seq.cons l τ) := by
           unfold LabelledSystem.consumeLabel; simp [h_int]
         rw [h_consume_internal] at h_consume
         have h_trace_e_rest : ls.trace e_rest = Seq.cons l τ :=
@@ -1013,7 +1019,6 @@ def LabelledSystem.TraceDecomp.toTight
           exact congrArg (Seq.cons l) h_trace_e_rest
         · rw [if_neg h_l_eq] at h_consume
           exact absurd h_consume (by simp)),
-    -- IsTight via IsTight_cons_iff
     (ls.IsTight_cons_iff s₀ l₀ s₁ e_rest.trans).mpr ⟨
       h_e_rest_eq ▸ h_tight,
       by
@@ -1042,22 +1047,25 @@ noncomputable def LabelledSystem.TraceDecomp.equiv
   toFun e := LabelledSystem.TraceDecomp.ofTight ls l τ e.1 e.2.1 e.2.2.1 e.2.2.2
   invFun := LabelledSystem.TraceDecomp.toTight ls l τ
   left_inv := by
-    -- The round-trip toTight ∘ ofTight is structurally `e.init`-preserving;
-    -- the trans component is `cons (head.1, head.2) tail = head_eq_some e.trans`.
-    -- Even with both defs term-mode, Lean's iota reduction inside the nested
-    -- `let ⟨…⟩ := d; …` (= `match` desugaring) doesn't fully fire here —
-    -- the proof terms inside the inner PSigma carry dependencies that block
-    -- whnf. Workable via an explicit term that bypasses the match, but this
-    -- has grown into its own ~30-line chunk.
-    sorry
+    rintro ⟨e, h_term, h_trace, h_tight⟩
+    apply Subtype.ext
+    dsimp only [LabelledSystem.TraceDecomp.toTight, LabelledSystem.TraceDecomp.ofTight]
+    rcases e with ⟨e_init, e_trans⟩
+    congr 1
+    -- Goal: cons ((e_trans.head.get _).1, (e_trans.head.get _).2) e_trans.tail = e_trans
+    exact (Stream'.Seq.head_eq_some (Option.eq_some_of_isSome _)).symm
   right_inv := by
-    rintro ⟨s₀, l₀, s₁, e_rest, h_init, h_term, h_tight, h_consume⟩
-    -- The round-trip ofTight ∘ toTight extracts (l₀, s₁) as head of
-    -- `cons (l₀, s₁) e_rest.trans`. By `head_cons`, `head = some (l₀, s₁)`,
-    -- so `pair = (l₀, s₁)` and `pair.1 = l₀`, `pair.2 = s₁`. Also `tail =
-    -- e_rest.trans`, so the e_rest component is `⟨s₁, e_rest.trans⟩ = e_rest`
-    -- (via `h_init`). The first three components s₀, l₀, s₁ match.
-    sorry
+    rintro ⟨s₀, l₀, s₁, ⟨e_rest, h_init, h_term, h_tight, h_consume⟩⟩
+    dsimp only [LabelledSystem.TraceDecomp.toTight, LabelledSystem.TraceDecomp.ofTight]
+    -- First three PSigma components (s₀, l₀, s₁) match definitionally;
+    -- the inner Subtype reduces to the AlterSeq equality `⟨s₁, e_rest.trans⟩
+    -- = e_rest` via `h_init`.
+    congr 1
+    congr 1
+    congr 1
+    apply Subtype.ext
+    change ({init := s₁, trans := e_rest.trans} : AlterSeq State Label) = e_rest
+    rw [← h_init]
 
 /-- **One-step trace-cone decomposition.** The trace probability for a
 non-empty trace `cons l τ` decomposes over the first transition `(l₀, s₁)`
