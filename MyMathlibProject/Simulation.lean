@@ -814,13 +814,39 @@ theorem ProbabilisticForwardSimulation.exists_coupling
       exact (sim.init s_C h).choose_spec.1 s_A h_s_A
   -- STEP 2: `pe_A.init`.
   let pe_A_init : PMF State_A := pe_C.init.bind init_match
-  -- STEP 3 (sorry — the core scheduler construction + trace-equality proof):
-  -- build `σ_A : Scheduler sys_A.toSystem` such that the resulting
-  -- `⟨pe_A_init, σ_A⟩` is trace-coupled to `pe_C`.
-  obtain ⟨pe_A_scheduler, h_traces⟩ :
-      ∃ σ_A : Scheduler sys_A.toSystem,
-        TraceCoupled sys_C sys_A pe_C ⟨pe_A_init, σ_A⟩ := by
+  -- STEP 3: construct `σ_A` such that the resulting probabilistic execution
+  -- is trace-coupled to `pe_C`. Decomposed into three sub-pieces.
+  classical
+  -- STEP 3.1: define the scheduler's next function. For each abstract prefix,
+  -- this should output the abstract single-step that corresponds to what
+  -- `pe_C.scheduler` would do at a matching concrete prefix, via `sim.step`'s
+  -- weak transition data (extracted by the `stepWitness` / `weakTau` /
+  -- `weakStep` / `hyperStep` extractors). The "matching concrete prefix" is
+  -- chosen by `Classical.choose`; the abstract single-step is then the
+  -- appropriate stage of the weak transition for that concrete step.
+  have h_construct_next :
+      ∃ compute_next : AlterSeq State_A Label → PMF (Label × PMF State_A),
+        ∀ (e_A : AlterSeq State_A Label) (n : ℕ) (s_A : State_A),
+          e_A.trans.TerminatedAt n → e_A.stateAt n = some s_A →
+          ∀ l_A μ_A_post, (l_A, μ_A_post) ∈ (compute_next e_A).support →
+            sys_A.step s_A l_A μ_A_post := by
     sorry
+  obtain ⟨compute_next, h_valid⟩ := h_construct_next
+  let pe_A_scheduler : Scheduler sys_A.toSystem :=
+    { next := compute_next, valid := h_valid }
+  -- STEP 3.2: prove trace coupling. Uses `TraceCoupled.of_nil_and_cons` to
+  -- reduce to two sub-cases (empty trace, cons-extension), each of which
+  -- decomposes the `traceProb` sum via tight prefixes and applies the
+  -- `stepWitness` matching from `sim.step`.
+  have h_traces : TraceCoupled sys_C sys_A pe_C
+      ⟨pe_A_init, pe_A_scheduler⟩ := by
+    apply TraceCoupled.of_nil_and_cons
+    · -- nil case: both sides sum over their unique tight empty prefixes.
+      sorry
+    · intro l τ
+      -- cons case: induction on the trace, using `sim.step` to match the
+      -- first external transition.
+      sorry
   -- Assemble the `Coupling`.
   refine ⟨{
     pe_A := ⟨pe_A_init, pe_A_scheduler⟩
