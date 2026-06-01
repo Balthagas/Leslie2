@@ -531,6 +531,57 @@ def TraceCoupled
     (pe_A : ProbabilisticExecution sys_A.toSystem) : Prop :=
   ∀ τ : Seq Label, sys_C.traceProb pe_C τ = sys_A.traceProb pe_A τ
 
+/-- Reflexivity of `TraceCoupled`. -/
+theorem TraceCoupled.refl (ls : LabelledSystem State Label)
+    (pe : ProbabilisticExecution ls.toSystem) :
+    TraceCoupled ls ls pe pe := fun _ => rfl
+
+/-- Symmetry of `TraceCoupled` (across systems). -/
+theorem TraceCoupled.symm {ls₁ : LabelledSystem State Label}
+    {ls₂ : LabelledSystem State_A Label}
+    {pe₁ : ProbabilisticExecution ls₁.toSystem}
+    {pe₂ : ProbabilisticExecution ls₂.toSystem}
+    (h : TraceCoupled ls₁ ls₂ pe₁ pe₂) : TraceCoupled ls₂ ls₁ pe₂ pe₁ :=
+  fun τ => (h τ).symm
+
+/-- Transitivity of `TraceCoupled` (across systems). -/
+theorem TraceCoupled.trans {ls₁ : LabelledSystem State Label}
+    {ls₂ : LabelledSystem State_A Label} {ls₃ : LabelledSystem State_C Label}
+    {pe₁ : ProbabilisticExecution ls₁.toSystem}
+    {pe₂ : ProbabilisticExecution ls₂.toSystem}
+    {pe₃ : ProbabilisticExecution ls₃.toSystem}
+    (h₁₂ : TraceCoupled ls₁ ls₂ pe₁ pe₂)
+    (h₂₃ : TraceCoupled ls₂ ls₃ pe₂ pe₃) :
+    TraceCoupled ls₁ ls₃ pe₁ pe₃ :=
+  fun τ => (h₁₂ τ).trans (h₂₃ τ)
+
+/-- **Inductive reduction lemma**: `TraceCoupled` is determined by its
+behaviour on the empty trace and on cons-extensions. Any inductive proof of
+`TraceCoupled` can split into a `nil` case plus a `cons` case via this lemma. -/
+theorem TraceCoupled.of_nil_and_cons
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {pe_A : ProbabilisticExecution sys_A.toSystem}
+    (h_nil : sys_C.traceProb pe_C Seq.nil = sys_A.traceProb pe_A Seq.nil)
+    (h_cons : ∀ (l : Label) (τ : Seq Label),
+      sys_C.traceProb pe_C (Seq.cons l τ) = sys_A.traceProb pe_A (Seq.cons l τ)) :
+    TraceCoupled sys_C sys_A pe_C pe_A := by
+  intro τ
+  cases τ with
+  | nil => exact h_nil
+  | cons l τ' => exact h_cons l τ'
+
+/-- The trace probability of any trace is at most `1`. Proof requires
+summing over finite executions and bounding by `pe.init`'s mass, plus
+arguing that the conditional probabilities along the kernel sum to `≤ 1`
+at each step. (Currently unproved — needed for Session C's quantitative
+arguments.) -/
+theorem LabelledSystem.traceProb_le_one
+    (ls : LabelledSystem State Label)
+    (pe : ProbabilisticExecution ls.toSystem) (τ : Seq Label) :
+    ls.traceProb pe τ ≤ 1 := by
+  sorry
+
 /-- A *coupling* extending a concrete probabilistic execution along a
 probabilistic forward simulation: an abstract probabilistic execution whose
 init is supported on `sys_A`-initial states and which is trace-coupled to the
