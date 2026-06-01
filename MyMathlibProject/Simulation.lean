@@ -822,6 +822,61 @@ theorem LabelledSystem.traceProb_nil_eq_one
         pe.init a.1.init) = ∑' s, pe.init s from e_equiv.tsum_eq pe.init]
   exact pe.init.tsum_coe
 
+/-- "After the scheduler emits a transition with label `l₀`, the remaining
+trace becomes…": internal labels drop out (trace unchanged); external labels
+must match the next external label of `τ` and are consumed; an external
+mismatch makes the continuation impossible (`none`). -/
+noncomputable def LabelledSystem.consumeLabel (ls : LabelledSystem State Label)
+    (l₀ : Label) (τ : Seq Label) : Option (Seq Label) := by
+  classical
+  exact
+    if ls.internal l₀ then some τ
+    else
+      match τ.head with
+      | some l => if l = l₀ then some τ.tail else none
+      | none   => none
+
+/-- **One-step trace-cone decomposition.** The trace probability for a
+non-empty trace `cons l τ` decomposes over the first transition `(l₀, s₁)`
+taken from each initial state `s₀`:
+
+* the joint mass `pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁)` is the
+  probability of starting at `s₀` and emitting first transition `(l₀, s₁)`,
+* `consumeLabel l₀ (cons l τ)` says how the trace remaining to be produced
+  shrinks (or fails) given `l₀`,
+* the recursive `traceProb (pe.continuationFrom …) (consumeLabel …)` is the
+  conditional trace probability of completing the remainder.
+
+When `consumeLabel l₀ (cons l τ) = none` (external label `l₀ ≠ l`) the
+contribution is `0` via `Option.elim`. This is the recursion engine for
+inducting `traceProb` equalities along the trace.
+
+The continuation's `history` is the singleton transition just emitted; its
+`endState` is `s₁`, matching the next initial state. -/
+theorem LabelledSystem.traceProb_first_step
+    (ls : LabelledSystem State Label)
+    (pe : ProbabilisticExecution ls.toSystem)
+    (l : Label) (τ : Seq Label) :
+    ls.traceProb pe (Seq.cons l τ) =
+      ∑' (s₀ : State) (l₀ : Label) (s₁ : State),
+        pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+        (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+          (fun τ' => ls.traceProb
+            (pe.continuationFrom
+              ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+              ⟨1, by
+                change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
+                rw [Stream'.Seq.get?_cons_succ]
+                exact Stream'.Seq.terminatedAt_nil⟩)
+            τ') := by
+  -- Reindex `traceProb`'s tsum over tight prefixes with `trace = cons l τ`
+  -- by `(s₀, l₀, s₁, e_rest)` where `s₀ = e.init`, `(l₀, s₁) = e.trans.head`,
+  -- and `e_rest = ⟨s₁, e.trans.tail⟩` is the remaining tight prefix.
+  -- Factor `probOf e = init s₀ * kernel … * (continuationFrom … ).probOf e_rest`.
+  -- The tightness-with-trace constraint on `e` becomes a tightness-with-
+  -- `consumeLabel`-trace constraint on `e_rest`.
+  sorry
+
 /-- The trace probability of any trace is at most `1`.
 
 The bound holds because: (i) `probOfRemaining ≤ 1` (each kernel value

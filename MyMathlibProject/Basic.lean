@@ -59,6 +59,20 @@ lemma exists_endpoint (e : AlterSeq State Label) (h : e.trans.Terminates) :
     change (e.trans.get? k).map Prod.snd = some s
     rw [hls]; rfl
 
+/-- The end-state of a finite alternating sequence: the state reached after
+the last transition (or `e.init` if there are no transitions). Extracted via
+`exists_endpoint` and `Classical.choose`. -/
+noncomputable def endState (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    State :=
+  (exists_endpoint e h).choose_spec.choose
+
+/-- The end-state's defining property: at some terminated position the
+alterSeq is in this state. -/
+theorem endState_spec (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    ∃ n, e.trans.TerminatedAt n ∧ e.stateAt n = some (e.endState h) := by
+  refine ⟨(exists_endpoint e h).choose, ?_⟩
+  exact (exists_endpoint e h).choose_spec.choose_spec
+
 end AlterSeq
 
 variable {State : Type} {Label : Type}
@@ -177,6 +191,33 @@ theorem probOf_le_init (pe : ProbabilisticExecution sys)
   calc pe.init e.init * pe.probOfRemaining ⟨e.init, Seq.nil⟩ (e.trans.toList hFin)
       ≤ pe.init e.init * 1 := by gcongr; exact pe.probOfRemaining_le_one _ _
     _ = pe.init e.init := mul_one _
+
+/-- The probabilistic execution starting at the end-state of `history`, with
+its scheduler shifted so it queries `pe.scheduler` on prefixes extended by
+`history` on the left. Used to recursively decompose `traceProb`: after pe
+takes a first transition, the "remaining" execution is a `continuationFrom`
+of the just-emitted history.
+
+The scheduler is conditional on `e'.init = history.endState`: when this
+holds, the extended prefix has a consistent state at the join, and validity
+transfers from `pe.scheduler.valid`. When it doesn't hold, the scheduler
+returns `none` (validity vacuous). -/
+noncomputable def continuationFrom (pe : ProbabilisticExecution sys)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates) :
+    ProbabilisticExecution sys where
+  init := PMF.pure (history.endState h_term)
+  scheduler :=
+    { next := fun e' =>
+        open Classical in
+        if e'.init = history.endState h_term then
+          pe.scheduler.next ⟨history.init, history.trans.append e'.trans⟩
+        else
+          none
+      valid := by
+        -- The extended prefix `⟨history.init, history.trans ++ e'.trans⟩`
+        -- terminates at `(Nat.find h_term) + n` with the same end-state `s`,
+        -- so `pe.scheduler.valid` at that position transfers.
+        sorry }
 
 end ProbabilisticExecution
 
