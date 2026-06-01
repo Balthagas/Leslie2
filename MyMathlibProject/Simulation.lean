@@ -711,6 +711,23 @@ theorem TraceCoupled.of_nil_and_cons
   | nil => exact h_nil
   | cons l τ' => exact h_cons l τ'
 
+/-- The trace probability of the empty trace is exactly `1`: every trajectory
+trivially has `Seq.nil` as a prefix of its trace, so the trace cone for
+`Seq.nil` is the whole space.
+
+Concretely: under `IsTight`, only `⟨s, Seq.nil⟩` (the empty-trans prefixes,
+one per `s : State`) have trace `Seq.nil`. Their `probOf` values are
+`pe.init s * 1 = pe.init s`, summing to `pe.init.tsum_coe = 1`.
+
+The proof requires bijecting the subtype `{e // Terminates ∧ trace = nil ∧
+IsTight}` with `State` via `s ↦ ⟨s, Seq.nil⟩`, which uses `tight + trace nil
+⇒ trans = nil` for the surjection. -/
+theorem LabelledSystem.traceProb_nil_eq_one
+    (ls : LabelledSystem State Label)
+    (pe : ProbabilisticExecution ls.toSystem) :
+    ls.traceProb pe Seq.nil = 1 := by
+  sorry
+
 /-- The trace probability of any trace is at most `1`.
 
 The bound holds because: (i) `probOfRemaining ≤ 1` (each kernel value
@@ -841,8 +858,9 @@ theorem ProbabilisticForwardSimulation.exists_coupling
   have h_traces : TraceCoupled sys_C sys_A pe_C
       ⟨pe_A_init, pe_A_scheduler⟩ := by
     apply TraceCoupled.of_nil_and_cons
-    · -- nil case: both sides sum over their unique tight empty prefixes.
-      sorry
+    · -- nil case: both sides equal `1` via `traceProb_nil_eq_one`.
+      rw [sys_C.traceProb_nil_eq_one pe_C,
+          sys_A.traceProb_nil_eq_one ⟨pe_A_init, pe_A_scheduler⟩]
     · intro l τ
       -- cons case: induction on the trace, using `sim.step` to match the
       -- first external transition.
