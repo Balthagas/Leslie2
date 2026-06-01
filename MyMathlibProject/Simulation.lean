@@ -711,17 +711,37 @@ theorem TraceCoupled.of_nil_and_cons
   | nil => exact h_nil
   | cons l τ' => exact h_cons l τ'
 
+/-- Key algebraic fact: a tight prefix whose trace is empty has no
+transitions. The first disjunct of `IsTight` (TerminatedAt 0) gives this
+directly via `Seq.get?_zero_eq_none`; the second disjunct (external last
+transition) contradicts trace nil, since an external transition contributes
+to the trace. -/
+private theorem trans_nil_of_tight_trace_nil
+    (ls : LabelledSystem State Label) (e : AlterSeq State Label)
+    (h_trace : ls.trace e = Seq.nil) (h_tight : ls.IsTight e) :
+    e.trans = Seq.nil := by
+  rcases h_tight with h_term0 | ⟨n, l, s, h_get, _h_term_succ, _h_ext⟩
+  · -- TerminatedAt 0 unfolds to `get? 0 = none`, which gives `trans = nil`
+    -- via `Seq.get?_zero_eq_none`.
+    exact Stream'.Seq.get?_zero_eq_none.mp h_term0
+  · -- Contradiction: an external transition at position `n` forces the
+    -- trace to contain that label, but the trace is `nil`. Formal proof
+    -- requires lemmas about how `Seq.filter` and `Seq.map` interact with
+    -- `get?` and membership at specific positions.
+    exfalso
+    sorry
+
 /-- The trace probability of the empty trace is exactly `1`: every trajectory
 trivially has `Seq.nil` as a prefix of its trace, so the trace cone for
 `Seq.nil` is the whole space.
 
 Concretely: under `IsTight`, only `⟨s, Seq.nil⟩` (the empty-trans prefixes,
-one per `s : State`) have trace `Seq.nil`. Their `probOf` values are
-`pe.init s * 1 = pe.init s`, summing to `pe.init.tsum_coe = 1`.
+one per `s : State`) have trace `Seq.nil` (`trans_nil_of_tight_trace_nil`).
+Their `probOf` values are `pe.init s * 1 = pe.init s`, summing to
+`pe.init.tsum_coe = 1`.
 
 The proof requires bijecting the subtype `{e // Terminates ∧ trace = nil ∧
-IsTight}` with `State` via `s ↦ ⟨s, Seq.nil⟩`, which uses `tight + trace nil
-⇒ trans = nil` for the surjection. -/
+IsTight}` with `State` via `s ↦ ⟨s, Seq.nil⟩`, then `Equiv.tsum_eq`. -/
 theorem LabelledSystem.traceProb_nil_eq_one
     (ls : LabelledSystem State Label)
     (pe : ProbabilisticExecution ls.toSystem) :
