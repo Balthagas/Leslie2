@@ -836,6 +836,66 @@ noncomputable def LabelledSystem.consumeLabel (ls : LabelledSystem State Label)
       | some l => if l = l₀ then some τ.tail else none
       | none   => none
 
+/-- IsTight characterization for a prefix starting with `(l₀, s₁)` followed
+by `e_rest_trans`: tight iff its tail-prefix is tight, with the extra
+constraint that when the tail is empty, `l₀` must be external (since the
+last transition of the full prefix is then `(l₀, s₁)` itself). -/
+theorem LabelledSystem.IsTight_cons_iff (ls : LabelledSystem State Label)
+    (s₀ : State) (l₀ : Label) (s₁ : State) (e_rest_trans : Seq (Label × State)) :
+    ls.IsTight ⟨s₀, Seq.cons (l₀, s₁) e_rest_trans⟩ ↔
+      ls.IsTight ⟨s₁, e_rest_trans⟩ ∧
+        (¬ ls.internal l₀ ∨ e_rest_trans ≠ Seq.nil) := by
+  constructor
+  · rintro (h_term0 | ⟨n, l, s, h_get, h_term_succ, h_ext⟩)
+    · -- TerminatedAt 0 on cons is impossible.
+      exact absurd h_term0 Stream'.Seq.cons_not_terminatedAt_zero
+    · refine ⟨?_, ?_⟩
+      · -- IsTight e_rest: split on whether the witness `n` is `0` or `n+1`.
+        rcases n with _ | n'
+        · -- n = 0: the witness is the head (l₀, s₁) with ¬ internal l₀.
+          -- TerminatedAt 1 on cons means e_rest_trans.TerminatedAt 0 = nil.
+          have h_e_rest_nil : e_rest_trans.TerminatedAt 0 := by
+            rw [← Stream'.Seq.cons_terminatedAt_succ_iff (x := (l₀, s₁))]
+            exact h_term_succ
+          exact Or.inl h_e_rest_nil
+        · -- n = n' + 1: witness lies in e_rest_trans.
+          refine Or.inr ⟨n', l, s, ?_, ?_, h_ext⟩
+          · rw [← Stream'.Seq.get?_cons_succ (a := (l₀, s₁))]; exact h_get
+          · rw [← Stream'.Seq.cons_terminatedAt_succ_iff (x := (l₀, s₁))]
+            exact h_term_succ
+      · -- (¬ internal l₀ ∨ e_rest_trans ≠ nil): from the same `n` case-split.
+        rcases n with _ | n'
+        · -- n = 0: get? 0 = some (l, s) but trans starts with (l₀, s₁), so l = l₀, ¬ internal l₀.
+          have h_pair_eq : l = l₀ := by
+            have h_zero : (Seq.cons (l₀, s₁) e_rest_trans).get? 0 = some (l₀, s₁) := rfl
+            rw [h_zero] at h_get
+            exact ((Prod.mk.injEq _ _ _ _).mp (Option.some.inj h_get) |>.1).symm
+          exact Or.inl (h_pair_eq ▸ h_ext)
+        · -- n = n' + 1: trans extends beyond the head, so e_rest_trans is non-nil
+          -- (it has an element at position n').
+          refine Or.inr ?_
+          intro h_nil
+          rw [h_nil] at h_get
+          have h_none : (Seq.cons (l₀, s₁) Seq.nil).get? (n' + 1) = none := by
+            rw [Stream'.Seq.get?_cons_succ]; exact Stream'.Seq.terminatedAt_nil
+          rw [h_none] at h_get
+          exact absurd h_get (by simp)
+  · rintro ⟨h_tight_rest, h_aux⟩
+    rcases h_tight_rest with h_e_rest_nil | ⟨n', l, s, h_get', h_term_succ', h_ext'⟩
+    · -- e_rest_trans = nil.  Use the n = 0 witness in disjunct 2.
+      have h_e_rest_eq : e_rest_trans = Seq.nil :=
+        Stream'.Seq.terminatedAt_zero_iff.mp h_e_rest_nil
+      have h_not_internal : ¬ ls.internal l₀ :=
+        h_aux.resolve_right (by intro h_ne; exact h_ne h_e_rest_eq)
+      refine Or.inr ⟨0, l₀, s₁, ?_, ?_, h_not_internal⟩
+      · rfl
+      · change (Seq.cons (l₀, s₁) e_rest_trans).get? 1 = none
+        rw [Stream'.Seq.get?_cons_succ]; rw [h_e_rest_eq]; exact Stream'.Seq.terminatedAt_nil
+    · -- second disjunct of e_rest: lift the witness by 1.
+      refine Or.inr ⟨n' + 1, l, s, ?_, ?_, h_ext'⟩
+      · rw [Stream'.Seq.get?_cons_succ]; exact h_get'
+      · rw [Stream'.Seq.cons_terminatedAt_succ_iff]; exact h_term_succ'
+
 /-- **One-step trace-cone decomposition.** The trace probability for a
 non-empty trace `cons l τ` decomposes over the first transition `(l₀, s₁)`
 taken from each initial state `s₀`:
