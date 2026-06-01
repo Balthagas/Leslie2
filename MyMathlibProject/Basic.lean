@@ -71,14 +71,15 @@ def is_exec (e : AlterSeq State Label) (sys : System State Label) : Prop :=
   is_partial_exec e sys ∧ sys.init e.init
 
 /-- A randomized scheduler for a PLTS `sys`. Given a finite execution prefix it
-returns a distribution over the next step `(label, distribution)` of the
+either returns `none` (the scheduler stops on this prefix, producing no further
+step) or `some` distribution over the next step `(label, distribution)` of the
 system. The well-formedness condition `valid` requires every step in the support
-to be a valid transition of `sys` from the current state. -/
+of a `some` output to be a valid transition of `sys` from the current state. -/
 structure Scheduler (sys : System State Label) where
-  next : AlterSeq State Label → PMF (Label × PMF State)
+  next : AlterSeq State Label → Option (PMF (Label × PMF State))
   valid : ∀ (e : AlterSeq State Label) (n : ℕ) (s : State),
     e.trans.TerminatedAt n → e.stateAt n = some s →
-    ∀ l μ, (l, μ) ∈ (next e).support → sys.step s l μ
+    ∀ d, next e = some d → ∀ l μ, (l, μ) ∈ d.support → sys.step s l μ
 
 /-- A probabilistic execution: an initial distribution over states together
 with a scheduler resolving each step of the trace. -/
@@ -90,13 +91,29 @@ namespace ProbabilisticExecution
 
 variable {sys : System State Label}
 
-/-- The one-step kernel of a probabilistic execution. Given a finite prefix `e`,
-returns the distribution over the next concrete `(label, state)` step:
-`(l, μ) ~ pe.scheduler.next e` is the next PLTS step, and `s' ~ μ` is the next
-concrete state. -/
+/-- The one-step kernel of a probabilistic execution. Given a finite prefix `e`
+and a concrete next step `(l, s')`, returns the probability mass that the
+scheduler emits `(l, s')` as the next step. If the scheduler stops on `e`
+(i.e. `pe.scheduler.next e = none`), the mass is `0`. Otherwise:
+
+  `kernel pe e (l, s') = ∑_{μ} (pe.scheduler.next e) (l, μ) * μ s'`
+
+i.e. it is `(pe.scheduler.next e).bind (fun (l, μ) => PMF.map (l, ·) μ) (l, s')`. -/
 noncomputable def kernel (pe : ProbabilisticExecution sys)
-    (e : AlterSeq State Label) : PMF (Label × State) :=
-  (pe.scheduler.next e).bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2
+    (e : AlterSeq State Label) (step : Label × State) : ENNReal :=
+  (pe.scheduler.next e).elim 0 fun d =>
+    (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) step
+
+/-- The one-step kernel is bounded by `1`: a coerced PMF mass when the
+scheduler is active, `0` otherwise. -/
+theorem kernel_le_one (pe : ProbabilisticExecution sys)
+    (e : AlterSeq State Label) (step : Label × State) :
+    pe.kernel e step ≤ 1 := by
+  unfold kernel
+  rcases h : pe.scheduler.next e with _ | d
+  · simp
+  · simp only [Option.elim_some]
+    exact PMF.coe_le_one _ _
 
 /-- Probability of taking the remaining transitions of a finite execution,
 given the concrete prefix `pre` walked so far. Each step contributes the mass
@@ -142,7 +159,7 @@ private theorem probOfRemaining_aux_le_one (pe : ProbabilisticExecution sys)
     calc acc.1 * pe.kernel acc.2 hd
         ≤ 1 * 1 := by
           gcongr
-          exact PMF.coe_le_one _ _
+          exact pe.kernel_le_one _ _
       _ = 1 := one_mul 1
 
 /-- `probOfRemaining` is always at most `1` — a product of PMF values each ≤ 1. -/
