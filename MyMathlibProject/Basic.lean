@@ -506,6 +506,23 @@ theorem probOf_cons (pe : ProbabilisticExecution sys)
   rw [probOf_continuationFrom pe ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ h_hist_term
     ⟨s₁, e_rest_trans⟩ h_e_rest_term h_endState.symm]
 
+/-- `continuationFrom`'s `probOf` is zero when the local prefix's init
+doesn't match `history.endState`: the `init` factor `(PMF.pure
+(history.endState)) e_local.init = 0`. -/
+theorem probOf_continuationFrom_zero_of_init_ne
+    (pe : ProbabilisticExecution sys) (history : AlterSeq State Label)
+    (h_term : history.trans.Terminates) (e_local : AlterSeq State Label)
+    (h_e_local : e_local.trans.Terminates)
+    (h_init_ne : e_local.init ≠ history.endState h_term) :
+    (pe.continuationFrom history h_term).probOf e_local h_e_local = 0 := by
+  unfold probOf
+  have h_pmf : (pe.continuationFrom history h_term).init e_local.init = 0 := by
+    change (PMF.pure (history.endState h_term)) e_local.init = 0
+    rw [PMF.pure_apply]
+    simp [h_init_ne.symm, Ne.symm]
+  rw [h_pmf]
+  ring
+
 end ProbabilisticExecution
 
 end PLTS
