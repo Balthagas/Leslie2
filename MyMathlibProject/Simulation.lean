@@ -116,6 +116,123 @@ theorem filter_cons_pos {p : α → Prop} (a : α) (s : Seq α) (h : p a) :
   funext n
   cases n <;> rfl
 
+/-- `(cons a s).drop (n + 1) = s.drop n`: dropping one more from `cons a s` is
+the same as dropping one from `s`. -/
+private theorem drop_cons_succ (a : α) (s : Seq α) (n : ℕ) :
+    (cons a s).drop (n + 1) = s.drop n := by
+  induction n with
+  | zero => rfl
+  | succ k ih =>
+    change tail ((cons a s).drop (k + 1)) = tail (s.drop k)
+    rw [ih]
+
+/-- Filtering `cons a s` by a predicate that fails at `a`: the result equals
+`s.filter p`. -/
+theorem filter_cons_neg {p : α → Prop} (a : α) (s : Seq α) (h : ¬ p a) :
+    (cons a s).filter p = s.filter p := by
+  classical
+  apply Seq.eq_of_bisim
+    (R := fun t₁ t₂ =>
+      t₁ = t₂ ∨ ∃ a' s', ¬ p a' ∧ t₁ = (cons a' s').filter p ∧ t₂ = s'.filter p)
+  · -- IsBisimulation
+    have bisim_refl : ∀ x, BisimO
+        (fun t₁ t₂ => t₁ = t₂ ∨ ∃ a' s', ¬ p a' ∧
+          t₁ = (cons a' s').filter p ∧ t₂ = s'.filter p) x x := by
+      intro x
+      cases x with
+      | none => trivial
+      | some pr =>
+        obtain ⟨v, t'⟩ := pr
+        exact ⟨rfl, Or.inl rfl⟩
+    rintro t₁ t₂ (rfl | ⟨a', s', h', rfl, rfl⟩)
+    · exact bisim_refl _
+    · -- Show: destruct ((cons a' s').filter p) = destruct (s'.filter p),
+      -- then BisimO follows by reflexivity.
+      suffices h_de : destruct ((cons a' s').filter p) = destruct (s'.filter p) by
+        rw [h_de]; exact bisim_refl _
+      unfold filter
+      rw [corec_eq, corec_eq]
+      -- Goal: omap _ (body (cons a' s')) = omap _ (body s')
+      congr 1
+      -- Goal: body (cons a' s') = body s', by case analysis.
+      by_cases h_s_ex : ∃ m, ∃ a'', s'.get? m = some a'' ∧ p a''
+      · -- Case A: `s'` has a `p`-satisfying element.
+        have h_cons_ex : ∃ n, ∃ a'', (cons a' s').get? n = some a'' ∧ p a'' := by
+          obtain ⟨m, a'', h_get, h_p⟩ := h_s_ex
+          exact ⟨m + 1, a'', by simp [h_get], h_p⟩
+        -- `Nat.find h_cons_ex = Nat.find h_s_ex + 1`.
+        have h_find_eq : Nat.find h_cons_ex = Nat.find h_s_ex + 1 := by
+          apply le_antisymm
+          · apply Nat.find_min' h_cons_ex
+            obtain ⟨a'', h_get, h_p⟩ := Nat.find_spec h_s_ex
+            exact ⟨a'', by simp [h_get], h_p⟩
+          · -- Extract a witness `a''` at `Nat.find h_cons_ex` in `cons a' s'`,
+            -- then split that position as `m + 1` (it's positive since `¬ p a'`).
+            obtain ⟨a'', h_get, h_p⟩ := Nat.find_spec h_cons_ex
+            -- `Nat.find h_cons_ex ≥ 1`.
+            have h_pos : 1 ≤ Nat.find h_cons_ex := by
+              rcases Nat.eq_zero_or_pos (Nat.find h_cons_ex) with h_zero | h_pos
+              · exfalso
+                rw [h_zero] at h_get
+                have h_eq : a' = a'' := by simpa using h_get
+                subst h_eq
+                exact h' h_p
+              · exact h_pos
+            obtain ⟨m, hm⟩ : ∃ m, Nat.find h_cons_ex = m + 1 :=
+              Nat.exists_eq_succ_of_ne_zero (Nat.one_le_iff_ne_zero.mp h_pos)
+            rw [hm]
+            apply Nat.succ_le_succ
+            apply Nat.find_min' h_s_ex
+            rw [hm] at h_get
+            exact ⟨a'', by simpa using h_get, h_p⟩
+        change (if h : ∃ n, ∃ a'', (cons a' s').get? n = some a'' ∧ p a'' then
+                  some ((Nat.find_spec h).choose, (cons a' s').drop (Nat.find h + 1))
+                else none) =
+               (if h : ∃ n, ∃ a'', s'.get? n = some a'' ∧ p a'' then
+                  some ((Nat.find_spec h).choose, s'.drop (Nat.find h + 1))
+                else none)
+        rw [dif_pos h_cons_ex, dif_pos h_s_ex]
+        -- Drop equality.
+        have h_drop_eq : (cons a' s').drop (Nat.find h_cons_ex + 1) =
+            s'.drop (Nat.find h_s_ex + 1) := by
+          rw [h_find_eq]
+          exact drop_cons_succ a' s' (Nat.find h_s_ex + 1)
+        -- Choose equality.
+        have h_choose_eq : (Nat.find_spec h_cons_ex).choose =
+            (Nat.find_spec h_s_ex).choose := by
+          have h_cons_at_succ : (cons a' s').get? (Nat.find h_s_ex + 1) =
+              some (Nat.find_spec h_cons_ex).choose := by
+            rw [← h_find_eq]; exact (Nat.find_spec h_cons_ex).choose_spec.1
+          have h_shift : (cons a' s').get? (Nat.find h_s_ex + 1) =
+              s'.get? (Nat.find h_s_ex) := by simp
+          have h_s_via : s'.get? (Nat.find h_s_ex) =
+              some (Nat.find_spec h_cons_ex).choose := h_shift ▸ h_cons_at_succ
+          have h_s_get : s'.get? (Nat.find h_s_ex) =
+              some (Nat.find_spec h_s_ex).choose :=
+            (Nat.find_spec h_s_ex).choose_spec.1
+          exact Option.some_inj.mp (h_s_via.symm.trans h_s_get)
+        rw [h_choose_eq, h_drop_eq]
+      · -- Case B: neither `s'` nor `cons a' s'` has a `p`-satisfying element.
+        have h_cons_neg :
+            ¬ ∃ n, ∃ a'', (cons a' s').get? n = some a'' ∧ p a'' := by
+          rintro ⟨n, a'', h_get, h_p⟩
+          cases n with
+          | zero =>
+            have h_eq : a' = a'' := by simpa using h_get
+            subst h_eq
+            exact h' h_p
+          | succ k =>
+            exact h_s_ex ⟨k, a'', by simpa using h_get, h_p⟩
+        change (if h : ∃ n, ∃ a'', (cons a' s').get? n = some a'' ∧ p a'' then
+                  some ((Nat.find_spec h).choose, (cons a' s').drop (Nat.find h + 1))
+                else none) =
+               (if h : ∃ n, ∃ a'', s'.get? n = some a'' ∧ p a'' then
+                  some ((Nat.find_spec h).choose, s'.drop (Nat.find h + 1))
+                else none)
+        rw [dif_neg h_cons_neg, dif_neg h_s_ex]
+  · right
+    exact ⟨a, s, h, rfl, rfl⟩
+
 end Stream'.Seq
 
 namespace PLTS
@@ -380,6 +497,16 @@ noncomputable def LabelledSystem.trace (ls : LabelledSystem State Label)
     ls.trace ⟨s, Seq.cons (l, s') rest⟩ = Seq.cons l (ls.trace ⟨s', rest⟩) := by
   unfold LabelledSystem.trace
   rw [Seq.filter_cons_pos (l, s') rest h, Seq.map_cons]
+
+/-- The trace of an execution whose first transition has an *internal* label
+`l` equals the trace from the rest of the execution (the internal label is
+dropped). -/
+@[simp] theorem LabelledSystem.trace_cons_internal
+    (ls : LabelledSystem State Label) (s : State) (l : Label) (s' : State)
+    (rest : Seq (Label × State)) (h : ls.internal l) :
+    ls.trace ⟨s, Seq.cons (l, s') rest⟩ = ls.trace ⟨s', rest⟩ := by
+  unfold LabelledSystem.trace
+  rw [Seq.filter_cons_neg (l, s') rest (fun h' => h' h)]
 
 /-- The probability that the probabilistic execution `pe` produces a finite
 execution whose trace under `ls` equals `τ`: the (countable) sum of
