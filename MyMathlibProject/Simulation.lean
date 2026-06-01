@@ -5,6 +5,7 @@ Authors: Gaspard Reghem
 -/
 
 import MyMathlibProject.Basic
+import Mathlib.Data.Seq.Basic
 
 /-!
 # Probabilistic forward simulation and weak transitions
@@ -78,12 +79,6 @@ noncomputable def filter (p : α → Prop) (s : Seq α) : Seq α :=
   rintro ⟨n, a, h_eq, _⟩
   simp at h_eq
 
-/-- Mapping the empty sequence yields the empty sequence. -/
-@[simp] theorem map_nil {β : Type v} (f : α → β) :
-    (nil : Seq α).map f = (nil : Seq β) := by
-  ext n
-  simp [map, get?, nil]
-
 /-- Filtering `cons a s` by a predicate that holds at `a`: the result is
 `cons a (s.filter p)`. -/
 theorem filter_cons_pos {p : α → Prop} (a : α) (s : Seq α) (h : p a) :
@@ -108,13 +103,6 @@ theorem filter_cons_pos {p : α → Prop} (a : α) (s : Seq α) (h : p a) :
     exact (Option.some_inj.mp this).symm
   rw [h_choose_eq, h_find_zero]
   rfl
-
-/-- Mapping a function over `cons a s` gives `cons (f a) (s.map f)`. -/
-@[simp] theorem map_cons {β : Type v} (f : α → β) (a : α) (s : Seq α) :
-    (cons a s).map f = cons (f a) (s.map f) := by
-  apply Subtype.ext
-  funext n
-  cases n <;> rfl
 
 /-- `(cons a s).drop (n + 1) = s.drop n`: dropping one more from `cons a s` is
 the same as dropping one from `s`. -/
@@ -711,25 +699,72 @@ theorem TraceCoupled.of_nil_and_cons
   | nil => exact h_nil
   | cons l τ' => exact h_cons l τ'
 
+/-- If `e.trans.get? n = some (l, s)` with `l` external, then `ls.trace e`
+is non-empty: the external label at position `n` contributes to the trace.
+
+Proved by induction on `n`. The base case (`n = 0`) decomposes
+`e.trans = cons (l, s) e.trans.tail` via `Seq.head_eq_some`, then uses
+`trace_cons_external` to expose the trace's `cons l _` head. The inductive
+case (`n = k+1`) peels off the actual head transition: if its label is
+external, the trace immediately starts with that label; if internal, the
+trace equals the trace of the tail, to which IH applies. -/
+private theorem trace_ne_nil_of_external_at
+    (ls : LabelledSystem State Label) :
+    ∀ (n : ℕ) (e : AlterSeq State Label) (l : Label) (s : State),
+      e.trans.get? n = some (l, s) → ¬ ls.internal l →
+      ls.trace e ≠ Seq.nil := by
+  intro n
+  induction n with
+  | zero =>
+    intro e l s h_get h_ext
+    have h_cons : e.trans = Seq.cons (l, s) e.trans.tail :=
+      Stream'.Seq.head_eq_some h_get
+    have h_eq : ls.trace e = Seq.cons l (ls.trace ⟨s, e.trans.tail⟩) := by
+      conv_lhs =>
+        rw [show e = ⟨e.init, Seq.cons (l, s) e.trans.tail⟩ from by
+          rcases e with ⟨init, trans⟩; congr]
+      exact ls.trace_cons_external e.init l s e.trans.tail h_ext
+    rw [h_eq]
+    exact Stream'.Seq.cons_ne_nil
+  | succ k ih =>
+    intro e l s h_get h_ext
+    -- `e.trans` is non-empty (position `k+1` is occupied), so it's
+    -- `cons (l₀, s₀) tail` for some `(l₀, s₀)`.
+    obtain ⟨⟨l₀, s₀⟩, h_get_0⟩ : ∃ a, e.trans.get? 0 = some a :=
+      Stream'.Seq.ge_stable e.trans (Nat.zero_le _) h_get
+    have h_cons : e.trans = Seq.cons (l₀, s₀) e.trans.tail :=
+      Stream'.Seq.head_eq_some h_get_0
+    have h_tail_get : e.trans.tail.get? k = some (l, s) := by
+      rw [Stream'.Seq.get?_tail]; exact h_get
+    by_cases h_int_0 : ls.internal l₀
+    · -- Head transition internal: trace e = trace ⟨s₀, tail⟩. Apply IH.
+      have h_trace_eq : ls.trace e = ls.trace ⟨s₀, e.trans.tail⟩ := by
+        conv_lhs =>
+          rw [show e = ⟨e.init, Seq.cons (l₀, s₀) e.trans.tail⟩ from by
+            rcases e with ⟨init, trans⟩; congr]
+        exact ls.trace_cons_internal e.init l₀ s₀ e.trans.tail h_int_0
+      rw [h_trace_eq]
+      exact ih ⟨s₀, e.trans.tail⟩ l s h_tail_get h_ext
+    · -- Head transition external: trace e starts with l₀.
+      have h_trace_eq : ls.trace e = Seq.cons l₀ (ls.trace ⟨s₀, e.trans.tail⟩) := by
+        conv_lhs =>
+          rw [show e = ⟨e.init, Seq.cons (l₀, s₀) e.trans.tail⟩ from by
+            rcases e with ⟨init, trans⟩; congr]
+        exact ls.trace_cons_external e.init l₀ s₀ e.trans.tail h_int_0
+      rw [h_trace_eq]
+      exact Stream'.Seq.cons_ne_nil
+
 /-- Key algebraic fact: a tight prefix whose trace is empty has no
 transitions. The first disjunct of `IsTight` (TerminatedAt 0) gives this
 directly via `Seq.get?_zero_eq_none`; the second disjunct (external last
-transition) contradicts trace nil, since an external transition contributes
-to the trace. -/
+transition) contradicts trace nil via `trace_ne_nil_of_external_at`. -/
 private theorem trans_nil_of_tight_trace_nil
     (ls : LabelledSystem State Label) (e : AlterSeq State Label)
     (h_trace : ls.trace e = Seq.nil) (h_tight : ls.IsTight e) :
     e.trans = Seq.nil := by
-  rcases h_tight with h_term0 | ⟨n, l, s, h_get, _h_term_succ, _h_ext⟩
-  · -- TerminatedAt 0 unfolds to `get? 0 = none`, which gives `trans = nil`
-    -- via `Seq.get?_zero_eq_none`.
-    exact Stream'.Seq.get?_zero_eq_none.mp h_term0
-  · -- Contradiction: an external transition at position `n` forces the
-    -- trace to contain that label, but the trace is `nil`. Formal proof
-    -- requires lemmas about how `Seq.filter` and `Seq.map` interact with
-    -- `get?` and membership at specific positions.
-    exfalso
-    sorry
+  rcases h_tight with h_term0 | ⟨n, l, s, h_get, _h_term_succ, h_ext⟩
+  · exact Stream'.Seq.get?_zero_eq_none.mp h_term0
+  · exact absurd h_trace (trace_ne_nil_of_external_at ls n e l s h_get h_ext)
 
 /-- The trace probability of the empty trace is exactly `1`: every trajectory
 trivially has `Seq.nil` as a prefix of its trace, so the trace cone for
@@ -737,16 +772,55 @@ trivially has `Seq.nil` as a prefix of its trace, so the trace cone for
 
 Concretely: under `IsTight`, only `⟨s, Seq.nil⟩` (the empty-trans prefixes,
 one per `s : State`) have trace `Seq.nil` (`trans_nil_of_tight_trace_nil`).
-Their `probOf` values are `pe.init s * 1 = pe.init s`, summing to
-`pe.init.tsum_coe = 1`.
-
-The proof requires bijecting the subtype `{e // Terminates ∧ trace = nil ∧
-IsTight}` with `State` via `s ↦ ⟨s, Seq.nil⟩`, then `Equiv.tsum_eq`. -/
+Their `probOf` values are `pe.init s * 1 = pe.init s`, summing via
+`Equiv.tsum_eq` and `PMF.tsum_coe` to `1`. -/
 theorem LabelledSystem.traceProb_nil_eq_one
     (ls : LabelledSystem State Label)
     (pe : ProbabilisticExecution ls.toSystem) :
     ls.traceProb pe Seq.nil = 1 := by
-  sorry
+  unfold LabelledSystem.traceProb
+  -- Build the bijection {e // Terminates ∧ trace = nil ∧ IsTight} ≃ State.
+  let e_equiv : {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = Seq.nil ∧ ls.IsTight e} ≃ State :=
+    { toFun := fun e => e.1.init
+      invFun := fun s =>
+        ⟨⟨s, Seq.nil⟩,
+          Stream'.Seq.terminates_nil,
+          ls.trace_init s,
+          Or.inl Stream'.Seq.terminatedAt_nil⟩
+      left_inv := by
+        rintro ⟨⟨init, trans⟩, hTerm, hTrace, hTight⟩
+        have h_trans_nil : trans = Seq.nil :=
+          trans_nil_of_tight_trace_nil ls ⟨init, trans⟩ hTrace hTight
+        subst h_trans_nil
+        rfl
+      right_inv := fun _ => rfl }
+  -- For each element of the subtype, `probOf = pe.init e.1.init`.
+  have h_probOf : ∀ (a : {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = Seq.nil ∧ ls.IsTight e}),
+      pe.probOf a.1 a.2.1 = pe.init a.1.init := by
+    rintro ⟨⟨init, trans⟩, hTerm, hTrace, hTight⟩
+    have h_trans_nil : trans = Seq.nil :=
+      trans_nil_of_tight_trace_nil ls ⟨init, trans⟩ hTrace hTight
+    subst h_trans_nil
+    -- Goal: pe.probOf ⟨init, Seq.nil⟩ hTerm = pe.init init
+    unfold ProbabilisticExecution.probOf
+    -- toList of nil is [].
+    change pe.init init * pe.probOfRemaining ⟨init, Seq.nil⟩
+        ((Seq.nil : Seq (Label × State)).toList hTerm) = pe.init init
+    have h_toList : (Seq.nil : Seq (Label × State)).toList hTerm = [] :=
+      Stream'.Seq.toList_nil
+    rw [h_toList]
+    unfold ProbabilisticExecution.probOfRemaining
+    simp
+  -- Rewrite the tsum and conclude.
+  rw [tsum_congr h_probOf]
+  -- Goal: ∑' a : Subtype, pe.init a.1.init = 1
+  rw [show
+      (∑' a : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.nil ∧ ls.IsTight e},
+        pe.init a.1.init) = ∑' s, pe.init s from e_equiv.tsum_eq pe.init]
+  exact pe.init.tsum_coe
 
 /-- The trace probability of any trace is at most `1`.
 
