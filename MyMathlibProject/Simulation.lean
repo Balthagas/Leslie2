@@ -847,33 +847,24 @@ theorem LabelledSystem.IsTight_cons_iff (ls : LabelledSystem State Label)
         (¬ ls.internal l₀ ∨ e_rest_trans ≠ Seq.nil) := by
   constructor
   · rintro (h_term0 | ⟨n, l, s, h_get, h_term_succ, h_ext⟩)
-    · -- TerminatedAt 0 on cons is impossible.
-      exact absurd h_term0 Stream'.Seq.cons_not_terminatedAt_zero
+    · exact absurd h_term0 Stream'.Seq.cons_not_terminatedAt_zero
     · refine ⟨?_, ?_⟩
-      · -- IsTight e_rest: split on whether the witness `n` is `0` or `n+1`.
-        rcases n with _ | n'
-        · -- n = 0: the witness is the head (l₀, s₁) with ¬ internal l₀.
-          -- TerminatedAt 1 on cons means e_rest_trans.TerminatedAt 0 = nil.
-          have h_e_rest_nil : e_rest_trans.TerminatedAt 0 := by
+      · rcases n with _ | n'
+        · have h_e_rest_nil : e_rest_trans.TerminatedAt 0 := by
             rw [← Stream'.Seq.cons_terminatedAt_succ_iff (x := (l₀, s₁))]
             exact h_term_succ
           exact Or.inl h_e_rest_nil
-        · -- n = n' + 1: witness lies in e_rest_trans.
-          refine Or.inr ⟨n', l, s, ?_, ?_, h_ext⟩
+        · refine Or.inr ⟨n', l, s, ?_, ?_, h_ext⟩
           · rw [← Stream'.Seq.get?_cons_succ (a := (l₀, s₁))]; exact h_get
           · rw [← Stream'.Seq.cons_terminatedAt_succ_iff (x := (l₀, s₁))]
             exact h_term_succ
-      · -- (¬ internal l₀ ∨ e_rest_trans ≠ nil): from the same `n` case-split.
-        rcases n with _ | n'
-        · -- n = 0: get? 0 = some (l, s) but trans starts with (l₀, s₁), so l = l₀, ¬ internal l₀.
-          have h_pair_eq : l = l₀ := by
+      · rcases n with _ | n'
+        · have h_pair_eq : l = l₀ := by
             have h_zero : (Seq.cons (l₀, s₁) e_rest_trans).get? 0 = some (l₀, s₁) := rfl
             rw [h_zero] at h_get
             exact ((Prod.mk.injEq _ _ _ _).mp (Option.some.inj h_get) |>.1).symm
           exact Or.inl (h_pair_eq ▸ h_ext)
-        · -- n = n' + 1: trans extends beyond the head, so e_rest_trans is non-nil
-          -- (it has an element at position n').
-          refine Or.inr ?_
+        · refine Or.inr ?_
           intro h_nil
           rw [h_nil] at h_get
           have h_none : (Seq.cons (l₀, s₁) Seq.nil).get? (n' + 1) = none := by
@@ -882,8 +873,7 @@ theorem LabelledSystem.IsTight_cons_iff (ls : LabelledSystem State Label)
           exact absurd h_get (by simp)
   · rintro ⟨h_tight_rest, h_aux⟩
     rcases h_tight_rest with h_e_rest_nil | ⟨n', l, s, h_get', h_term_succ', h_ext'⟩
-    · -- e_rest_trans = nil.  Use the n = 0 witness in disjunct 2.
-      have h_e_rest_eq : e_rest_trans = Seq.nil :=
+    · have h_e_rest_eq : e_rest_trans = Seq.nil :=
         Stream'.Seq.terminatedAt_zero_iff.mp h_e_rest_nil
       have h_not_internal : ¬ ls.internal l₀ :=
         h_aux.resolve_right (by intro h_ne; exact h_ne h_e_rest_eq)
@@ -891,10 +881,113 @@ theorem LabelledSystem.IsTight_cons_iff (ls : LabelledSystem State Label)
       · rfl
       · change (Seq.cons (l₀, s₁) e_rest_trans).get? 1 = none
         rw [Stream'.Seq.get?_cons_succ]; rw [h_e_rest_eq]; exact Stream'.Seq.terminatedAt_nil
-    · -- second disjunct of e_rest: lift the witness by 1.
-      refine Or.inr ⟨n' + 1, l, s, ?_, ?_, h_ext'⟩
+    · refine Or.inr ⟨n' + 1, l, s, ?_, ?_, h_ext'⟩
       · rw [Stream'.Seq.get?_cons_succ]; exact h_get'
       · rw [Stream'.Seq.cons_terminatedAt_succ_iff]; exact h_term_succ'
+
+/-- **The trace-decomposition codomain** for `traceProb_first_step`'s
+bijection: a triple `(s₀, l₀, s₁)` together with a constrained tail prefix
+`e_rest` whose `init` is `s₁` and whose trace matches whatever
+`consumeLabel l₀ (cons l τ)` produces.
+
+The `consumeLabel … = some (ls.trace e_rest)` constraint encodes two
+cases simultaneously:
+* `l₀` internal: `ls.consumeLabel l₀ … = some (cons l τ)`, forcing
+  `ls.trace e_rest = cons l τ`.
+* `l₀` external with `l₀ = l`: `ls.consumeLabel = some τ`, forcing
+  `ls.trace e_rest = τ`.
+* `l₀` external with `l₀ ≠ l`: `ls.consumeLabel = none`, so the
+  constraint `none = some (ls.trace e_rest)` is unsatisfiable — the
+  subtype is empty for such `l₀`, matching the "0 contribution" branch
+  of `consumeLabel.elim` on the RHS. -/
+def LabelledSystem.TraceDecomp (ls : LabelledSystem State Label)
+    (l : Label) (τ : Seq Label) : Type :=
+  Σ' (s₀ : State) (l₀ : Label) (s₁ : State),
+    {e_rest : AlterSeq State Label //
+      e_rest.init = s₁ ∧
+      e_rest.trans.Terminates ∧
+      ls.IsTight e_rest ∧
+      ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)}
+
+/-- Forward map of the trace-decomposition bijection: decompose a tight
+prefix with trace `cons l τ` into `(e.init, head label, head state, tail
+prefix)`. Constraint translation uses `IsTight_cons_iff` and the
+`trace_cons_*` lemmas. -/
+noncomputable def LabelledSystem.TraceDecomp.ofTight
+    (ls : LabelledSystem State Label) (l : Label) (τ : Seq Label)
+    (e : AlterSeq State Label)
+    (h_term : e.trans.Terminates) (h_trace : ls.trace e = Seq.cons l τ)
+    (h_tight : ls.IsTight e) :
+    ls.TraceDecomp l τ := by
+  classical
+  -- `e.trans` is non-empty since the trace is.
+  have h_trans_ne_nil : e.trans ≠ Seq.nil := by
+    intro h_nil
+    have h_trace_nil : ls.trace e = Seq.nil := by
+      rcases e with ⟨init, trans⟩
+      cases h_nil
+      exact ls.trace_init init
+    rw [h_trace] at h_trace_nil
+    exact Stream'.Seq.cons_ne_nil h_trace_nil
+  -- Extract head `(l₀, s₁)`.
+  have h_head_isSome : e.trans.head.isSome := by
+    rcases h_eq : e.trans.head with _ | _
+    · exact absurd (Stream'.Seq.terminatedAt_zero_iff.mp h_eq) h_trans_ne_nil
+    · rfl
+  set pair := e.trans.head.get h_head_isSome with hpair_def
+  have h_head : e.trans.head = some pair := (Option.eq_some_of_isSome _)
+  let l₀ := pair.1
+  let s₁ := pair.2
+  have h_pair_eq : pair = (l₀, s₁) := rfl
+  have h_cons : e.trans = Seq.cons (l₀, s₁) e.trans.tail := by
+    rw [show (l₀, s₁) = pair from rfl]
+    exact Stream'.Seq.head_eq_some h_head
+  -- Build the codomain element.
+  refine ⟨e.init, l₀, s₁, ⟨⟨s₁, e.trans.tail⟩, ?_, ?_, ?_, ?_⟩⟩
+  · -- init = s₁
+    rfl
+  · -- e.trans.tail.Terminates
+    have : (Seq.cons (l₀, s₁) e.trans.tail).Terminates := h_cons ▸ h_term
+    exact Stream'.Seq.terminates_tail_of_cons this
+  · -- IsTight ⟨s₁, e.trans.tail⟩ via IsTight_cons_iff.
+    have h_tight_full : ls.IsTight ⟨e.init, Seq.cons (l₀, s₁) e.trans.tail⟩ := by
+      rcases e with ⟨init, trans⟩
+      simp only at h_cons
+      rw [h_cons] at h_tight
+      exact h_tight
+    exact ((ls.IsTight_cons_iff e.init l₀ s₁ e.trans.tail).mp h_tight_full).1
+  · -- consumeLabel l₀ (cons l τ) = some (trace e_rest).
+    -- Case on l₀ internal vs external; use trace_cons_internal/external.
+    by_cases h_int : ls.internal l₀
+    · -- Internal: consumeLabel = some (cons l τ); trace e_rest = cons l τ.
+      have h_trace_rest : ls.trace ⟨s₁, e.trans.tail⟩ = Seq.cons l τ := by
+        rw [← h_trace]
+        rcases e with ⟨init, trans⟩
+        simp only at h_cons
+        rw [h_cons]
+        exact (ls.trace_cons_internal init l₀ s₁ trans.tail h_int).symm
+      rw [h_trace_rest]
+      change ls.consumeLabel l₀ (Seq.cons l τ) = some (Seq.cons l τ)
+      unfold LabelledSystem.consumeLabel
+      simp [h_int]
+    · -- External: l₀ = l (forced by trace = cons l τ); consumeLabel = some τ;
+      -- trace e_rest = τ.
+      have h_trace_full : ls.trace e = Seq.cons l₀ (ls.trace ⟨s₁, e.trans.tail⟩) := by
+        rcases e with ⟨init, trans⟩
+        simp only at h_cons ⊢
+        rw [h_cons]
+        exact ls.trace_cons_external init l₀ s₁ trans.tail h_int
+      rw [h_trace] at h_trace_full
+      -- h_trace_full : cons l τ = cons l₀ (trace e_rest)
+      have h_l_eq : l = l₀ := ((Stream'.Seq.cons_eq_cons).mp h_trace_full).1
+      have h_trace_rest_eq : ls.trace ⟨s₁, e.trans.tail⟩ = τ :=
+        ((Stream'.Seq.cons_eq_cons).mp h_trace_full).2.symm
+      rw [h_trace_rest_eq]
+      change ls.consumeLabel l₀ (Seq.cons l τ) = some τ
+      unfold LabelledSystem.consumeLabel
+      simp only [if_neg h_int]
+      change (if l = l₀ then some (Seq.cons l τ).tail else none) = some τ
+      rw [if_pos h_l_eq, Stream'.Seq.tail_cons]
 
 /-- **One-step trace-cone decomposition.** The trace probability for a
 non-empty trace `cons l τ` decomposes over the first transition `(l₀, s₁)`
