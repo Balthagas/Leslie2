@@ -332,6 +332,22 @@ def weakTau (sys : LabelledSystem State Label)
     (μ_init : PMF State) (μ : PMF State) : Prop :=
   ∃ σ : WeakScheduler sys, μ_init.bind σ.run = μ
 
+namespace weakTau
+
+variable {sys : LabelledSystem State Label} {μ_init μ : PMF State}
+
+/-- Classical extraction of the underlying `WeakScheduler` from a `weakTau`
+proof. -/
+noncomputable def witness (h : weakTau sys μ_init μ) : WeakScheduler sys :=
+  h.choose
+
+/-- The extracted scheduler, when run from `μ_init`, reaches `μ`. -/
+theorem witness_run (h : weakTau sys μ_init μ) :
+    μ_init.bind h.witness.run = μ :=
+  h.choose_spec
+
+end weakTau
+
 /-- Reflexivity of `weakTau`: every distribution is weak-τ-related to itself,
 witnessed by the stop-everywhere weak scheduler. -/
 theorem weakTau_refl (ls : LabelledSystem State Label) (μ : PMF State) :
@@ -369,6 +385,27 @@ def hyperStep (sys : System State Label)
     (∀ s ∈ μ_pre.support, ∀ μ ∈ (p s).support, sys.step s l μ) ∧
     μ_post = μ_pre.bind (fun s => (p s).bind id)
 
+namespace hyperStep
+
+variable {sys : System State Label} {μ_pre μ_post : PMF State} {l : Label}
+
+/-- Classical extraction of the per-state successor kernel from a `hyperStep`
+proof. -/
+noncomputable def kernel (h : hyperStep sys μ_pre l μ_post) :
+    State → PMF (PMF State) := h.choose
+
+/-- Every distribution in the kernel's support is a valid system step. -/
+theorem kernel_step (h : hyperStep sys μ_pre l μ_post) :
+    ∀ s ∈ μ_pre.support, ∀ μ ∈ (h.kernel s).support, sys.step s l μ :=
+  h.choose_spec.1
+
+/-- The post-distribution is the bind of `μ_pre` with the flattened kernel. -/
+theorem post_eq_bind (h : hyperStep sys μ_pre l μ_post) :
+    μ_post = μ_pre.bind (fun s => (h.kernel s).bind id) :=
+  h.choose_spec.2
+
+end hyperStep
+
 /-- A strong system step lifts to a hyper-step on a singleton initial
 distribution: if `sys.step s l μ`, then `hyperStep sys (PMF.pure s) l μ`. -/
 theorem hyperStep_pure_of_step
@@ -401,6 +438,35 @@ def weakStep (sys : LabelledSystem State Label)
     weakTau sys μ_init μ ∧
     hyperStep sys.toSystem μ l μ' ∧
     weakTau sys μ' μ_final
+
+namespace weakStep
+
+variable {sys : LabelledSystem State Label} {μ_init μ_final : PMF State} {l : Label}
+
+/-- Classical extraction of the post-τ-closure intermediate distribution. -/
+noncomputable def preDist (h : weakStep sys μ_init l μ_final) : PMF State :=
+  h.choose
+
+/-- Classical extraction of the post-`l`-step intermediate distribution. -/
+noncomputable def postDist (h : weakStep sys μ_init l μ_final) : PMF State :=
+  h.choose_spec.choose
+
+/-- The τ-closure before the external step. -/
+theorem weakTau_pre (h : weakStep sys μ_init l μ_final) :
+    weakTau sys μ_init h.preDist :=
+  h.choose_spec.choose_spec.1
+
+/-- The external step itself, as a `hyperStep`. -/
+theorem hyperStep_mid (h : weakStep sys μ_init l μ_final) :
+    hyperStep sys.toSystem h.preDist l h.postDist :=
+  h.choose_spec.choose_spec.2.1
+
+/-- The τ-closure after the external step. -/
+theorem weakTau_post (h : weakStep sys μ_init l μ_final) :
+    weakTau sys h.postDist μ_final :=
+  h.choose_spec.choose_spec.2.2
+
+end weakStep
 
 /-- A strong system step lifts to a weak step on a singleton initial
 distribution: if `sys.step s l μ`, then `weakStep sys (PMF.pure s) l μ`. Both
