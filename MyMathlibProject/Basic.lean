@@ -74,6 +74,19 @@ theorem terminatedAt_append_find {s : Seq α} (h : s.Terminates) {s' : Seq α}
   change (s.append s').get? _ = none
   rw [get?_append_find h s' n]; exact h_s'
 
+/-- `Terminates` transfers from a cons to its tail. -/
+theorem terminates_tail_of_cons {a : α} {s : Seq α}
+    (h : (cons a s).Terminates) : s.Terminates :=
+  terminates_cons_iff.mp h
+
+/-- `toList` of a cons. -/
+theorem toList_cons {a : α} {s : Seq α} (h : (cons a s).Terminates) :
+    (cons a s).toList h = a :: s.toList (terminates_tail_of_cons h) := by
+  unfold toList
+  have h' : s.Terminates := terminates_tail_of_cons h
+  rw [show (cons a s).length h = s.length h' + 1 from length_cons h']
+  exact take_succ_cons
+
 end Stream'.Seq
 
 namespace PLTS
@@ -249,6 +262,41 @@ theorem probOf_le_init (pe : ProbabilisticExecution sys)
       ≤ pe.init e.init * 1 := by gcongr; exact pe.probOfRemaining_le_one _ _
     _ = pe.init e.init := mul_one _
 
+/-- The initial-accumulator value factors linearly out of `probOfRemaining`'s
+internal foldl: scaling the starting `acc.1` by `c` scales the result by `c`. -/
+private theorem foldl_acc_linear (pe : ProbabilisticExecution sys) :
+    ∀ (xs : List (Label × State)) (c : ENNReal) (pre : AlterSeq State Label),
+    (xs.foldl
+      (fun (acc : ENNReal × AlterSeq State Label) hd =>
+        (acc.1 * pe.kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩)) (c, pre)).1 =
+    c * (xs.foldl
+      (fun (acc : ENNReal × AlterSeq State Label) hd =>
+        (acc.1 * pe.kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩)) (1, pre)).1 := by
+  intro xs
+  induction xs with
+  | nil => intro c pre; simp [List.foldl]
+  | cons hd rest ih =>
+    intro c pre
+    simp only [List.foldl]
+    rw [ih (c * pe.kernel pre hd) _, ih (1 * pe.kernel pre hd) _]
+    ring
+
+/-- `probOfRemaining` decomposes at the head: the first kernel mass multiplied
+by the rest's `probOfRemaining` on the prefix extended by `hd`. -/
+theorem probOfRemaining_cons (pe : ProbabilisticExecution sys)
+    (pre : AlterSeq State Label) (hd : Label × State) (rest : List (Label × State)) :
+    pe.probOfRemaining pre (hd :: rest) =
+      pe.kernel pre hd *
+        pe.probOfRemaining ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩ rest := by
+  unfold probOfRemaining
+  simp only [List.foldl]
+  rw [pe.foldl_acc_linear rest (1 * pe.kernel pre hd) _]
+  ring
+
+-- The continuationFrom-related lemmas come after the definition.
+
 /-- The probabilistic execution starting at the end-state of `history`, with
 its scheduler shifted so it queries `pe.scheduler` on prefixes extended by
 `history` on the left. Used to recursively decompose `traceProb`: after pe
@@ -327,6 +375,136 @@ noncomputable def continuationFrom (pe : ProbabilisticExecution sys)
             rw [h_after]
             change e'.stateAt (k + 1) = some s
             rw [← hk']; exact h_state_e' }
+
+/-- The `continuationFrom`'s kernel, evaluated at a local prefix starting at
+`history.endState`, equals `pe`'s kernel at the history-extended prefix. -/
+theorem kernel_continuationFrom (pe : ProbabilisticExecution sys)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates)
+    (extra_trans : Seq (Label × State)) (step : Label × State) :
+    (pe.continuationFrom history h_term).kernel
+        ⟨history.endState h_term, extra_trans⟩ step =
+      pe.kernel ⟨history.init, history.trans.append extra_trans⟩ step := by
+  classical
+  unfold kernel
+  change (((if (⟨history.endState h_term, extra_trans⟩ : AlterSeq State Label).init
+        = history.endState h_term then
+          pe.scheduler.next ⟨history.init, history.trans.append extra_trans⟩
+        else none).elim 0
+      (fun d => (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) step))) = _
+  rw [if_pos rfl]
+
+/-- The `continuationFrom`'s `probOfRemaining`, on a local prefix starting at
+`history.endState`, equals `pe`'s `probOfRemaining` from the history-extended
+prefix. -/
+theorem probOfRemaining_continuationFrom (pe : ProbabilisticExecution sys)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates)
+    (xs : List (Label × State)) :
+    (pe.continuationFrom history h_term).probOfRemaining
+        ⟨history.endState h_term, Seq.nil⟩ xs =
+      pe.probOfRemaining ⟨history.init, history.trans⟩ xs := by
+  -- Both sides unfold to a foldl. Show by induction on xs that they
+  -- agree pointwise, using `kernel_continuationFrom` at each step.
+  -- Generalize over the accumulated extra_trans on the continuationFrom side.
+  -- For simplicity, prove a more general statement first.
+  have h_aux : ∀ (xs : List (Label × State)) (c : ENNReal)
+      (extra : Seq (Label × State)),
+      (xs.foldl (fun acc hd =>
+        (acc.1 * (pe.continuationFrom history h_term).kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩))
+        (c, ⟨history.endState h_term, extra⟩)).1 =
+      (xs.foldl (fun acc hd =>
+        (acc.1 * pe.kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩))
+        (c, ⟨history.init, history.trans.append extra⟩)).1 := by
+    intro xs
+    induction xs with
+    | nil => intros; rfl
+    | cons hd rest ih =>
+      intro c extra
+      simp only [List.foldl]
+      rw [kernel_continuationFrom pe history h_term extra hd]
+      -- After the step, the continuationFrom side has extra := extra.append (cons hd nil),
+      -- the pe side has trans := history.trans.append extra.append (cons hd nil).
+      -- These should agree after rewriting via append_assoc.
+      have h_assoc : history.trans.append (extra.append (Seq.cons hd Seq.nil)) =
+          (history.trans.append extra).append (Seq.cons hd Seq.nil) :=
+        (Stream'.Seq.append_assoc _ _ _).symm
+      rw [← h_assoc]
+      exact ih _ _
+  unfold probOfRemaining
+  exact h_aux xs 1 Seq.nil |>.trans (by rw [Stream'.Seq.append_nil])
+
+/-- The `continuationFrom`'s `probOf`, at a local prefix starting at
+`history.endState`, equals `pe`'s `probOfRemaining` from `history`'s trans
+on the local prefix's transition list. -/
+theorem probOf_continuationFrom (pe : ProbabilisticExecution sys)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates)
+    (e_local : AlterSeq State Label) (h_e_local : e_local.trans.Terminates)
+    (h_init : e_local.init = history.endState h_term) :
+    (pe.continuationFrom history h_term).probOf e_local h_e_local =
+      pe.probOfRemaining ⟨history.init, history.trans⟩ (e_local.trans.toList h_e_local) := by
+  unfold probOf
+  have h_pmf : (pe.continuationFrom history h_term).init e_local.init = 1 := by
+    change (PMF.pure (history.endState h_term)) e_local.init = 1
+    rw [h_init, PMF.pure_apply]
+    simp
+  rw [h_pmf, one_mul, h_init]
+  exact probOfRemaining_continuationFrom pe history h_term _
+
+/-- **Factorization of `probOf` over the first transition.** A finite execution
+starting with transition `(l₀, s₁)` factors into:
+* the initial mass `pe.init s₀`,
+* the first kernel step `pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁)`,
+* the conditional `probOf` of the rest, expressed as a `probOf` of a
+  `continuationFrom`. -/
+theorem probOf_cons (pe : ProbabilisticExecution sys)
+    (s₀ : State) (l₀ : Label) (s₁ : State) (e_rest_trans : Seq (Label × State))
+    (h_term_full : (Seq.cons (l₀, s₁) e_rest_trans).Terminates) :
+    pe.probOf ⟨s₀, Seq.cons (l₀, s₁) e_rest_trans⟩ h_term_full =
+      pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+      (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+            : (Seq.cons (l₀, s₁) Seq.nil).Terminates)).probOf
+        ⟨s₁, e_rest_trans⟩ (Stream'.Seq.terminates_tail_of_cons h_term_full) := by
+  -- The history ⟨s₀, cons (l₀, s₁) nil⟩ has endState s₁.
+  have h_hist_term : (Seq.cons (l₀, s₁) Seq.nil : Seq (Label × State)).Terminates :=
+    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  have h_e_rest_term : e_rest_trans.Terminates :=
+    Stream'.Seq.terminates_tail_of_cons h_term_full
+  have h_find : Nat.find h_hist_term = 1 := by
+    apply le_antisymm
+    · exact Nat.find_le (show (Seq.cons (l₀, s₁) Seq.nil).TerminatedAt 1 from rfl)
+    · rw [Nat.one_le_iff_ne_zero]
+      intro h_zero
+      exact Stream'.Seq.cons_not_terminatedAt_zero
+        (h_zero ▸ Nat.find_spec h_hist_term)
+  have h_endState :
+      ({ init := s₀, trans := Seq.cons (l₀, s₁) Seq.nil
+        : AlterSeq State Label }).endState h_hist_term = s₁ := by
+    have h_eq := AlterSeq.stateAt_find_eq_endState
+      ({ init := s₀, trans := Seq.cons (l₀, s₁) Seq.nil
+        : AlterSeq State Label }) h_hist_term
+    rw [h_find] at h_eq
+    exact (Option.some.inj h_eq).symm
+  -- LHS: pe.init s₀ * pe.probOfRemaining ⟨s₀, nil⟩ ((l₀, s₁) :: rest_list).
+  -- Factor first step via probOfRemaining_cons; the tail prefix becomes
+  -- ⟨s₀, nil.append (cons (l₀, s₁) nil)⟩ = ⟨s₀, cons (l₀, s₁) nil⟩.
+  have h_lhs : pe.probOf ⟨s₀, Seq.cons (l₀, s₁) e_rest_trans⟩ h_term_full =
+      pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+      pe.probOfRemaining ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+        (e_rest_trans.toList h_e_rest_term) := by
+    unfold probOf
+    rw [Stream'.Seq.toList_cons, probOfRemaining_cons]
+    rw [show (⟨s₀, Seq.nil⟩ : AlterSeq State Label).trans.append
+      (Seq.cons (l₀, s₁) Seq.nil) = Seq.cons (l₀, s₁) Seq.nil from
+      Stream'.Seq.nil_append _]
+    ring
+  -- RHS: ... * (continuationFrom).probOf ⟨s₁, e_rest_trans⟩ h_e_rest_term.
+  -- By probOf_continuationFrom (with init match via h_endState), this equals
+  -- ... * pe.probOfRemaining ⟨s₀, cons (l₀, s₁) nil⟩ (e_rest_trans.toList _).
+  rw [h_lhs]
+  rw [probOf_continuationFrom pe ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ h_hist_term
+    ⟨s₁, e_rest_trans⟩ h_e_rest_term h_endState.symm]
 
 end ProbabilisticExecution
 
