@@ -68,6 +68,22 @@ noncomputable def filter (p : α → Prop) (s : Seq α) : Seq α :=
       some ((Nat.find_spec h).choose, cur.drop (Nat.find h + 1))
     else none) s
 
+/-- Filtering the empty sequence yields the empty sequence. -/
+@[simp] theorem filter_nil (p : α → Prop) : (nil : Seq α).filter p = nil := by
+  classical
+  unfold filter
+  apply corec_nil
+  show (if _ : ∃ n, ∃ a, (nil : Seq α).get? n = some a ∧ p a then _ else none) = none
+  rw [dif_neg]
+  rintro ⟨n, a, h_eq, _⟩
+  simp at h_eq
+
+/-- Mapping the empty sequence yields the empty sequence. -/
+@[simp] theorem map_nil {β : Type v} (f : α → β) :
+    (nil : Seq α).map f = (nil : Seq β) := by
+  ext n
+  simp [map, get?, nil]
+
 end Stream'.Seq
 
 namespace PLTS
@@ -317,6 +333,12 @@ transitions, infinite otherwise. -/
 noncomputable def LabelledSystem.trace (ls : LabelledSystem State Label)
     (e : AlterSeq State Label) : Seq Label :=
   (e.trans.filter (fun p => ¬ ls.internal p.1)).map Prod.fst
+
+/-- The trace of an execution with no transitions is the empty sequence. -/
+@[simp] theorem LabelledSystem.trace_init
+    (ls : LabelledSystem State Label) (s : State) :
+    ls.trace ⟨s, (Seq.nil : Seq (Label × State))⟩ = (Seq.nil : Seq Label) := by
+  simp [LabelledSystem.trace]
 
 /-- The probability that the probabilistic execution `pe` produces a finite
 execution whose trace under `ls` equals `τ`: the (countable) sum of
