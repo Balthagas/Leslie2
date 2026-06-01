@@ -84,6 +84,38 @@ noncomputable def filter (p : α → Prop) (s : Seq α) : Seq α :=
   ext n
   simp [map, get?, nil]
 
+/-- Filtering `cons a s` by a predicate that holds at `a`: the result is
+`cons a (s.filter p)`. -/
+theorem filter_cons_pos {p : α → Prop} (a : α) (s : Seq α) (h : p a) :
+    (cons a s).filter p = cons a (s.filter p) := by
+  classical
+  unfold filter
+  apply corec_cons
+  have h_ex : ∃ n, ∃ a', (cons a s).get? n = some a' ∧ p a' :=
+    ⟨0, a, by simp, h⟩
+  have h_find_zero : Nat.find h_ex = 0 :=
+    (Nat.find_eq_zero h_ex).mpr ⟨a, by simp, h⟩
+  change (if h' : ∃ n, ∃ a', (cons a s).get? n = some a' ∧ p a' then
+         some ((Nat.find_spec h').choose, (cons a s).drop (Nat.find h' + 1))
+       else none) = some (a, s)
+  rw [dif_pos h_ex]
+  have h_choose_eq : (Nat.find_spec h_ex).choose = a := by
+    have h_spec_get : (cons a s).get? (Nat.find h_ex) =
+        some (Nat.find_spec h_ex).choose := (Nat.find_spec h_ex).choose_spec.1
+    have h_at_zero : (cons a s).get? (Nat.find h_ex) = some a := by
+      rw [h_find_zero]; simp
+    have : some a = some (Nat.find_spec h_ex).choose := h_at_zero.symm.trans h_spec_get
+    exact (Option.some_inj.mp this).symm
+  rw [h_choose_eq, h_find_zero]
+  rfl
+
+/-- Mapping a function over `cons a s` gives `cons (f a) (s.map f)`. -/
+@[simp] theorem map_cons {β : Type v} (f : α → β) (a : α) (s : Seq α) :
+    (cons a s).map f = cons (f a) (s.map f) := by
+  apply Subtype.ext
+  funext n
+  cases n <;> rfl
+
 end Stream'.Seq
 
 namespace PLTS
@@ -339,6 +371,15 @@ noncomputable def LabelledSystem.trace (ls : LabelledSystem State Label)
     (ls : LabelledSystem State Label) (s : State) :
     ls.trace ⟨s, (Seq.nil : Seq (Label × State))⟩ = (Seq.nil : Seq Label) := by
   simp [LabelledSystem.trace]
+
+/-- The trace of an execution whose first transition has an *external* label
+`l` starts with `l`, followed by the trace from the rest of the execution. -/
+@[simp] theorem LabelledSystem.trace_cons_external
+    (ls : LabelledSystem State Label) (s : State) (l : Label) (s' : State)
+    (rest : Seq (Label × State)) (h : ¬ ls.internal l) :
+    ls.trace ⟨s, Seq.cons (l, s') rest⟩ = Seq.cons l (ls.trace ⟨s', rest⟩) := by
+  unfold LabelledSystem.trace
+  rw [Seq.filter_cons_pos (l, s') rest h, Seq.map_cons]
 
 /-- The probability that the probabilistic execution `pe` produces a finite
 execution whose trace under `ls` equals `τ`: the (countable) sum of
