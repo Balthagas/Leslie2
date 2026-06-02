@@ -2135,6 +2135,28 @@ into:
 This is the *core* of Segala's theorem; the proof is non-trivial and
 deferred. Once the helpers (currently inlined as sorries) are filled,
 this theorem closes via term-by-term tsum manipulation. -/
+
+/-- **First-step recognition**: the kernel-times-continuation sum from
+state `s` matches the `traceProb` of the continuation-pe starting from
+`⟨s, Seq.nil⟩`. This is just `traceProb_first_step` applied to
+`pe.continuationFrom ⟨s, Seq.nil⟩` (whose init is `PMF.pure s`), with
+the s₀-sum collapsed. -/
+private lemma kernel_contA_eq_traceProb_from_state
+    {State Label : Type}
+    (sys : LabelledSystem State Label)
+    (pe : ProbabilisticExecution sys.toSystem)
+    (s : State) (l : Label) (τ : Seq Label) :
+    (∑' (l₀ : Label) (s₁ : State), pe.kernel ⟨s, Seq.nil⟩ (l₀, s₁) *
+        (sys.consumeLabel l₀ (Seq.cons l τ)).elim 0
+          (fun τ' => sys.traceProb
+            (pe.continuationFrom ⟨s, Seq.cons (l₀, s₁) Seq.nil⟩
+              ⟨1, by
+                change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
+                rw [Stream'.Seq.get?_cons_succ]
+                exact Stream'.Seq.terminatedAt_nil⟩) τ')) =
+    sys.traceProb (pe.continuationFrom ⟨s, Seq.nil⟩
+      Stream'.Seq.terminates_nil) (Seq.cons l τ) := by
+  sorry
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -2231,42 +2253,37 @@ theorem traceCoupling_tsum_eq
   refine tsum_congr (fun s_C => ?_)
   congr 1
   -- ============================================================
-  -- STAGE 2: characterize pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A').
+  -- STAGE 3: recognize each side as `traceProb pe_from_state (l :: τ)`
+  -- via `traceProb_first_step` in reverse.
   -- ============================================================
-  -- Unfold via h_sched_eq + fromAbstractPrefix_empty.
-  have h_pe_A_kernel : ∀ s_A l_A s_A',
-      pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A') =
-      ((MatchingState.initial sim pe_C init_match h_match_R s_A).bind
-          MatchingState.computeNext).elim 0
-        (fun d => (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2)
-          (l_A, s_A')) := by
-    intro s_A l_A s_A'
-    unfold ProbabilisticExecution.kernel
-    rw [h_sched_eq]
-    simp only
-    rw [fromAbstractPrefix_empty]
-  simp_rw [h_pe_A_kernel]
+  -- LHS: ∑' l_C s_C', pe_C.kernel ⟨s_C, _⟩ (l_C, s_C') * contC ...
+  --      = traceProb sys_C (pe_C.continuationFrom ⟨s_C, Seq.nil⟩) (l :: τ).
+  -- RHS: ∑' s_A l_A s_A', init_match s_C s_A * pe_A.kernel ⟨s_A, _⟩ * contA ...
+  --      = ∑' s_A, init_match s_C s_A *
+  --          traceProb sys_A (pe_A.continuationFrom ⟨s_A, Seq.nil⟩) (l :: τ).
+  rw [kernel_contA_eq_traceProb_from_state sys_C pe_C s_C l τ]
+  -- Factor `init_match s_C s_A` out of the inner sum, then apply Stage 3
+  -- recognition on the abstract side.
+  rw [show (∑' (s_A : State_A) (l_A : Label) (s_A' : State_A),
+          init_match s_C s_A * pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A') *
+          contA s_A l_A s_A') =
+        ∑' (s_A : State_A), init_match s_C s_A *
+          sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
+              Stream'.Seq.terminates_nil) (Seq.cons l τ) from by
+    refine tsum_congr (fun s_A => ?_)
+    rw [← kernel_contA_eq_traceProb_from_state sys_A pe_A s_A l τ]
+    simp_rw [mul_assoc (init_match s_C s_A), ENNReal.tsum_mul_left]
+    rfl]
   -- ============================================================
-  -- STAGES 3-7: the per-`s_C` coupling argument (with pe_A.kernel
-  -- now expanded). **DEFERRED**.
-  -- Goal: ∑' (l_C : Label) (s_C' : State_C),
-  --         pe_C.kernel ⟨s_C, Seq.nil⟩ (l_C, s_C') * contC s_C l_C s_C' =
-  --       ∑' (s_A : State_A) (l_A : Label) (s_A' : State_A),
-  --         init_match s_C s_A *
-  --         ((MatchingState.initial sim pe_C init_match h_match_R s_A).bind
-  --             MatchingState.computeNext).elim 0
-  --           (fun d => (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2)
-  --             (l_A, s_A')) *
-  --         contA s_A l_A s_A'.
-  -- Remaining work (Stages 3-7):
-  --   • Case on `MatchingState.initial sim pe_C init_match h_match_R s_A`:
-  --     - `none`: kernel is 0, summand is 0.
-  --     - `some m₀`: case on `m₀.computeNext`'s structure.
-  --   • For internal/tau emissions: use `consumeLabel_internal` and
-  --     `WeakScheduler.run` to fold the tau-padding into the continuation.
-  --   • For external emissions: use `stepWitness_pmfRel` + `hyperStep` to
-  --     couple with `pe_C.kernel ⟨s_C, _⟩`.
-  --   • Recurse on `τ` for continuation coupling.
+  -- STAGES 4-7: the per-state coupling claim.
+  -- Goal: traceProb sys_C (pe_C.continuationFrom ⟨s_C, Seq.nil⟩) (l :: τ) =
+  --       ∑' s_A, init_match s_C s_A *
+  --         traceProb sys_A (pe_A.continuationFrom ⟨s_A, Seq.nil⟩) (l :: τ).
+  -- This is the per-`s_C` coupling: starting from `s_C`, the concrete
+  -- trace probability matches the `init_match`-weighted average of
+  -- the abstract trace probabilities starting from each `s_A` in
+  -- `init_match s_C`'s support. Requires Stage 2 (pe_A.kernel expansion)
+  -- folded into the per-step coupling argument. **DEFERRED.**
   sorry
 
 end ProbabilisticForwardSimulation
