@@ -1685,32 +1685,28 @@ noncomputable def MatchingState.initial
   by_cases h_exists : ∃ s_C, s_C ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C).support
   · let s_C := h_exists.choose
     have h_s_C_supp : s_C ∈ pe_C.init.support := h_exists.choose_spec.1
-    refine some
+    let base : MatchingState sim pe_C :=
       { e_C := ⟨s_C, Seq.nil⟩
         h_term_C := Stream'.Seq.terminates_nil
         μ_A_current := init_match s_C
-        h_R := ?_
+        h_R := by
+          have h_endState : (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :
+              AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = s_C := by
+            have h_eq := AlterSeq.stateAt_find_eq_endState
+              ({init := s_C, trans := Seq.nil} : AlterSeq State_C Label)
+              Stream'.Seq.terminates_nil
+            have h_find : Nat.find (Stream'.Seq.terminates_nil :
+                (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
+              apply Nat.find_eq_zero _ |>.mpr; rfl
+            rw [h_find] at h_eq
+            exact (Option.some.inj h_eq).symm
+          rw [h_endState]
+          exact h_match_R s_C h_s_C_supp
         next_step := none
         weak_sched := none
         stage := WeakStage.tauInternal 0 }
-    -- R s_C (init_match s_C) at endState ⟨s_C, nil⟩ = s_C.
-    -- The endState of ⟨s_C, nil⟩ is s_C (the init).
-    have h_endState : (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :
-        AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = s_C := by
-      -- endState defined via stateAt at Nat.find h. For nil, Nat.find = 0,
-      -- and stateAt 0 = some init = some s_C.
-      have h_eq := AlterSeq.stateAt_find_eq_endState
-        ({init := s_C, trans := Seq.nil} : AlterSeq State_C Label)
-        Stream'.Seq.terminates_nil
-      -- For nil, Nat.find = 0.
-      have h_find : Nat.find (Stream'.Seq.terminates_nil :
-          (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
-        apply Nat.find_eq_zero _ |>.mpr
-        rfl
-      rw [h_find] at h_eq
-      exact (Option.some.inj h_eq).symm
-    rw [h_endState]
-    exact h_match_R s_C h_s_C_supp
+    -- Install the first weak transition via `setupNextTransition`.
+    exact some base.setupNextTransition
   · exact none
 
 /-- For each abstract prefix `e_A`, the (Classical) matching state that
