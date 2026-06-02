@@ -2407,10 +2407,11 @@ private theorem step_kernel_coupling
     (init_match : State_C → PMF State_A)
     (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
     (pe_A : ProbabilisticExecution sys_A.toSystem)
-    (_h_sched_eq : pe_A.scheduler.next = fun e_A =>
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
       (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
         MatchingState.computeNext)
     (s_C : State_C) (μ_A : PMF State_A) (_h_R : R s_C μ_A)
+    (_h_reach : IsReachable sim pe_C init_match h_match_R s_C μ_A)
     (l₀ : Label) (τ' : Seq Label) :
     sys_C.traceProb (pe_C.continuationFrom ⟨s_C, Seq.nil⟩
       Stream'.Seq.terminates_nil) (Seq.cons l₀ τ') =
@@ -2465,11 +2466,57 @@ private theorem step_kernel_coupling
   --     (consumeLabel l_first (l₀ :: τ')).elim 0 (continuation_C) =
   --   ∑' s_A l_first s_first, μ_A s_A * (pe_A.kernel ⟨s_A, Seq.nil⟩ (l_first, s_first) *
   --     (consumeLabel l_first (l₀ :: τ')).elim 0 (continuation_A))
-  --
-  -- Step 2-4 (case on `pe_C.scheduler.next`, apply `stepWitness_pmfRel`,
-  -- bridge to pe_A.kernel via matching state, recurse on continuations)
-  -- remain to be done. **DEFERRED.**
-  sorry
+  classical
+  -- Case on whether pe_C.scheduler.next ⟨s_C, Seq.nil⟩ is none or some.
+  by_cases h_pe_C_next : pe_C.scheduler.next ⟨s_C, Seq.nil⟩ = none
+  · -- `none` case: pe_C halts at this state, so LHS = 0.
+    have h_kernel_C_zero : ∀ (l_first : Label) (s_first : State_C),
+        pe_C.kernel ⟨s_C, Seq.nil⟩ (l_first, s_first) = 0 := by
+      intro l_first s_first
+      unfold ProbabilisticExecution.kernel
+      rw [h_pe_C_next]
+      rfl
+    have h_LHS_zero :
+        (∑' (l_first : Label) (s_first : State_C),
+          pe_C.kernel ⟨s_C, Seq.nil⟩ (l_first, s_first) *
+          (sys_C.consumeLabel l_first (Seq.cons l₀ τ')).elim 0
+            (fun τ'' => sys_C.traceProb
+              (pe_C.continuationFrom ⟨s_C, Seq.cons (l_first, s_first) Seq.nil⟩
+                ⟨1, by
+                  change (Seq.cons (l_first, s_first) Seq.nil).get? 1 = none
+                  rw [Stream'.Seq.get?_cons_succ]
+                  exact Stream'.Seq.terminatedAt_nil⟩) τ'')) = 0 := by
+      apply ENNReal.tsum_eq_zero.mpr
+      intro l_first
+      apply ENNReal.tsum_eq_zero.mpr
+      intro s_first
+      rw [h_kernel_C_zero, zero_mul]
+    rw [h_LHS_zero]
+    -- Now need: 0 = (RHS).
+    -- The RHS involves pe_A's kernel at ⟨s_A, _⟩ for s_A ∈ μ_A.support.
+    -- pe_A's scheduler uses fromAbstractPrefix ⟨s_A, Seq.nil⟩ → MatchingState.initial s_A.
+    -- This is anchored to pe_C.initState, not to our s_C. So pe_A might emit
+    -- something even when pe_C halts at s_C — unless s_C = pe_C.initState.
+    --
+    -- **DEFERRED**: closing the RHS = 0 here would require either:
+    --   (a) The structural insight that pe_A's behavior at ⟨s_A, _⟩ for
+    --       s_A ∈ μ_A.support uses pe_C's behavior at ⟨pe_C.initState, _⟩
+    --       (NOT at ⟨s_C, _⟩), so pe_C halting at s_C doesn't imply pe_A halts.
+    --   (b) Restricting the lemma to the case `s_C = pe_C.initState`.
+    --   (c) An auxiliary hypothesis that pe_C halts everywhere reachable.
+    sorry
+  · -- `some d` case: pe_C emits a distribution.
+    --
+    -- This is the bulk of Segala's per-step coupling:
+    --   * Extract `d` and apply `pe_C.scheduler.valid` to obtain
+    --     `sys_C.step (endState) l_C μ_C` for (l_C, μ_C) in d.support.
+    --   * Apply `sim.stepWitness_pmfRel` (with `_h_R : R s_C μ_A`) to obtain
+    --     `PMFRel R μ_C ω` where ω is the abstract step witness.
+    --   * Bridge to pe_A.kernel via the matching state (using `_h_reach`).
+    --   * Recurse on continuations.
+    --
+    -- **DEFERRED**: full mathematical content of Segala's theorem.
+    sorry
 
 /-- The **PMFRel-style coupling** stating Segala's theorem in its full
 generality: given two distributions `μ_C` (concrete) and `μ_A` (abstract)
