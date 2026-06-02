@@ -2304,8 +2304,34 @@ private theorem per_state_trace_coupling
           rw [sys_A.traceProb_nil_eq_one, mul_one]]
     exact (PMF.tsum_coe (init_match s_C)).symm
   | cons l₀ τ' =>
-    -- Inductive case: apply `traceProb_first_step` and use PMFRel coupling.
-    -- **DEFERRED**.
+    -- Inductive case: apply `traceProb_first_step` + collapse s₀-sums.
+    -- LHS: traceProb pe_C_from_sC (l₀ :: τ').
+    -- Use `kernel_contA_eq_traceProb_from_state` in REVERSE to convert
+    -- traceProb back to the kernel-times-continuation form.
+    rw [← kernel_contA_eq_traceProb_from_state sys_C pe_C s_C l₀ τ']
+    -- For RHS: inside the s_A-sum, apply the same in reverse, then factor
+    -- init_match s_C s_A out.
+    rw [show (∑' (s_A : State_A), init_match s_C s_A *
+            sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
+              Stream'.Seq.terminates_nil) (Seq.cons l₀ τ')) =
+          ∑' (s_A : State_A) (l_first : Label) (s_first : State_A),
+            init_match s_C s_A *
+            (pe_A.kernel ⟨s_A, Seq.nil⟩ (l_first, s_first) *
+              (sys_A.consumeLabel l_first (Seq.cons l₀ τ')).elim 0
+                (fun τ'' => sys_A.traceProb
+                  (pe_A.continuationFrom ⟨s_A, Seq.cons (l_first, s_first) Seq.nil⟩
+                    ⟨1, by
+                      change (Seq.cons (l_first, s_first) Seq.nil).get? 1 = none
+                      rw [Stream'.Seq.get?_cons_succ]
+                      exact Stream'.Seq.terminatedAt_nil⟩) τ'')) from by
+      refine tsum_congr (fun s_A => ?_)
+      rw [← kernel_contA_eq_traceProb_from_state sys_A pe_A s_A l₀ τ']
+      simp_rw [← ENNReal.tsum_mul_left]]
+    -- Now both sides have the form ∑' (l_first, s_first), kernel * cont.
+    -- The remaining argument: per (l_first, s_first), the kernel + cont match
+    -- via `stepWitness_pmfRel` (PMFRel R μ_C ω) chained through the matching
+    -- state. **DEFERRED** — this is the per-step coupling argument that uses
+    -- the recursive structure of `per_state_trace_coupling` on shorter traces.
     sorry
 
 theorem traceCoupling_tsum_eq
