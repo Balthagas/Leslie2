@@ -1789,6 +1789,335 @@ lemma liftOption_faithful_apply {α : Type*} (p : PMF (Option α))
     (Option.some.inj h_eq).symm
   rw [h_q_eq, PMF.normalize_apply]
 
+/-! ### Option (a) Phase 2: faithful Scheduler / ProbabilisticExecution
+
+`PMFScheduler` mirrors `Scheduler` but with the faithful signature
+`next : AlterSeq → PMF (Option (Label × PMF State))`, allowing
+distributional emission decisions. `PMFProbabilisticExecution` is the
+corresponding probabilistic execution type.
+
+This Phase 2 establishes the parallel type system; Phase 3 builds
+pe_A on it. -/
+
+/-- **Faithful scheduler**: like `Scheduler` but `next` returns a full
+PMF over emit/halt outcomes (rather than `Option (PMF …)`). The `valid`
+condition asserts that every emitted `some (l, μ)` is a valid system
+step at the prefix's end state. -/
+structure PMFScheduler (sys : System State Label) where
+  next : AlterSeq State Label → PMF (Option (Label × PMF State))
+  valid : ∀ (e : AlterSeq State Label) (n : ℕ) (s : State),
+    e.trans.TerminatedAt n → e.stateAt n = some s →
+    ∀ (l : Label) (μ : PMF State),
+      some (l, μ) ∈ (next e).support → sys.step s l μ
+
+/-- **Faithful probabilistic execution**: initial state plus a `PMFScheduler`. -/
+structure PMFProbabilisticExecution (sys : System State Label) where
+  /-- The unique initial state. -/
+  initState : State
+  scheduler : PMFScheduler sys
+
+namespace PMFProbabilisticExecution
+
+variable {sys : System State Label}
+
+/-- The initial distribution: Dirac on `initState`. -/
+noncomputable def init (pe : PMFProbabilisticExecution sys) : PMF State :=
+  PMF.pure pe.initState
+
+/-- The faithful one-step kernel. Given a prefix `e` and a step `(l, s')`,
+the probability mass is:
+  `kernel pe e (l, s') = ∑' μ, (pe.scheduler.next e) (some (l, μ)) * μ s'`
+i.e., aggregating over all distributions μ that the scheduler might emit
+alongside label `l`, weighted by the emission probability and the
+state-sample probability. -/
+noncomputable def kernel (pe : PMFProbabilisticExecution sys)
+    (e : AlterSeq State Label) (step : Label × State) : ENNReal :=
+  ∑' μ, pe.scheduler.next e (some (step.1, μ)) * μ step.2
+
+/-- The faithful kernel is bounded by `1`. -/
+theorem kernel_le_one (pe : PMFProbabilisticExecution sys)
+    (e : AlterSeq State Label) (step : Label × State) :
+    pe.kernel e step ≤ 1 := by
+  unfold kernel
+  calc ∑' μ, pe.scheduler.next e (some (step.1, μ)) * μ step.2
+      ≤ ∑' μ, pe.scheduler.next e (some (step.1, μ)) := by
+        refine ENNReal.tsum_le_tsum (fun μ => ?_)
+        exact mul_le_of_le_one_right' (PMF.coe_le_one _ _)
+    _ ≤ ∑' (lμ : Label × PMF State), pe.scheduler.next e (some lμ) := by
+        exact ENNReal.tsum_comp_le_tsum_of_injective
+          (f := fun μ => (step.1, μ))
+          (fun μ₁ μ₂ h_eq => (Prod.mk.inj h_eq).2)
+          (fun lμ => pe.scheduler.next e (some lμ))
+    _ ≤ ∑' opt, pe.scheduler.next e opt := by
+        exact ENNReal.tsum_comp_le_tsum_of_injective
+          (f := some) (fun _ _ h => Option.some.inj h)
+          (fun opt => pe.scheduler.next e opt)
+    _ = 1 := (pe.scheduler.next e).tsum_coe
+
+/-- Faithful `probOfRemaining`: foldl product of `kernel` masses across `xs`. -/
+noncomputable def probOfRemaining (pe : PMFProbabilisticExecution sys)
+    (pre : AlterSeq State Label) (xs : List (Label × State)) : ENNReal :=
+  xs.foldl
+    (fun (acc : ENNReal × AlterSeq State Label) hd =>
+      (acc.1 * pe.kernel acc.2 hd,
+       ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩))
+    (1, pre)
+    |>.1
+
+/-- Faithful `probOf`: `pe.init e.init` times `probOfRemaining` along `e`'s
+transitions. -/
+noncomputable def probOf (pe : PMFProbabilisticExecution sys)
+    (e : AlterSeq State Label) (hFin : e.trans.Terminates) : ENNReal :=
+  pe.init e.init * pe.probOfRemaining ⟨e.init, Seq.nil⟩ (e.trans.toList hFin)
+
+/-- Auxiliary: `probOfRemaining`'s foldl-acc stays `≤ 1`. -/
+private theorem probOfRemaining_aux_le_one (pe : PMFProbabilisticExecution sys)
+    (xs : List (Label × State)) :
+    ∀ acc : ENNReal × AlterSeq State Label, acc.1 ≤ 1 →
+    (xs.foldl
+      (fun (acc : ENNReal × AlterSeq State Label) hd =>
+        (acc.1 * pe.kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩)) acc).1 ≤ 1 := by
+  induction xs with
+  | nil => intro acc h_acc; exact h_acc
+  | cons hd rest ih =>
+    intro acc h_acc
+    apply ih
+    change acc.1 * pe.kernel acc.2 hd ≤ 1
+    calc acc.1 * pe.kernel acc.2 hd
+        ≤ 1 * 1 := by gcongr; exact pe.kernel_le_one _ _
+      _ = 1 := one_mul 1
+
+/-- `probOfRemaining` is bounded by `1`. -/
+theorem probOfRemaining_le_one (pe : PMFProbabilisticExecution sys)
+    (pre : AlterSeq State Label) (xs : List (Label × State)) :
+    pe.probOfRemaining pre xs ≤ 1 :=
+  pe.probOfRemaining_aux_le_one xs (1, pre) (le_refl _)
+
+/-- `probOf e ≤ pe.init e.init`. -/
+theorem probOf_le_init (pe : PMFProbabilisticExecution sys)
+    (e : AlterSeq State Label) (hFin : e.trans.Terminates) :
+    pe.probOf e hFin ≤ pe.init e.init := by
+  unfold probOf
+  calc pe.init e.init * pe.probOfRemaining ⟨e.init, Seq.nil⟩ (e.trans.toList hFin)
+      ≤ pe.init e.init * 1 := by gcongr; exact pe.probOfRemaining_le_one _ _
+    _ = pe.init e.init := mul_one _
+
+/-- The initial-accumulator value factors linearly out of `probOfRemaining`'s foldl. -/
+private theorem foldl_acc_linear (pe : PMFProbabilisticExecution sys) :
+    ∀ (xs : List (Label × State)) (c : ENNReal) (pre : AlterSeq State Label),
+    (xs.foldl
+      (fun (acc : ENNReal × AlterSeq State Label) hd =>
+        (acc.1 * pe.kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩)) (c, pre)).1 =
+    c * (xs.foldl
+      (fun (acc : ENNReal × AlterSeq State Label) hd =>
+        (acc.1 * pe.kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩)) (1, pre)).1 := by
+  intro xs
+  induction xs with
+  | nil => intro c pre; simp [List.foldl]
+  | cons hd rest ih =>
+    intro c pre
+    simp only [List.foldl]
+    rw [ih (c * pe.kernel pre hd) _, ih (1 * pe.kernel pre hd) _]
+    ring
+
+/-- `probOfRemaining` decomposes at the head. -/
+theorem probOfRemaining_cons (pe : PMFProbabilisticExecution sys)
+    (pre : AlterSeq State Label) (hd : Label × State) (rest : List (Label × State)) :
+    pe.probOfRemaining pre (hd :: rest) =
+      pe.kernel pre hd *
+        pe.probOfRemaining ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩ rest := by
+  unfold probOfRemaining
+  simp only [List.foldl]
+  rw [pe.foldl_acc_linear rest (1 * pe.kernel pre hd) _]
+  ring
+
+/-- The faithful `continuationFrom`: a probabilistic execution starting at the
+end-state of `history`, with its scheduler shifted so it queries `pe.scheduler`
+on prefixes extended by `history` on the left. -/
+noncomputable def continuationFrom (pe : PMFProbabilisticExecution sys)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates) :
+    PMFProbabilisticExecution sys where
+  initState := history.endState h_term
+  scheduler :=
+    { next := fun e' =>
+        open Classical in
+        if e'.init = history.endState h_term then
+          pe.scheduler.next ⟨history.init, history.trans.append e'.trans⟩
+        else
+          PMF.pure none
+      valid := by
+        classical
+        intro e' n s h_term_e' h_state_e' l μ h_supp
+        by_cases h_init : e'.init = history.endState h_term
+        swap
+        · rw [if_neg h_init] at h_supp
+          rw [PMF.support_pure] at h_supp
+          exact absurd h_supp (by simp)
+        rw [if_pos h_init] at h_supp
+        set m := Nat.find h_term with hm_def
+        refine pe.scheduler.valid
+          ⟨history.init, history.trans.append e'.trans⟩ (m + n) s ?_ ?_ l μ h_supp
+        · exact Stream'.Seq.terminatedAt_append_find h_term h_term_e'
+        · rcases Nat.eq_zero_or_pos n with hn0 | hn_pos
+          · subst hn0
+            have h_e'_init : s = e'.init := by
+              have : e'.stateAt 0 = some e'.init := rfl
+              rw [this] at h_state_e'
+              exact (Option.some.inj h_state_e').symm
+            have h_s_eq : s = history.endState h_term := by rw [h_e'_init]; exact h_init
+            rcases Nat.eq_zero_or_pos m with hm0 | hm_pos
+            · rw [Nat.add_zero, hm0]
+              change some history.init = some s
+              have h_endState_eq : history.endState h_term = history.init := by
+                have h_eq := history.stateAt_find_eq_endState h_term
+                rw [← hm_def, hm0] at h_eq
+                have h_zero : history.stateAt 0 = some history.init := rfl
+                rw [h_zero] at h_eq
+                exact (Option.some.inj h_eq).symm
+              rw [h_s_eq, h_endState_eq]
+            · obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hm_pos.ne'
+              have hj' : m = j + 1 := hj
+              rw [Nat.add_zero, hj']
+              change ((history.trans.append e'.trans).get? j).map Prod.snd = some s
+              have h_lt_find : j < Nat.find h_term := by
+                rw [← hm_def]; rw [hj']; exact Nat.lt_succ_self j
+              have h_before : (history.trans.append e'.trans).get? j =
+                  history.trans.get? j :=
+                Stream'.Seq.get?_append_before_length (Nat.find_min h_term h_lt_find)
+              rw [h_before]
+              change history.stateAt (j + 1) = some s
+              rw [← hj', hm_def, history.stateAt_find_eq_endState h_term, h_s_eq]
+          · obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hn_pos.ne'
+            have hk' : n = k + 1 := hk
+            rw [hk']
+            change ((history.trans.append e'.trans).get? (m + k)).map Prod.snd = some s
+            have h_after : (history.trans.append e'.trans).get? (m + k) =
+                e'.trans.get? k :=
+              Stream'.Seq.get?_append_find h_term e'.trans k
+            rw [h_after]
+            change (e'.trans.get? k).map Prod.snd = some s
+            rw [hk'] at h_state_e'
+            exact h_state_e' }
+
+end PMFProbabilisticExecution
+
+/-- Trace probability for `PMFProbabilisticExecution`: sum of `probOf` over
+finite tight executions whose trace equals `τ`. -/
+noncomputable def LabelledSystem.traceProbPMF
+    {State Label : Type} (ls : LabelledSystem State Label)
+    (pe : PMFProbabilisticExecution ls.toSystem) (τ : Seq Label) : ENNReal :=
+  ∑' e : {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e},
+    pe.probOf e.1 e.2.1
+
+/-- Convert an existing `Scheduler` into a `PMFScheduler`. The conversion is
+the natural embedding `Option (PMF (l, μ)) → PMF (Option (l, μ))`:
+* `none ↦ PMF.pure none` (Dirac on halt).
+* `some d ↦ d.map some` (Dirac-via-d on emit). -/
+noncomputable def Scheduler.toPMFScheduler {State Label : Type}
+    {sys : System State Label} (σ : Scheduler sys) : PMFScheduler sys where
+  next e := (σ.next e).elim (PMF.pure none) (fun d => d.map some)
+  valid := by
+    intro e n s h_term_e h_state_e l μ h_supp
+    -- h_supp : some (l, μ) ∈ ((σ.next e).elim (PMF.pure none) (fun d => d.map some)).support
+    cases h_d : σ.next e with
+    | none =>
+      simp only [h_d, Option.elim_none] at h_supp
+      rw [PMF.support_pure] at h_supp
+      exact absurd h_supp (by simp)
+    | some d =>
+      simp only [h_d, Option.elim_some] at h_supp
+      rw [PMF.support_map] at h_supp
+      obtain ⟨lμ, h_lμ_supp, h_eq⟩ := h_supp
+      have h_lμ_eq : lμ = (l, μ) := Option.some.inj h_eq
+      rw [h_lμ_eq] at h_lμ_supp
+      exact σ.valid e n s h_term_e h_state_e d h_d l μ h_lμ_supp
+
+/-- Convert a `ProbabilisticExecution` to a `PMFProbabilisticExecution` via the
+scheduler embedding. -/
+noncomputable def ProbabilisticExecution.toPMF {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys) :
+    PMFProbabilisticExecution sys where
+  initState := pe.initState
+  scheduler := Scheduler.toPMFScheduler pe.scheduler
+
+/-- Kernel preservation: for any `pe` lifted via `toPMF`, the faithful kernel
+gives the same values as the original `pe.kernel`. -/
+theorem ProbabilisticExecution.toPMF_kernel_eq {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (e : AlterSeq State Label) (step : Label × State) :
+    (ProbabilisticExecution.toPMF pe).kernel e step = pe.kernel e step := by
+  unfold PMFProbabilisticExecution.kernel
+  unfold ProbabilisticExecution.kernel
+  unfold ProbabilisticExecution.toPMF Scheduler.toPMFScheduler
+  cases h_d : pe.scheduler.next e with
+  | none =>
+    -- LHS: ∑' μ, (PMF.pure none) (some (step.1, μ)) * μ step.2.
+    -- PMF.pure none at (some ...) = 0. So LHS = 0.
+    -- RHS: (some none).elim 0 _ = 0... wait, h_d says next = none, so RHS = (none).elim 0 _ = 0.
+    simp only [h_d, Option.elim_none]
+    -- LHS becomes ∑' μ, PMF.pure none (some (step.1, μ)) * μ step.2.
+    -- PMF.pure none at any `some _` = 0.
+    have h_zero : ∀ μ : PMF State,
+        (PMF.pure (none : Option (Label × PMF State))) (some (step.1, μ)) = 0 := by
+      intro μ; exact PMF.pure_apply_of_ne _ _ (by simp)
+    simp_rw [h_zero]
+    simp
+  | some d =>
+    classical
+    simp only [h_d, Option.elim_some]
+    -- LHS: ∑' μ, (d.map some) (some (step.1, μ)) * μ step.2.
+    -- Simplify (d.map some) (some x) = d x by collapsing PMF.map_apply.
+    have h_map_some : ∀ μ : PMF State,
+        (d.map some) (some (step.1, μ)) = d (step.1, μ) := by
+      intro μ
+      rw [PMF.map_apply]
+      rw [tsum_eq_single (step.1, μ) (fun lμ h_ne => by
+        have h_neq : some (step.1, μ) ≠ some lμ := by
+          intro h_eq
+          exact h_ne (Option.some.inj h_eq).symm
+        exact if_neg h_neq)]
+      simp
+    simp_rw [h_map_some]
+    -- LHS: ∑' μ, d (step.1, μ) * μ step.2.
+    -- RHS: (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) step.
+    rw [PMF.bind_apply]
+    -- RHS: ∑' lμ, d lμ * (PMF.map (fun s' => (lμ.1, s')) lμ.2) step.
+    -- Inner PMF.map_apply: equals if step.1 = lμ.1 then lμ.2 step.2 else 0.
+    have h_map_apply : ∀ lμ : Label × PMF State,
+        (PMF.map (fun s' => (lμ.1, s')) lμ.2) step =
+        if step.1 = lμ.1 then lμ.2 step.2 else 0 := by
+      intro lμ
+      rw [PMF.map_apply]
+      rw [tsum_eq_single step.2 (fun s' h_ne => by
+        have h_pair_ne : step ≠ (lμ.1, s') := by
+          intro h_eq
+          exact h_ne (Prod.mk.inj h_eq).2.symm
+        simp [if_neg h_pair_ne])]
+      by_cases h_l : step.1 = lμ.1
+      · rw [if_pos h_l]
+        have h_pair_eq : step = (lμ.1, step.2) := by
+          cases step; simp at h_l; simp [h_l]
+        rw [if_pos h_pair_eq]
+      · rw [if_neg h_l]
+        have h_pair_ne : step ≠ (lμ.1, step.2) := by
+          intro h_eq
+          exact h_l (Prod.mk.inj h_eq).1
+        rw [if_neg h_pair_ne]
+    simp_rw [h_map_apply]
+    -- RHS: ∑' lμ, d lμ * (if step.1 = lμ.1 then lμ.2 step.2 else 0).
+    -- Reindex: lμ ↦ (l, μ); only l = step.1 contributes.
+    rw [ENNReal.tsum_prod']
+    -- ∑' l μ, d (l, μ) * (if step.1 = l then μ step.2 else 0)
+    rw [tsum_eq_single step.1 (fun l h_ne => by
+      have h_ne' : step.1 ≠ l := h_ne.symm
+      simp [if_neg h_ne'])]
+    -- ∑' μ, d (step.1, μ) * (if step.1 = step.1 then μ step.2 else 0)
+    simp
+
 /-- Compute the next abstract step from a matching state. Structurally
 case-analyzes on `m.weak_sched` × `m.stage`:
 
