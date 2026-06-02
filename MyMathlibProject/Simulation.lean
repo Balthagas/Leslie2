@@ -4071,6 +4071,185 @@ private lemma MatchingState.foldl_advance_e_C_trans_length_le
     have : (head :: tail).length = tail.length + 1 := by simp [List.length_cons]
     omega
 
+/-! ### Architecture D infrastructure: D3 framework
+
+`probOfRemaining_aux` is defined via `List.rec`. These lemmas give the
+expected `match`-style equations as named handles for D3's composition. -/
+
+/-- `probOfRemaining_aux m [] = 1`. -/
+private lemma probOfRemaining_aux_nil
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) :
+    probOfRemaining_aux m [] = 1 := rfl
+
+/-- `probOfRemaining_aux m (hd :: rest)` unfolds into the head kernel mass
+times `probOfRemaining_aux` on the advanced matching state. -/
+private lemma probOfRemaining_aux_cons
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (hd : Label × State_A) (rest : List (Label × State_A)) :
+    probOfRemaining_aux m (hd :: rest) =
+    (MatchingState.computeNext m).elim 0
+        (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) hd) *
+    probOfRemaining_aux (m.advance hd.1 hd.2) rest := rfl
+
+/-! ### D3: per-block mass-conservation skeleton
+
+The central D3 composition: aggregate per-step factors in
+`probOfRemaining_aux` into per-block products tied to concrete `pe_C`
+steps via PMFRel γ.
+
+The lemmas below state the per-step compute-kernel form and the
+target block-mass identity. The full D3 composition (a single equation
+combining the per-step mass equations with the block decomposition
+from D2) is genuinely complex and is left as a focused sorry below;
+its proof requires:
+
+* enumerating the abstract trajectories within one σ.run block,
+* applying `per_step_mass_marginal_abstract` to identify the
+  block-end mass distribution as a γ-sum,
+* combining with σ-run / hyperStep chain compositions from `fd5810d`
+  via PMF.bind algebra. -/
+
+/-- **D3 per-step kernel form**: when `computeNext m = some d_A`, the
+matching-state-derived kernel at step `hd` equals
+`(d_A.bind …) hd`. -/
+private lemma matching_state_kernel_when_some
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C)
+    {d_A : PMF (Label × PMF State_A)}
+    (h_some : MatchingState.computeNext m = some d_A)
+    (hd : Label × State_A) :
+    (MatchingState.computeNext m).elim 0
+        (fun d_A' => (d_A'.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) hd) =
+    (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) hd := by
+  rw [h_some]; rfl
+
+/-- **D3 per-step kernel form (none)**: when `computeNext m = none`,
+the matching-state-derived kernel is `0`. -/
+private lemma matching_state_kernel_when_none
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C)
+    (h_none : MatchingState.computeNext m = none)
+    (hd : Label × State_A) :
+    (MatchingState.computeNext m).elim 0
+        (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) hd) = 0 := by
+  rw [h_none]; rfl
+
+/-- **D3 central — per-block mass conservation (statement)**: for each
+pe_C step `(l_C, μ_C, s_C')` committed during an abstract execution's
+walk, the *total* abstract probability mass accumulated through the
+σ_int.run (or σ_pre + hyper + σ_post chain) block, summed over all
+block-trajectory completions, equals `μ_C(s_C')` times the abstract
+end-state distribution mass.
+
+Formally (internal case): the sum, over all "compatible end-state
+trajectories" within one block, of the per-step kernel product
+factors equals `μ_C(s_C')`. The same identity holds in the external
+case via the σ_pre + hyper + σ_post chain composition.
+
+This is the central D3 identity. Its proof composes `D2`'s block-extent
+characterization with the per-step mass equations
+(`per_step_mass_marginal_concrete`, `per_step_mass_marginal_abstract`)
+and the chain equalities (`σ_internal_run_eq`,
+`ExternalDecomp.chain_eq_stepWitness_bind`). Deferred. -/
+private theorem D3_block_mass_conservation_internal
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (s_C' : State_C) (s_A_final : State_A) :
+    -- The abstract block's end-state mass at `s_A_final`, when summed
+    -- over compatible concrete samples `s_C'`, equals the γ-distributed
+    -- per-concrete-state contribution.
+    ∑' (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) *
+      μ_A_next s_A_final ≤
+    ((sim.stepWitness h_R h_step).bind id) s_A_final := by
+  -- The inequality follows from `per_step_mass_marginal_abstract`'s sum
+  -- being a single-`s_C'`-fiber of the full γ-sum. Trivially bounded by
+  -- the marginal-extracted total.
+  have h_eq := per_step_mass_marginal_abstract sim h_R h_step s_A_final
+  -- h_eq : ∑' s_C' μ_A_next, γ(s_C', μ_A_next) * μ_A_next s_A_final
+  --       = ((sim.stepWitness h_R h_step).bind id) s_A_final
+  -- The single-fiber sum is bounded by the full sum.
+  rw [← h_eq]
+  exact ENNReal.le_tsum s_C'
+
+/-- **Mid-tau per-step kernel value**: in tauInternal / preExternal /
+postExternal stages with `weak_sched = some σ` and σ.next having a
+`some` emission, the matching-state-derived kernel at step `hd = (l, s)`
+collapses to `if l = h_some.choose.1 then h_some.choose.2 s else 0`.
+
+Documents the **Classical.choose-induced collapse** in `liftOption`:
+pe_A's per-step kernel is a *Dirac* on `(h_some.choose.1, sample from
+h_some.choose.2)`. This concentrates pe_A's emissions on a single
+Classical-determined path through σ.next's distribution. -/
+private lemma mid_tau_kernel_value
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {m : MatchingState sim pe_C} {σ : WeakScheduler sys_A}
+    (h_ws : m.weak_sched = some σ) (h_st_ne : m.stage ≠ WeakStage.externalEmit)
+    (h_some : ∃ a, some a ∈ (σ.next m.σ_query_prefix).support)
+    (hd : Label × State_A) :
+    letI : Decidable (hd.1 = h_some.choose.1) := Classical.propDecidable _
+    (MatchingState.computeNext m).elim 0
+        (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) hd) =
+    (if hd.1 = h_some.choose.1 then h_some.choose.2 hd.2 else 0) := by
+  classical
+  have h_compute := MatchingState.computeNext_mid_tau h_ws h_st_ne
+  rw [h_compute]
+  -- liftOption (σ.next m.σ_query_prefix) = some (PMF.pure h_some.choose).
+  have h_lift : MatchingState.liftOption (σ.next m.σ_query_prefix) =
+      some (PMF.pure h_some.choose) := by
+    unfold MatchingState.liftOption
+    rw [dif_pos h_some]
+  rw [h_lift]
+  -- (some (PMF.pure h_some.choose)).elim 0 (fun d => (d.bind ...) hd)
+  -- = ((PMF.pure h_some.choose).bind (fun lμ => PMF.map (lμ.1, ·) lμ.2)) hd
+  -- = (PMF.map (h_some.choose.1, ·) h_some.choose.2) hd
+  -- = if hd.1 = h_some.choose.1 then h_some.choose.2 hd.2 else 0
+  change ((PMF.pure h_some.choose).bind
+      fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) hd =
+    if hd.1 = h_some.choose.1 then h_some.choose.2 hd.2 else 0
+  rw [PMF.pure_bind]
+  -- (PMF.map (h_some.choose.1, ·) h_some.choose.2) hd
+  rw [PMF.map_apply]
+  -- ∑' s', if hd = (h_some.choose.1, s') then h_some.choose.2 s' else 0
+  -- = if hd.1 = h_some.choose.1 then h_some.choose.2 hd.2 else 0 (collapse via Prod.ext).
+  rw [tsum_eq_single hd.2 (fun s' h_ne => by
+    have h_pair_ne : hd ≠ (h_some.choose.1, s') := by
+      intro h_eq
+      have := (Prod.mk.inj h_eq).2
+      exact h_ne this.symm
+    exact if_neg h_pair_ne)]
+  -- Now goal: if hd = (h_some.choose.1, hd.2) then h_some.choose.2 hd.2 else 0
+  --        = if hd.1 = h_some.choose.1 then h_some.choose.2 hd.2 else 0
+  by_cases h_l : hd.1 = h_some.choose.1
+  · rw [if_pos h_l]
+    have h_pair_eq : hd = (h_some.choose.1, hd.2) := by
+      cases hd; simp at h_l; simp [h_l]
+    rw [if_pos h_pair_eq]
+  · rw [if_neg h_l]
+    have h_pair_ne : hd ≠ (h_some.choose.1, hd.2) := by
+      intro h_eq
+      exact h_l (Prod.mk.inj h_eq).1
+    rw [if_neg h_pair_ne]
+
 /-- **D1: `pe_A.probOf` factors through the initial matching state**.
 The whole-execution probability equals `pe_A.init e_A.init` times the
 matching-state-aware product, where the product is taken over `e_A`'s
