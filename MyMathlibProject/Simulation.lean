@@ -2231,12 +2231,42 @@ theorem traceCoupling_tsum_eq
   refine tsum_congr (fun s_C => ?_)
   congr 1
   -- ============================================================
-  -- STAGES 2-7: the per-`s_C` coupling argument.
+  -- STAGE 2: characterize pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A').
+  -- ============================================================
+  -- Unfold via h_sched_eq + fromAbstractPrefix_empty.
+  have h_pe_A_kernel : ∀ s_A l_A s_A',
+      pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A') =
+      ((MatchingState.initial sim pe_C init_match h_match_R s_A).bind
+          MatchingState.computeNext).elim 0
+        (fun d => (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2)
+          (l_A, s_A')) := by
+    intro s_A l_A s_A'
+    unfold ProbabilisticExecution.kernel
+    rw [h_sched_eq]
+    simp only
+    rw [fromAbstractPrefix_empty]
+  simp_rw [h_pe_A_kernel]
+  -- ============================================================
+  -- STAGES 3-7: the per-`s_C` coupling argument (with pe_A.kernel
+  -- now expanded). **DEFERRED**.
   -- Goal: ∑' (l_C : Label) (s_C' : State_C),
   --         pe_C.kernel ⟨s_C, Seq.nil⟩ (l_C, s_C') * contC s_C l_C s_C' =
   --       ∑' (s_A : State_A) (l_A : Label) (s_A' : State_A),
   --         init_match s_C s_A *
-  --         pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A') * contA s_A l_A s_A'.
+  --         ((MatchingState.initial sim pe_C init_match h_match_R s_A).bind
+  --             MatchingState.computeNext).elim 0
+  --           (fun d => (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2)
+  --             (l_A, s_A')) *
+  --         contA s_A l_A s_A'.
+  -- Remaining work (Stages 3-7):
+  --   • Case on `MatchingState.initial sim pe_C init_match h_match_R s_A`:
+  --     - `none`: kernel is 0, summand is 0.
+  --     - `some m₀`: case on `m₀.computeNext`'s structure.
+  --   • For internal/tau emissions: use `consumeLabel_internal` and
+  --     `WeakScheduler.run` to fold the tau-padding into the continuation.
+  --   • For external emissions: use `stepWitness_pmfRel` + `hyperStep` to
+  --     couple with `pe_C.kernel ⟨s_C, _⟩`.
+  --   • Recurse on `τ` for continuation coupling.
   sorry
 
 end ProbabilisticForwardSimulation
