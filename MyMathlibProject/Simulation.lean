@@ -2156,6 +2156,32 @@ private lemma kernel_contA_eq_traceProb_from_state
                 exact Stream'.Seq.terminatedAt_nil⟩) τ')) =
     sys.traceProb (pe.continuationFrom ⟨s, Seq.nil⟩
       Stream'.Seq.terminates_nil) (Seq.cons l τ) := by
+  classical
+  -- Apply `traceProb_first_step` to RHS.
+  rw [sys.traceProb_first_step (pe.continuationFrom ⟨s, Seq.nil⟩
+        Stream'.Seq.terminates_nil) l τ]
+  -- The s₀-summation collapses since the init is PMF.pure s.
+  have h_init_zero : ∀ s₀, s₀ ≠ s →
+      (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).init s₀ = 0 := by
+    intro s₀ h_ne
+    show (PMF.pure (({init := s, trans := Seq.nil} :
+        AlterSeq State Label).endState Stream'.Seq.terminates_nil)) s₀ = 0
+    -- endState ⟨s, nil⟩ = s.
+    have h_eq := AlterSeq.stateAt_find_eq_endState
+      ({init := s, trans := Seq.nil} : AlterSeq State Label)
+      Stream'.Seq.terminates_nil
+    have h_find : Nat.find (Stream'.Seq.terminates_nil :
+        (Seq.nil : Seq (Label × State)).Terminates) = 0 := by
+      apply Nat.find_eq_zero _ |>.mpr; rfl
+    rw [h_find] at h_eq
+    have h_endState : ({init := s, trans := Seq.nil} :
+        AlterSeq State Label).endState Stream'.Seq.terminates_nil = s :=
+      (Option.some.inj h_eq).symm
+    rw [h_endState]
+    exact PMF.pure_apply_of_ne s s₀ h_ne
+  -- Collapse outer s₀-sum: tsum_eq_single at s₀ = s.
+  rw [tsum_eq_single s (fun s₀ h_ne => by
+    simp [h_init_zero s₀ h_ne])]
   sorry
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
