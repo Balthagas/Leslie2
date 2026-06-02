@@ -2050,7 +2050,7 @@ theorem ProbabilisticForwardSimulation.exists_coupling
               MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A
             with _ | m
           · simp [h_from] at h_some
-          · simp [h_from] at h_some
+          · simp only [h_from, Option.bind_some] at h_some
             rcases h_compute : MatchingState.computeNext m with _ | d'
             · rw [h_compute] at h_some; exact absurd h_some (by simp)
             · rw [h_compute] at h_some
@@ -2095,21 +2095,46 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                 rw [h_s_eq_endState, h_endState_eq]
               rw [h_state_align]
               -- Goal: sys_A.toSystem.step m.current_abstract_state l_A μ_A.
-              -- Validity sub-cases via `computeNext`'s structure:
-              --
-              -- (a) `externalEmit`: `d' = PMF.pure (l_C, μ_A_next)`;
-              --     `(l_A, μ_A) = (l_C, μ_A_next)`. Validity from
-              --     `hyperStep`'s per-state kernel applied to
-              --     `m.current_abstract_state`.
-              --
-              -- (b) Mid-tau via `liftOption`: `d' = PMF.pure h.choose`
-              --     where `h.choose ∈ σ.next ⟨…, nil⟩.support`. Validity
-              --     from `WeakScheduler.valid` applied to that prefix,
-              --     propagated through `liftOption`'s Classical extraction.
-              --
-              -- (c) `weak_sched = none + pe_C.next = some _`: `d' = none`
-              --     in the current stub; vacuously valid (no `some d`).
-              sorry }
+              -- Case-split on `computeNext`'s structure to identify
+              -- which branch fired. Vacuous branches discharge via
+              -- contradiction with `h_compute`; productive branches
+              -- still need work (see sub-sorries).
+              rcases h_ws : m.weak_sched with _ | σ
+              · -- weak_sched = none: `computeNext m = none` in both
+                -- pe_C.next sub-cases, contradicting `h_compute`.
+                exfalso
+                have h_cn_none : MatchingState.computeNext m = none := by
+                  unfold MatchingState.computeNext
+                  rw [h_ws]
+                  rcases pe_C.scheduler.next m.e_C with _ | _ <;> rfl
+                rw [h_cn_none] at h_compute
+                exact absurd h_compute (by simp)
+              · -- weak_sched = some σ. Case on stage.
+                rcases h_st : m.stage with k | k | _ | k
+                · -- tauInternal k — mid-tau case. **Deferred.**
+                  -- `computeNext m = liftOption (σ.next ⟨a, Seq.nil⟩)` for some
+                  -- `a := m.μ_A_current.support_nonempty.choose`. Validity
+                  -- needs `WeakScheduler.valid` σ at `⟨a, Seq.nil⟩, 0, a` plus
+                  -- bridging the state mismatch `a ≠ m.current_abstract_state`.
+                  sorry
+                · -- preExternal k — mid-tau case. **Deferred.** Same as above.
+                  sorry
+                · -- externalEmit case.
+                  rcases h_ns : m.next_step with _ | nsd
+                  · -- next_step = none: computeNext m = none, contradicts h_compute.
+                    exfalso
+                    have h_cn_none : MatchingState.computeNext m = none := by
+                      unfold MatchingState.computeNext
+                      rw [h_ws, h_st, h_ns]
+                    rw [h_cn_none] at h_compute
+                    exact absurd h_compute (by simp)
+                  · -- next_step = some nsd: `d' = PMF.pure (l_C, μ_A_next)`.
+                    -- Validity needs the hyperStep witness from the
+                    -- `weakStep` decomposition — currently not stored in
+                    -- `MatchingState`. **Deferred** (architectural gap).
+                    sorry
+                · -- postExternal k — mid-tau case. **Deferred.** Same as above.
+                  sorry }
     refine ⟨pe_A_scheduler, ?_⟩
     intro l τ
     -- Trace-coupling proof: by induction on the trace via
