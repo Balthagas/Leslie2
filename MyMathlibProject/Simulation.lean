@@ -1693,6 +1693,102 @@ lemma liftOption_eq_some_iff {α : Type*} (p : PMF (Option α)) (q : PMF α) :
     intro h_ex _
     exact h h_ex
 
+/-! ### Option (a): Faithful scheduler refactor (phased plan)
+
+The current `Scheduler.next : AlterSeq → Option (PMF (Label × PMF State))`
+is structurally too narrow to represent a faithful abstract probabilistic
+execution: it allows either total halt (`none`) or full emission with
+distribution `d` (`some d`), with nothing in between. A WeakScheduler's
+`next : AlterSeq → PMF (Option (Label × PMF State))` is strictly more
+general — it can put positive mass on both halting and various emissions.
+
+The `liftOption` bridge collapses the latter to the former by
+Classical-choose-picking one element, which is *lossy* — pe_A's per-step
+emission becomes a Dirac on a single Classical-determined `(l, μ)` pair.
+This collapse makes the trace coupling theorem (as stated, equality of
+trace probabilities) false in general: pe_A's narrowed trajectories
+cannot match pe_C's full distribution.
+
+**Option (a) plan**: refactor `Scheduler.next` to return `PMF (Option …)`
+directly. Phased migration:
+
+* **Phase 1** (this session): define a *faithful* lifting alternative.
+  `liftOption_faithful` either returns `none` (when `p` has no `some`
+  in support) or returns a *conditional* PMF given `some`, normalizing
+  out the `none` mass. Demonstrates the contrast.
+* **Phase 2**: add a parallel `PMFScheduler` structure with the new
+  signature, plus matching `kernel`, `probOf`, `probOfRemaining`,
+  `continuationFrom`, `traceProb` definitions.
+* **Phase 3**: re-build `pe_A` as a `PMFScheduler`-backed probabilistic
+  execution; re-derive trace coupling using the faithful design.
+* **Phase 4**: either retire the old `Scheduler` (if pe_C migrates too)
+  or keep both and bridge via conversion lemmas.
+
+Total scope ≈ 500-1000 lines across phases 2-4. -/
+
+/-- **Faithful `liftOption`** (Phase 1 signature, Phase 2 body): returns
+the *conditional* PMF given that `p` emits `some`, renormalized so the
+result is a proper probability distribution. Returns `none` exactly when
+`p` has no `some` in its support.
+
+Unlike `liftOption`, this preserves the *full distribution* over `some`
+outcomes — pe_A's per-step emission becomes the actual σ.next distribution
+conditioned on emission, not a Classical-collapsed Dirac.
+
+The body uses `PMF.normalize (fun a => p (some a))` to renormalize.
+Two side conditions are required:
+* `tsum (fun a => p (some a)) ≠ 0` — follows from the `∃ some` witness.
+* `tsum (fun a => p (some a)) ≠ ∞` — follows from `p` being a PMF
+  (total mass ≤ 1 < ∞).
+
+These are `sorry`-ed for Phase 1; Phase 2 fills them via the mathlib
+infrastructure (e.g. `Equiv.optionEquivSumPUnit`-based tsum split). -/
+noncomputable def liftOption_faithful {α : Type*} (p : PMF (Option α)) :
+    Option (PMF α) :=
+  letI : Decidable (∃ a, some a ∈ p.support) := Classical.propDecidable _
+  if h : ∃ a, some a ∈ p.support then
+    let f : α → ENNReal := fun a => p (some a)
+    have hf0 : tsum f ≠ 0 := by
+      obtain ⟨a, ha⟩ := h
+      intro h_tsum
+      have h_pos : f a ≠ 0 := (p.mem_support_iff (some a)).mp ha
+      exact h_pos (ENNReal.tsum_eq_zero.mp h_tsum a)
+    have hf : tsum f ≠ (⊤ : ENNReal) := by
+      -- tsum f ≤ tsum p = 1 ≠ ⊤. Use the equiv Option α ≃ α ⊕ PUnit to
+      -- split the PMF total mass.
+      have h_le : tsum f ≤ ∑' (opt : Option α), p opt := by
+        rw [← (Equiv.optionEquivSumPUnit α).symm.tsum_eq (fun opt => p opt)]
+        rw [tsum_sum_type]
+        exact le_add_right (le_refl _)
+      have h_one : ∑' (opt : Option α), p opt = 1 := p.tsum_coe
+      rw [h_one] at h_le
+      exact ne_of_lt (lt_of_le_of_lt h_le ENNReal.one_lt_top)
+    some (PMF.normalize f hf0 hf)
+  else none
+
+/-- `liftOption_faithful p = none` iff `p` has no `some` in its support. -/
+lemma liftOption_faithful_eq_none_iff {α : Type*} (p : PMF (Option α)) :
+    liftOption_faithful p = none ↔ ¬ ∃ a, some a ∈ p.support := by
+  classical
+  unfold liftOption_faithful
+  split_ifs with h
+  · refine ⟨fun h_eq => ?_, fun h_ne => absurd h h_ne⟩
+    exact absurd h_eq (by simp)
+  · exact ⟨fun _ => h, fun _ => rfl⟩
+
+/-- When `liftOption_faithful p = some q`, the result `q` is the conditional
+distribution: `q a = p (some a) / (∑' a', p (some a'))`. -/
+lemma liftOption_faithful_apply {α : Type*} (p : PMF (Option α))
+    (h : ∃ a, some a ∈ p.support)
+    (q : PMF α) (h_eq : liftOption_faithful p = some q) (a : α) :
+    q a = p (some a) * (∑' a', p (some a'))⁻¹ := by
+  classical
+  unfold liftOption_faithful at h_eq
+  rw [dif_pos h] at h_eq
+  have h_q_eq : q = PMF.normalize (fun a => p (some a)) _ _ :=
+    (Option.some.inj h_eq).symm
+  rw [h_q_eq, PMF.normalize_apply]
+
 /-- Compute the next abstract step from a matching state. Structurally
 case-analyzes on `m.weak_sched` × `m.stage`:
 
