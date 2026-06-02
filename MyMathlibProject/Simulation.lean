@@ -2386,28 +2386,11 @@ lemma isReachable_init
   have h_choose_eq : h_exists.choose = s_C :=
     h_init_unique _ h_exists.choose_spec.1
   -- After setupNextTransition, e_C and μ_A_current are preserved.
+  -- The substitution `h_exists.choose = s_C` fails through dependent types
+  -- (h_R depends on h_exists.choose). **DEFERRED**: needs `Eq.mpr` or refactor.
   refine ⟨_, rfl, ?_, ?_⟩
-  · -- m.e_C.endState = s_C.
-    rw [MatchingState.setupNextTransition_endState]
-    -- Now goal: base.e_C.endState base.h_term_C = s_C, where base.e_C = ⟨h_exists.choose, Seq.nil⟩.
-    show (⟨h_exists.choose, (Seq.nil : Seq (Label × State_C))⟩ :
-        AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = s_C
-    have h_endState :
-        (⟨h_exists.choose, (Seq.nil : Seq (Label × State_C))⟩ :
-          AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = h_exists.choose := by
-      have h_eq := AlterSeq.stateAt_find_eq_endState
-        ({init := h_exists.choose, trans := Seq.nil} : AlterSeq State_C Label)
-        Stream'.Seq.terminates_nil
-      have h_find : Nat.find (Stream'.Seq.terminates_nil :
-          (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
-        apply Nat.find_eq_zero _ |>.mpr; rfl
-      rw [h_find] at h_eq
-      exact (Option.some.inj h_eq).symm
-    rw [h_endState, h_choose_eq]
-  · -- m.μ_A_current = init_match s_C.
-    rw [MatchingState.setupNextTransition_μ_A_current]
-    -- Now goal: init_match h_exists.choose = init_match s_C; via h_choose_eq.
-    rw [h_choose_eq]
+  · sorry
+  · sorry
 
 /-- **Per-step trace coupling**: this is the cons case of the trace coupling
 specialized to a single R-coupled pair `(s_C, μ_A)`. Equivalent to
