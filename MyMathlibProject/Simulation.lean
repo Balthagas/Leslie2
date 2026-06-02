@@ -912,6 +912,33 @@ noncomputable def LabelledSystem.consumeLabel (ls : LabelledSystem State Label)
       | some l => if l = l₀ then some τ.tail else none
       | none   => none
 
+/-- `consumeLabel` on an internal label: returns the trace unchanged. -/
+@[simp] theorem LabelledSystem.consumeLabel_internal
+    (ls : LabelledSystem State Label) (l₀ : Label) (τ : Seq Label)
+    (h : ls.internal l₀) : ls.consumeLabel l₀ τ = some τ := by
+  unfold LabelledSystem.consumeLabel
+  classical
+  simp [h]
+
+/-- `consumeLabel` on an external label matching the head of `Seq.cons l τ`:
+returns `some τ`. -/
+theorem LabelledSystem.consumeLabel_external_match
+    (ls : LabelledSystem State Label) (l : Label) (τ : Seq Label)
+    (h : ¬ ls.internal l) : ls.consumeLabel l (Seq.cons l τ) = some τ := by
+  unfold LabelledSystem.consumeLabel
+  classical
+  simp [h, Stream'.Seq.head_cons, Stream'.Seq.tail_cons]
+
+/-- `consumeLabel` on an external label *not* matching the head:
+returns `none`. -/
+theorem LabelledSystem.consumeLabel_external_no_match
+    (ls : LabelledSystem State Label) (l₀ l : Label) (τ : Seq Label)
+    (h_ext : ¬ ls.internal l₀) (h_ne : l ≠ l₀) :
+    ls.consumeLabel l₀ (Seq.cons l τ) = none := by
+  unfold LabelledSystem.consumeLabel
+  classical
+  simp [h_ext, Stream'.Seq.head_cons, h_ne]
+
 /-- IsTight characterization for a prefix starting with `(l₀, s₁)` followed
 by `e_rest_trans`: tight iff its tail-prefix is tight, with the extra
 constraint that when the tail is empty, `l₀` must be external (since the
