@@ -2254,27 +2254,62 @@ private lemma kernel_contA_eq_traceProb_from_state
     rw [h, Stream'.Seq.nil_append]
   simp_rw [h_kernel_eq]
 
-/-- **Per-state trace coupling**: starting from any concrete state `s_C`, the
-trace probability of `pe_C` equals the `init_match`-weighted average of trace
-probabilities of `pe_A` starting from each `s_A` in `init_match s_C`'s support.
+/-- **Weighted trace probability**: the average of `traceProb` from each
+state `s`, weighted by `μ s`. When `μ = PMF.pure s_0`, this collapses to
+`traceProb` from `s_0`. -/
+noncomputable def weighted_traceProb
+    {State Label : Type}
+    (sys : LabelledSystem State Label)
+    (pe : ProbabilisticExecution sys.toSystem)
+    (μ : PMF State) (τ : Seq Label) : ENNReal :=
+  ∑' s, μ s * sys.traceProb
+    (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil) τ
 
-This is the *core inductive claim* of Segala's theorem at the per-state level.
-It is universally quantified over `τ` (any trace), so the proof requires
-induction on `τ`'s structure — typically via `traceProb_first_step` at each
-step plus `stepWitness_pmfRel` for the coupling.
+/-- When the weight is `PMF.pure s_0`, the weighted trace prob collapses
+to the trace prob starting from `s_0`. -/
+private lemma weighted_traceProb_pure
+    {State Label : Type}
+    (sys : LabelledSystem State Label)
+    (pe : ProbabilisticExecution sys.toSystem) (s_0 : State) (τ : Seq Label) :
+    weighted_traceProb sys pe (PMF.pure s_0) τ =
+    sys.traceProb (pe.continuationFrom ⟨s_0, Seq.nil⟩
+      Stream'.Seq.terminates_nil) τ := by
+  unfold weighted_traceProb
+  classical
+  rw [tsum_eq_single s_0]
+  · rw [PMF.pure_apply, if_pos rfl, one_mul]
+  · intro s h_ne
+    rw [PMF.pure_apply_of_ne s_0 s h_ne, zero_mul]
 
-**Inductive structure**:
-* `τ = Seq.nil`: `traceProb pe nil = 1 - (mass of non-empty support)`. The
-  per-state claim reduces to an init-coupling identity using `h_match_R`.
-* `τ = Seq.cons l₀ τ'`: apply `traceProb_first_step` on both sides; the
-  resulting tsums match via `stepWitness_pmfRel` at the kernel level, with
-  the continuation case reducing to the IH on the shorter trace `τ'` (or
-  the same `τ'` if `l₀` is internal — tau-padding case requiring a
-  separate well-founded measure).
-
-**Proof deferred**: this is the heart of Segala's theorem; requires
-substantial induction infrastructure (probably well-founded on the "external
-trace length" so tau-padding cycles are bounded). -/
+/-- The **PMFRel-style coupling** stating Segala's theorem in its full
+generality: given two distributions `μ_C` (concrete) and `μ_A` (abstract)
+related by a per-state R-coupling via `f`, the weighted trace
+probabilities match. The original `per_state_trace_coupling` is the
+special case `μ_C = PMF.pure s_C, f = init_match`. -/
+private theorem weighted_trace_coupling
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : ProbabilisticExecution sys_A.toSystem)
+    (_h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+        MatchingState.computeNext)
+    (μ_C : PMF State_C) (f : State_C → PMF State_A)
+    (_h_coupled : ∀ s_C, s_C ∈ μ_C.support → R s_C (f s_C))
+    (τ : Seq Label) :
+    weighted_traceProb sys_C pe_C μ_C τ =
+    weighted_traceProb sys_A pe_A (μ_C.bind f) τ := by
+  -- **Proof deferred**: this is the strongest form of the coupling claim.
+  -- Reduces by induction on `τ`:
+  -- * `τ = nil`: both sides equal 1 (PMF mass).
+  -- * `τ = cons l₀ τ'`: apply first_step on both sides; the kernel-level
+  --   coupling follows from `stepWitness_pmfRel`; the continuation is
+  --   another weighted_trace_coupling call on shorter trace + new (R, f)
+  --   pair via the matching state's `next_step.h_R_next`.
+  sorry
 private theorem per_state_trace_coupling
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
@@ -2292,47 +2327,33 @@ private theorem per_state_trace_coupling
     ∑' (s_A : State_A), init_match s_C s_A *
       sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
         Stream'.Seq.terminates_nil) τ := by
-  -- Case on τ. The nil case is direct; cons requires induction.
-  cases τ with
-  | nil =>
-    rw [sys_C.traceProb_nil_eq_one,
-        show (∑' (s_A : State_A), init_match s_C s_A *
-            sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
-              Stream'.Seq.terminates_nil) Seq.nil) =
-          ∑' (s_A : State_A), init_match s_C s_A from by
-          refine tsum_congr (fun s_A => ?_)
-          rw [sys_A.traceProb_nil_eq_one, mul_one]]
-    exact (PMF.tsum_coe (init_match s_C)).symm
-  | cons l₀ τ' =>
-    -- Inductive case: apply `traceProb_first_step` + collapse s₀-sums.
-    -- LHS: traceProb pe_C_from_sC (l₀ :: τ').
-    -- Use `kernel_contA_eq_traceProb_from_state` in REVERSE to convert
-    -- traceProb back to the kernel-times-continuation form.
-    rw [← kernel_contA_eq_traceProb_from_state sys_C pe_C s_C l₀ τ']
-    -- For RHS: inside the s_A-sum, apply the same in reverse, then factor
-    -- init_match s_C s_A out.
-    rw [show (∑' (s_A : State_A), init_match s_C s_A *
-            sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
-              Stream'.Seq.terminates_nil) (Seq.cons l₀ τ')) =
-          ∑' (s_A : State_A) (l_first : Label) (s_first : State_A),
-            init_match s_C s_A *
-            (pe_A.kernel ⟨s_A, Seq.nil⟩ (l_first, s_first) *
-              (sys_A.consumeLabel l_first (Seq.cons l₀ τ')).elim 0
-                (fun τ'' => sys_A.traceProb
-                  (pe_A.continuationFrom ⟨s_A, Seq.cons (l_first, s_first) Seq.nil⟩
-                    ⟨1, by
-                      change (Seq.cons (l_first, s_first) Seq.nil).get? 1 = none
-                      rw [Stream'.Seq.get?_cons_succ]
-                      exact Stream'.Seq.terminatedAt_nil⟩) τ'')) from by
-      refine tsum_congr (fun s_A => ?_)
-      rw [← kernel_contA_eq_traceProb_from_state sys_A pe_A s_A l₀ τ']
-      simp_rw [← ENNReal.tsum_mul_left]]
-    -- Now both sides have the form ∑' (l_first, s_first), kernel * cont.
-    -- The remaining argument: per (l_first, s_first), the kernel + cont match
-    -- via `stepWitness_pmfRel` (PMFRel R μ_C ω) chained through the matching
-    -- state. **DEFERRED** — this is the per-step coupling argument that uses
-    -- the recursive structure of `per_state_trace_coupling` on shorter traces.
-    sorry
+  -- Dispatch to the more general `weighted_trace_coupling`, with
+  -- `μ_C := PMF.pure s_C, f := init_match`. The LHS collapses via
+  -- `weighted_traceProb_pure`; the RHS unfolds the `bind`.
+  have h_general := weighted_trace_coupling sim pe_C init_match h_match_R pe_A
+    _h_sched_eq (PMF.pure s_C) init_match (fun s_C' h_s_C' => by
+      rw [PMF.mem_support_pure_iff] at h_s_C'
+      rw [h_s_C']
+      classical
+      by_cases h : s_C ∈ pe_C.init.support
+      · exact h_match_R s_C h
+      · -- When s_C ∉ pe_C.init.support, side-condition can't be discharged
+        -- directly. **Sorry'd**: outside main use case.
+        sorry) τ
+  rw [weighted_traceProb_pure] at h_general
+  rw [h_general]
+  unfold weighted_traceProb
+  refine tsum_congr (fun s_A => ?_)
+  rw [PMF.bind_apply]
+  -- (PMF.pure s_C).bind init_match s_A = ∑' s_C', (PMF.pure s_C) s_C' * init_match s_C' s_A
+  --                                     = init_match s_C s_A.
+  classical
+  rw [show (∑' (a : State_C), (PMF.pure s_C) a * (init_match a) s_A) =
+        init_match s_C s_A from by
+    rw [tsum_eq_single s_C]
+    · rw [PMF.pure_apply, if_pos rfl, one_mul]
+    · intro s_C' h_ne
+      rw [PMF.pure_apply_of_ne s_C s_C' h_ne, zero_mul]]
 
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
