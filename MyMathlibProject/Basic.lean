@@ -451,6 +451,27 @@ theorem probOf_continuationFrom (pe : ProbabilisticExecution sys)
   rw [h_pmf, one_mul, h_init]
   exact probOfRemaining_continuationFrom pe history h_term _
 
+/-- The `endState` of the singleton-transition alterSeq `⟨s₀, cons (l₀, s₁) nil⟩`
+is `s₁`. Useful for matching constraints involving `endState` against `s₁`. -/
+theorem AlterSeq.endState_singleton_cons
+    (s₀ : State) (l₀ : Label) (s₁ : State) :
+    (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+      (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) = s₁ := by
+  set h_hist_term : (Seq.cons (l₀, s₁) Seq.nil : Seq (Label × State)).Terminates :=
+    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  have h_find : Nat.find h_hist_term = 1 := by
+    apply le_antisymm
+    · exact Nat.find_le (show (Seq.cons (l₀, s₁) Seq.nil).TerminatedAt 1 from rfl)
+    · rw [Nat.one_le_iff_ne_zero]
+      intro h_zero
+      exact Stream'.Seq.cons_not_terminatedAt_zero
+        (h_zero ▸ Nat.find_spec h_hist_term)
+  have h_eq := AlterSeq.stateAt_find_eq_endState
+    ({ init := s₀, trans := Seq.cons (l₀, s₁) Seq.nil
+      : AlterSeq State Label }) h_hist_term
+  rw [h_find] at h_eq
+  exact (Option.some.inj h_eq).symm
+
 /-- **Factorization of `probOf` over the first transition.** A finite execution
 starting with transition `(l₀, s₁)` factors into:
 * the initial mass `pe.init s₀`,
