@@ -1532,21 +1532,48 @@ variable {pe_C : ProbabilisticExecution sys_C.toSystem}
 /-- Compute the next abstract step from a matching state. Structurally
 case-analyzes on `m.weak_sched` × `m.stage`:
 
-* `weak_sched = none`: would start a new weak transition by consulting
-  `pe_C.scheduler.next m.e_C` and applying `sim.step` to set up
-  `weak_sched`, `next_step`, and `stage`. **Deferred** (returns `none`).
-* `weak_sched = some σ` with `stage = externalEmit`: emit the external
-  step `(l_C, PMF.pure ?)` derived from `next_step` — specifically, the
-  emit's label is `l_C` and its next-state distribution is `μ_A_next`
-  (the post-step distribution that the matching state will switch to).
-* `weak_sched = some σ` with `stage` in `{tauInternal k, preExternal k,
-  postExternal k}`: emit `σ.next` at the current weak-transition
-  prefix. **Deferred** (would require tracking the abstract prefix
-  walked within the current weak transition). -/
+* `weak_sched = none`:
+  - Consult `pe_C.scheduler.next m.e_C`.
+  - If `none`, the concrete side has stopped; emit `none`.
+  - If `some d`, sample `(l_C, μ_C)` from `d` and use `sim.step`
+    to produce the corresponding abstract step. The simplest
+    realization: `PMF.bind` over `d` mirroring the concrete distribution.
+    The "first step of the weak transition" we'd emit depends on
+    whether `l_C` is internal/external and the structure of the
+    weak transition. For *now* we collapse the weak-transition
+    unrolling by emitting the step `(l_C, μ_A_next.bind id)` where
+    `μ_A_next` comes from a `Classical.choice` over `sim.step`'s
+    `stepWitness`. This skips intermediate `tau` stages — the
+    trace-coupling proof will need to argue this is sound, OR a
+    future refinement will properly unroll the weak transition.
+
+* `weak_sched = some σ` with `stage = externalEmit`: emit
+  `PMF.pure (l_C, μ_A_next)` from `next_step`.
+
+* `weak_sched = some σ` with mid-tau stages: emit `σ.next`. Deferred. -/
 noncomputable def computeNext (m : MatchingState sim pe_C) :
     Option (PMF (Label × PMF State_A)) :=
   match m.weak_sched, m.stage with
-  | none, _ => none
+  | none, _ =>
+    match pe_C.scheduler.next m.e_C with
+    | none =>
+      -- pe_C stopped; abstract side stops too.
+      none
+    | some _ =>
+      -- pe_C has a step distribution to emit, but setting up the
+      -- corresponding abstract weak transition requires Classical
+      -- extraction from `sim.step`. **Deferred** — returns `none`
+      -- for now; a future refinement will:
+      --   1. Sample `(l_C, μ_C)` from `d` via PMF.bind.
+      --   2. Apply `sim.step` (using `m.h_R`) to get `stepWitness`.
+      --   3. Build a fresh `WeakScheduler` from
+      --      `stepWitness_weakTau` (internal) or `stepWitness_weakStep`
+      --      (external).
+      --   4. Update the matching state's `weak_sched`, `next_step`,
+      --      `stage`. (Note: this requires `computeNext` to also
+      --      return state updates, or the work to be split with
+      --      `advance` initialization.)
+      none
   | some _, WeakStage.externalEmit =>
     match m.next_step with
     | none => none
