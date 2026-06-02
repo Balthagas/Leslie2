@@ -1533,6 +1533,26 @@ variable {pe_C : ProbabilisticExecution sys_C.toSystem}
 -- indexes into the weak-transition unrolling, which itself comes from
 -- `sim.step`. To be filled in alongside `computeNext` below.
 
+/-- Bridge `WeakScheduler.next`'s output (`PMF (Option α)`) to our
+`Scheduler.next` shape (`Option (PMF α)`).
+
+* If the input PMF has any `some` element in its support, return
+  `some (PMF.pure ⟨…⟩)` where `⟨…⟩` is Classical-chosen from the
+  `some`-supported elements.
+* Else (the PMF is concentrated on `none`), return `none` (the
+  scheduler stops).
+
+This is a coarse bridge — it collapses the input PMF's distribution to
+a single-step `PMF.pure` emit, losing proportional information. A
+finer bridge should `condition` on the `some` mass to preserve
+probabilities. -/
+noncomputable def liftOption {α : Type*} (p : PMF (Option α)) :
+    Option (PMF α) := by
+  classical
+  by_cases h : ∃ a, some a ∈ p.support
+  · exact some (PMF.pure h.choose)
+  · exact none
+
 /-- Compute the next abstract step from a matching state. Structurally
 case-analyzes on `m.weak_sched` × `m.stage`:
 
@@ -1582,15 +1602,17 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
     match m.next_step with
     | none => none
     | some ⟨l_C, _, μ_A_next, _⟩ => some (PMF.pure (l_C, μ_A_next))
-  | some _, _ =>
-    -- Mid-tau cases (tauInternal/preExternal/postExternal): the
-    -- `WeakScheduler` σ has type `AlterSeq → PMF (Option …)`,
-    -- structurally different from our `Option (PMF …)` return type
-    -- (the WeakScheduler can emit "stop" probabilistically inside
-    -- its PMF rather than as the outer Option). Bridging this
-    -- requires either reshuffling the types or projecting through
-    -- the inner Option. **Deferred.**
-    none
+  | some σ, _ =>
+    -- Mid-tau cases (tauInternal/preExternal/postExternal): bridge
+    -- `WeakScheduler.next : AlterSeq → PMF (Option (l, μ))` to our
+    -- `Scheduler.next : AlterSeq → Option (PMF (l, μ))` via
+    -- `MatchingState.liftOption`. This is a coarse bridge —
+    -- collapses the probability distribution to a single-step
+    -- emit when any `some` is in the support — and loses
+    -- information; a future refinement should condition on the
+    -- `some` mass to preserve proportions.
+    MatchingState.liftOption
+      (σ.next ⟨m.μ_A_current.support_nonempty.choose, Seq.nil⟩)
 
 /-- Helper used by `advance`: on weak-transition completion, install
 the next weak transition based on `pe_C.scheduler.next m.e_C`.
