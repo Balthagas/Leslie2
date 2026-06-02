@@ -3511,6 +3511,260 @@ The existing Case 2(b) per-step decomposition (`tauInternal` / `preExternal`
 will be **superseded and replaced** once the D-style proof is in place;
 the 8 deferred sub-sorries will collapse to invocations of D1-D4. -/
 
+/-! ### Architecture D infrastructure: mass-conservation API
+
+Clean wrappers around `sim.stepWitness_weakTau` / `weakStep` /
+`stepWitness_pmfRel`'s `Classical.choose` chains. These give named
+handles for the mass-conservation facts D3 will compose.
+
+Each lemma is a one-liner that unwraps an existential's `choose_spec`;
+the value comes from packaging these as a coherent API rather than
+re-deriving them inline. -/
+
+/-- **σ-run mass conservation (internal case)**: when `l_C` is internal,
+`μ_A.bind σ.run = (sim.stepWitness h_R h_step).bind id`, where `σ` is the
+WeakScheduler `Classical.choose`d from `stepWitness_weakTau`. -/
+private lemma ProbabilisticForwardSimulation.σ_internal_run_eq
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_int : sys_C.internal l) :
+    μ_A.bind ((sim.stepWitness_weakTau h_R h_step h_int).choose.run) =
+    (sim.stepWitness h_R h_step).bind id :=
+  (sim.stepWitness_weakTau h_R h_step h_int).choose_spec
+
+/-- **External weak-step decomposition**: when `l_C` is external,
+`stepWitness_weakStep` produces a `weakStep μ_A l_C ω.bind id` witness;
+unpacking exposes the intermediate distributions `μ_inter`, `μ_inter'`
+and the three component witnesses `weakTau μ_A μ_inter`, `hyperStep
+μ_inter l μ_inter'`, `weakTau μ_inter' ω.bind id`. This packages all
+three for downstream use. -/
+private structure ExternalDecomp
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_ext : ¬ sys_C.internal l) where
+  μ_inter : PMF State_A
+  μ_inter' : PMF State_A
+  h_pre : weakTau sys_A μ_A μ_inter
+  h_hyper : hyperStep sys_A.toSystem μ_inter l μ_inter'
+  h_post : weakTau sys_A μ_inter' ((sim.stepWitness h_R h_step).bind id)
+
+/-- Extract the external-case decomposition from `stepWitness_weakStep`. -/
+private noncomputable def externalDecomp
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_ext : ¬ sys_C.internal l) :
+    ExternalDecomp sim h_R h_step h_ext :=
+  let h_step_w := sim.stepWitness_weakStep h_R h_step h_ext
+  { μ_inter := h_step_w.choose
+    μ_inter' := h_step_w.choose_spec.choose
+    h_pre := h_step_w.choose_spec.choose_spec.1
+    h_hyper := h_step_w.choose_spec.choose_spec.2.1
+    h_post := h_step_w.choose_spec.choose_spec.2.2 }
+
+/-- **σ_pre.run mass conservation (external case)**: `μ_A.bind σ_pre.run
+= μ_inter`. -/
+private lemma ExternalDecomp.σ_pre_run_eq
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {s_C : State_C} {μ_A : PMF State_A} {h_R : R s_C μ_A}
+    {l : Label} {μ_C : PMF State_C} {h_step : sys_C.step s_C l μ_C}
+    {h_ext : ¬ sys_C.internal l}
+    (decomp : ExternalDecomp sim h_R h_step h_ext) :
+    μ_A.bind decomp.h_pre.choose.run = decomp.μ_inter :=
+  decomp.h_pre.choose_spec
+
+/-- **σ_post.run mass conservation (external case)**: `μ_inter'.bind
+σ_post.run = ω.bind id`. -/
+private lemma ExternalDecomp.σ_post_run_eq
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {s_C : State_C} {μ_A : PMF State_A} {h_R : R s_C μ_A}
+    {l : Label} {μ_C : PMF State_C} {h_step : sys_C.step s_C l μ_C}
+    {h_ext : ¬ sys_C.internal l}
+    (decomp : ExternalDecomp sim h_R h_step h_ext) :
+    decomp.μ_inter'.bind decomp.h_post.choose.run =
+    (sim.stepWitness h_R h_step).bind id :=
+  decomp.h_post.choose_spec
+
+/-- **PMFRel γ extraction**: from `PMFRel R μ_C ω`, package the joint
+distribution `γ`, the two marginal equalities, and the `R`-support
+property. -/
+private structure PMFRelDecomp {α β : Type} (R : α → β → Prop)
+    (μ : PMF α) (ν : PMF β) where
+  γ : PMF (α × β)
+  h_fst : PMF.map Prod.fst γ = μ
+  h_snd : PMF.map Prod.snd γ = ν
+  h_R : ∀ p ∈ γ.support, R p.1 p.2
+
+/-- Extract `PMFRelDecomp` from a `PMFRel` witness. -/
+private noncomputable def PMFRel.decomp {α β : Type} {R : α → β → Prop}
+    {μ : PMF α} {ν : PMF β} (h : PMFRel R μ ν) :
+    PMFRelDecomp R μ ν :=
+  let h_spec := h.choose_spec
+  { γ := h.choose
+    h_fst := h_spec.1
+    h_snd := h_spec.2.1
+    h_R := h_spec.2.2 }
+
+/-- **D3 marginal extraction (α-side)**: γ's first marginal applied at `a`
+sums to μ(a). The standard "joint → marginal" identity made explicit. -/
+private lemma PMFRelDecomp.fst_apply_eq_tsum
+    {α β : Type} {R : α → β → Prop} {μ : PMF α} {ν : PMF β}
+    (decomp : PMFRelDecomp R μ ν) (a : α) :
+    μ a = ∑' b, decomp.γ (a, b) := by
+  classical
+  have h_μ : μ a = (PMF.map Prod.fst decomp.γ) a := by rw [decomp.h_fst]
+  rw [h_μ, PMF.map_apply, ENNReal.tsum_prod']
+  rw [show (∑' (a' : α) (b : β), (if a = a' then decomp.γ (a', b) else 0))
+        = (∑' (b : β) (a' : α), (if a = a' then decomp.γ (a', b) else 0))
+        from ENNReal.tsum_comm]
+  refine tsum_congr (fun b => ?_)
+  rw [tsum_eq_single a (fun a' h_ne => by
+    simp only [if_neg (Ne.symm h_ne)])]
+  simp
+
+/-- **D3 marginal extraction (β-side)**: γ's second marginal applied at `b`
+sums to ν(b). -/
+private lemma PMFRelDecomp.snd_apply_eq_tsum
+    {α β : Type} {R : α → β → Prop} {μ : PMF α} {ν : PMF β}
+    (decomp : PMFRelDecomp R μ ν) (b : β) :
+    ν b = ∑' a, decomp.γ (a, b) := by
+  classical
+  have h_ν : ν b = (PMF.map Prod.snd decomp.γ) b := by rw [decomp.h_snd]
+  rw [h_ν, PMF.map_apply, ENNReal.tsum_prod']
+  refine tsum_congr (fun a => ?_)
+  rw [tsum_eq_single b (fun b' h_ne => by
+    simp only [if_neg (Ne.symm h_ne)])]
+  simp
+
+/-- Total mass on `γ`'s support equals 1. (Trivial — γ is a PMF — but
+useful as a named handle.) -/
+private lemma PMFRelDecomp.γ_tsum_eq_one
+    {α β : Type} {R : α → β → Prop} {μ : PMF α} {ν : PMF β}
+    (decomp : PMFRelDecomp R μ ν) :
+    ∑' p, decomp.γ p = 1 :=
+  decomp.γ.tsum_coe
+
+/-- **D3 per-step mass marginal (concrete side)**: for each concrete
+sample `s_C'`, summing the joint γ-mass over all `(μ_A_next, s_A_final)`
+outcomes gives `μ_C(s_C')`. The mass-conservation version of γ's first
+marginal.
+
+(General: works for both internal and external `l_C`; the proof only
+needs `PMFRel γ`, not the internal/external classification — `ω =
+sim.stepWitness h_R h_step` is the same in both cases.) -/
+private lemma per_step_mass_marginal_concrete
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (s_C' : State_C) :
+    ∑' (s_A_final : State_A) (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) *
+      μ_A_next s_A_final
+    = μ_C s_C' := by
+  set decomp := PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step) with h_decomp_def
+  rw [ENNReal.tsum_comm]
+  rw [show (∑' (μ_A_next : PMF State_A) (s_A_final : State_A),
+          decomp.γ (s_C', μ_A_next) * μ_A_next s_A_final)
+        = ∑' μ_A_next : PMF State_A,
+            decomp.γ (s_C', μ_A_next) *
+            (∑' s_A_final : State_A, μ_A_next s_A_final) from by
+      refine tsum_congr (fun μ_A_next => ?_)
+      rw [ENNReal.tsum_mul_left]]
+  simp_rw [PMF.tsum_coe, mul_one]
+  exact (decomp.fst_apply_eq_tsum s_C').symm
+
+/-- **D3 per-step mass marginal (abstract side)**: for each abstract end
+state `s_A_final`, summing the joint γ-mass over all `(s_C', μ_A_next)`
+outcomes gives `(sim.stepWitness h_R h_step).bind id` at `s_A_final` —
+i.e., the abstract block's end-state mass.
+
+This is the dual of `per_step_mass_marginal_concrete` and captures γ's
+second marginal in mass-conservation form: the block's abstract end-state
+distribution is the sum over all concrete-side states of γ-mediated
+contributions.
+
+(General: works for both internal and external `l_C`. For internal, by
+`σ_internal_run_eq`, `(stepWitness).bind id = μ_A.bind σ_int.run`. For
+external, the same identity holds via the σ_pre + hyper + σ_post chain.) -/
+private lemma per_step_mass_marginal_abstract
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (s_A_final : State_A) :
+    ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) *
+      μ_A_next s_A_final
+    = ((sim.stepWitness h_R h_step).bind id) s_A_final := by
+  set decomp := PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step) with h_decomp_def
+  rw [ENNReal.tsum_comm]
+  -- ∑' μ_A_next, ∑' s_C', γ(s_C', μ_A_next) * μ_A_next(s_A_final)
+  rw [show (∑' (μ_A_next : PMF State_A) (s_C' : State_C),
+          decomp.γ (s_C', μ_A_next) * μ_A_next s_A_final)
+        = ∑' μ_A_next : PMF State_A,
+            (sim.stepWitness h_R h_step) μ_A_next * μ_A_next s_A_final from by
+      refine tsum_congr (fun μ_A_next => ?_)
+      rw [ENNReal.tsum_mul_right]
+      congr 1
+      exact (decomp.snd_apply_eq_tsum μ_A_next).symm]
+  -- ∑' μ_A_next, ω(μ_A_next) * μ_A_next(s_A_final) = (ω.bind id)(s_A_final).
+  rw [PMF.bind_apply]
+  rfl
+
+/-- **D3 per-step mass equation, external case**: identical to the internal
+case at the algebraic level since `ω = sim.stepWitness h_R h_step` is
+shared. The internal/external distinction only affects *how* the abstract
+block's mass is realized (σ_int.run vs σ_pre + hyper + σ_post), not its
+total mass at each `s_A_final`. -/
+private lemma per_step_mass_marginal_concrete_external
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (_h_ext : ¬ sys_C.internal l) (s_C' : State_C) :
+    ∑' (s_A_final : State_A) (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) *
+      μ_A_next s_A_final
+    = μ_C s_C' :=
+  per_step_mass_marginal_concrete sim h_R h_step s_C'
+
+/-- **External-case chain equality**: the composed PMF.bind chain
+`σ_pre.run → hyperStep.kernel-flattened → σ_post.run` starting from `μ_A`
+equals `(sim.stepWitness h_R h_step).bind id` — the abstract block's
+end-state distribution.
+
+This is the external-case analogue of `σ_internal_run_eq`. The three
+intermediate equalities — pretau, hyperStep, posttau — compose:
+* `μ_A.bind σ_pre.run = μ_inter` (`σ_pre_run_eq`),
+* `μ_inter.bind (fun s => (h_hyper.kernel s).bind id) = μ_inter'`
+  (`hyperStep.post_eq_bind` rearranged),
+* `μ_inter'.bind σ_post.run = ω.bind id` (`σ_post_run_eq`). -/
+private lemma ExternalDecomp.chain_eq_stepWitness_bind
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {s_C : State_C} {μ_A : PMF State_A} {h_R : R s_C μ_A}
+    {l : Label} {μ_C : PMF State_C} {h_step : sys_C.step s_C l μ_C}
+    {h_ext : ¬ sys_C.internal l}
+    (decomp : ExternalDecomp sim h_R h_step h_ext) :
+    ((μ_A.bind decomp.h_pre.choose.run).bind
+        (fun s => (decomp.h_hyper.kernel s).bind id)).bind
+      decomp.h_post.choose.run
+    = (sim.stepWitness h_R h_step).bind id := by
+  rw [decomp.σ_pre_run_eq]
+  rw [← decomp.h_hyper.post_eq_bind]
+  exact decomp.σ_post_run_eq
+
 /-- **Matching-state-indexed trace coupling**: the canonical form of the
 Segala coupling. Given a matching state `m` paired with an abstract
 prefix `history_A` (via `fromAbstractPrefix`), the trace probability of
