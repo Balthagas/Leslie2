@@ -1639,6 +1639,17 @@ structure MatchingState (sim : ProbabilisticForwardSimulation sys_C sys_A R)
   cleared by `extendOnCompletion`. Read by `computeNext`'s
   `externalEmit` case to emit `(witness.l, witness.kernel m.cas)`. -/
   hyper_witness : Option (HyperWitness sys_A)
+  /-- The abstract prefix `σ.next` is queried on by `computeNext` in
+  mid-tau stages. Reset to `⟨current_abstract_state, Seq.nil⟩` whenever
+  a fresh `σ` is installed (in `setupNextTransition` and at the
+  `externalEmit → postExternal` transition); extended by `(l_A, s_A')`
+  on within-stage `advance`. Maintaining `σ_query_prefix.trans.length`
+  in sync with the `stage`'s `k` counter lets the `stops` constraint
+  fire, providing termination for mid-tau recursion. -/
+  σ_query_prefix : AlterSeq State_A Label
+  /-- Termination proof for `σ_query_prefix.trans` — always finite since
+  the prefix is built by finite extensions from `Seq.nil`. -/
+  σ_query_prefix_term : σ_query_prefix.trans.Terminates
 
 namespace MatchingState
 
@@ -1741,11 +1752,11 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
     -- Mid-tau cases (tauInternal/preExternal/postExternal): bridge
     -- `WeakScheduler.next : AlterSeq → PMF (Option (l, μ))` to our
     -- `Scheduler.next : AlterSeq → Option (PMF (l, μ))` via
-    -- `MatchingState.liftOption`. The query state is
-    -- `m.current_abstract_state` (the actual abstract state at this
-    -- prefix), so `σ.valid` directly gives validity for the emission.
-    MatchingState.liftOption
-      (σ.next ⟨m.current_abstract_state, Seq.nil⟩)
+    -- `MatchingState.liftOption`. Query on `m.σ_query_prefix`, which
+    -- accumulates the prior mid-tau emissions; when its length reaches
+    -- `σ.runtime`, `σ`'s `stops` constraint forces `pure none`, ensuring
+    -- the recursion bottoms out without an unbounded chain of advances.
+    MatchingState.liftOption (σ.next m.σ_query_prefix)
 
 /-- Helper used by `advance`: on weak-transition completion, install
 the next weak transition based on `pe_C.scheduler.next m.e_C`.
@@ -1800,7 +1811,9 @@ noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
       { m with
         weak_sched := some σ
         next_step := some ⟨l_C, s_C', μ_A_next, h_R_next⟩
-        stage := WeakStage.tauInternal 0 }
+        stage := WeakStage.tauInternal 0
+        σ_query_prefix := ⟨m.current_abstract_state, Seq.nil⟩
+        σ_query_prefix_term := Stream'.Seq.terminates_nil }
     else
       let h_step_w : weakStep sys_A m.μ_A_current l_C (ω.bind id) :=
         sim.stepWitness_weakStep m.h_R h_step h_int
@@ -1823,7 +1836,9 @@ noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
           { μ_pre := μ_inter
             l := l_C
             kernel := h_hyper.kernel
-            valid := h_hyper.kernel_step } }
+            valid := h_hyper.kernel_step }
+        σ_query_prefix := ⟨m.current_abstract_state, Seq.nil⟩
+        σ_query_prefix_term := Stream'.Seq.terminates_nil }
 
 /-- Helper used by `advance`: on weak-transition completion, extend
 `e_C` by `next_step` if present, then call `setupNextTransition` to
@@ -1846,7 +1861,9 @@ noncomputable def extendOnCompletion (m : MatchingState sim pe_C) :
         post_weak_sched := none
         stage := WeakStage.tauInternal 0
         current_abstract_state := m.current_abstract_state
-        hyper_witness := none }
+        hyper_witness := none
+        σ_query_prefix := ⟨m.current_abstract_state, Seq.nil⟩
+        σ_query_prefix_term := Stream'.Seq.terminates_nil }
   setupNextTransition extended
 
 /-- Advance the matching state after the abstract scheduler emitted a step
@@ -1866,32 +1883,55 @@ Remaining semantic gap: `μ_A_current` / `h_R` are held constant rather
 than evolving with each stage transition; closing this requires
 threading `σ.runFromState`-derived distributions. -/
 noncomputable def advance (m : MatchingState sim pe_C)
-    (_l_A : Label) (s_A' : State_A) :
+    (l_A : Label) (s_A' : State_A) :
     MatchingState sim pe_C :=
   let m' := { m with current_abstract_state := s_A' }
+  -- The extended σ_query_prefix for within-stage advances: append (l_A, s_A').
+  let extended_prefix : AlterSeq State_A Label :=
+    ⟨m.σ_query_prefix.init,
+      m.σ_query_prefix.trans.append (Seq.cons (l_A, s_A') Seq.nil)⟩
+  let extended_prefix_term : extended_prefix.trans.Terminates :=
+    ⟨Nat.find m.σ_query_prefix_term + 1,
+      Stream'.Seq.terminatedAt_append_find m.σ_query_prefix_term
+        (show (Seq.cons (l_A, s_A') Seq.nil).TerminatedAt 1 from rfl)⟩
   match m'.weak_sched with
   | none => m'
   | some σ =>
     match m'.stage with
     | WeakStage.tauInternal k =>
       if k + 1 < σ.runtime then
-        { m' with stage := WeakStage.tauInternal (k + 1) }
+        { m' with
+          stage := WeakStage.tauInternal (k + 1)
+          σ_query_prefix := extended_prefix
+          σ_query_prefix_term := extended_prefix_term }
       else
         m'.extendOnCompletion
     | WeakStage.preExternal k =>
       if k + 1 < σ.runtime then
-        { m' with stage := WeakStage.preExternal (k + 1) }
+        { m' with
+          stage := WeakStage.preExternal (k + 1)
+          σ_query_prefix := extended_prefix
+          σ_query_prefix_term := extended_prefix_term }
       else
-        { m' with stage := WeakStage.externalEmit }
+        { m' with
+          stage := WeakStage.externalEmit
+          σ_query_prefix := extended_prefix
+          σ_query_prefix_term := extended_prefix_term }
     | WeakStage.externalEmit =>
-      -- Transition from external-emit to the post-tau: swap weak_sched.
+      -- Transition from external-emit to the post-tau: swap weak_sched
+      -- and reset σ_query_prefix for σ_post.
       { m' with
         weak_sched := m'.post_weak_sched
         post_weak_sched := none
-        stage := WeakStage.postExternal 0 }
+        stage := WeakStage.postExternal 0
+        σ_query_prefix := ⟨s_A', Seq.nil⟩
+        σ_query_prefix_term := Stream'.Seq.terminates_nil }
     | WeakStage.postExternal k =>
       if k + 1 < σ.runtime then
-        { m' with stage := WeakStage.postExternal (k + 1) }
+        { m' with
+          stage := WeakStage.postExternal (k + 1)
+          σ_query_prefix := extended_prefix
+          σ_query_prefix_term := extended_prefix_term }
       else
         m'.extendOnCompletion
 
@@ -2015,7 +2055,9 @@ noncomputable def MatchingState.initial
         post_weak_sched := none
         stage := WeakStage.tauInternal 0
         current_abstract_state := s_A
-        hyper_witness := none }
+        hyper_witness := none
+        σ_query_prefix := ⟨s_A, Seq.nil⟩
+        σ_query_prefix_term := Stream'.Seq.terminates_nil }
     some base.setupNextTransition
   else
     none
@@ -2161,7 +2203,9 @@ private lemma fromAbstractPrefix_current_abstract_state
                 post_weak_sched := none,
                 stage := WeakStage.tauInternal 0,
                 current_abstract_state := e_A.init,
-                hyper_witness := none } :
+                hyper_witness := none,
+                σ_query_prefix := ⟨e_A.init, Seq.nil⟩,
+                σ_query_prefix_term := Stream'.Seq.terminates_nil } :
               MatchingState sim pe_C).setupNextTransition :=
           (Option.some.inj h_init).symm
         rw [h_m₀_eq, MatchingState.setupNextTransition_current_abstract_state]
@@ -2572,6 +2616,318 @@ private lemma MatchingState.weak_sched_some_of_pe_C_step
     cases this
   · exact ⟨σ, rfl⟩
 
+/-- The HyperWitness invariant: at `preExternal k` and `externalEmit` stages,
+`hyper_witness` is non-`none`. Mirrors `PostInv` but tracks `hyper_witness`
+instead of `post_weak_sched`; established by `setupNextTransition`'s
+external branch, preserved by `advance` through preExternal → externalEmit. -/
+private def MatchingState.HyperWitnessInv
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) : Prop :=
+  (m.stage = WeakStage.externalEmit ∨ ∃ k, m.stage = WeakStage.preExternal k) →
+    m.hyper_witness ≠ none
+
+/-- `setupNextTransition` establishes `HyperWitnessInv` when the input has
+`stage = tauInternal 0` (the canonical state entering `setupNextTransition`). -/
+private lemma MatchingState.setupNextTransition_hyperWitnessInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C)
+    (h_st : m.stage = WeakStage.tauInternal 0) :
+    m.setupNextTransition.HyperWitnessInv := by
+  classical
+  unfold MatchingState.setupNextTransition
+  split
+  · -- pe_C.next = none → unchanged.
+    intro h_stage
+    rw [h_st] at h_stage
+    rcases h_stage with h | ⟨k, h⟩ <;> cases h
+  · rename_i d h_d
+    dsimp only
+    split_ifs with h_int
+    · -- Internal: stage = tauInternal 0.
+      intro h_stage
+      rcases h_stage with h | ⟨k, h⟩ <;> cases h
+    · -- External: stage = preExternal 0, hyper_witness = some _.
+      intro _ h
+      have h' : (some _ : Option _) = none := h; cases h'
+
+/-- `extendOnCompletion` establishes `HyperWitnessInv`. -/
+private lemma MatchingState.extendOnCompletion_hyperWitnessInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) :
+    m.extendOnCompletion.HyperWitnessInv := by
+  unfold MatchingState.extendOnCompletion
+  refine MatchingState.setupNextTransition_hyperWitnessInv _ ?_
+  cases m.next_step with
+  | none => rfl
+  | some _ => rfl
+
+/-- `advance` preserves `HyperWitnessInv`. -/
+private lemma MatchingState.advance_hyperWitnessInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (h_inv : m.HyperWitnessInv)
+    (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').HyperWitnessInv := by
+  classical
+  unfold MatchingState.advance
+  dsimp only
+  split
+  · -- weak_sched = none: result has stage = m.stage. Invariant transfers.
+    intro h_stage
+    change m.hyper_witness ≠ none
+    exact h_inv h_stage
+  rename_i σ h_ws_some
+  split
+  · -- tauInternal k: result stage either tauInternal (k+1) or extendOnCompletion's.
+    rename_i k _
+    split_ifs with h_k
+    · -- Within-stage: stage = tauInternal (k+1). Vacuous.
+      intro h_stage
+      rcases h_stage with h | ⟨k', h⟩ <;> cases h
+    · exact MatchingState.extendOnCompletion_hyperWitnessInv _
+  · -- preExternal k.
+    rename_i k h_st_eq
+    split_ifs with h_k
+    · -- Within-stage: stage = preExternal (k+1). hyper_witness preserved.
+      intro _
+      change m.hyper_witness ≠ none
+      exact h_inv (Or.inr ⟨k, h_st_eq⟩)
+    · -- Transition to externalEmit: stage = externalEmit. hyper_witness preserved.
+      intro _
+      change m.hyper_witness ≠ none
+      exact h_inv (Or.inr ⟨k, h_st_eq⟩)
+  · -- externalEmit: result stage = postExternal 0. Vacuous.
+    intro h_stage
+    rcases h_stage with h | ⟨k', h⟩ <;> cases h
+  · -- postExternal k.
+    rename_i k _
+    split_ifs with h_k
+    · -- Within-stage: stage = postExternal (k+1). Vacuous.
+      intro h_stage
+      rcases h_stage with h | ⟨k', h⟩ <;> cases h
+    · exact MatchingState.extendOnCompletion_hyperWitnessInv _
+
+/-- `HyperWitnessInv` is preserved by `foldl advance`. -/
+private lemma MatchingState.foldl_advance_hyperWitnessInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (xs : List (Label × State_A)) (m₀ : MatchingState sim pe_C)
+    (h_inv : m₀.HyperWitnessInv) :
+    (xs.foldl (fun m p => MatchingState.advance m p.1 p.2) m₀).HyperWitnessInv := by
+  induction xs generalizing m₀ with
+  | nil => exact h_inv
+  | cons head tail ih =>
+    change (tail.foldl _ (MatchingState.advance m₀ head.1 head.2)).HyperWitnessInv
+    exact ih _ (MatchingState.advance_hyperWitnessInv m₀ h_inv head.1 head.2)
+
+/-- The matching state returned by `fromAbstractPrefix` satisfies `HyperWitnessInv`. -/
+private lemma fromAbstractPrefix_hyperWitnessInv
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (e_A : AlterSeq State_A Label)
+    {m : MatchingState sim pe_C}
+    (h : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = some m) :
+    m.HyperWitnessInv := by
+  classical
+  unfold MatchingState.fromAbstractPrefix at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i m₀ h_init
+    have h_m₀_inv : m₀.HyperWitnessInv := by
+      unfold MatchingState.initial at h_init
+      split at h_init
+      · rename_i h_s_A_in
+        have h_eq : m₀ = _ := (Option.some.inj h_init).symm
+        rw [h_eq]
+        exact MatchingState.setupNextTransition_hyperWitnessInv _ rfl
+      · exact absurd h_init (by simp)
+    split at h
+    · have h_m_eq : m = _ := (Option.some.inj h).symm
+      rw [h_m_eq]
+      exact MatchingState.foldl_advance_hyperWitnessInv _ m₀ h_m₀_inv
+    · have h_m_eq : m = m₀ := (Option.some.inj h).symm
+      rw [h_m_eq]; exact h_m₀_inv
+
+/-- The σ-query-prefix invariant: whenever the matching state has an
+active weak scheduler, the `σ_query_prefix`'s `endState` matches
+`current_abstract_state`. This is exactly the bridge needed for
+`σ.valid`'s `stateAt n = some s` hypothesis to produce a step about
+`m.current_abstract_state` rather than the prefix's endState. -/
+private def MatchingState.EndStateInv
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) : Prop :=
+  m.weak_sched ≠ none →
+    m.σ_query_prefix.endState m.σ_query_prefix_term = m.current_abstract_state
+
+/-- `setupNextTransition` preserves `EndStateInv`: the `pe_C.next = none`
+branch is the identity; the `some d` branches set `σ_query_prefix` to
+`⟨current_abstract_state, Seq.nil⟩`, whose `endState` is trivially
+`current_abstract_state`. -/
+private lemma MatchingState.setupNextTransition_endStateInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (h_inv : m.EndStateInv) :
+    m.setupNextTransition.EndStateInv := by
+  classical
+  unfold MatchingState.setupNextTransition
+  split
+  · -- pe_C.next = none → output = m.
+    exact h_inv
+  · rename_i d h_d
+    dsimp only
+    split_ifs with h_int
+    · -- Internal: output has σ_query_prefix = ⟨cas, Seq.nil⟩, cas unchanged.
+      intro _
+      change ((⟨m.current_abstract_state, Seq.nil⟩ : AlterSeq State_A Label).endState
+          Stream'.Seq.terminates_nil) = m.current_abstract_state
+      -- endState ⟨s, Seq.nil⟩ = s.
+      have h_eq := AlterSeq.stateAt_find_eq_endState
+        (⟨m.current_abstract_state, Seq.nil⟩ : AlterSeq State_A Label)
+        Stream'.Seq.terminates_nil
+      have h_find : Nat.find (Stream'.Seq.terminates_nil :
+          (Seq.nil : Seq (Label × State_A)).Terminates) = 0 := by
+        apply Nat.find_eq_zero _ |>.mpr; rfl
+      rw [h_find] at h_eq
+      exact (Option.some.inj h_eq).symm
+    · -- External: same shape.
+      intro _
+      change ((⟨m.current_abstract_state, Seq.nil⟩ : AlterSeq State_A Label).endState
+          Stream'.Seq.terminates_nil) = m.current_abstract_state
+      have h_eq := AlterSeq.stateAt_find_eq_endState
+        (⟨m.current_abstract_state, Seq.nil⟩ : AlterSeq State_A Label)
+        Stream'.Seq.terminates_nil
+      have h_find : Nat.find (Stream'.Seq.terminates_nil :
+          (Seq.nil : Seq (Label × State_A)).Terminates) = 0 := by
+        apply Nat.find_eq_zero _ |>.mpr; rfl
+      rw [h_find] at h_eq
+      exact (Option.some.inj h_eq).symm
+
+/-- `extendOnCompletion` establishes `EndStateInv`: the intermediate
+state has `weak_sched = none` (invariant vacuous), and
+`setupNextTransition` preserves it. -/
+private lemma MatchingState.extendOnCompletion_endStateInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) :
+    m.extendOnCompletion.EndStateInv := by
+  unfold MatchingState.extendOnCompletion
+  refine MatchingState.setupNextTransition_endStateInv _ ?_
+  -- Intermediate state has weak_sched = none.
+  cases m.next_step with
+  | none => intro h; exact absurd rfl h
+  | some _ => intro h; exact absurd rfl h
+
+/-- `advance` preserves `EndStateInv` unconditionally (in all the active
+weak_sched cases, the post-advance state's `σ_query_prefix.endState`
+equals the new `current_abstract_state` by construction). -/
+private lemma MatchingState.advance_endStateInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (_h_inv : m.EndStateInv)
+    (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').EndStateInv := by
+  classical
+  unfold MatchingState.advance
+  dsimp only
+  split
+  · -- weak_sched = none: output preserves m.weak_sched = none.
+    rename_i _ h_ws_none
+    intro h_ne
+    -- m'.weak_sched = m.weak_sched = none, contradicting h_ne.
+    exact absurd h_ws_none h_ne
+  rename_i σ h_ws_some
+  -- For within-stage and externalEmit non-completion: σ_query_prefix.endState
+  -- needs to equal s_A' (the new cas). Use `endState_append_singleton`.
+  have h_extended_endState :
+      (⟨m.σ_query_prefix.init,
+          m.σ_query_prefix.trans.append (Seq.cons (l_A, s_A') Seq.nil)⟩ :
+          AlterSeq State_A Label).endState
+        ⟨Nat.find m.σ_query_prefix_term + 1,
+          Stream'.Seq.terminatedAt_append_find m.σ_query_prefix_term
+            (show (Seq.cons (l_A, s_A') Seq.nil).TerminatedAt 1 from rfl)⟩ = s_A' :=
+    AlterSeq.endState_append_singleton m.σ_query_prefix m.σ_query_prefix_term l_A s_A'
+  split
+  · -- tauInternal k
+    split_ifs with h_k
+    · intro _; exact h_extended_endState
+    · exact MatchingState.extendOnCompletion_endStateInv
+        ({ m with current_abstract_state := s_A' } : MatchingState sim pe_C)
+  · -- preExternal k
+    split_ifs with h_k
+    · intro _; exact h_extended_endState
+    · intro _; exact h_extended_endState
+  · -- externalEmit: output σ_query_prefix = ⟨s_A', Seq.nil⟩, cas = s_A'.
+    intro _
+    change ((⟨s_A', Seq.nil⟩ : AlterSeq State_A Label).endState
+        Stream'.Seq.terminates_nil) = s_A'
+    have h_eq := AlterSeq.stateAt_find_eq_endState
+      (⟨s_A', Seq.nil⟩ : AlterSeq State_A Label) Stream'.Seq.terminates_nil
+    have h_find : Nat.find (Stream'.Seq.terminates_nil :
+        (Seq.nil : Seq (Label × State_A)).Terminates) = 0 := by
+      apply Nat.find_eq_zero _ |>.mpr; rfl
+    rw [h_find] at h_eq
+    exact (Option.some.inj h_eq).symm
+  · -- postExternal k
+    split_ifs with h_k
+    · intro _; exact h_extended_endState
+    · exact MatchingState.extendOnCompletion_endStateInv
+        ({ m with current_abstract_state := s_A' } : MatchingState sim pe_C)
+
+/-- `EndStateInv` is preserved by `foldl advance`. -/
+private lemma MatchingState.foldl_advance_endStateInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (xs : List (Label × State_A)) (m₀ : MatchingState sim pe_C)
+    (h_inv : m₀.EndStateInv) :
+    (xs.foldl (fun m p => MatchingState.advance m p.1 p.2) m₀).EndStateInv := by
+  induction xs generalizing m₀ with
+  | nil => exact h_inv
+  | cons head tail ih =>
+    change (tail.foldl _ (MatchingState.advance m₀ head.1 head.2)).EndStateInv
+    exact ih _ (MatchingState.advance_endStateInv m₀ h_inv head.1 head.2)
+
+/-- The matching state returned by `fromAbstractPrefix` satisfies `EndStateInv`. -/
+private lemma fromAbstractPrefix_endStateInv
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (e_A : AlterSeq State_A Label)
+    {m : MatchingState sim pe_C}
+    (h : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = some m) :
+    m.EndStateInv := by
+  classical
+  unfold MatchingState.fromAbstractPrefix at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i m₀ h_init
+    have h_m₀_inv : m₀.EndStateInv := by
+      unfold MatchingState.initial at h_init
+      split at h_init
+      · rename_i h_s_A_in
+        have h_eq : m₀ = _ := (Option.some.inj h_init).symm
+        rw [h_eq]
+        refine MatchingState.setupNextTransition_endStateInv _ ?_
+        -- base has weak_sched = none; invariant vacuously holds.
+        intro h; exact absurd rfl h
+      · exact absurd h_init (by simp)
+    split at h
+    · have h_m_eq : m = _ := (Option.some.inj h).symm
+      rw [h_m_eq]
+      exact MatchingState.foldl_advance_endStateInv _ m₀ h_m₀_inv
+    · have h_m_eq : m = m₀ := (Option.some.inj h).symm
+      rw [h_m_eq]; exact h_m₀_inv
+
 /-- **Per-step concrete validity**: at a matching state `m`, when
 `pe_C.scheduler.next m.e_C = some d` and `(l_C, μ_C) ∈ d.support`, the
 concrete step `sys_C.step (e_C.endState) l_C μ_C` is valid (via
@@ -2789,7 +3145,7 @@ private lemma fromAbstractPrefix_advance_consistency
 
 /-- `computeNext` at a "mid-tau" stage (tauInternal, preExternal, or
 postExternal — anything except externalEmit) reduces to
-`liftOption (σ.next ⟨m.current_abstract_state, Seq.nil⟩)`. -/
+`liftOption (σ.next m.σ_query_prefix)`. -/
 private lemma MatchingState.computeNext_mid_tau
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -2797,7 +3153,7 @@ private lemma MatchingState.computeNext_mid_tau
     (h_ws : m.weak_sched = some σ)
     (h_st_ne : m.stage ≠ WeakStage.externalEmit) :
     MatchingState.computeNext m =
-    MatchingState.liftOption (σ.next ⟨m.current_abstract_state, Seq.nil⟩) := by
+    MatchingState.liftOption (σ.next m.σ_query_prefix) := by
   unfold MatchingState.computeNext
   rw [h_ws]
   cases h_st : m.stage with
@@ -3085,6 +3441,76 @@ private lemma kernel_contA_eq_traceProb_from_state
     rw [h, Stream'.Seq.nil_append]
   simp_rw [h_kernel_eq]
 
+/-! ## Architecture D plan: bijection / mass redistribution proof
+
+The original per-step recursive proof (`traceProb_first_step` + recurse on
+`τ'` or advanced matching state) is **blocked by two structural issues**:
+
+* `extendOnCompletion` installs fresh `σ'` via `Classical.choose` from
+  `stepWitness_weakTau`/`weakStep`; `σ'.runtime` has no a-priori bound, so
+  no syntactic lex measure on the matching state strictly decreases at
+  completions.
+* The σ-emits-none sub-cases are not separable from σ-some sub-cases at
+  the local level — `cont_C` depends on pe_C's own structure independent
+  of σ, so "kernel_A = 0 ⟹ LHS = 0" doesn't follow locally.
+
+Both issues dissolve at a coarser granularity: prove trace coupling by
+**directly manipulating `traceProb`'s defining tsum**, with the
+correspondence between concrete and abstract executions running at the
+*pe_C concrete-step* level (one weak transition block per pe_C step).
+
+### Proof outline
+
+1. **Unfold both sides as sums** over finite tight executions:
+   * `traceProb_C = ∑' e_C : {e // e.trans.Terminates ∧ trace e = τ ∧ IsTight e},
+     pe_C.probOf e`
+   * `traceProb_A = ∑' e_A : {e // …}, pe_A.probOf e_A`
+
+2. **Block-decompose abstract executions**. Each tight finite `e_A` from
+   `history_A` decomposes uniquely into a sequence of *weak-transition
+   blocks*. Each block corresponds to one pe_C step `(l_C, s_C') ∈ d.support`:
+   * Internal `l_C`: block = σ_pre's `runtime` mid-tau emissions.
+   * External `l_C`: block = σ_pre's emissions + externalEmit + σ_post's
+     emissions.
+
+3. **Mass conservation per block.** For each pe_C step `(l_C, μ_C, s_C')`
+   with concrete mass `d(l_C, μ_C) * μ_C(s_C')`, the corresponding block's
+   abstract mass equals the concrete mass — via:
+   * `PMFRel γ` (between `d` and `sim.stepWitness`) coupling the per-step
+     choice.
+   * `μ_A_current.bind σ_pre.run = μ_inter` (mass conservation through σ_pre).
+   * `hyperStep.kernel`'s total mass = 1.
+   * `μ_inter'.bind σ_post.run = ω.bind id` (mass conservation through σ_post).
+
+4. **Bijection at the tsum level.** The set `{e_A : tight from history_A,
+   trace = τ}` is the image of `{(e_C, σ-draws)} = {e_C : tight from m.e_C,
+   trace = τ} × σ-block-draws`. Rewriting `∑' e_A pe_A.probOf e_A` via this
+   reindexing factors into `∑' e_C pe_C.probOf e_C`.
+
+### Required infrastructure
+
+* **D1**: Characterize `pe_A.probOf e_A` as a product over `e_A`'s steps,
+  with each factor expressed as a matching-state kernel mass. (Mostly
+  unfolding `probOf` + `probOfRemaining`.)
+* **D2**: Define "block boundaries" within `e_A` — positions where
+  `extendOnCompletion` fires. Each block is between two consecutive
+  boundaries.
+* **D3**: For each block in `e_A`, prove its total mass equals the
+  corresponding pe_C step's mass. (Uses PMFRel γ + σ.run mass conservation
+  + hyperStep.kernel mass.)
+* **D4**: Reindex `∑' e_A pe_A.probOf` via the block decomposition, factor
+  out σ-draw masses, sum-conserve them, and conclude `= ∑' e_C pe_C.probOf`.
+
+Each piece is ~100-200 lines. Total scope: 500-800 lines. Existing
+infrastructure (`StrongInv`, `HyperWitnessInv`, `EndStateInv`,
+`fromAbstractPrefix_advance_consistency`, `step_of_pe_C_step`,
+`pmfRel_at_step`, computeNext shape lemmas) remains useful for D3.
+
+The existing Case 2(b) per-step decomposition (`tauInternal` / `preExternal`
+/ `externalEmit` / `postExternal` sub-cases with `σ.next some/none` splits)
+will be **superseded and replaced** once the D-style proof is in place;
+the 8 deferred sub-sorries will collapse to invocations of D1-D4. -/
+
 /-- **Matching-state-indexed trace coupling**: the canonical form of the
 Segala coupling. Given a matching state `m` paired with an abstract
 prefix `history_A` (via `fromAbstractPrefix`), the trace probability of
@@ -3095,12 +3521,12 @@ This formulation captures the matching-state invariant directly,
 avoiding the "anchored to initial state" issue of formulations using
 arbitrary `(s_C, μ_A)` pairs.
 
-**Proof by induction on `τ`** (with well-founded recursion on
-`(τ.length, σ.runtime)` for the cons case to handle tau-padding):
+**Proof**: Architecture D (bijection / mass redistribution) — see the
+section comment above. Cases:
 * `nil`: both traceProbs are 1.
-* `cons l τ'`: apply `traceProb_first_step`; the kernels match via
-  `sim.stepWitness_pmfRel` chained through `m`'s structure; continuation
-  recurses with the new matching state from `advance`/`extendOnCompletion`. -/
+* `cons l τ'`: currently proven via the per-step decomposition
+  (with 8 sub-sorries to be replaced by D1-D4 once that infrastructure
+  is in place). -/
 private theorem trace_coupling_at_matching_state
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
@@ -3366,31 +3792,195 @@ private theorem trace_coupling_at_matching_state
       -- a well-founded recursion is deferred to a follow-up session.
       -- ------------------------------------------------------------
       rcases h_st : m.stage with k_st | k_st | _ | k_st
-      · -- m.stage = tauInternal k_st. Mid-tau case.
-        have h_compute := MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
-          (h_st ▸ (fun h => WeakStage.noConfusion h))
-        -- `computeNext m = liftOption (σ.next ⟨m.current_abstract_state, Seq.nil⟩)`.
-        -- Per-step coupling: σ emits abstract internal steps; the concrete
-        -- side via `d.bind` emits `(l_C, μ_C)` with PMFRel relation; the
-        -- continuations advance through `tauInternal (k_st + 1)` (within-stage)
-        -- or `extendOnCompletion` (at completion). Recursion on continuation.
-        sorry
-      · -- m.stage = preExternal k_st. Mid-tau case.
-        have h_compute := MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
-          (h_st ▸ (fun h => WeakStage.noConfusion h))
-        -- σ here is the pre-tau scheduler from `weakStep`. Continuations
-        -- advance through `preExternal (k_st + 1)` or transition to `externalEmit`.
-        sorry
-      · -- m.stage = externalEmit. Uses `m.hyper_witness`.
-        -- Sub-case on whether hyper_witness is present and cas ∈ μ_pre.support.
-        -- (The matching state coming from `setupNextTransition` external
-        -- always has hyper_witness = some _; sub-sorries here mirror that.)
-        sorry
-      · -- m.stage = postExternal k_st. Mid-tau case.
-        have h_compute := MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
-          (h_st ▸ (fun h => WeakStage.noConfusion h))
-        -- σ here is the post-tau scheduler. At completion: `extendOnCompletion`.
-        sorry
+      · -- ====================================================
+        -- m.stage = tauInternal k_st. Mid-tau internal case.
+        -- ====================================================
+        have h_compute : MatchingState.computeNext m =
+            MatchingState.liftOption (σ.next m.σ_query_prefix) :=
+          MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
+            (h_st ▸ (fun h => WeakStage.noConfusion h))
+        -- Plug `h_compute` into `h_kernel_A_form`: the abstract kernel is
+        -- determined by `liftOption (σ.next σ_query_prefix)`.
+        have h_kernel_A_form' : ∀ (l : Label) (s : State_A),
+            pe_A.kernel (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) =
+            (MatchingState.liftOption (σ.next m.σ_query_prefix)).elim 0
+              (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) (l, s)) := by
+          intro l s
+          rw [h_kernel_A_form l s, h_compute]
+        classical
+        -- Case-split on whether `σ.next` has any `some` emission.
+        by_cases h_some : ∃ a, some a ∈ (σ.next m.σ_query_prefix).support
+        · -- ---- σ emits a "some" step. ----
+          -- `liftOption` returns `some (PMF.pure h_some.choose)`. The abstract
+          -- kernel concentrates all mass on `(h_some.choose.1, h_some.choose.2 s)`.
+          -- The recursive continuation: pe_A advances to a new matching state
+          -- `m' = m.advance h_some.choose.1 h_some.choose.2.choose` (the sampled state).
+          -- `m'.stage = tauInternal (k_st + 1)` (within-stage), `m'.σ_query_prefix`
+          -- extends by `(h_some.choose.1, …)`. By `tauProgress_lt_of_advance_tauInternal`,
+          -- `m'.tauProgress < m.tauProgress`, so the lex measure decreases — this is
+          -- where the recursive call would land. Closing it requires the recursive
+          -- invocation, which is structurally available once `termination_by` is set up.
+          sorry
+        · -- ---- σ emits only `none`. ----
+          -- `liftOption` returns `none`. Abstract kernel = 0 everywhere → RHS = 0.
+          --
+          -- **Attempt-to-close finding**: this is NOT locally closable. For LHS = 0
+          -- we'd need every term `pe_C.kernel m.e_C (l_first, s_first) * cont_C` to
+          -- vanish. But pe_C.kernel is generally non-zero (since pe_C.next = some d),
+          -- and `cont_C` is `(consumeLabel l_first τ).elim 0 (fun τ'' => traceProb
+          -- (continuationFrom …) τ'')`. For internal `l_first` or external `l_first
+          -- = l₀`, `consumeLabel` returns `some τ''`, so cont_C reduces to a
+          -- concrete `traceProb` that depends on pe_C's *own structure independent
+          -- of σ*. Nothing in the local hypotheses constrains pe_C's downstream
+          -- behavior, so we cannot conclude `cont_C = 0` from `σ emits only none`.
+          --
+          -- This case isn't a separable base case — it's intertwined with the full
+          -- recursive coupling. Either the proof must traverse both σ-some and σ-none
+          -- branches together (not separately), or σ-none must be ruled out via a
+          -- stronger invariant on which `σ ∈ stepWitness_weakTau`'s choices are
+          -- admissible (no such invariant currently exists).
+          have h_liftOpt_none : MatchingState.liftOption (σ.next m.σ_query_prefix) = none := by
+            unfold MatchingState.liftOption
+            rw [dif_neg h_some]
+          have h_kernel_A_zero : ∀ (l : Label) (s : State_A),
+              pe_A.kernel
+                (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) = 0 := by
+            intro l s; rw [h_kernel_A_form' l s, h_liftOpt_none]; rfl
+          sorry
+      · -- ====================================================
+        -- m.stage = preExternal k_st. Mid-tau case.
+        -- σ here is the pre-tau scheduler from `weakStep`; continuations
+        -- either advance to `preExternal (k_st + 1)` (within-stage) or
+        -- transition to `externalEmit` (completion).
+        -- ====================================================
+        have h_compute : MatchingState.computeNext m =
+            MatchingState.liftOption (σ.next m.σ_query_prefix) :=
+          MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
+            (h_st ▸ (fun h => WeakStage.noConfusion h))
+        have h_kernel_A_form' : ∀ (l : Label) (s : State_A),
+            pe_A.kernel (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) =
+            (MatchingState.liftOption (σ.next m.σ_query_prefix)).elim 0
+              (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) (l, s)) := by
+          intro l s
+          rw [h_kernel_A_form l s, h_compute]
+        classical
+        by_cases h_some : ∃ a, some a ∈ (σ.next m.σ_query_prefix).support
+        · -- ---- σ_pre emits a "some" step. ----
+          -- `liftOption` returns `some (PMF.pure h_some.choose)`. Advance lands at
+          -- either `preExternal (k_st + 1)` (within-stage; `tauProgress` decreases
+          -- by `tauProgress_lt_of_advance_preExternal`) or `externalEmit`
+          -- (transition; `tauProgress` drops to 0 by
+          -- `tauProgress_lt_of_advance_preExternal_to_externalEmit`). Both decrease
+          -- the lex measure; the recursive call lands consistently.
+          sorry
+        · -- ---- σ_pre emits only `none`. ----
+          -- `liftOption` returns `none`; abstract kernel = 0 → RHS = 0.
+          -- Same LHS-vanishing obstacle as in `tauInternal`'s sub-case (ii): not
+          -- closable locally (pe_C's `cont_C` depends on pe_C's structure
+          -- independent of σ_pre).
+          have h_liftOpt_none : MatchingState.liftOption (σ.next m.σ_query_prefix) = none := by
+            unfold MatchingState.liftOption
+            rw [dif_neg h_some]
+          have h_kernel_A_zero : ∀ (l : Label) (s : State_A),
+              pe_A.kernel
+                (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) = 0 := by
+            intro l s; rw [h_kernel_A_form' l s, h_liftOpt_none]; rfl
+          sorry
+      · -- ====================================================
+        -- m.stage = externalEmit. Structurally distinct from mid-tau:
+        -- `computeNext` consults `m.hyper_witness` rather than σ, and this
+        -- is the *only* branch where the external label is actually emitted
+        -- (and where `τ` shrinks via `consumeLabel` in the recursive call).
+        -- ====================================================
+        classical
+        cases h_hw : m.hyper_witness with
+        | none =>
+          -- ---- hyper_witness = none: structurally impossible. ----
+          -- `HyperWitnessInv` (established by `fromAbstractPrefix_hyperWitnessInv`)
+          -- forces `hyper_witness ≠ none` whenever `stage = externalEmit`.
+          exfalso
+          have h_hw_ne : m.hyper_witness ≠ none :=
+            fromAbstractPrefix_hyperWitnessInv sim pe_C init_match h_match_R history_A
+              _h_matched (Or.inl h_st)
+          exact h_hw_ne h_hw
+        | some w =>
+          by_cases h_cas_in : m.current_abstract_state ∈ w.μ_pre.support
+          · -- ---- Productive: hyper_witness = some w, cas ∈ μ_pre.support. ----
+            -- `computeNext m = some ((w.kernel cas).map (Prod.mk w.l))`.
+            -- The abstract scheduler emits external label `w.l` with `μ` drawn
+            -- from `w.kernel cas`, then samples `s_A'` from `μ`. The advance
+            -- transitions to `postExternal 0` with `weak_sched := post_weak_sched`
+            -- (= some σ_post by `PostInv`) and `σ_query_prefix` reset.
+            --
+            -- In `consumeLabel l_first (cons l₀ τ')`: when `l_first = w.l`
+            -- (matching the external label `l₀`), τ shrinks to τ'. The recursive
+            -- call lands at `(m', τ')` with strictly smaller `τ.length` — the
+            -- lex measure's *first* component decreases, so the
+            -- "unbounded fresh σ_post" problem does not block here.
+            -- This is the only branch where the recursion actually makes
+            -- structural progress on τ.
+            have h_compute_some : MatchingState.computeNext m =
+                some ((w.kernel m.current_abstract_state).map (Prod.mk w.l)) :=
+              MatchingState.computeNext_externalEmit (m := m) (σ := σ) h_ws h_st h_hw h_cas_in
+            sorry
+          · -- ---- hyper_witness = some w but cas ∉ w.μ_pre.support. ----
+            -- `computeNext m = none` (the guard fails) → kernel_A = 0.
+            -- Same LHS-vanishing obstacle as in mid-tau "σ emits only none"
+            -- sub-cases: not closable locally. Closure would require either
+            -- a `CasInSupportInv` ruling this out (depends on chained support
+            -- transfer through σ_pre.run, plus an install-time precondition
+            -- `cas ∈ μ_A_current.support` which isn't established), or the
+            -- full coupling argument.
+            have h_compute_none : MatchingState.computeNext m = none := by
+              unfold MatchingState.computeNext
+              rw [h_ws, h_st, h_hw]
+              dsimp only
+              rw [if_neg h_cas_in]
+            have h_kernel_A_zero : ∀ (l : Label) (s : State_A),
+                pe_A.kernel
+                  (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) = 0 := by
+              intro l s; rw [h_kernel_A_form l s, h_compute_none]; rfl
+            sorry
+      · -- ====================================================
+        -- m.stage = postExternal k_st. Mid-tau case.
+        -- σ here is the post-tau scheduler from `weakStep` (installed by the
+        -- `externalEmit → postExternal` advance transition). Continuations
+        -- advance through `postExternal (k_st + 1)` (within-stage) or, at
+        -- completion, into `extendOnCompletion`.
+        -- ====================================================
+        have h_compute : MatchingState.computeNext m =
+            MatchingState.liftOption (σ.next m.σ_query_prefix) :=
+          MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
+            (h_st ▸ (fun h => WeakStage.noConfusion h))
+        have h_kernel_A_form' : ∀ (l : Label) (s : State_A),
+            pe_A.kernel (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) =
+            (MatchingState.liftOption (σ.next m.σ_query_prefix)).elim 0
+              (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) (l, s)) := by
+          intro l s
+          rw [h_kernel_A_form l s, h_compute]
+        classical
+        by_cases h_some : ∃ a, some a ∈ (σ.next m.σ_query_prefix).support
+        · -- ---- σ_post emits a "some" step. ----
+          -- `liftOption` returns `some (PMF.pure h_some.choose)`. Advance lands at
+          -- either `postExternal (k_st + 1)` (within-stage; `tauProgress` decreases
+          -- by `tauProgress_lt_of_advance_postExternal`) or `extendOnCompletion`
+          -- (at completion; new matching state has reset `weak_sched` via
+          -- `setupNextTransition`). The completion case is where the lex measure
+          -- runs into the "fresh σ' with unbounded runtime" obstacle — closing
+          -- it needs the design resolution discussed previously.
+          sorry
+        · -- ---- σ_post emits only `none`. ----
+          -- `liftOption` returns `none`; abstract kernel = 0 → RHS = 0.
+          -- Same LHS-vanishing obstacle as in `tauInternal`/`preExternal`'s
+          -- sub-case (ii): not closable locally.
+          have h_liftOpt_none : MatchingState.liftOption (σ.next m.σ_query_prefix) = none := by
+            unfold MatchingState.liftOption
+            rw [dif_neg h_some]
+          have h_kernel_A_zero : ∀ (l : Label) (s : State_A),
+              pe_A.kernel
+                (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) = 0 := by
+            intro l s; rw [h_kernel_A_form' l s, h_liftOpt_none]; rfl
+          sorry
 
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
@@ -3779,8 +4369,7 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                 -- the support; combined with `liftOption_eq_some_iff`, this
                 -- closes validity.
                 have h_mid_tau : ∀ (h_st_eq : MatchingState.computeNext m =
-                    MatchingState.liftOption
-                      (σ.next ⟨m.current_abstract_state, Seq.nil⟩)),
+                    MatchingState.liftOption (σ.next m.σ_query_prefix)),
                     sys_A.toSystem.step m.current_abstract_state l_A μ_A := by
                   intro h_st_eq
                   rw [h_st_eq] at h_compute
@@ -3794,13 +4383,30 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                     rw [if_neg h_ne] at h_supp
                     exact absurd h_supp (by norm_num)
                   have h_choose_supp := h_exists.choose_spec
-                  have h_term : (Seq.nil : Seq (Label × State_A)).TerminatedAt 0 := rfl
-                  have h_state :
-                      (⟨m.current_abstract_state, Seq.nil⟩ : AlterSeq State_A Label).stateAt 0
-                        = some m.current_abstract_state := rfl
-                  have h_valid := σ.valid ⟨m.current_abstract_state, Seq.nil⟩ 0
-                    m.current_abstract_state h_term h_state _ h_choose_supp
+                  -- Use σ.valid at m.σ_query_prefix: TerminatedAt position is
+                  -- Nat.find m.σ_query_prefix_term, and the state there is
+                  -- m.σ_query_prefix.endState. Bridge to m.current_abstract_state
+                  -- via the invariant `σ_query_prefix.endState = current_abstract_state`
+                  -- (proven below in a separate sub-claim).
+                  have h_term : m.σ_query_prefix.trans.TerminatedAt
+                      (Nat.find m.σ_query_prefix_term) :=
+                    Nat.find_spec m.σ_query_prefix_term
+                  have h_state : m.σ_query_prefix.stateAt
+                      (Nat.find m.σ_query_prefix_term) =
+                      some (m.σ_query_prefix.endState m.σ_query_prefix_term) :=
+                    AlterSeq.stateAt_find_eq_endState m.σ_query_prefix m.σ_query_prefix_term
+                  have h_valid := σ.valid m.σ_query_prefix
+                    (Nat.find m.σ_query_prefix_term)
+                    (m.σ_query_prefix.endState m.σ_query_prefix_term)
+                    h_term h_state _ h_choose_supp
                   rw [← h_pair_eq] at h_valid
+                  -- Bridge: σ_query_prefix.endState = m.current_abstract_state.
+                  -- Use `EndStateInv` (active when weak_sched = some σ).
+                  have h_endState_eq : m.σ_query_prefix.endState m.σ_query_prefix_term
+                      = m.current_abstract_state :=
+                    fromAbstractPrefix_endStateInv sim pe_C init_match h_match_R e_A h_from
+                      (by rw [h_ws]; simp)
+                  rw [h_endState_eq] at h_valid
                   exact h_valid
                 rcases h_st : m.stage with k | k | _ | k
                 · -- tauInternal k
