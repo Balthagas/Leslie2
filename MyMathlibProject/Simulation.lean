@@ -1877,7 +1877,7 @@ private lemma foldl_advance_current_abstract_state
   induction xs generalizing m₀ with
   | nil => rfl
   | cons head tail ih =>
-    show (tail.foldl _ (MatchingState.advance m₀ head.1 head.2)).current_abstract_state =
+    change (tail.foldl _ (MatchingState.advance m₀ head.1 head.2)).current_abstract_state =
       tail.foldl _ head.2
     rw [ih, advance_current_abstract_state]
 
@@ -1965,7 +1965,7 @@ private lemma foldl_snd_eq_getLast_elim
     cases tail with
     | nil => rfl
     | cons head' rest =>
-      show (head' :: rest).foldl _ head.2 =
+      change (head' :: rest).foldl _ head.2 =
         ((head :: head' :: rest).getLast?).elim init Prod.snd
       rw [ih]
       rfl
@@ -1995,7 +1995,7 @@ private lemma endState_eq_foldl_toList
     rw [h_len_zero]
     -- Goal: endState = (seq.get? 0).elim init Prod.snd. With seq.get? 0 = none, RHS = init.
     rw [show seq.get? 0 = none from h_term_0]
-    show _ = init
+    change _ = init
     -- LHS: endState = stateAt 0's content = init.
     have h_stateAt_0 :
         ({ init := init, trans := seq } : AlterSeq State_A Label).stateAt 0 =
@@ -2015,7 +2015,7 @@ private lemma endState_eq_foldl_toList
       Option.ne_none_iff_isSome.mp h_not_term_n
     obtain ⟨⟨l, s⟩, h_get_eq⟩ := Option.isSome_iff_exists.mp h_get_n
     rw [h_get_eq]
-    show _ = s
+    change _ = s
     -- LHS: endState = stateAt (n+1)'s content = snd of seq.get? n = s.
     have h_stateAt_succ :
         ({ init := init, trans := seq } : AlterSeq State_A Label).stateAt (n + 1) =
@@ -2082,6 +2082,26 @@ private lemma fromAbstractPrefix_current_abstract_state
     rw [MatchingState.foldl_advance_current_abstract_state, h_m₀_cas,
         ← endState_eq_foldl_toList]
 
+/-- `fromAbstractPrefix` on the empty-trans prefix `⟨s_A, Seq.nil⟩` reduces
+to `MatchingState.initial s_A` (the foldl is over the empty list). -/
+private lemma fromAbstractPrefix_empty
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (s_A : State_A) :
+    MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R ⟨s_A, Seq.nil⟩ =
+    MatchingState.initial sim pe_C init_match h_match_R s_A := by
+  unfold MatchingState.fromAbstractPrefix
+  split
+  · rename_i h_init
+    exact h_init.symm
+  · rename_i m₀ h_init
+    rw [dif_pos Stream'.Seq.terminates_nil]
+    rw [show (Seq.nil : Seq (Label × State_A)).toList Stream'.Seq.terminates_nil = []
+      from Stream'.Seq.toList_nil]
+    exact h_init.symm
+
 /-! ### Trace-coupling helpers for `exists_coupling`
 
 The trace-coupling proof reduces — via `traceProb_first_step` on both
@@ -2144,19 +2164,79 @@ theorem traceCoupling_tsum_eq
                 change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
                 rw [Stream'.Seq.get?_cons_succ]
                 exact Stream'.Seq.terminatedAt_nil⟩) τ') := by
-  -- **DEFERRED**: the core coupling argument of Segala's theorem.
-  -- Strategy outline:
-  --   1. Tau-collapse on RHS: the `s_A₀ → s_A₁` transitions emitted as
-  --      internal labels (via `pe_A_scheduler.next` driven by
-  --      `WeakScheduler.next`) marginalise out — `consumeLabel l₀ (l :: τ)`
-  --      is `none` for internal `l₀`, so those summands are zero.
-  --   2. External-label step: only external `l₀ = l` survives; the inner
-  --      `consumeLabel` then gives `some τ`.
-  --   3. For external `l₀ = l`, use `stepWitness_pmfRel` (from `sim.step`
-  --      at each R-coupled `(s_C, μ_A_next)`) to couple the kernels.
-  --   4. The continuations are themselves trace-coupled — this is a
-  --      recursive use of `TraceCoupled` over `τ`, with the new init
-  --      distributions being the post-step PMFRel-coupled pair.
+  -- Continuation traceProb abbreviations to keep the expressions short.
+  let contC : State_C → Label → State_C → ENNReal := fun s₀ l₀ s₁ =>
+    (sys_C.consumeLabel l₀ (Seq.cons l τ)).elim 0
+      (fun τ' => sys_C.traceProb
+        (pe_C.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+          ⟨1, by
+            change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
+            rw [Stream'.Seq.get?_cons_succ]
+            exact Stream'.Seq.terminatedAt_nil⟩) τ')
+  let contA : State_A → Label → State_A → ENNReal := fun s₀ l₀ s₁ =>
+    (sys_A.consumeLabel l₀ (Seq.cons l τ)).elim 0
+      (fun τ' => sys_A.traceProb
+        (pe_A.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+          ⟨1, by
+            change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
+            rw [Stream'.Seq.get?_cons_succ]
+            exact Stream'.Seq.terminatedAt_nil⟩) τ')
+  show (∑' (s_C : State_C) (l_C : Label) (s_C' : State_C),
+      pe_C.init s_C * pe_C.kernel ⟨s_C, Seq.nil⟩ (l_C, s_C') *
+      contC s_C l_C s_C') =
+    ∑' (s_A : State_A) (l_A : Label) (s_A' : State_A),
+      pe_A.init s_A * pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A') *
+      contA s_A l_A s_A'
+  -- ============================================================
+  -- STAGE 1: rewrite pe_A.init via h_init_eq + PMF.bind_apply and
+  --          reorganize the abstract tsum to start with ∑' s_C.
+  -- ============================================================
+  -- LHS: pull pe_C.init s_C out of inner sums.
+  -- ∑' s_C l_C s_C', pe_C.init s_C * pe_C.kernel ... * contC
+  --  = ∑' s_C, pe_C.init s_C * (∑' l_C s_C', pe_C.kernel ... * contC).
+  simp_rw [mul_assoc (pe_C.init _), ENNReal.tsum_mul_left]
+  -- RHS: rewrite pe_A.init s_A = ∑' s_C, pe_C.init s_C * init_match s_C s_A,
+  -- distribute, and reorder.
+  have h_pe_A_init : ∀ s_A, pe_A.init s_A =
+      ∑' s_C, pe_C.init s_C * init_match s_C s_A := by
+    intro s_A; rw [h_init_eq, PMF.bind_apply]
+  simp_rw [h_pe_A_init]
+  -- After simp_rw, RHS has: ∑' s_A l_A s_A', (∑' s_C, ...) * pe_A.kernel ... * contA.
+  -- Distribute the inner ∑' s_C via tsum_mul_right (twice for two outer *'s).
+  conv_rhs =>
+    enter [1, s_A, 1, l_A, 1, s_A']
+    rw [← ENNReal.tsum_mul_right, ← ENNReal.tsum_mul_right]
+  -- Goal RHS = ∑' s_A l_A s_A' s_C, pe_C.init s_C * init_match s_C s_A *
+  --   pe_A.kernel ⟨s_A, _⟩ (l_A, s_A') * contA s_A l_A s_A'.
+  -- Reorganize: convert the four-nested tsum to ∑' s_C s_A l_A s_A'.
+  -- Three tsum_comm swaps move s_C from innermost to outermost.
+  conv_rhs =>
+    enter [1, s_A, 1, l_A]
+    rw [ENNReal.tsum_comm]
+  conv_rhs =>
+    enter [1, s_A]
+    rw [ENNReal.tsum_comm]
+  rw [ENNReal.tsum_comm]
+  -- Factor pe_C.init s_C out of the inner sum.
+  conv_rhs =>
+    enter [1, s_C]
+    rw [show (∑' (s_A : State_A) (l_A : Label) (s_A' : State_A),
+            pe_C.init s_C * init_match s_C s_A *
+            pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A') * contA s_A l_A s_A') =
+          pe_C.init s_C * ∑' (s_A : State_A) (l_A : Label) (s_A' : State_A),
+            init_match s_C s_A * pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A') *
+            contA s_A l_A s_A' from by
+      simp_rw [mul_assoc (pe_C.init s_C), ENNReal.tsum_mul_left]]
+  -- Both sides are now ∑' s_C, pe_C.init s_C * (inner). Reduce to per-s_C.
+  refine tsum_congr (fun s_C => ?_)
+  congr 1
+  -- ============================================================
+  -- STAGES 2-7: the per-`s_C` coupling argument.
+  -- Goal: ∑' (l_C : Label) (s_C' : State_C),
+  --         pe_C.kernel ⟨s_C, Seq.nil⟩ (l_C, s_C') * contC s_C l_C s_C' =
+  --       ∑' (s_A : State_A) (l_A : Label) (s_A' : State_A),
+  --         init_match s_C s_A *
+  --         pe_A.kernel ⟨s_A, Seq.nil⟩ (l_A, s_A') * contA s_A l_A s_A'.
   sorry
 
 end ProbabilisticForwardSimulation
