@@ -1522,6 +1522,11 @@ structure MatchingState (sim : ProbabilisticForwardSimulation sys_C sys_A R)
   /-- Position within the current weak transition. Only meaningful when
   `weak_sched` is `some σ`. -/
   stage : WeakStage
+  /-- The abstract state the execution is currently at. Maintained as
+  the end-state of the abstract prefix walked so far; for the matching
+  state derived via `fromAbstractPrefix e_A`, this equals `e_A.endState`.
+  Used by `computeNext` and validity proofs to align with `μ_A_current`. -/
+  current_abstract_state : State_A
 
 namespace MatchingState
 
@@ -1718,7 +1723,8 @@ noncomputable def extendOnCompletion (m : MatchingState sim pe_C) :
         next_step := none
         weak_sched := none
         post_weak_sched := none
-        stage := WeakStage.tauInternal 0 }
+        stage := WeakStage.tauInternal 0
+        current_abstract_state := m.current_abstract_state }
   setupNextTransition extended
 
 /-- Advance the matching state after the abstract scheduler emitted a step
@@ -1738,33 +1744,34 @@ Remaining semantic gap: `μ_A_current` / `h_R` are held constant rather
 than evolving with each stage transition; closing this requires
 threading `σ.runFromState`-derived distributions. -/
 noncomputable def advance (m : MatchingState sim pe_C)
-    (_l_A : Label) (_μ_A' : PMF State_A) :
+    (_l_A : Label) (s_A' : State_A) :
     MatchingState sim pe_C :=
-  match m.weak_sched with
-  | none => m
+  let m' := { m with current_abstract_state := s_A' }
+  match m'.weak_sched with
+  | none => m'
   | some σ =>
-    match m.stage with
+    match m'.stage with
     | WeakStage.tauInternal k =>
       if k + 1 < σ.runtime then
-        { m with stage := WeakStage.tauInternal (k + 1) }
+        { m' with stage := WeakStage.tauInternal (k + 1) }
       else
-        m.extendOnCompletion
+        m'.extendOnCompletion
     | WeakStage.preExternal k =>
       if k + 1 < σ.runtime then
-        { m with stage := WeakStage.preExternal (k + 1) }
+        { m' with stage := WeakStage.preExternal (k + 1) }
       else
-        { m with stage := WeakStage.externalEmit }
+        { m' with stage := WeakStage.externalEmit }
     | WeakStage.externalEmit =>
       -- Transition from external-emit to the post-tau: swap weak_sched.
-      { m with
-        weak_sched := m.post_weak_sched
+      { m' with
+        weak_sched := m'.post_weak_sched
         post_weak_sched := none
         stage := WeakStage.postExternal 0 }
     | WeakStage.postExternal k =>
       if k + 1 < σ.runtime then
-        { m with stage := WeakStage.postExternal (k + 1) }
+        { m' with stage := WeakStage.postExternal (k + 1) }
       else
-        m.extendOnCompletion
+        m'.extendOnCompletion
 
 end MatchingState
 
@@ -1811,7 +1818,8 @@ noncomputable def MatchingState.initial
         next_step := none
         weak_sched := none
         post_weak_sched := none
-        stage := WeakStage.tauInternal 0 }
+        stage := WeakStage.tauInternal 0
+        current_abstract_state := s_A }
     -- Install the first weak transition via `setupNextTransition`.
     exact some base.setupNextTransition
   · exact none
@@ -1841,8 +1849,7 @@ noncomputable def MatchingState.fromAbstractPrefix
     -- check applies, so this is sound).
     by_cases h_fin : e_A.trans.Terminates
     · exact some ((e_A.trans.toList h_fin).foldl
-        (fun m ⟨l_A, s_A'⟩ => MatchingState.advance m l_A
-          (PMF.pure s_A')) m₀)  -- placeholder: advance with `pure s_A'` PMF
+        (fun m ⟨l_A, s_A'⟩ => MatchingState.advance m l_A s_A') m₀)
     · exact some m₀
 
 end ProbabilisticForwardSimulation
