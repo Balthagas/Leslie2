@@ -2013,17 +2013,20 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                   -- Show n = Nat.find h_term_C, then use stateAt_find_eq_endState.
                   have h_n_le : Nat.find h_term_C ≤ n := Nat.find_le h_term_e
                   have h_n_ge : n ≤ Nat.find h_term_C := by
-                    -- If n > Nat.find h_term_C, then stateAt n = none.
-                    -- This contradicts h_state_e.
-                    by_contra h_gt
-                    push_neg at h_gt
-                    -- h_gt : Nat.find h_term_C < n.
-                    -- stateAt n: case on n.
-                    -- For n = 0: impossible since Nat.find h_term_C < 0 absurd.
-                    -- For n ≥ 1: stateAt n = (e_A.trans.get? (n-1)).map snd.
-                    -- n-1 ≥ Nat.find h_term_C, so get? (n-1) = none (terminated_stable).
-                    -- Thus stateAt n = none, contradicting h_state_e.
-                    sorry
+                    by_contra h_not_le
+                    have h_gt : Nat.find h_term_C < n := Nat.not_le.mp h_not_le
+                    cases n with
+                    | zero => exact absurd h_gt (Nat.not_lt_zero _)
+                    | succ n' =>
+                      have h_n'_ge : n' ≥ Nat.find h_term_C := Nat.lt_succ_iff.mp h_gt
+                      have h_get_none : e_A.trans.get? n' = none :=
+                        Stream'.Seq.terminated_stable e_A.trans h_n'_ge
+                          (Nat.find_spec h_term_C)
+                      have h_stateAt_def :
+                          e_A.stateAt (n' + 1) = (e_A.trans.get? n').map Prod.snd := rfl
+                      rw [h_get_none] at h_stateAt_def
+                      rw [h_stateAt_def] at h_state_e
+                      simp at h_state_e
                   have h_n_eq : n = Nat.find h_term_C := le_antisymm h_n_ge h_n_le
                   have h_eq := AlterSeq.stateAt_find_eq_endState e_A h_term_C
                   rw [← h_n_eq] at h_eq
