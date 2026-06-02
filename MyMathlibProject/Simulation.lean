@@ -1619,12 +1619,38 @@ noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
     -- Step 4: extract sim.step's witness ω and its PMFRel coupling.
     let ω : PMF (PMF State_A) := sim.stepWitness m.h_R h_step
     have h_pmfRel : PMFRel R μ_C ω := sim.stepWitness_pmfRel m.h_R h_step
-    -- Steps 5-6 (PMFRel extraction of μ_A_next + WeakScheduler from
-    -- stepWitness_weakTau/weakStep) deferred.
-    let _ := h_pmfRel
-    let _ := h_s_C'_supp
-    let _ := ω
-    exact m  -- placeholder; full extraction deferred.
+    -- Step 5: extract μ_A_next ∈ ω.support with R s_C' μ_A_next via PMFRel.
+    let γ : PMF (State_C × PMF State_A) := h_pmfRel.choose
+    have h_pmfRel_spec := h_pmfRel.choose_spec
+    have h_marg_fst : PMF.map Prod.fst γ = μ_C := h_pmfRel_spec.1
+    have h_R_on_supp : ∀ p ∈ γ.support, R p.1 p.2 := h_pmfRel_spec.2.2
+    have h_s_C'_in_map : s_C' ∈ (PMF.map Prod.fst γ).support := h_marg_fst ▸ h_s_C'_supp
+    rw [PMF.support_map] at h_s_C'_in_map
+    -- h_s_C'_in_map : s_C' ∈ Prod.fst '' γ.support = ∃ p ∈ γ.support, p.1 = s_C'.
+    let p : State_C × PMF State_A := h_s_C'_in_map.choose
+    have h_p_spec := h_s_C'_in_map.choose_spec
+    have h_p_supp : p ∈ γ.support := h_p_spec.1
+    have h_p_fst : p.1 = s_C' := h_p_spec.2
+    let μ_A_next : PMF State_A := p.2
+    have h_R_next : R s_C' μ_A_next := by
+      have h_R_p : R p.1 p.2 := h_R_on_supp p h_p_supp
+      rw [h_p_fst] at h_R_p
+      exact h_R_p
+    -- Step 6: case on `sys_C.internal l_C`.
+    by_cases h_int : sys_C.internal l_C
+    · -- Internal: weakTau gives a single WeakScheduler σ.
+      have h_tau : weakTau sys_A m.μ_A_current (ω.bind id) :=
+        sim.stepWitness_weakTau m.h_R h_step h_int
+      let σ : WeakScheduler sys_A := h_tau.choose
+      -- Step 7: assemble the new matching state.
+      exact { m with
+        weak_sched := some σ
+        next_step := some ⟨l_C, s_C', μ_A_next, h_R_next⟩
+        stage := WeakStage.tauInternal 0 }
+    · -- External: weakStep has pre-tau + hyperStep + post-tau structure.
+      -- Storing both pre and post WeakSchedulers requires an extra field
+      -- in MatchingState (e.g., `post_weak_sched`). **Deferred.**
+      exact m
 
 /-- Helper used by `advance`: on weak-transition completion, extend
 `e_C` by `next_step` if present, then call `setupNextTransition` to
