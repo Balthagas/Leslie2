@@ -2234,7 +2234,68 @@ private lemma continuationFrom_compose
     · -- next-function equality.
       funext e'
       classical
-      sorry
+      -- LHS: ((pe.continuationFrom history₁).continuationFrom history₂).scheduler.next e'.
+      -- Reduces (via continuationFrom def) to:
+      --   if e'.init = history₂.endState then
+      --     (pe.continuationFrom history₁).scheduler.next
+      --     ⟨history₂.init, history₂.trans.append e'.trans⟩
+      --   else none
+      -- Inside the `then`: by h_init₂, history₂.init = history₁.endState. So:
+      --   = pe.scheduler.next ⟨history₁.init, history₁.trans.append
+      --     (history₂.trans.append e'.trans)⟩.
+      -- RHS: (pe.continuationFrom ⟨history₁.init,
+      --      history₁.trans.append history₂.trans⟩).scheduler.next e'.
+      -- Reduces to:
+      --   if e'.init = (combined).endState then
+      --     pe.scheduler.next ⟨history₁.init,
+      --     (history₁.trans.append history₂.trans).append e'.trans⟩
+      --   else none.
+      -- Bridge: history₂.endState = (combined).endState (by initState equality we proved above);
+      --        append associativity for the inner trans.
+      change (if e'.init = history₂.endState h_term₂ then
+              (pe.continuationFrom history₁ h_term₁).scheduler.next
+                ⟨history₂.init, history₂.trans.append e'.trans⟩
+            else none) =
+        if e'.init = (⟨history₁.init, history₁.trans.append history₂.trans⟩ :
+            AlterSeq State Label).endState h_term_combined then
+          pe.scheduler.next ⟨history₁.init,
+            (history₁.trans.append history₂.trans).append e'.trans⟩
+        else none
+      have h_endState_eq : (⟨history₁.init, history₁.trans.append history₂.trans⟩ :
+          AlterSeq State Label).endState h_term_combined =
+          history₂.endState h_term₂ := by
+        -- This is the initState equality we proved above, in reverse.
+        rw [show history₂.endState h_term₂ =
+              (history₂.trans.toList h_term₂).foldl (fun _ p => p.2) history₂.init from
+            endState_eq_foldl_toList history₂.init history₂.trans h_term₂]
+        rw [endState_eq_foldl_toList history₁.init
+          (history₁.trans.append history₂.trans) h_term_combined]
+        rw [Stream'.Seq.toList_append history₁.trans history₂.trans h_term₁ h_term₂]
+        rw [List.foldl_append]
+        congr 1
+        rw [← endState_eq_foldl_toList history₁.init history₁.trans h_term₁]
+        change history₁.endState h_term₁ = history₂.init
+        exact h_init₂.symm
+      rw [h_endState_eq]
+      by_cases h_cond : e'.init = history₂.endState h_term₂
+      · rw [if_pos h_cond, if_pos h_cond]
+        -- Inner: (pe.continuationFrom history₁).scheduler.next
+        -- ⟨history₂.init, history₂.trans.append e'.trans⟩
+        -- = if history₂.init = history₁.endState then pe.scheduler.next ⟨h₁.init,
+        -- h₁.trans.append (h₂.trans.append e'.trans)⟩
+        --   else none
+        -- By h_init₂, condition holds.
+        change (if (⟨history₂.init, history₂.trans.append e'.trans⟩ :
+                AlterSeq State Label).init = history₁.endState h_term₁ then
+              pe.scheduler.next ⟨history₁.init,
+                history₁.trans.append (history₂.trans.append e'.trans)⟩
+            else none) =
+          pe.scheduler.next ⟨history₁.init,
+            (history₁.trans.append history₂.trans).append e'.trans⟩
+        rw [if_pos h_init₂]
+        -- Append associativity.
+        rw [Stream'.Seq.append_assoc]
+      · rw [if_neg h_cond, if_neg h_cond]
 
 /-! ### Trace-coupling helpers for `exists_coupling`
 
