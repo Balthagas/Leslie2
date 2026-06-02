@@ -1957,6 +1957,83 @@ private lemma fromAbstractPrefix_current_abstract_state
     m.current_abstract_state = e_A.endState h_term := by
   sorry
 
+/-! ### Trace-coupling helpers for `exists_coupling`
+
+The trace-coupling proof reduces — via `traceProb_first_step` on both
+sides — to equality of two tsums over `(s₀, l₀, s₁)`. This equality is
+captured by `traceCoupling_tsum_eq` below; the proof itself decomposes
+into:
+
+* **Tau-collapse on the abstract side**: tau-internal labels emitted by
+  `pe_A_scheduler` (via `WeakScheduler.next` during `tauInternal` /
+  `preExternal` / `postExternal` stages) do not contribute to the
+  observed trace — when summed out, they cancel out and leave only the
+  externalEmit contributions.
+
+* **Initial-state coupling**: `pe_A.init = pe_C.init.bind init_match`;
+  every `(s_C, s_A)` with `s_A ∈ (init_match s_C).support` is `R`-coupled
+  via `h_match_R`.
+
+* **First-step PMFRel coupling**: at each `R`-coupled `(s_C, μ_A)`,
+  `sim.stepWitness_pmfRel` couples `pe_C.kernel ⟨s_C, _⟩` with an
+  abstract-side distribution; this distribution corresponds, after
+  marginalisation through the weak-transition stages, to the *external
+  label's* emission from `pe_A`.
+
+* **Continuation coupling**: for each step outcome `(s_C', μ_A_next)`
+  with the preserved `R s_C' μ_A_next`, the continuations of both
+  executions are again trace-coupled — handled by induction on `τ` via
+  this same theorem (the recursive structure is implicit in the τ
+  parameter, since `traceProb` on `continuationFrom` over a shorter
+  trace appears in the tsum).
+
+This is the *core* of Segala's theorem; the proof is non-trivial and
+deferred. Once the helpers (currently inlined as sorries) are filled,
+this theorem closes via term-by-term tsum manipulation. -/
+theorem traceCoupling_tsum_eq
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : ProbabilisticExecution sys_A.toSystem)
+    (l : Label) (τ : Seq Label)
+    (h_init_eq : pe_A.init = pe_C.init.bind init_match)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+        MatchingState.computeNext) :
+    (∑' (s₀ : State_C) (l₀ : Label) (s₁ : State_C),
+        pe_C.init s₀ * pe_C.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+        (sys_C.consumeLabel l₀ (Seq.cons l τ)).elim 0
+          (fun τ' => sys_C.traceProb
+            (pe_C.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+              ⟨1, by
+                change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
+                rw [Stream'.Seq.get?_cons_succ]
+                exact Stream'.Seq.terminatedAt_nil⟩) τ')) =
+    ∑' (s₀ : State_A) (l₀ : Label) (s₁ : State_A),
+        pe_A.init s₀ * pe_A.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+        (sys_A.consumeLabel l₀ (Seq.cons l τ)).elim 0
+          (fun τ' => sys_A.traceProb
+            (pe_A.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+              ⟨1, by
+                change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
+                rw [Stream'.Seq.get?_cons_succ]
+                exact Stream'.Seq.terminatedAt_nil⟩) τ') := by
+  -- **DEFERRED**: the core coupling argument of Segala's theorem.
+  -- Strategy outline:
+  --   1. Tau-collapse on RHS: the `s_A₀ → s_A₁` transitions emitted as
+  --      internal labels (via `pe_A_scheduler.next` driven by
+  --      `WeakScheduler.next`) marginalise out — `consumeLabel l₀ (l :: τ)`
+  --      is `none` for internal `l₀`, so those summands are zero.
+  --   2. External-label step: only external `l₀ = l` survives; the inner
+  --      `consumeLabel` then gives `some τ`.
+  --   3. For external `l₀ = l`, use `stepWitness_pmfRel` (from `sim.step`
+  --      at each R-coupled `(s_C, μ_A_next)`) to couple the kernels.
+  --   4. The continuations are themselves trace-coupled — this is a
+  --      recursive use of `TraceCoupled` over `τ`, with the new init
+  --      distributions being the post-step PMFRel-coupled pair.
+  sorry
+
 end ProbabilisticForwardSimulation
 
 /-- A *coupling* extending a concrete probabilistic execution along a
@@ -2236,11 +2313,18 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                   exact h_mid_tau (by unfold MatchingState.computeNext; rw [h_ws, h_st]) }
     refine ⟨pe_A_scheduler, ?_⟩
     intro l τ
-    -- Trace-coupling proof: by induction on the trace via
-    -- `traceProb_first_step` applied to both sides. Each step's match
-    -- comes from `PMFRel`-coupling at the first transition (via
-    -- `stepWitness_pmfRel` chained through the matching state). **Deferred.**
-    sorry
+    -- ============================================================
+    -- TRACE-COUPLING PROOF (cons case)
+    -- ============================================================
+    -- Step A: Apply `traceProb_first_step` on both sides, reducing the
+    -- goal to equality of tsums over `(s₀, l₀, s₁)`. The tsum equality
+    -- is the heart of the coupling; it's decomposed into helper lemmas
+    -- listed in `traceCoupling_*_aux` below. Currently sorried as a
+    -- single block; each `aux` lemma is its own scoped sorry.
+    rw [sys_C.traceProb_first_step pe_C l τ,
+        sys_A.traceProb_first_step ⟨pe_A_init, pe_A_scheduler⟩ l τ]
+    exact ProbabilisticForwardSimulation.traceCoupling_tsum_eq
+      sim pe_C init_match h_match_R ⟨pe_A_init, pe_A_scheduler⟩ l τ rfl rfl
   obtain ⟨pe_A_scheduler, h_cons⟩ := h_build_pe_A
   -- Combine the nil case (from `traceProb_nil_eq_one`) and the cons case
   -- (from `h_build_pe_A`) into full `TraceCoupled` via `of_nil_and_cons`.
