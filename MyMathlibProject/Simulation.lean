@@ -1913,18 +1913,10 @@ private lemma foldl_advance_current_abstract_state
 
 end MatchingState
 
-/-- The *initial* matching state for an abstract state `s_A`, given:
-* `pe_C` and `init_match` from `exists_coupling`'s STEP 1.
-* `h_match_R`: the `R`-coupling between concrete initial states and their
-  matched abstract distributions.
-
-Picks (via Classical) a concrete initial state `s_C ∈ pe_C.init.support`
-with `s_A ∈ (init_match s_C).support`. The starting `MatchingState`:
-* `e_C := ⟨s_C, Seq.nil⟩` (the trivial empty concrete prefix at `s_C`).
-* `μ_A_current := init_match s_C`.
-* `h_R := h_match_R s_C h_s_C_supp` (`R s_C (init_match s_C)`).
-* `stage := tauInternal 0` (initial sentinel).
-Returns `none` if no such concrete state exists. -/
+/-- The *initial* matching state for an abstract state `s_A`. Since
+`pe_C.init` is now Dirac on `pe_C.initState`, the only relevant concrete
+initial state is `pe_C.initState`. Returns `some` iff `s_A` is in the
+support of `init_match pe_C.initState`; otherwise `none`. -/
 noncomputable def MatchingState.initial
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -1932,16 +1924,17 @@ noncomputable def MatchingState.initial
     (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
     (s_A : State_A) :
     Option (MatchingState sim pe_C) :=
-  letI : Decidable (∃ s_C, s_C ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C).support) :=
+  letI : Decidable (s_A ∈ (init_match pe_C.initState).support) :=
     Classical.propDecidable _
-  if h_exists : ∃ s_C, s_C ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C).support then
-    let s_C := h_exists.choose
-    let h_s_C_supp : s_C ∈ pe_C.init.support := h_exists.choose_spec.1
+  if h_s_A_in : s_A ∈ (init_match pe_C.initState).support then
+    let h_initState_supp : pe_C.initState ∈ pe_C.init.support := by
+      rw [pe_C.init_support]; exact rfl
     let h_endState :
-        (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :
-          AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = s_C := by
+        (⟨pe_C.initState, (Seq.nil : Seq (Label × State_C))⟩ :
+          AlterSeq State_C Label).endState Stream'.Seq.terminates_nil =
+        pe_C.initState := by
       have h_eq := AlterSeq.stateAt_find_eq_endState
-        ({init := s_C, trans := Seq.nil} : AlterSeq State_C Label)
+        ({init := pe_C.initState, trans := Seq.nil} : AlterSeq State_C Label)
         Stream'.Seq.terminates_nil
       have h_find : Nat.find (Stream'.Seq.terminates_nil :
           (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
@@ -1949,10 +1942,10 @@ noncomputable def MatchingState.initial
       rw [h_find] at h_eq
       exact (Option.some.inj h_eq).symm
     let base : MatchingState sim pe_C :=
-      { e_C := ⟨s_C, Seq.nil⟩
+      { e_C := ⟨pe_C.initState, Seq.nil⟩
         h_term_C := Stream'.Seq.terminates_nil
-        μ_A_current := init_match s_C
-        h_R := h_endState.symm ▸ h_match_R s_C h_s_C_supp
+        μ_A_current := init_match pe_C.initState
+        h_R := h_endState.symm ▸ h_match_R pe_C.initState h_initState_supp
         next_step := none
         weak_sched := none
         post_weak_sched := none
@@ -2093,11 +2086,11 @@ private lemma fromAbstractPrefix_current_abstract_state
       -- setupNextTransition_cas to transfer this.
       unfold MatchingState.initial at h_init
       split at h_init
-      · rename_i h_exists
+      · rename_i h_s_A_in
         have h_m₀_eq : m₀ =
-            ({ e_C := ⟨h_exists.choose, Seq.nil⟩,
+            ({ e_C := ⟨pe_C.initState, Seq.nil⟩,
                 h_term_C := Stream'.Seq.terminates_nil,
-                μ_A_current := init_match h_exists.choose,
+                μ_A_current := init_match pe_C.initState,
                 h_R := _,
                 next_step := none,
                 weak_sched := none,
@@ -2344,14 +2337,11 @@ def IsReachable
   ∃ e_A : AlterSeq State_A Label,
     IsReachableAt sim pe_C init_match h_match_R e_A s_C μ_A
 
-/-- Initial states are reachable, given the **Dirac hypothesis**
-`h_pe_C_pure : ∃ s_C₀, pe_C.init = PMF.pure s_C₀` (the probabilistic
-execution starts from a unique state). This is the practical case
-where `sys_C.init` has a unique satisfier.
-
-Under this hypothesis, `MatchingState.initial`'s `Classical.choose` is
-forced to pick this unique state, making the witness consistent with
-the chosen `s_C`. -/
+/-- Initial states are reachable: since `pe_C.init` is Dirac on
+`pe_C.initState` (by the refactored type), `s_C ∈ pe_C.init.support`
+forces `s_C = pe_C.initState`. Then the matching state built by
+`MatchingState.initial` uses `pe_C.initState`, which equals `s_C`, so
+the witness directly satisfies the reachability properties. -/
 lemma isReachable_init
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
@@ -2359,37 +2349,35 @@ lemma isReachable_init
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (init_match : State_C → PMF State_A)
     (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
-    (s_C : State_C) (h_s_C_supp : s_C ∈ pe_C.init.support)
-    (h_pe_C_pure : ∃ s_C₀, pe_C.init = PMF.pure s_C₀) :
+    (s_C : State_C) (h_s_C_supp : s_C ∈ pe_C.init.support) :
     IsReachable sim pe_C init_match h_match_R s_C (init_match s_C) := by
   classical
-  -- From h_pe_C_pure and h_s_C_supp, derive that s_C is the Dirac point.
-  obtain ⟨s_C₀, h_pure⟩ := h_pe_C_pure
-  have h_s_C_eq : s_C = s_C₀ := by
-    rw [h_pure, PMF.mem_support_pure_iff] at h_s_C_supp
-    exact h_s_C_supp
-  -- pe_C.init.support = {s_C₀} (a singleton).
-  have h_init_unique : ∀ s_C', s_C' ∈ pe_C.init.support → s_C' = s_C := by
-    intro s_C' h
-    rw [h_pure, PMF.mem_support_pure_iff] at h
-    rw [h, h_s_C_eq]
-  -- Pick any s_A ∈ (init_match s_C).support and use e_A := ⟨s_A, Seq.nil⟩.
-  obtain ⟨s_A, h_s_A⟩ := (init_match s_C).support_nonempty
+  -- pe_C.init = PMF.pure pe_C.initState; so s_C ∈ pe_C.init.support → s_C = pe_C.initState.
+  rw [pe_C.init_support, Set.mem_singleton_iff] at h_s_C_supp
+  subst h_s_C_supp
+  -- Now s_C is replaced by pe_C.initState throughout.
+  -- Pick any s_A ∈ (init_match pe_C.initState).support.
+  obtain ⟨s_A, h_s_A⟩ := (init_match pe_C.initState).support_nonempty
   refine ⟨⟨s_A, Seq.nil⟩, ?_⟩
   unfold IsReachableAt
   rw [fromAbstractPrefix_empty]
   unfold MatchingState.initial
-  have h_exists : ∃ s_C', s_C' ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C').support :=
-    ⟨s_C, h_s_C_supp, h_s_A⟩
-  rw [dif_pos h_exists]
-  have h_choose_eq : h_exists.choose = s_C :=
-    h_init_unique _ h_exists.choose_spec.1
-  -- After setupNextTransition, e_C and μ_A_current are preserved.
-  -- The substitution `h_exists.choose = s_C` fails through dependent types
-  -- (h_R depends on h_exists.choose). **DEFERRED**: needs `Eq.mpr` or refactor.
-  refine ⟨_, rfl, ?_, ?_⟩
-  · sorry
-  · sorry
+  rw [dif_pos h_s_A]
+  refine ⟨_, rfl, ?_, MatchingState.setupNextTransition_μ_A_current _⟩
+  -- The remaining goal: m.e_C.endState m.h_term_C = pe_C.initState.
+  -- m = base.setupNextTransition where base.e_C = ⟨pe_C.initState, Seq.nil⟩.
+  -- Use setupNextTransition_endState + endState_nil_eq.
+  rw [MatchingState.setupNextTransition_endState]
+  -- Goal: base.e_C.endState base.h_term_C = pe_C.initState.
+  -- base.e_C = ⟨pe_C.initState, Seq.nil⟩; endState of nil-trans = init.
+  have h_eq := AlterSeq.stateAt_find_eq_endState
+    ({init := pe_C.initState, trans := Seq.nil} : AlterSeq State_C Label)
+    Stream'.Seq.terminates_nil
+  have h_find : Nat.find (Stream'.Seq.terminates_nil :
+      (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
+    apply Nat.find_eq_zero _ |>.mpr; rfl
+  rw [h_find] at h_eq
+  exact (Option.some.inj h_eq).symm
 
 /-- **Per-step trace coupling**: this is the cons case of the trace coupling
 specialized to a single R-coupled pair `(s_C, μ_A)`. Equivalent to
