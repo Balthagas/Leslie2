@@ -1520,6 +1520,30 @@ theorem ProbabilisticForwardSimulation.exists_coupling
   -- emulating `pe_C.scheduler.next e_C`. Validity follows from `sim.step`'s
   -- conclusions on `sys_A.step`; trace matching follows from how
   -- `weakTau`/`weakStep` decompose along the external trace.
+  -- Approach to building pe_A_scheduler:
+  --
+  -- The scheduler must, for each abstract prefix `e_A`, emit a next-step
+  -- distribution that emulates what `pe_C` would do at a "matching" concrete
+  -- prefix. The matching is via `sim`'s `stepWitness` machinery:
+  --   * `sim.init` matches each concrete initial state `s_C` with a
+  --     distribution `μ_A = init_match s_C` related via `R`.
+  --   * Given a concrete prefix `e_C` related to `μ_A`, `sim.step` lifts
+  --     `pe_C.scheduler.next e_C` to a weak abstract transition (`weakTau`
+  --     when the concrete label is internal, `weakStep` when external).
+  --   * A weak transition unrolls into a sequence of single abstract steps;
+  --     the scheduler plays them one at a time, tracking position in `e_A`.
+  --
+  -- Classical.choose picks a matching `e_C` for each `e_A`. The bookkeeping
+  -- for "which stage of which weak transition" is encoded by the `e_A`
+  -- length (number of abstract transitions taken). This requires a
+  -- recursive definition of the matching across all prefix lengths.
+  --
+  -- Trace-coupling proof: by induction on the trace shape, using
+  -- `traceProb_first_step` on both sides. Each step reduces to a per-`(s₀,
+  -- l₀, s₁)` matching that follows from `stepWitness_pmfRel`.
+  --
+  -- This is genuinely the deep content of Segala's theorem; left as the
+  -- main outstanding sorry. Resolved in stages over multiple sessions.
   have h_build_pe_A :
       ∃ pe_A_scheduler : Scheduler sys_A.toSystem,
         ∀ l τ, sys_C.traceProb pe_C (Seq.cons l τ) =
