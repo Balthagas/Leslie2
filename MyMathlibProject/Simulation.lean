@@ -1699,75 +1699,59 @@ When `some d`, we Classical-extract:
   its R-witness) but leaves `weak_sched = none` until the full
   extraction lands. -/
 noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
-    MatchingState sim pe_C := by
-  classical
-  rcases h_d : pe_C.scheduler.next m.e_C with _ | d
-  · exact m  -- pe_C stopped.
-  · -- Step 1: Classical-extract (l_C, μ_C) ∈ d.support.
-    let pair_supp := d.support_nonempty
-    let pair : Label × PMF State_C := pair_supp.choose
-    have h_pair_supp : pair ∈ d.support := pair_supp.choose_spec
+    MatchingState sim pe_C :=
+  match h_d : pe_C.scheduler.next m.e_C with
+  | none => m
+  | some d =>
+    let pair := d.support_nonempty.choose
+    let h_pair_supp : pair ∈ d.support := d.support_nonempty.choose_spec
     let l_C := pair.1
     let μ_C := pair.2
-    -- Step 2: Classical-extract s_C' ∈ μ_C.support.
-    let s_C'_supp := μ_C.support_nonempty
-    let s_C' : State_C := s_C'_supp.choose
-    have h_s_C'_supp : s_C' ∈ μ_C.support := s_C'_supp.choose_spec
-    -- Step 3: derive h_step : sys_C.step (endState e_C) l_C μ_C.
-    have h_step : sys_C.toSystem.step (m.e_C.endState m.h_term_C) l_C μ_C := by
-      have h_pair_eq : pair = (l_C, μ_C) := rfl
-      have h_pair_supp' : (l_C, μ_C) ∈ d.support := h_pair_eq ▸ h_pair_supp
-      exact pe_C.scheduler.valid m.e_C (Nat.find m.h_term_C)
+    let s_C' := μ_C.support_nonempty.choose
+    let h_s_C'_supp : s_C' ∈ μ_C.support := μ_C.support_nonempty.choose_spec
+    let h_step : sys_C.toSystem.step (m.e_C.endState m.h_term_C) l_C μ_C :=
+      pe_C.scheduler.valid m.e_C (Nat.find m.h_term_C)
         (m.e_C.endState m.h_term_C) (Nat.find_spec m.h_term_C)
-        (AlterSeq.stateAt_find_eq_endState m.e_C m.h_term_C) d h_d l_C μ_C h_pair_supp'
-    -- Step 4: extract sim.step's witness ω and its PMFRel coupling.
+        (AlterSeq.stateAt_find_eq_endState m.e_C m.h_term_C) d h_d l_C μ_C
+        (show (l_C, μ_C) ∈ d.support from h_pair_supp)
     let ω : PMF (PMF State_A) := sim.stepWitness m.h_R h_step
-    have h_pmfRel : PMFRel R μ_C ω := sim.stepWitness_pmfRel m.h_R h_step
-    -- Step 5: extract μ_A_next ∈ ω.support with R s_C' μ_A_next via PMFRel.
+    let h_pmfRel : PMFRel R μ_C ω := sim.stepWitness_pmfRel m.h_R h_step
     let γ : PMF (State_C × PMF State_A) := h_pmfRel.choose
-    have h_pmfRel_spec := h_pmfRel.choose_spec
-    have h_marg_fst : PMF.map Prod.fst γ = μ_C := h_pmfRel_spec.1
-    have h_R_on_supp : ∀ p ∈ γ.support, R p.1 p.2 := h_pmfRel_spec.2.2
-    have h_s_C'_in_map : s_C' ∈ (PMF.map Prod.fst γ).support := h_marg_fst ▸ h_s_C'_supp
-    rw [PMF.support_map] at h_s_C'_in_map
-    -- h_s_C'_in_map : s_C' ∈ Prod.fst '' γ.support = ∃ p ∈ γ.support, p.1 = s_C'.
+    let h_pmfRel_spec := h_pmfRel.choose_spec
+    let h_marg_fst : PMF.map Prod.fst γ = μ_C := h_pmfRel_spec.1
+    let h_R_on_supp : ∀ p ∈ γ.support, R p.1 p.2 := h_pmfRel_spec.2.2
+    let h_s_C'_in_map_raw : s_C' ∈ (PMF.map Prod.fst γ).support :=
+      h_marg_fst ▸ h_s_C'_supp
+    let h_s_C'_in_map : s_C' ∈ Prod.fst '' γ.support :=
+      PMF.support_map _ _ ▸ h_s_C'_in_map_raw
     let p : State_C × PMF State_A := h_s_C'_in_map.choose
-    have h_p_spec := h_s_C'_in_map.choose_spec
-    have h_p_supp : p ∈ γ.support := h_p_spec.1
-    have h_p_fst : p.1 = s_C' := h_p_spec.2
+    let h_p_spec := h_s_C'_in_map.choose_spec
+    let h_p_supp : p ∈ γ.support := h_p_spec.1
+    let h_p_fst : p.1 = s_C' := h_p_spec.2
     let μ_A_next : PMF State_A := p.2
-    have h_R_next : R s_C' μ_A_next := by
-      have h_R_p : R p.1 p.2 := h_R_on_supp p h_p_supp
-      rw [h_p_fst] at h_R_p
-      exact h_R_p
-    -- Step 6: case on `sys_C.internal l_C`.
-    by_cases h_int : sys_C.internal l_C
-    · -- Internal: weakTau gives a single WeakScheduler σ.
-      have h_tau : weakTau sys_A m.μ_A_current (ω.bind id) :=
-        sim.stepWitness_weakTau m.h_R h_step h_int
-      let σ : WeakScheduler sys_A := h_tau.choose
-      -- Step 7: assemble the new matching state.
-      exact { m with
+    let h_R_next : R s_C' μ_A_next := h_p_fst ▸ h_R_on_supp p h_p_supp
+    letI : Decidable (sys_C.internal l_C) := Classical.propDecidable _
+    if h_int : sys_C.internal l_C then
+      let σ : WeakScheduler sys_A :=
+        (sim.stepWitness_weakTau m.h_R h_step h_int).choose
+      { m with
         weak_sched := some σ
         next_step := some ⟨l_C, s_C', μ_A_next, h_R_next⟩
         stage := WeakStage.tauInternal 0 }
-    · -- External: weakStep has pre-tau + hyperStep + post-tau structure.
-      have h_step_w : weakStep sys_A m.μ_A_current l_C (ω.bind id) :=
+    else
+      let h_step_w : weakStep sys_A m.μ_A_current l_C (ω.bind id) :=
         sim.stepWitness_weakStep m.h_R h_step h_int
-      -- weakStep: ∃ μ μ', weakTau sys_A μ_init μ ∧ hyperStep ∧ weakTau sys_A μ' μ_final.
       let μ_inter : PMF State_A := h_step_w.choose
-      have h_step_w_spec := h_step_w.choose_spec
+      let h_step_w_spec := h_step_w.choose_spec
       let μ_inter' : PMF State_A := h_step_w_spec.choose
-      have h_step_w_spec_2 := h_step_w_spec.choose_spec
-      have h_pre : weakTau sys_A m.μ_A_current μ_inter := h_step_w_spec_2.1
-      have h_hyper : hyperStep sys_A.toSystem μ_inter l_C μ_inter' := h_step_w_spec_2.2.1
-      have h_post : weakTau sys_A μ_inter' (ω.bind id) := h_step_w_spec_2.2.2
+      let h_step_w_spec_2 := h_step_w_spec.choose_spec
+      let h_pre : weakTau sys_A m.μ_A_current μ_inter := h_step_w_spec_2.1
+      let h_hyper : hyperStep sys_A.toSystem μ_inter l_C μ_inter' :=
+        h_step_w_spec_2.2.1
+      let h_post : weakTau sys_A μ_inter' (ω.bind id) := h_step_w_spec_2.2.2
       let σ_pre : WeakScheduler sys_A := h_pre.choose
       let σ_post : WeakScheduler sys_A := h_post.choose
-      -- Extract the hyperStep kernel for use in the externalEmit emission.
-      let hyper_kernel : State_A → PMF (PMF State_A) := h_hyper.kernel
-      have h_hyper_valid := h_hyper.kernel_step
-      exact { m with
+      { m with
         weak_sched := some σ_pre
         post_weak_sched := some σ_post
         next_step := some ⟨l_C, s_C', μ_A_next, h_R_next⟩
@@ -1775,8 +1759,8 @@ noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
         hyper_witness := some
           { μ_pre := μ_inter
             l := l_C
-            kernel := hyper_kernel
-            valid := h_hyper_valid } }
+            kernel := h_hyper.kernel
+            valid := h_hyper.kernel_step } }
 
 /-- Helper used by `advance`: on weak-transition completion, extend
 `e_C` by `next_step` if present, then call `setupNextTransition` to
@@ -1848,17 +1832,15 @@ noncomputable def advance (m : MatchingState sim pe_C)
       else
         m'.extendOnCompletion
 
-/-- `setupNextTransition` preserves `current_abstract_state`. **Deferred** —
-the definition is built in tactic mode with `by classical; rcases ...; by_cases`,
-plus several dependent `let`s using `Exists.choose`; `unfold` / `rw [.eq_def]`
-both fail with "Tactic `generalize` failed: result is not type correct" because
-later let-bindings depend on earlier choose-results, making naive substitution
-ill-typed. Refactoring the definition into term-mode `match` with a tuple
-result would unblock this. -/
+/-- `setupNextTransition` preserves `current_abstract_state`. -/
 private lemma setupNextTransition_current_abstract_state
     (m : MatchingState sim pe_C) :
     m.setupNextTransition.current_abstract_state = m.current_abstract_state := by
-  sorry
+  unfold MatchingState.setupNextTransition
+  split
+  · rfl
+  · dsimp only
+    split_ifs <;> rfl
 
 /-- `extendOnCompletion` preserves `current_abstract_state`. -/
 private lemma extendOnCompletion_current_abstract_state
@@ -1885,6 +1867,20 @@ private lemma advance_current_abstract_state
     | (split_ifs <;>
         first | rfl | exact extendOnCompletion_current_abstract_state _)
 
+/-- `foldl advance` over a list `xs` ends at a state whose
+`current_abstract_state` equals the foldl over `xs` taking the second
+projection (starting from `m₀.current_abstract_state`). -/
+private lemma foldl_advance_current_abstract_state
+    (xs : List (Label × State_A)) (m₀ : MatchingState sim pe_C) :
+    (xs.foldl (fun m p => MatchingState.advance m p.1 p.2) m₀).current_abstract_state =
+    xs.foldl (fun _ p => p.2) m₀.current_abstract_state := by
+  induction xs generalizing m₀ with
+  | nil => rfl
+  | cons head tail ih =>
+    show (tail.foldl _ (MatchingState.advance m₀ head.1 head.2)).current_abstract_state =
+      tail.foldl _ head.2
+    rw [ih, advance_current_abstract_state]
+
 end MatchingState
 
 /-- The *initial* matching state for an abstract state `s_A`, given:
@@ -1905,37 +1901,37 @@ noncomputable def MatchingState.initial
     (init_match : State_C → PMF State_A)
     (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
     (s_A : State_A) :
-    Option (MatchingState sim pe_C) := by
-  classical
-  by_cases h_exists : ∃ s_C, s_C ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C).support
-  · let s_C := h_exists.choose
-    have h_s_C_supp : s_C ∈ pe_C.init.support := h_exists.choose_spec.1
+    Option (MatchingState sim pe_C) :=
+  letI : Decidable (∃ s_C, s_C ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C).support) :=
+    Classical.propDecidable _
+  if h_exists : ∃ s_C, s_C ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C).support then
+    let s_C := h_exists.choose
+    let h_s_C_supp : s_C ∈ pe_C.init.support := h_exists.choose_spec.1
+    let h_endState :
+        (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :
+          AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = s_C := by
+      have h_eq := AlterSeq.stateAt_find_eq_endState
+        ({init := s_C, trans := Seq.nil} : AlterSeq State_C Label)
+        Stream'.Seq.terminates_nil
+      have h_find : Nat.find (Stream'.Seq.terminates_nil :
+          (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
+        apply Nat.find_eq_zero _ |>.mpr; rfl
+      rw [h_find] at h_eq
+      exact (Option.some.inj h_eq).symm
     let base : MatchingState sim pe_C :=
       { e_C := ⟨s_C, Seq.nil⟩
         h_term_C := Stream'.Seq.terminates_nil
         μ_A_current := init_match s_C
-        h_R := by
-          have h_endState : (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :
-              AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = s_C := by
-            have h_eq := AlterSeq.stateAt_find_eq_endState
-              ({init := s_C, trans := Seq.nil} : AlterSeq State_C Label)
-              Stream'.Seq.terminates_nil
-            have h_find : Nat.find (Stream'.Seq.terminates_nil :
-                (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
-              apply Nat.find_eq_zero _ |>.mpr; rfl
-            rw [h_find] at h_eq
-            exact (Option.some.inj h_eq).symm
-          rw [h_endState]
-          exact h_match_R s_C h_s_C_supp
+        h_R := h_endState.symm ▸ h_match_R s_C h_s_C_supp
         next_step := none
         weak_sched := none
         post_weak_sched := none
         stage := WeakStage.tauInternal 0
         current_abstract_state := s_A
         hyper_witness := none }
-    -- Install the first weak transition via `setupNextTransition`.
-    exact some base.setupNextTransition
-  · exact none
+    some base.setupNextTransition
+  else
+    none
 
 /-- For each abstract prefix `e_A`, the (Classical) matching state that
 the scheduler should consult to determine `compute_next e_A`. Computed by
@@ -1947,32 +1943,92 @@ noncomputable def MatchingState.fromAbstractPrefix
     (init_match : State_C → PMF State_A)
     (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
     (e_A : AlterSeq State_A Label) :
-    Option (MatchingState sim pe_C) := by
-  classical
-  -- Initial state from `e_A.init`.
-  match h_init : MatchingState.initial sim pe_C init_match h_match_R e_A.init with
-  | none => exact none
+    Option (MatchingState sim pe_C) :=
+  match MatchingState.initial sim pe_C init_match h_match_R e_A.init with
+  | none => none
   | some m₀ =>
-    -- Thread `advance` through `e_A.trans`. For infinite `e_A.trans`,
-    -- there's no clean "fold" — but `advance` would only be applied at
-    -- positions where the abstract scheduler has been queried, i.e., on
-    -- finite prefixes. We finesse by only folding through `toList` when
-    -- `e_A.trans` is finite; for infinite `e_A.trans` we return the
-    -- initial state (it's used only at finite positions, where validity
-    -- check applies, so this is sound).
-    by_cases h_fin : e_A.trans.Terminates
-    · exact some ((e_A.trans.toList h_fin).foldl
-        (fun m ⟨l_A, s_A'⟩ => MatchingState.advance m l_A s_A') m₀)
-    · exact some m₀
+    letI : Decidable (e_A.trans.Terminates) := Classical.propDecidable _
+    if h_fin : e_A.trans.Terminates then
+      some ((e_A.trans.toList h_fin).foldl
+        (fun m p => MatchingState.advance m p.1 p.2) m₀)
+    else
+      some m₀
+
+/-- `foldl` with the "always take the second projection" function returns
+the last element's `.snd`, or the initial accumulator if the list is empty. -/
+private lemma foldl_snd_eq_getLast_elim
+    {α β : Type*} (xs : List (α × β)) (init : β) :
+    xs.foldl (fun _ p => p.2) init = xs.getLast?.elim init Prod.snd := by
+  induction xs generalizing init with
+  | nil => rfl
+  | cons head tail ih =>
+    cases tail with
+    | nil => rfl
+    | cons head' rest =>
+      show (head' :: rest).foldl _ head.2 =
+        ((head :: head' :: rest).getLast?).elim init Prod.snd
+      rw [ih]
+      rfl
+
+/-- For a finite sequence `seq` (of type `Seq (Label × State)`), `endState`
+of the alternating-sequence `⟨init, seq⟩` equals the `foldl` over
+`seq.toList` taking the second projection. -/
+private lemma endState_eq_foldl_toList
+    (init : State_A) (seq : Seq (Label × State_A))
+    (h_term : seq.Terminates) :
+    ({ init := init, trans := seq } : AlterSeq State_A Label).endState h_term =
+    (seq.toList h_term).foldl (fun _ p => p.2) init := by
+  rw [foldl_snd_eq_getLast_elim, Stream'.Seq.getLast?_toList]
+  -- Goal: endState = (seq.get? (length - 1)).elim init Prod.snd.
+  -- Use stateAt_find_eq_endState in reverse to push endState into stateAt.
+  have h_endState_some :
+      ({ init := init, trans := seq } : AlterSeq State_A Label).stateAt
+        (Nat.find h_term) =
+      some (({ init := init, trans := seq } : AlterSeq State_A Label).endState
+        h_term) :=
+    AlterSeq.stateAt_find_eq_endState _ h_term
+  -- Case on whether Nat.find h_term = 0.
+  rcases Nat.eq_zero_or_pos (Nat.find h_term) with h_zero | h_pos
+  · -- Length 0: seq.TerminatedAt 0, so seq.get? 0 = none.
+    have h_term_0 : seq.TerminatedAt 0 := h_zero ▸ Nat.find_spec h_term
+    have h_len_zero : Stream'.Seq.length seq h_term = 0 := h_zero
+    rw [h_len_zero]
+    -- Goal: endState = (seq.get? 0).elim init Prod.snd. With seq.get? 0 = none, RHS = init.
+    rw [show seq.get? 0 = none from h_term_0]
+    show _ = init
+    -- LHS: endState = stateAt 0's content = init.
+    have h_stateAt_0 :
+        ({ init := init, trans := seq } : AlterSeq State_A Label).stateAt 0 =
+        some init := rfl
+    rw [h_zero] at h_endState_some
+    rw [h_stateAt_0] at h_endState_some
+    exact (Option.some.inj h_endState_some).symm
+  · -- Length = n + 1 for some n ≥ 0.
+    obtain ⟨n, h_n⟩ := Nat.exists_eq_succ_of_ne_zero h_pos.ne'
+    have h_len_succ : Stream'.Seq.length seq h_term = n + 1 := h_n
+    rw [h_len_succ]
+    simp only [Nat.add_sub_cancel]
+    -- Length - 1 = n. seq.get? n is some (since n < Nat.find = n+1).
+    have h_not_term_n : ¬ seq.TerminatedAt n :=
+      Nat.find_min h_term (by rw [h_n]; exact Nat.lt_succ_self n)
+    have h_get_n : (seq.get? n).isSome :=
+      Option.ne_none_iff_isSome.mp h_not_term_n
+    obtain ⟨⟨l, s⟩, h_get_eq⟩ := Option.isSome_iff_exists.mp h_get_n
+    rw [h_get_eq]
+    show _ = s
+    -- LHS: endState = stateAt (n+1)'s content = snd of seq.get? n = s.
+    have h_stateAt_succ :
+        ({ init := init, trans := seq } : AlterSeq State_A Label).stateAt (n + 1) =
+        some s := by
+      change (seq.get? n).map Prod.snd = some s
+      rw [h_get_eq]; rfl
+    rw [h_n] at h_endState_some
+    rw [h_stateAt_succ] at h_endState_some
+    exact (Option.some.inj h_endState_some).symm
 
 /-- The state-alignment invariant: when `fromAbstractPrefix` returns
 `some m` on a finite abstract prefix `e_A`, the matching state's
-`current_abstract_state` equals `e_A.endState`. Proof requires:
-* `MatchingState.initial`'s output has `current_abstract_state = e_A.init`;
-* `MatchingState.advance` sets `current_abstract_state := s_A'`;
-* `setupNextTransition` / `extendOnCompletion` preserve `current_abstract_state`;
-* `List.foldl`-induction over `e_A.trans.toList`.
-**Deferred** — proof is mechanical but multi-step. -/
+`current_abstract_state` equals `e_A.endState`. -/
 private lemma fromAbstractPrefix_current_abstract_state
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -1982,7 +2038,49 @@ private lemma fromAbstractPrefix_current_abstract_state
     (m : MatchingState sim pe_C)
     (h : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = some m) :
     m.current_abstract_state = e_A.endState h_term := by
-  sorry
+  classical
+  unfold MatchingState.fromAbstractPrefix at h
+  -- Split on `MatchingState.initial ... e_A.init` and on `h_term`.
+  split at h
+  · -- initial returned none, contradicting h : none = some m.
+    exact absurd h (by simp)
+  · rename_i m₀ h_init
+    -- m₀ is the initial matching state for e_A.init.
+    -- Goal: m.current_abstract_state = e_A.endState h_term.
+    -- h_init is now in scope: `MatchingState.initial ... e_A.init = some m₀`.
+    -- After the initial-split, the body is the `if h_fin : ...` branch.
+    -- Since h_term holds, h_fin = true.
+    rw [dif_pos h_term] at h
+    -- h : some (foldl ... m₀) = some m.
+    have h_m_eq : m = (e_A.trans.toList h_term).foldl
+        (fun m p => MatchingState.advance m p.1 p.2) m₀ :=
+      (Option.some.inj h).symm
+    rw [h_m_eq]
+    -- m₀.current_abstract_state = e_A.init via initial's structure.
+    have h_m₀_cas : m₀.current_abstract_state = e_A.init := by
+      -- initial returns some m₀ via `some base.setupNextTransition`,
+      -- with `base.current_abstract_state = e_A.init`. Use
+      -- setupNextTransition_cas to transfer this.
+      unfold MatchingState.initial at h_init
+      split at h_init
+      · rename_i h_exists
+        have h_m₀_eq : m₀ =
+            ({ e_C := ⟨h_exists.choose, Seq.nil⟩,
+                h_term_C := Stream'.Seq.terminates_nil,
+                μ_A_current := init_match h_exists.choose,
+                h_R := _,
+                next_step := none,
+                weak_sched := none,
+                post_weak_sched := none,
+                stage := WeakStage.tauInternal 0,
+                current_abstract_state := e_A.init,
+                hyper_witness := none } :
+              MatchingState sim pe_C).setupNextTransition :=
+          (Option.some.inj h_init).symm
+        rw [h_m₀_eq, MatchingState.setupNextTransition_current_abstract_state]
+      · exact absurd h_init (by simp)
+    rw [MatchingState.foldl_advance_current_abstract_state, h_m₀_cas,
+        ← endState_eq_foldl_toList]
 
 /-! ### Trace-coupling helpers for `exists_coupling`
 
