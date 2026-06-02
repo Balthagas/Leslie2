@@ -2588,6 +2588,42 @@ private theorem weighted_trace_coupling
     --       on either τ.length for external steps, or σ.runtime for tau-padding).
     sorry
 
+/-- **Matching-state-indexed trace coupling**: the canonical form of the
+Segala coupling. Given a matching state `m` paired with an abstract
+prefix `history_A` (via `fromAbstractPrefix`), the trace probability of
+`pe_C` continuing from `m.e_C` matches the trace probability of `pe_A`
+continuing from `history_A`.
+
+This formulation captures the matching-state invariant directly,
+avoiding the "anchored to initial state" issue of formulations using
+arbitrary `(s_C, μ_A)` pairs.
+
+**Proof by induction on `τ`** (with well-founded recursion on
+`(τ.length, σ.runtime)` for the cons case to handle tau-padding):
+* `nil`: both traceProbs are 1.
+* `cons l τ'`: apply `traceProb_first_step`; the kernels match via
+  `sim.stepWitness_pmfRel` chained through `m`'s structure; continuation
+  recurses with the new matching state from `advance`/`extendOnCompletion`. -/
+private theorem trace_coupling_at_matching_state
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : ProbabilisticExecution sys_A.toSystem)
+    (_h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+        MatchingState.computeNext)
+    (m : MatchingState sim pe_C)
+    (history_A : AlterSeq State_A Label) (h_term_A : history_A.trans.Terminates)
+    (_h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+      history_A = some m)
+    (τ : Seq Label) :
+    sys_C.traceProb (pe_C.continuationFrom m.e_C m.h_term_C) τ =
+    sys_A.traceProb (pe_A.continuationFrom history_A h_term_A) τ := by
+  sorry
+
 private theorem per_state_trace_coupling
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
