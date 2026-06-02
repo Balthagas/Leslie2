@@ -1616,10 +1616,14 @@ noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
       exact pe_C.scheduler.valid m.e_C (Nat.find m.h_term_C)
         (m.e_C.endState m.h_term_C) (Nat.find_spec m.h_term_C)
         (AlterSeq.stateAt_find_eq_endState m.e_C m.h_term_C) d h_d l_C μ_C h_pair_supp'
-    -- Steps 4-6 (sim.step + stepWitness + WeakScheduler) deferred.
-    -- For now, leave matching state mostly as-is; just record we have h_step.
-    let _ := h_step
+    -- Step 4: extract sim.step's witness ω and its PMFRel coupling.
+    let ω : PMF (PMF State_A) := sim.stepWitness m.h_R h_step
+    have h_pmfRel : PMFRel R μ_C ω := sim.stepWitness_pmfRel m.h_R h_step
+    -- Steps 5-6 (PMFRel extraction of μ_A_next + WeakScheduler from
+    -- stepWitness_weakTau/weakStep) deferred.
+    let _ := h_pmfRel
     let _ := h_s_C'_supp
+    let _ := ω
     exact m  -- placeholder; full extraction deferred.
 
 /-- Helper used by `advance`: on weak-transition completion, extend
