@@ -2125,6 +2125,36 @@ private lemma fromAbstractPrefix_empty
       from Stream'.Seq.toList_nil]
     exact h_init.symm
 
+/-- **`continuationFrom` composition**: nested `continuationFrom`s flatten
+into a single one over the concatenated prefix. Requires the inner
+prefix's init to match the outer prefix's endState (otherwise the
+nested scheduler returns `none` and the equality is trivially about
+zero PMFs). -/
+private lemma continuationFrom_compose
+    {State Label : Type} {sys : System State Label}
+    (pe : ProbabilisticExecution sys)
+    (history₁ : AlterSeq State Label) (h_term₁ : history₁.trans.Terminates)
+    (history₂ : AlterSeq State Label) (h_term₂ : history₂.trans.Terminates)
+    (h_init₂ : history₂.init = history₁.endState h_term₁)
+    (h_term_combined : (history₁.trans.append history₂.trans).Terminates) :
+    (pe.continuationFrom history₁ h_term₁).continuationFrom history₂ h_term₂ =
+    pe.continuationFrom ⟨history₁.init, history₁.trans.append history₂.trans⟩
+      h_term_combined := by
+  -- Both have the same initState and the same scheduler.next pointwise.
+  -- We prove structural equality via congr + funext for the scheduler.
+  show ProbabilisticExecution.mk _ _ = ProbabilisticExecution.mk _ _
+  congr 1
+  · -- initState equality: history₂.endState h_term₂ = (combined).endState h_term_combined.
+    -- Both ARE the same final state (Seq.append's endState).
+    sorry
+  · -- Scheduler equality.
+    show Scheduler.mk _ _ = Scheduler.mk _ _
+    congr 1
+    · -- next-function equality.
+      funext e'
+      classical
+      sorry
+
 /-! ### Trace-coupling helpers for `exists_coupling`
 
 The trace-coupling proof reduces — via `traceProb_first_step` on both
