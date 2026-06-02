@@ -152,12 +152,54 @@ theorem endState_append_singleton
       ⟨Nat.find h + 1, Stream'.Seq.terminatedAt_append_find h
         (show (Seq.cons (l, s) Seq.nil).TerminatedAt 1 from rfl)⟩ = s := by
   classical
-  -- Sketch: the new Nat.find equals Nat.find h + 1 (length of old + 1).
-  -- Then stateAt (Nat.find h + 1) = (new_trans.get? (Nat.find h)).map snd,
-  -- which by get?_append_find equals (cons (l, s) nil).get? 0 = some (l, s),
-  -- so stateAt is `some s` and endState extracts `s`.
-  -- Full proof deferred; uses get?_append_find and Nat.find characterization.
-  sorry
+  set new_e : AlterSeq State Label :=
+    ⟨e.init, e.trans.append (Seq.cons (l, s) Seq.nil)⟩
+  set new_h : new_e.trans.Terminates :=
+    ⟨Nat.find h + 1, Stream'.Seq.terminatedAt_append_find h
+      (show (Seq.cons (l, s) Seq.nil).TerminatedAt 1 from rfl)⟩
+  -- Step 1: Nat.find new_h = Nat.find h + 1.
+  have h_find : Nat.find new_h = Nat.find h + 1 := by
+    apply le_antisymm
+    · exact Nat.find_le (Stream'.Seq.terminatedAt_append_find h
+        (show (Seq.cons (l, s) Seq.nil).TerminatedAt 1 from rfl))
+    · -- Show Nat.find h + 1 ≤ Nat.find new_h via contradiction.
+      by_contra h_not
+      have h_lt_succ : Nat.find new_h < Nat.find h + 1 := Nat.not_le.mp h_not
+      have h_le : Nat.find new_h ≤ Nat.find h := Nat.lt_succ_iff.mp h_lt_succ
+      have h_term_spec : new_e.trans.TerminatedAt (Nat.find new_h) := Nat.find_spec new_h
+      by_cases h_eq : Nat.find new_h = Nat.find h
+      · -- Nat.find new_h = Nat.find h: new_e.trans.get? (Nat.find h) = some (l, s).
+        have h_get : new_e.trans.get? (Nat.find h) = some (l, s) := by
+          change (e.trans.append (Seq.cons (l, s) Seq.nil)).get? (Nat.find h) = _
+          have := Stream'.Seq.get?_append_find h (Seq.cons (l, s) Seq.nil) 0
+          rw [Nat.add_zero] at this; rw [this]; rfl
+        rw [h_eq] at h_term_spec
+        change new_e.trans.get? (Nat.find h) = none at h_term_spec
+        rw [h_get] at h_term_spec
+        exact absurd h_term_spec (by simp)
+      · -- Nat.find new_h < Nat.find h: get? value is in e.trans.
+        have hk' : Nat.find new_h < Nat.find h := lt_of_le_of_ne h_le h_eq
+        have h_not_term_e : ¬ e.trans.TerminatedAt (Nat.find new_h) := Nat.find_min h hk'
+        have h_get_eq : new_e.trans.get? (Nat.find new_h) = e.trans.get? (Nat.find new_h) :=
+          Stream'.Seq.get?_append_before_length h_not_term_e
+        change new_e.trans.get? (Nat.find new_h) = none at h_term_spec
+        rw [h_get_eq] at h_term_spec
+        exact h_not_term_e h_term_spec
+  -- Step 2: new_e.stateAt (Nat.find h + 1) = some s.
+  have h_state : new_e.stateAt (Nat.find h + 1) = some s := by
+    change (new_e.trans.get? (Nat.find h)).map Prod.snd = some s
+    have h_get : new_e.trans.get? (Nat.find h) = some (l, s) := by
+      change (e.trans.append (Seq.cons (l, s) Seq.nil)).get? (Nat.find h) = _
+      have := Stream'.Seq.get?_append_find h (Seq.cons (l, s) Seq.nil) 0
+      rw [Nat.add_zero] at this
+      rw [this]
+      rfl
+    rw [h_get]
+    rfl
+  -- Combine via stateAt_find_eq_endState.
+  have h_stateAt := AlterSeq.stateAt_find_eq_endState new_e new_h
+  rw [h_find, h_state] at h_stateAt
+  exact (Option.some.inj h_stateAt).symm
 
 /-- The `endState` of the singleton-transition alterSeq `⟨s₀, cons (l₀, s₁) nil⟩`
 is `s₁`. Useful for matching constraints involving `endState` against `s₁`. -/

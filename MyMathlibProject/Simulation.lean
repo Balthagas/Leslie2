@@ -1530,24 +1530,28 @@ variable {pe_C : ProbabilisticExecution sys_C.toSystem}
 -- `sim.step`. To be filled in alongside `computeNext` below.
 
 /-- Compute the next abstract step from a matching state. Structurally
-case-analyzes on `m.weak_sched` × `m.stage`. The non-trivial cases need:
-* `weak_sched = none`: consult `pe_C.scheduler.next m.e_C`. If that
-  returns `none`, output `none` (concrete stopped). Else sample (l_C,
-  μ_C); for each (s_C' ∈ μ_C.support), use `sim.step` + `stepWitness`
-  to build a fresh `WeakScheduler` and `NextStepData`; output the
-  first abstract step of the weak transition. *Deferred.*
-* `weak_sched = some σ` with `stage = tauInternal k`, `preExternal k`,
-  `postExternal k`: emit `σ.next` at an appropriate prefix
-  representing position `k`. *Deferred.*
-* `weak_sched = some σ` with `stage = externalEmit`: emit the external
-  step `(l_C, μ_A_next)` from the bundled `next_step`. *Deferred.*
+case-analyzes on `m.weak_sched` × `m.stage`:
 
-For now, `computeNext` returns `none` everywhere — a "stop everywhere"
-stub. With this, `Scheduler.valid` is vacuous and the wider proof
-typechecks, but `h_build_pe_A`'s trace-coupling can't hold (pe_A
-emits nothing). Filling each case is the substantive remaining work. -/
-noncomputable def computeNext (_m : MatchingState sim pe_C) :
-    Option (PMF (Label × PMF State_A)) := none
+* `weak_sched = none`: would start a new weak transition by consulting
+  `pe_C.scheduler.next m.e_C` and applying `sim.step` to set up
+  `weak_sched`, `next_step`, and `stage`. **Deferred** (returns `none`).
+* `weak_sched = some σ` with `stage = externalEmit`: emit the external
+  step `(l_C, PMF.pure ?)` derived from `next_step` — specifically, the
+  emit's label is `l_C` and its next-state distribution is `μ_A_next`
+  (the post-step distribution that the matching state will switch to).
+* `weak_sched = some σ` with `stage` in `{tauInternal k, preExternal k,
+  postExternal k}`: emit `σ.next` at the current weak-transition
+  prefix. **Deferred** (would require tracking the abstract prefix
+  walked within the current weak transition). -/
+noncomputable def computeNext (m : MatchingState sim pe_C) :
+    Option (PMF (Label × PMF State_A)) :=
+  match m.weak_sched, m.stage with
+  | none, _ => none
+  | some _, WeakStage.externalEmit =>
+    match m.next_step with
+    | none => none
+    | some ⟨l_C, _, μ_A_next, _⟩ => some (PMF.pure (l_C, μ_A_next))
+  | some _, _ => none
 
 /-- Helper used by `advance`: on weak-transition completion, if a
 `next_concrete_step` was recorded, extend `e_C` by it. The new
