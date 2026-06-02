@@ -3888,6 +3888,189 @@ private lemma probOfRemaining_eq_aux
         pre h_term h_matched hd.1 hd.2
     exact ih ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩ h_term' h_matched'
 
+/-! ### Architecture D infrastructure: D2 (block boundaries)
+
+Structural facts about how `m.e_C` grows along the `advance` chain. Each
+"block boundary" in an abstract execution `e_A` is a position where
+`advance` fires `extendOnCompletion`, extending `m.e_C` by one concrete
+pe_C step. -/
+
+/-- `advance` preserves `e_C.init`. Every branch either leaves `e_C`
+unchanged or extends `e_C.trans` (preserving init). -/
+private lemma MatchingState.advance_e_C_init_eq
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').e_C.init = m.e_C.init := by
+  classical
+  unfold MatchingState.advance
+  dsimp only
+  split
+  · rfl
+  split
+  · split_ifs <;>
+      first
+      | rfl
+      | (unfold MatchingState.extendOnCompletion
+         rw [MatchingState.setupNextTransition_e_C]
+         cases m.next_step <;> rfl)
+  · split_ifs <;> rfl
+  · rfl
+  · split_ifs <;>
+      first
+      | rfl
+      | (unfold MatchingState.extendOnCompletion
+         rw [MatchingState.setupNextTransition_e_C]
+         cases m.next_step <;> rfl)
+
+/-- `advance` either preserves `e_C` exactly, or extends it by one
+transition via `extendOnCompletion`. This is the *block-boundary
+characterization*: every advance is either "within a block" (e_C
+unchanged) or "completes a block" (e_C grows by one). -/
+private lemma MatchingState.advance_e_C_eq_or_extends
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').e_C = m.e_C ∨
+    ∃ next : NextStepData State_C State_A Label R,
+      m.next_step = some next ∧
+      (m.advance l_A s_A').e_C =
+        ⟨m.e_C.init, m.e_C.trans.append (Seq.cons (next.l_C, next.s_C') Seq.nil)⟩ := by
+  classical
+  unfold MatchingState.advance
+  dsimp only
+  split
+  · left; rfl
+  rename_i σ _
+  split
+  · -- tauInternal k.
+    rename_i k _
+    split_ifs with h_k
+    · left; rfl
+    · unfold MatchingState.extendOnCompletion
+      cases h_ns : m.next_step with
+      | none =>
+        left
+        rw [MatchingState.setupNextTransition_e_C]
+      | some next =>
+        right
+        refine ⟨next, rfl, ?_⟩
+        rw [MatchingState.setupNextTransition_e_C]
+  · -- preExternal k: no completion path.
+    rename_i k _
+    split_ifs <;> (left; rfl)
+  · -- externalEmit: transition to postExternal 0.
+    left; rfl
+  · -- postExternal k. Mirror of tauInternal completion.
+    rename_i k _
+    split_ifs with h_k
+    · left; rfl
+    · unfold MatchingState.extendOnCompletion
+      cases h_ns : m.next_step with
+      | none =>
+        left
+        rw [MatchingState.setupNextTransition_e_C]
+      | some next =>
+        right
+        refine ⟨next, rfl, ?_⟩
+        rw [MatchingState.setupNextTransition_e_C]
+
+/-- `foldl_advance` preserves `e_C.init`. -/
+private lemma MatchingState.foldl_advance_e_C_init_eq
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (xs : List (Label × State_A)) (m₀ : MatchingState sim pe_C) :
+    (xs.foldl (fun m p => MatchingState.advance m p.1 p.2) m₀).e_C.init = m₀.e_C.init := by
+  induction xs generalizing m₀ with
+  | nil => rfl
+  | cons head tail ih =>
+    change (tail.foldl _ (MatchingState.advance m₀ head.1 head.2)).e_C.init = m₀.e_C.init
+    rw [ih]
+    exact MatchingState.advance_e_C_init_eq m₀ head.1 head.2
+
+/-- `length` of a seq extended by a single-transition `Seq.cons x Seq.nil` equals
+the original length plus 1. Via `toList_append` + `length_toList`. -/
+private lemma seq_length_append_singleton
+    {α : Type} (s : Seq α) (h_s : s.Terminates) (x : α)
+    (h_combined : (s.append (Seq.cons x Seq.nil)).Terminates) :
+    Stream'.Seq.length (s.append (Seq.cons x Seq.nil)) h_combined =
+    Stream'.Seq.length s h_s + 1 := by
+  have h_single : (Seq.cons x Seq.nil).Terminates :=
+    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  have h_singleton_toList : (Seq.cons x Seq.nil).toList h_single = [x] := by
+    rw [Stream'.Seq.toList_cons]
+    congr 1
+    exact Stream'.Seq.toList_nil
+  rw [← Stream'.Seq.length_toList _ h_combined]
+  rw [Stream'.Seq.toList_append s (Seq.cons x Seq.nil) h_s h_single h_combined]
+  rw [List.length_append, Stream'.Seq.length_toList s h_s, h_singleton_toList]
+  rfl
+
+/-- Single-step length bound: `advance` grows `e_C.trans.length` by at most 1. -/
+private lemma MatchingState.advance_e_C_trans_length_le
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (l_A : Label) (s_A' : State_A)
+    (h_term' : (m.advance l_A s_A').e_C.trans.Terminates) :
+    (m.advance l_A s_A').e_C.trans.length h_term' ≤
+    m.e_C.trans.length m.h_term_C + 1 := by
+  rcases MatchingState.advance_e_C_eq_or_extends m l_A s_A' with h_eq | ⟨next, _, h_eq⟩
+  · -- e_C unchanged: lengths equal (via proof irrelevance through h_eq).
+    have h_trans_eq : (m.advance l_A s_A').e_C.trans = m.e_C.trans := by rw [h_eq]
+    -- Use congr lemma on Stream'.Seq.length with the trans equality.
+    have h_len_eq : (m.advance l_A s_A').e_C.trans.length h_term' =
+        m.e_C.trans.length m.h_term_C := by
+      revert h_term'; rw [h_trans_eq]; intro h_term'; rfl
+    omega
+  · -- e_C extended: length increases by exactly 1.
+    have h_trans_eq : (m.advance l_A s_A').e_C.trans =
+        m.e_C.trans.append (Seq.cons (next.l_C, next.s_C') Seq.nil) := by
+      have : (m.advance l_A s_A').e_C =
+          ⟨m.e_C.init, m.e_C.trans.append (Seq.cons (next.l_C, next.s_C') Seq.nil)⟩ := h_eq
+      exact congrArg AlterSeq.trans this
+    have h_len_eq : (m.advance l_A s_A').e_C.trans.length h_term' =
+        m.e_C.trans.length m.h_term_C + 1 := by
+      revert h_term'; rw [h_trans_eq]; intro h_term'
+      exact seq_length_append_singleton m.e_C.trans m.h_term_C (next.l_C, next.s_C') h_term'
+    omega
+
+/-- `foldl_advance` length bound: after walking `xs` from `m₀`, the resulting
+`e_C.trans.length` is bounded by `m₀.e_C.trans.length + xs.length`. -/
+private lemma MatchingState.foldl_advance_e_C_trans_length_le
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (xs : List (Label × State_A)) (m₀ : MatchingState sim pe_C)
+    (h_term : (xs.foldl (fun m p => MatchingState.advance m p.1 p.2) m₀).e_C.trans.Terminates) :
+    (xs.foldl (fun m p => MatchingState.advance m p.1 p.2) m₀).e_C.trans.length h_term ≤
+    m₀.e_C.trans.length m₀.h_term_C + xs.length := by
+  induction xs generalizing m₀ with
+  | nil =>
+    -- foldl over [] gives m₀ directly. Use proof irrelevance to equate the two length terms.
+    change m₀.e_C.trans.length h_term ≤ m₀.e_C.trans.length m₀.h_term_C + 0
+    have h_proofs : h_term = m₀.h_term_C := Subsingleton.elim _ _
+    rw [h_proofs]; omega
+  | cons head tail ih =>
+    change (tail.foldl (fun m p => MatchingState.advance m p.1 p.2)
+        (MatchingState.advance m₀ head.1 head.2)).e_C.trans.length h_term ≤
+        m₀.e_C.trans.length m₀.h_term_C + (head :: tail).length
+    have h_step_le := ih (MatchingState.advance m₀ head.1 head.2) h_term
+    have h_advance_le : (MatchingState.advance m₀ head.1 head.2).e_C.trans.length
+        (MatchingState.advance m₀ head.1 head.2).h_term_C ≤
+        m₀.e_C.trans.length m₀.h_term_C + 1 :=
+      MatchingState.advance_e_C_trans_length_le m₀ head.1 head.2 _
+    have : (head :: tail).length = tail.length + 1 := by simp [List.length_cons]
+    omega
+
 /-- **D1: `pe_A.probOf` factors through the initial matching state**.
 The whole-execution probability equals `pe_A.init e_A.init` times the
 matching-state-aware product, where the product is taken over `e_A`'s
