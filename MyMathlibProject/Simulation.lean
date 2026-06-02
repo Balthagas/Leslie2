@@ -1852,6 +1852,25 @@ noncomputable def MatchingState.fromAbstractPrefix
         (fun m ⟨l_A, s_A'⟩ => MatchingState.advance m l_A s_A') m₀)
     · exact some m₀
 
+/-- The state-alignment invariant: when `fromAbstractPrefix` returns
+`some m` on a finite abstract prefix `e_A`, the matching state's
+`current_abstract_state` equals `e_A.endState`. Proof requires:
+* `MatchingState.initial`'s output has `current_abstract_state = e_A.init`;
+* `MatchingState.advance` sets `current_abstract_state := s_A'`;
+* `setupNextTransition` / `extendOnCompletion` preserve `current_abstract_state`;
+* `List.foldl`-induction over `e_A.trans.toList`.
+**Deferred** — proof is mechanical but multi-step. -/
+private lemma fromAbstractPrefix_current_abstract_state
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (e_A : AlterSeq State_A Label) (h_term : e_A.trans.Terminates)
+    (m : MatchingState sim pe_C)
+    (h : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = some m) :
+    m.current_abstract_state = e_A.endState h_term := by
+  sorry
+
 end ProbabilisticForwardSimulation
 
 /-- A *coupling* extending a concrete probabilistic execution along a
@@ -2033,14 +2052,9 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                   rw [h_eq] at h_state_e
                   exact (Option.some.inj h_state_e).symm
                 -- (ii) e_A.endState h_term_C = m.current_abstract_state.
-                have h_endState_eq : e_A.endState h_term_C = m.current_abstract_state := by
-                  -- `fromAbstractPrefix e_A = some m` and inductively the
-                  -- `advance` fold preserves `current_abstract_state =
-                  -- (last s_A' in e_A.trans, or e_A.init for empty)`. For
-                  -- finite `e_A`, this equals `e_A.endState`. **Deferred**
-                  -- — requires an induction lemma about `List.foldl` over
-                  -- `advance` and `endState`'s value.
-                  sorry
+                have h_endState_eq : e_A.endState h_term_C = m.current_abstract_state :=
+                  (ProbabilisticForwardSimulation.fromAbstractPrefix_current_abstract_state
+                    sim pe_C init_match h_match_R e_A h_term_C m h_from).symm
                 rw [h_s_eq_endState, h_endState_eq]
               rw [h_state_align]
               -- Goal: sys_A.toSystem.step m.current_abstract_state l_A μ_A.
