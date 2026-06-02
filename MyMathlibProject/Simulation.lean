@@ -822,20 +822,30 @@ theorem LabelledSystem.traceProb_nil_eq_one
         pe.init a.1.init) = ∑' s, pe.init s from e_equiv.tsum_eq pe.init]
   exact pe.init.tsum_coe
 
+/-- Local helper: `∑'` over a sum type decomposes into the two
+sub-`tsum`s. Proved via `Equiv.sumEquivSigmaBool` + `ENNReal.tsum_sigma'`
++ `Fintype.sum_bool`. Should arguably live in Mathlib. -/
+theorem tsum_sum_type {α β : Type u} (f : α ⊕ β → ENNReal) :
+    ∑' x : α ⊕ β, f x = ∑' a, f (Sum.inl a) + ∑' b, f (Sum.inr b) := by
+  rw [show (∑' x : α ⊕ β, f x) =
+      ∑' s : Σ b : Bool, bif b then β else α,
+        f ((Equiv.sumEquivSigmaBool α β).symm s) from
+    ((Equiv.sumEquivSigmaBool α β).symm.tsum_eq f).symm]
+  rw [ENNReal.tsum_sigma']
+  rw [tsum_fintype]
+  rw [Fintype.sum_bool]
+  -- After Fintype.sum_bool: `true`-term + `false`-term. Swap to match RHS.
+  exact add_comm _ _
+
 /-- The `traceProb` of a `continuationFrom`-execution restricts to the
 sub-subtype where `e.init = history.endState`: the other elements have
 `probOf = 0` via `probOf_continuationFrom_zero_of_init_ne`.
 
-Proof strategy options (both blocked on Mathlib API gaps in this codebase):
-1. Fiber-by-init Sigma decomposition + `ENNReal.tsum_sigma` + `tsum_eq_single`.
-   Blocker: Equiv.tsum_eq's LHS pattern (`f (e_fiber a)`) doesn't match
-   `probOf a.1 a.2.1` syntactically; needs a `tsum_congr` bridge.
-2. `Equiv.sumCompl`-based split into `B' ⊕ A_no` and decompose `tsum`
-   over `Sum`. Blocker: no `tsum_sum_type` / `HasSum.sum_elim`-style
-   lemma found in Mathlib for splitting `∑' (x : α ⊕ β), f x` into
-   `∑' a, f (Sum.inl a) + ∑' b, f (Sum.inr b)`.
-
-Either path is mechanical but needs a small bridging helper. -/
+Proof: `Equiv.sumCompl` splits the LHS subtype into "init = endState"
+(B') and "init ≠ endState" (A_no). Apply `tsum_sum_type` to split the
+sum. The A_no side is 0 (each summand is 0 via
+`probOf_continuationFrom_zero_of_init_ne`). The B' side maps
+bijectively to the desired init-constrained subtype. -/
 theorem LabelledSystem.traceProb_continuationFrom_init_restrict
     (ls : LabelledSystem State Label) (pe : ProbabilisticExecution ls.toSystem)
     (history : AlterSeq State Label) (h_term : history.trans.Terminates)
@@ -845,7 +855,48 @@ theorem LabelledSystem.traceProb_continuationFrom_init_restrict
           e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e ∧
           e.init = history.endState h_term}),
         (pe.continuationFrom history h_term).probOf e.1 e.2.1 := by
-  sorry
+  classical
+  unfold LabelledSystem.traceProb
+  set A := {e : AlterSeq State Label //
+    e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e} with hA_def
+  set p : A → Prop := fun a => a.1.init = history.endState h_term with hp_def
+  -- Split A via Equiv.sumCompl p.
+  rw [show
+      (∑' (a : A), (pe.continuationFrom history h_term).probOf a.1 a.2.1) =
+      ∑' (x : {a : A // p a} ⊕ {a : A // ¬ p a}),
+        (pe.continuationFrom history h_term).probOf
+          ((Equiv.sumCompl p) x).1 ((Equiv.sumCompl p) x).2.1 from
+    ((Equiv.sumCompl p).tsum_eq _).symm]
+  rw [tsum_sum_type]
+  -- The right (A_no) summand is 0.
+  have h_zero : (∑' (a : {a : A // ¬ p a}),
+      (pe.continuationFrom history h_term).probOf
+        ((Equiv.sumCompl p) (Sum.inr a)).1
+        ((Equiv.sumCompl p) (Sum.inr a)).2.1) = 0 := by
+    apply ENNReal.tsum_eq_zero.mpr
+    rintro ⟨⟨e, h_term', h_trace', h_tight'⟩, h_ne⟩
+    -- (Equiv.sumCompl p) (Sum.inr ⟨⟨e, …⟩, h_ne⟩) = ⟨e, …⟩.
+    exact ProbabilisticExecution.probOf_continuationFrom_zero_of_init_ne
+      pe history h_term e h_term' h_ne
+  rw [h_zero, add_zero]
+  -- The left (B') summand: bijection with the desired subtype.
+  let e_B' : {a : A // p a} ≃ {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e ∧
+      e.init = history.endState h_term} :=
+    { toFun := fun ⟨⟨e, h_term', h_trace', h_tight'⟩, h_init'⟩ =>
+        ⟨e, h_term', h_trace', h_tight', h_init'⟩
+      invFun := fun ⟨e, h_term', h_trace', h_tight', h_init'⟩ =>
+        ⟨⟨e, h_term', h_trace', h_tight'⟩, h_init'⟩
+      left_inv := fun ⟨⟨_, _, _, _⟩, _⟩ => rfl
+      right_inv := fun ⟨_, _, _, _, _⟩ => rfl }
+  -- The LHS expression `probOf ((sumCompl p) (Sum.inl a)).1 …` reduces to
+  -- `probOf a.1.1 a.1.2.1` since `sumCompl p` on `Sum.inl ⟨a, _⟩` is `a`.
+  -- The Equiv `e_B'` rebrackets the constraint conjunction. After bridging
+  -- via `tsum_congr`, apply `e_B'.tsum_eq`.
+  refine (tsum_congr (fun a => ?_)).trans
+    (e_B'.tsum_eq (fun e => (pe.continuationFrom history h_term).probOf e.1 e.2.1))
+  rcases a with ⟨⟨e, _, _, _⟩, _⟩
+  rfl
 
 /-- "After the scheduler emits a transition with label `l₀`, the remaining
 trace becomes…": internal labels drop out (trace unchanged); external labels
