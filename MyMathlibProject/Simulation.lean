@@ -2323,32 +2323,34 @@ private theorem weighted_trace_coupling
     -- Inductive case: apply `kernel_contA_eq_traceProb_from_state` to expose
     -- the kernel-level structure on both sides.
     unfold weighted_traceProb
-    -- LHS = ∑' s_C, μ_C s_C * traceProb (pe_C_from_sC) (l₀ :: τ')
-    --     = ∑' s_C, μ_C s_C * (∑' l_first s_first, pe_C.kernel ⟨s_C, _⟩ * cont_C)
     simp_rw [← kernel_contA_eq_traceProb_from_state sys_C pe_C _ l₀ τ',
              ← kernel_contA_eq_traceProb_from_state sys_A pe_A _ l₀ τ']
-    -- The remaining goal is the per-step coupling:
-    --   ∑' s_C, μ_C s_C * (∑' l_first s_first, pe_C.kernel * cont_C s_C l_first s_first) =
-    --   ∑' s_A, (μ_C.bind f) s_A * (∑' l_first s_first, pe_A.kernel * cont_A s_A l_first s_first)
-    -- Closing this requires:
-    --   1. Unfolding `(μ_C.bind f) s_A = ∑' s_C, μ_C s_C * f s_C s_A` and
-    --      reorganizing tsums to reduce to a per-s_C inner equality.
-    --   2. At each s_C ∈ μ_C.support (where R s_C (f s_C) holds via h_coupled),
-    --      use `sim.stepWitness_pmfRel` to obtain a PMFRel-coupling between
-    --      `pe_C.kernel ⟨s_C, _⟩` (a PMF over `(l_C, s_C')`) and an abstract
-    --      witness PMF `ω` (a PMF over abstract distributions).
-    --   3. The continuation factor `cont_C s_C l_first s_first` (= traceProb on
-    --      continuation pe) recursively matches `cont_A` via another
-    --      `weighted_trace_coupling` invocation with:
-    --        - new μ_C' = pe_C.kernel emission distribution
-    --        - new f' = derived from the matching state's `h_R_next` chain
-    --        - smaller τ (for external matching) or unchanged (for internal —
-    --          well-founded by σ.runtime).
+    -- Expand (μ_C.bind f) s_A via PMF.bind_apply.
+    simp_rw [PMF.bind_apply]
+    -- RHS = ∑' s_A, (∑' s_C, μ_C s_C * f s_C s_A) * (∑' l_first s_first, ...)
+    -- Push the inner tsum outward and reorganize via tsum_comm.
     --
-    -- **DEFERRED**: this is the mathematical heart of Segala's theorem, requiring
-    -- well-founded recursion on a custom measure (external trace length +
-    -- bounded tau-padding count from σ.runtime).
+    -- After full reorganization, both sides become ∑' s_C, μ_C s_C * (inner per s_C).
+    -- The per-s_C inner equality at s_C ∈ μ_C.support is the *per-step PMFRel
+    -- coupling*, derived from `sim.stepWitness_pmfRel` chained through the
+    -- matching state. This needs:
+    --   1. The s_C ∈ μ_C.support case: apply stepWitness_pmfRel to get PMFRel
+    --      between pe_C.kernel ⟨s_C, _⟩ and ω = sim.stepWitness's witness PMF.
+    --   2. Bridge ω to pe_A.kernel ⟨s_A, _⟩ for s_A ∈ (f s_C).support via the
+    --      MatchingState construction (which uses the same sim.stepWitness).
+    --   3. Use the resulting kernel equality + the inductive hypothesis on the
+    --      continuation traceProb (which, by step 2, has matching R-coupling
+    --      `R s_C' μ_A_next` from `next_step.h_R_next`).
+    --
+    -- **DEFERRED**: closing this requires the trajectory-level coupling argument.
+    -- The MatchingState machinery provides the per-state R-witness chain
+    -- (Step 1 of the trajectory-matching). The remaining work is:
+    --   (a) A "kernel-coupling lemma": given `R s_C μ_A`, sum over matching
+    --       abstract emissions equals concrete kernel mass.
+    --   (b) Recursive use of the IH on continuation traceProbs (well-founded
+    --       on either τ.length for external steps, or σ.runtime for tau-padding).
     sorry
+
 private theorem per_state_trace_coupling
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
