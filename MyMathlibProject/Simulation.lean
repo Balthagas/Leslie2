@@ -1582,7 +1582,15 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
     match m.next_step with
     | none => none
     | some ⟨l_C, _, μ_A_next, _⟩ => some (PMF.pure (l_C, μ_A_next))
-  | some _, _ => none
+  | some _, _ =>
+    -- Mid-tau cases (tauInternal/preExternal/postExternal): the
+    -- `WeakScheduler` σ has type `AlterSeq → PMF (Option …)`,
+    -- structurally different from our `Option (PMF …)` return type
+    -- (the WeakScheduler can emit "stop" probabilistically inside
+    -- its PMF rather than as the outer Option). Bridging this
+    -- requires either reshuffling the types or projecting through
+    -- the inner Option. **Deferred.**
+    none
 
 /-- Helper used by `advance`: on weak-transition completion, install
 the next weak transition based on `pe_C.scheduler.next m.e_C`.
