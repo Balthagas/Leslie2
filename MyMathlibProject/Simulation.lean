@@ -1462,6 +1462,21 @@ inductive WeakStage where
   | postExternal (k : ℕ) : WeakStage
   deriving DecidableEq
 
+/-- Bundled data for the next-step transition in the matching state:
+the concrete step being emulated, the post-step abstract distribution
+to switch to, and the `R`-coupling witness. -/
+structure NextStepData
+    (State_C State_A Label : Type)
+    (R : State_C → PMF State_A → Prop) where
+  /-- The label of the concrete step. -/
+  l_C : Label
+  /-- The post-step concrete state (sampled from the concrete kernel). -/
+  s_C' : State_C
+  /-- The post-step abstract distribution to switch to. -/
+  μ_A_next : PMF State_A
+  /-- The new `R`-coupling: `R s_C' μ_A_next`. -/
+  h_R_next : R s_C' μ_A_next
+
 /-- A *matching state*: the concrete prefix being emulated, the current
 abstract distribution `R`-related to its end-state, and the in-flight
 weak-transition stage.
@@ -1475,10 +1490,9 @@ Fields:
 * `μ_A_current`: the abstract distribution currently `R`-related to
   `e_C`'s end-state.
 * `h_R`: the `R`-coupling witness, `R (e_C.endState h_term_C) μ_A_current`.
-* `next_concrete_step`: the concrete step `(l_C, s_C')` being emulated
-  by the in-flight weak transition. `none` when no weak transition is
-  in flight. When the weak transition completes, `e_C` is extended by
-  this step.
+* `next_step`: bundled data for the concrete step the in-flight weak
+  transition is emulating (with its post-step `μ_A_next` and the new
+  `R`-coupling). `none` when no weak transition is in flight.
 * `weak_sched`: `Option (WeakScheduler sys_A)`. When `some σ`, we are
   in the middle of executing the weak transition driven by `σ` (from
   `sim.step`'s witness); when `none`, the previous weak transition has
@@ -1496,9 +1510,8 @@ structure MatchingState (sim : ProbabilisticForwardSimulation sys_C sys_A R)
   /-- Witness of the `R`-coupling between the concrete end-state and the
   current abstract distribution. -/
   h_R : R (e_C.endState h_term_C) μ_A_current
-  /-- The concrete step `(l_C, s_C')` the in-flight weak transition is
-  emulating; appended to `e_C` when the weak transition completes. -/
-  next_concrete_step : Option (Label × State_C)
+  /-- Bundled data for the next concrete step being emulated. -/
+  next_step : Option (NextStepData State_C State_A Label R)
   /-- The `WeakScheduler` driving the current weak transition.
   `none` means "no weak transition in flight — start a fresh one next". -/
   weak_sched : Option (WeakScheduler sys_A)
@@ -1541,16 +1554,17 @@ If `next_concrete_step = none`, just clear `weak_sched` and reset
 `stage`. -/
 noncomputable def extendOnCompletion (m : MatchingState sim pe_C) :
     MatchingState sim pe_C :=
-  match h_step : m.next_concrete_step with
+  match m.next_step with
   | none =>
     { m with weak_sched := none, stage := WeakStage.tauInternal 0 }
-  | some (l_C, s_C') =>
+  | some ⟨l_C, s_C', μ_A_next, h_R_next⟩ =>
     { e_C := ⟨m.e_C.init, m.e_C.trans.append (Seq.cons (l_C, s_C') Seq.nil)⟩
-      h_term_C := ⟨_, Stream'.Seq.terminatedAt_append_find m.h_term_C
-        (show (Seq.cons (l_C, s_C') Seq.nil).TerminatedAt 1 from rfl)⟩
-      μ_A_current := m.μ_A_current
-      h_R := sorry
-      next_concrete_step := none
+      h_term_C := ⟨Nat.find m.h_term_C + 1,
+        Stream'.Seq.terminatedAt_append_find m.h_term_C
+          (show (Seq.cons (l_C, s_C') Seq.nil).TerminatedAt 1 from rfl)⟩
+      μ_A_current := μ_A_next
+      h_R := (AlterSeq.endState_append_singleton m.e_C m.h_term_C l_C s_C').symm ▸ h_R_next
+      next_step := none
       weak_sched := none
       stage := WeakStage.tauInternal 0 }
 
@@ -1620,8 +1634,14 @@ noncomputable def MatchingState.initial
   by_cases h_exists : ∃ s_C, s_C ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C).support
   · let s_C := h_exists.choose
     have h_s_C_supp : s_C ∈ pe_C.init.support := h_exists.choose_spec.1
-    refine some ⟨⟨s_C, Seq.nil⟩, Stream'.Seq.terminates_nil,
-      init_match s_C, ?_, none, none, WeakStage.tauInternal 0⟩
+    refine some
+      { e_C := ⟨s_C, Seq.nil⟩
+        h_term_C := Stream'.Seq.terminates_nil
+        μ_A_current := init_match s_C
+        h_R := ?_
+        next_step := none
+        weak_sched := none
+        stage := WeakStage.tauInternal 0 }
     -- R s_C (init_match s_C) at endState ⟨s_C, nil⟩ = s_C.
     -- The endState of ⟨s_C, nil⟩ is s_C (the init).
     have h_endState : (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :

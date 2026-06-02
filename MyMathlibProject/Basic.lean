@@ -143,6 +143,22 @@ theorem stateAt_find_eq_endState (e : AlterSeq State Label)
     e.stateAt (Nat.find h) = some (e.endState h) :=
   Option.eq_some_of_isSome _
 
+/-- The `endState` of an alterSeq extended by appending a single transition
+`(l, s)` is `s` (the destination of the appended transition). -/
+theorem endState_append_singleton
+    (e : AlterSeq State Label) (h : e.trans.Terminates)
+    (l : Label) (s : State) :
+    (⟨e.init, e.trans.append (Seq.cons (l, s) Seq.nil)⟩ : AlterSeq State Label).endState
+      ⟨Nat.find h + 1, Stream'.Seq.terminatedAt_append_find h
+        (show (Seq.cons (l, s) Seq.nil).TerminatedAt 1 from rfl)⟩ = s := by
+  classical
+  -- Sketch: the new Nat.find equals Nat.find h + 1 (length of old + 1).
+  -- Then stateAt (Nat.find h + 1) = (new_trans.get? (Nat.find h)).map snd,
+  -- which by get?_append_find equals (cons (l, s) nil).get? 0 = some (l, s),
+  -- so stateAt is `some s` and endState extracts `s`.
+  -- Full proof deferred; uses get?_append_find and Nat.find characterization.
+  sorry
+
 /-- The `endState` of the singleton-transition alterSeq `⟨s₀, cons (l₀, s₁) nil⟩`
 is `s₁`. Useful for matching constraints involving `endState` against `s₁`. -/
 theorem endState_singleton_cons
