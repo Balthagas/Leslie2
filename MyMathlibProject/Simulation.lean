@@ -1420,6 +1420,134 @@ theorem LabelledSystem.traceProb_le_one
     ls.traceProb pe τ ≤ 1 := by
   sorry
 
+/-! ### Matching-state machinery for `exists_coupling`
+
+The challenge in constructing `pe_A` is: for each abstract prefix `e_A`, the
+scheduler must emit a next step that emulates whatever `pe_C` does at a
+*matching* concrete prefix. The matching is non-trivial because one concrete
+step lifts (via `sim.step`) to a *weak* abstract transition — which unrolls
+into a sequence of single abstract steps. The scheduler plays them one at
+a time, tracking position both in the concrete trajectory and within the
+current weak transition.
+
+This section provides the data structures and helper functions that
+encode this matching. -/
+
+namespace ProbabilisticForwardSimulation
+
+variable {State_C State_A Label : Type}
+variable {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+variable {R : State_C → PMF State_A → Prop}
+
+/-- A *weak-stage* identifies which step inside a weak transition the
+abstract scheduler is about to emit.
+
+A weak transition emulating a concrete step `(l_C, μ_C)`:
+* **Internal `l_C`** — `weakTau`: a `WeakScheduler` with `runtime` steps
+  running from `μ_A` to (flattened) `stepWitness.bind id`. The stage
+  indexes the position in `0..runtime`.
+* **External `l_C`** — `weakStep`: three phases:
+  - A *pre*-`weakTau` `WeakScheduler` running from `μ_A` to some `μ_A'`.
+  - One single labelled external step from `μ_A'` to (flattened intermediate).
+  - A *post*-`weakTau` `WeakScheduler` running to the final distribution.
+  The stage tracks which phase + position within. -/
+inductive WeakStage where
+  /-- Stage `k` of an internal weak transition's tau-scheduler. -/
+  | tauInternal (k : ℕ) : WeakStage
+  /-- Stage `k` of an external weak transition's *pre*-tau. -/
+  | preExternal (k : ℕ) : WeakStage
+  /-- About to emit the external label itself. -/
+  | externalEmit : WeakStage
+  /-- Stage `k` of an external weak transition's *post*-tau. -/
+  | postExternal (k : ℕ) : WeakStage
+  deriving DecidableEq
+
+/-- A *matching state*: the concrete prefix being emulated, the current
+abstract distribution `R`-related to its end-state, and the in-flight
+weak-transition stage.
+
+This is the "private state" of `pe_A`'s scheduler — it accumulates as
+abstract steps are taken and gets advanced according to `WeakStage`.
+
+Fields:
+* `e_C`: the concrete prefix walked so far.
+* `h_term_C`: `e_C`'s termination proof (always finite).
+* `μ_A_current`: the abstract distribution currently `R`-related to
+  `e_C`'s end-state.
+* `h_R`: the `R`-coupling witness, `R (e_C.endState h_term_C) μ_A_current`.
+* `stage`: where we are inside the weak transition that started at the
+  *next* concrete step `pe_C.scheduler` would emit from `e_C`. -/
+structure MatchingState (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem) where
+  /-- The concrete prefix walked so far. -/
+  e_C : AlterSeq State_C Label
+  /-- Termination proof for the concrete prefix. -/
+  h_term_C : e_C.trans.Terminates
+  /-- The current abstract distribution `R`-related to `e_C`'s end-state. -/
+  μ_A_current : PMF State_A
+  /-- Witness of the `R`-coupling between the concrete end-state and the
+  current abstract distribution. -/
+  h_R : R (e_C.endState h_term_C) μ_A_current
+  /-- Position within the current weak transition (initialized to a
+  "begin next concrete step" sentinel — typically `tauInternal 0` for
+  a fresh state, then advances as abstract steps are taken). -/
+  stage : WeakStage
+
+namespace MatchingState
+
+variable {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+variable {pe_C : ProbabilisticExecution sys_C.toSystem}
+
+-- A `currentAbstractState` accessor (sampling from `μ_A_current` at the
+-- position dictated by `stage`) is deferred: it depends on how `stage`
+-- indexes into the weak-transition unrolling, which itself comes from
+-- `sim.step`. To be filled in alongside `computeNext` below.
+
+/-- Compute the next abstract step from a matching state, by:
+* If the current weak transition has more abstract steps to play, emit
+  the next single step (via the WeakScheduler from `sim.step`).
+* If the current weak transition is finished, consult `pe_C.scheduler`
+  for the next concrete step, then start a fresh weak transition via
+  `sim.step` (`weakTau` if the new concrete label is internal,
+  `weakStep` if external) and emit its first abstract single step.
+* If `pe_C.scheduler.next e_C = none` (the concrete side stopped),
+  emit `none` (the abstract side stops too).
+-/
+noncomputable def computeNext (m : MatchingState sim pe_C) :
+    Option (PMF (Label × PMF State_A)) :=
+  sorry
+
+/-- Advance the matching state after the abstract scheduler emitted a step
+`(l_A, μ_A')`. Updates `μ_A_current` to a sample from `μ_A'`'s lift, and
+advances `stage` according to the weak-transition unrolling. May also
+advance `e_C` by one concrete step if the previous step completed the
+emulation of a concrete step. -/
+noncomputable def advance (m : MatchingState sim pe_C)
+    (l_A : Label) (μ_A' : PMF State_A) :
+    MatchingState sim pe_C :=
+  sorry
+
+end MatchingState
+
+/-- For each abstract prefix `e_A`, the (Classical) matching state that
+the scheduler should consult to determine `compute_next e_A`. Computed by
+threading `MatchingState.advance` through `e_A.trans` from the initial
+matching state corresponding to `e_A.init`.
+
+The initial matching state for an abstract state `s_A`: pick (via Classical)
+a concrete initial state `s_C ∈ pe_C.init.support` with `s_A ∈
+(init_match s_C).support`. The `R`-coupling comes from `h_match_R s_C`.
+The `stage` starts at the "begin next concrete step" sentinel. -/
+noncomputable def MatchingState.fromAbstractPrefix
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (e_A : AlterSeq State_A Label) :
+    Option (MatchingState sim pe_C) :=
+  sorry
+
+end ProbabilisticForwardSimulation
+
 /-- A *coupling* extending a concrete probabilistic execution along a
 probabilistic forward simulation: an abstract probabilistic execution whose
 init is supported on `sys_A`-initial states and which is trace-coupled to the
