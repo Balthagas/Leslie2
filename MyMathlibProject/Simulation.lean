@@ -1475,8 +1475,12 @@ Fields:
 * `μ_A_current`: the abstract distribution currently `R`-related to
   `e_C`'s end-state.
 * `h_R`: the `R`-coupling witness, `R (e_C.endState h_term_C) μ_A_current`.
-* `stage`: where we are inside the weak transition that started at the
-  *next* concrete step `pe_C.scheduler` would emit from `e_C`. -/
+* `weak_sched`: `Option (WeakScheduler sys_A)`. When `some σ`, we are
+  in the middle of executing the weak transition driven by `σ` (from
+  `sim.step`'s witness); when `none`, the previous weak transition has
+  completed and the next abstract step should start a fresh one.
+* `stage`: position within the current weak transition. Meaningful only
+  when `weak_sched = some σ` (otherwise reset to `tauInternal 0`). -/
 structure MatchingState (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem) where
   /-- The concrete prefix walked so far. -/
@@ -1488,9 +1492,11 @@ structure MatchingState (sim : ProbabilisticForwardSimulation sys_C sys_A R)
   /-- Witness of the `R`-coupling between the concrete end-state and the
   current abstract distribution. -/
   h_R : R (e_C.endState h_term_C) μ_A_current
-  /-- Position within the current weak transition (initialized to a
-  "begin next concrete step" sentinel — typically `tauInternal 0` for
-  a fresh state, then advances as abstract steps are taken). -/
+  /-- The `WeakScheduler` driving the current weak transition.
+  `none` means "no weak transition in flight — start a fresh one next". -/
+  weak_sched : Option (WeakScheduler sys_A)
+  /-- Position within the current weak transition. Only meaningful when
+  `weak_sched` is `some σ`. -/
   stage : WeakStage
 
 namespace MatchingState
@@ -1520,33 +1526,54 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
 /-- Advance the matching state after the abstract scheduler emitted a step
 `(l_A, μ_A')`.
 
-Structurally, this is a state-machine transition on `m.stage`:
-* `tauInternal k` → `tauInternal (k + 1)` (advances within the internal-step
-  weakTau's unrolling).
-* `preExternal k` → `preExternal (k + 1)` (advances within the pre-tau).
-* `externalEmit` → `postExternal 0` (begins the post-tau after emitting
-  the external label).
-* `postExternal k` → `postExternal (k + 1)` (advances within the post-tau).
+Case-analyzes on `m.weak_sched`:
 
-When a weak transition reaches its `WeakScheduler`'s `runtime`, `e_C`
-should be advanced by one concrete step (consuming `pe_C.scheduler.next
-e_C`) and a fresh `WeakStage.tauInternal 0` / `preExternal 0` should be
-chosen depending on the new concrete label's internality. That "completion
-detection" — comparing `k+1` to the implicit runtime — is left as
-future-session refinement; the current stub just increments `k`.
+* **`none`**: no weak transition is in flight. This should not normally
+  occur (the scheduler would not have emitted a step). Returns `m`
+  unchanged — a safe no-op.
 
-Similarly, `μ_A_current` and `h_R` should be updated based on the sampled
-abstract state (encoded by `μ_A'`'s collapse to a pure distribution); for
-now the stub keeps the previous values, leaving the `R`-coupling proof
-intact but conservative. -/
+* **`some σ`**: case-analyzes on `m.stage`:
+  - `tauInternal k`: if `k + 1 < σ.runtime`, advance to `tauInternal
+    (k + 1)`; else the weakTau is complete — clear `weak_sched` so the
+    next step starts a fresh weak transition.
+  - `preExternal k`: if `k + 1 < σ.runtime`, advance to `preExternal
+    (k + 1)`; else the pre-tau is complete — transition to `externalEmit`.
+  - `externalEmit`: transition to `postExternal 0`.
+  - `postExternal k`: analogous to `tauInternal k`, with the completion
+    case clearing `weak_sched`.
+
+**Known semantic gaps** (still deferred):
+1. When `weak_sched` clears, the concrete prefix `e_C` should also be
+   advanced (by appending the concrete step that was being emulated).
+   The "next concrete step" data isn't currently stored in
+   `MatchingState`, so this is left as a future refinement (would
+   require a `next_concrete_step` field).
+2. `μ_A_current` and `h_R` should be updated at each stage transition
+   to track the actual evolving abstract distribution; not yet done. -/
 noncomputable def advance (m : MatchingState sim pe_C)
     (_l_A : Label) (_μ_A' : PMF State_A) :
     MatchingState sim pe_C :=
-  match m.stage with
-  | WeakStage.tauInternal k => { m with stage := WeakStage.tauInternal (k + 1) }
-  | WeakStage.preExternal k => { m with stage := WeakStage.preExternal (k + 1) }
-  | WeakStage.externalEmit => { m with stage := WeakStage.postExternal 0 }
-  | WeakStage.postExternal k => { m with stage := WeakStage.postExternal (k + 1) }
+  match m.weak_sched with
+  | none => m
+  | some σ =>
+    match m.stage with
+    | WeakStage.tauInternal k =>
+      if k + 1 < σ.runtime then
+        { m with stage := WeakStage.tauInternal (k + 1) }
+      else
+        { m with weak_sched := none, stage := WeakStage.tauInternal 0 }
+    | WeakStage.preExternal k =>
+      if k + 1 < σ.runtime then
+        { m with stage := WeakStage.preExternal (k + 1) }
+      else
+        { m with stage := WeakStage.externalEmit }
+    | WeakStage.externalEmit =>
+      { m with stage := WeakStage.postExternal 0 }
+    | WeakStage.postExternal k =>
+      if k + 1 < σ.runtime then
+        { m with stage := WeakStage.postExternal (k + 1) }
+      else
+        { m with weak_sched := none, stage := WeakStage.tauInternal 0 }
 
 end MatchingState
 
@@ -1574,7 +1601,7 @@ noncomputable def MatchingState.initial
   · let s_C := h_exists.choose
     have h_s_C_supp : s_C ∈ pe_C.init.support := h_exists.choose_spec.1
     refine some ⟨⟨s_C, Seq.nil⟩, Stream'.Seq.terminates_nil,
-      init_match s_C, ?_, WeakStage.tauInternal 0⟩
+      init_match s_C, ?_, none, WeakStage.tauInternal 0⟩
     -- R s_C (init_match s_C) at endState ⟨s_C, nil⟩ = s_C.
     -- The endState of ⟨s_C, nil⟩ is s_C (the init).
     have h_endState : (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :
