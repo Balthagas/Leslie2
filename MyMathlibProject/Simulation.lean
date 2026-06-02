@@ -2281,27 +2281,46 @@ private lemma weighted_traceProb_pure
   · intro s h_ne
     rw [PMF.pure_apply_of_ne s_0 s h_ne, zero_mul]
 
-/-- **Reachability** of an R-coupled pair `(s_C, μ_A)`: there exists a
-matching state `m` that witnesses `s_C` and `μ_A` as the "current" concrete
-end-state and abstract distribution. This is the structural invariant
-maintained by the simulation: only reachable pairs can be analysed via
-the matching-state machinery.
+/-- **Reachability** of `(s_C, μ_A)` *at an abstract prefix `e_A`*: the
+matching state computed by `fromAbstractPrefix` from `e_A` witnesses
+`s_C` as the concrete end-state and `μ_A` as the current abstract
+distribution. Crucially, this uses the *same* matching state that
+`pe_A.scheduler.next` queries at `e_A` — so by construction, the witness
+matches `pe_A`'s actual behavior. -/
+def IsReachableAt
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (e_A : AlterSeq State_A Label) (s_C : State_C) (μ_A : PMF State_A) : Prop :=
+  ∃ m : MatchingState sim pe_C,
+    MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = some m ∧
+    m.e_C.endState m.h_term_C = s_C ∧
+    m.μ_A_current = μ_A
 
-For the *initial* states, reachability is witnessed by
-`MatchingState.initial`. For *post-step* states, reachability is witnessed
-by `setupNextTransition` extending a previous reachable matching state. -/
+/-- **Reachability** of an R-coupled pair `(s_C, μ_A)`: there exists *some*
+abstract prefix `e_A` such that `IsReachableAt` holds. This is the
+"existential" form used at the level of `step_kernel_coupling`. -/
 def IsReachable
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
     (s_C : State_C) (μ_A : PMF State_A) : Prop :=
-  ∃ m : MatchingState sim pe_C,
-    m.e_C.endState m.h_term_C = s_C ∧
-    m.μ_A_current = μ_A
+  ∃ e_A : AlterSeq State_A Label,
+    IsReachableAt sim pe_C init_match h_match_R e_A s_C μ_A
 
-/-- Initial states are reachable: for `s_C ∈ pe_C.init.support`, the pair
-`(s_C, init_match s_C)` is reachable, witnessed by `MatchingState.initial`. -/
+/-- Initial states are reachable: for `s_C ∈ pe_C.init.support` and any
+`s_A ∈ (init_match s_C).support`, the pair `(s_C, init_match s_C)` is
+reachable at the empty prefix `⟨s_A, Seq.nil⟩`. **DEFERRED**: this
+requires knowing `MatchingState.initial sim pe_C init_match h_match_R s_A`'s
+choice of `s_C'` coincides with our `s_C` (or that we can constrain
+init_match's support). Issue: `Classical.choose` may pick a different
+`s_C'`. -/
 lemma isReachable_init
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
@@ -2309,50 +2328,9 @@ lemma isReachable_init
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (init_match : State_C → PMF State_A)
     (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
-    (s_C : State_C) (h_s_C_supp : s_C ∈ pe_C.init.support) :
-    IsReachable sim pe_C s_C (init_match s_C) := by
-  -- Witness: the matching state built from `s_C` and `init_match s_C`.
-  -- Use a sampled `s_A ∈ (init_match s_C).support`.
-  classical
-  obtain ⟨s_A, h_s_A⟩ := (init_match s_C).support_nonempty
-  -- `MatchingState.initial sim pe_C init_match h_match_R s_A` picks some
-  -- `s_C'` from `pe_C.init.support` (possibly different from our s_C).
-  -- For our purposes, we want a witness with `m.e_C.endState = s_C` and
-  -- `m.μ_A_current = init_match s_C`. **Build it directly**:
-  let base : MatchingState sim pe_C :=
-    { e_C := ⟨s_C, Seq.nil⟩
-      h_term_C := Stream'.Seq.terminates_nil
-      μ_A_current := init_match s_C
-      h_R := by
-        have h_endState :
-            (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :
-              AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = s_C := by
-          have h_eq := AlterSeq.stateAt_find_eq_endState
-            ({init := s_C, trans := Seq.nil} : AlterSeq State_C Label)
-            Stream'.Seq.terminates_nil
-          have h_find : Nat.find (Stream'.Seq.terminates_nil :
-              (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
-            apply Nat.find_eq_zero _ |>.mpr; rfl
-          rw [h_find] at h_eq
-          exact (Option.some.inj h_eq).symm
-        rw [h_endState]
-        exact h_match_R s_C h_s_C_supp
-      next_step := none
-      weak_sched := none
-      post_weak_sched := none
-      stage := WeakStage.tauInternal 0
-      current_abstract_state := s_A
-      hyper_witness := none }
-  refine ⟨base, ?_, rfl⟩
-  -- base.e_C.endState = s_C.
-  have h_eq := AlterSeq.stateAt_find_eq_endState
-    ({init := s_C, trans := Seq.nil} : AlterSeq State_C Label)
-    Stream'.Seq.terminates_nil
-  have h_find : Nat.find (Stream'.Seq.terminates_nil :
-      (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
-    apply Nat.find_eq_zero _ |>.mpr; rfl
-  rw [h_find] at h_eq
-  exact (Option.some.inj h_eq).symm
+    (s_C : State_C) (_h_s_C_supp : s_C ∈ pe_C.init.support) :
+    IsReachable sim pe_C init_match h_match_R s_C (init_match s_C) := by
+  sorry
 
 /-- **Per-step trace coupling**: this is the cons case of the trace coupling
 specialized to a single R-coupled pair `(s_C, μ_A)`. Equivalent to
