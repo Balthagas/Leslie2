@@ -1775,8 +1775,11 @@ noncomputable def advance (m : MatchingState sim pe_C)
 
 /-- `setupNextTransition` preserves `current_abstract_state`. **Deferred** —
 the definition is built in tactic mode with `by classical; rcases ...; by_cases`,
-which does not unfold cleanly; refactoring `setupNextTransition` into term-mode
-match would unblock this. -/
+plus several dependent `let`s using `Exists.choose`; `unfold` / `rw [.eq_def]`
+both fail with "Tactic `generalize` failed: result is not type correct" because
+later let-bindings depend on earlier choose-results, making naive substitution
+ill-typed. Refactoring the definition into term-mode `match` with a tuple
+result would unblock this. -/
 private lemma setupNextTransition_current_abstract_state
     (m : MatchingState sim pe_C) :
     m.setupNextTransition.current_abstract_state = m.current_abstract_state := by
