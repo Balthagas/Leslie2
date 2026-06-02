@@ -1990,35 +1990,38 @@ theorem ProbabilisticForwardSimulation.exists_coupling
         valid := by
           classical
           intro e_A n s_A h_term_e h_state_e d h_some l_A μ_A h_supp
-          -- next e_A = (fromAbstractPrefix …).bind computeNext = some d.
-          -- For this to hold, fromAbstractPrefix returns some m and
-          -- computeNext m = some d.
           rcases h_from :
               MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A
             with _ | m
-          · -- fromAbstractPrefix = none; h_some yields contradiction.
-            simp [h_from] at h_some
-          · -- fromAbstractPrefix = some m; computeNext m = some d.
-            simp [h_from] at h_some
-            -- Case-analyze on computeNext m's output.
+          · simp [h_from] at h_some
+          · simp [h_from] at h_some
             rcases h_compute : MatchingState.computeNext m with _ | d'
             · rw [h_compute] at h_some; exact absurd h_some (by simp)
-            · -- computeNext m = some d'; thus d = d'.
-              rw [h_compute] at h_some
+            · rw [h_compute] at h_some
               have h_d_eq : d = d' := (Option.some.inj h_some).symm
               subst h_d_eq
+              -- **State-alignment invariant**: `s_A = m.current_abstract_state`.
+              -- The matching state's `current_abstract_state` is set by
+              -- `fromAbstractPrefix` to be `e_A.endState` (= `s_A` since `n`
+              -- must equal `Nat.find` of the termination witness, derived
+              -- from `h_term_e` + `h_state_e`).
+              have h_state_align : s_A = m.current_abstract_state := by sorry
+              rw [h_state_align]
+              -- Goal: sys_A.toSystem.step m.current_abstract_state l_A μ_A.
               -- Validity sub-cases via `computeNext`'s structure:
-              -- (1) `externalEmit`: d' = PMF.pure (l_C, μ_A_next); validity
-              --     follows from `hyperStep`'s per-state-kernel in `weakStep`.
-              -- (2) mid-tau via `liftOption`: validity follows from
-              --     `WeakScheduler.valid` on σ.next's output, propagated
-              --     through `liftOption`'s Classical extraction.
-              -- Both rely on the invariant that `s_A ∈ m.μ_A_current.support`
-              -- (the abstract execution's current state aligns with the
-              -- matching state's distribution). This invariant isn't yet
-              -- maintained by `fromAbstractPrefix` — it requires threading
-              -- `m.μ_A_current` correctly through the `advance` folds.
-              -- **Deferred** pending invariant strengthening.
+              --
+              -- (a) `externalEmit`: `d' = PMF.pure (l_C, μ_A_next)`;
+              --     `(l_A, μ_A) = (l_C, μ_A_next)`. Validity from
+              --     `hyperStep`'s per-state kernel applied to
+              --     `m.current_abstract_state`.
+              --
+              -- (b) Mid-tau via `liftOption`: `d' = PMF.pure h.choose`
+              --     where `h.choose ∈ σ.next ⟨…, nil⟩.support`. Validity
+              --     from `WeakScheduler.valid` applied to that prefix,
+              --     propagated through `liftOption`'s Classical extraction.
+              --
+              -- (c) `weak_sched = none + pe_C.next = some _`: `d' = none`
+              --     in the current stub; vacuously valid (no `some d`).
               sorry }
     refine ⟨pe_A_scheduler, ?_⟩
     intro l τ
