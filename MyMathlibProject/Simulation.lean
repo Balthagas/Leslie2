@@ -222,18 +222,68 @@ theorem filter_cons_neg {p : α → Prop} (a : α) (s : Seq α) (h : ¬ p a) :
     exact ⟨a, s, h, rfl, rfl⟩
 
 /-- `toList` of an `append` is the list-level concatenation of the two
-constituent `toList`s. This is the natural extension of `Stream'.Seq.toList`
-to appended sequences.
-
-**Proof sketch** (deferred): induct on `Nat.find h_s`. Base case: s = nil
-(from `TerminatedAt 0` ↔ nil); then `nil.append s' = s'` (via `nil_append`).
-Inductive case: `s = cons a t` (from `s.length = n + 1`); use `cons_append`,
-`toList_cons`, and the IH on `t`. -/
-theorem toList_append {α : Type*}
-    (s s' : Seq α) (h_s : s.Terminates) (h_s' : s'.Terminates)
-    (h_combined : (s.append s').Terminates) :
+constituent `toList`s. -/
+theorem toList_append {α : Type*} (s s' : Seq α) (h_s : s.Terminates)
+    (h_s' : s'.Terminates) (h_combined : (s.append s').Terminates) :
     (s.append s').toList h_combined = s.toList h_s ++ s'.toList h_s' := by
-  sorry
+  -- Induct on s.length h_s, with s, h_s, h_combined universally quantified.
+  suffices h_aux : ∀ (n : ℕ) (s : Seq α) (h_s : s.Terminates),
+      s.length h_s = n → ∀ (h_combined : (s.append s').Terminates),
+      (s.append s').toList h_combined = s.toList h_s ++ s'.toList h_s' from
+    h_aux (s.length h_s) s h_s rfl h_combined
+  intro n
+  induction n with
+  | zero =>
+    intro s h_s h_len h_combined
+    have h_s_nil : s = Seq.nil := length_eq_zero.mp h_len
+    subst h_s_nil
+    -- Goal: (nil.append s').toList h_combined = nil.toList h_s ++ s'.toList h_s'.
+    -- nil.toList = []. (nil.append s') = s'. Goal reduces to s'.toList = s'.toList.
+    have h_nil_toList : (Seq.nil : Seq α).toList h_s = [] := toList_nil
+    rw [h_nil_toList, List.nil_append]
+    -- Goal: (nil.append s').toList h_combined = s'.toList h_s'.
+    -- Use proof irrelevance + nil_append.
+    congr 1
+    exact nil_append s'
+  | succ n ih =>
+    intro s h_s h_len h_combined
+    have h_ne : s ≠ Seq.nil := by
+      intro h_nil
+      subst h_nil
+      rw [length_nil] at h_len
+      exact Nat.succ_ne_zero n h_len.symm
+    cases s with
+    | nil =>
+      exact absurd rfl h_ne
+    | cons a t =>
+      have h_t_term : t.Terminates := terminates_tail_of_cons h_s
+      have h_t_len : t.length h_t_term = n := by
+        have : (cons a t).length h_s = t.length h_t_term + 1 := length_cons h_t_term
+        rw [this] at h_len
+        omega
+      -- (cons a t).append s' = cons a (t.append s') (cons_append).
+      have h_cons_app : (cons a t).append s' = cons a (t.append s') := cons_append a t s'
+      -- Use this to compute both sides.
+      -- LHS: (cons a t).append s'.toList h_combined.
+      -- By proof irrelevance, this equals (cons a (t.append s')).toList h_combined'
+      -- where h_combined' is the corresponding Terminates proof.
+      have h_tail_combined : (t.append s').Terminates := by
+        have : ((cons a t).append s').Terminates := h_combined
+        rw [h_cons_app] at this
+        exact terminates_tail_of_cons this
+      have h_cons_tail_combined : (cons a (t.append s')).Terminates := by
+        rw [← h_cons_app]; exact h_combined
+      -- LHS: rewrite via the seq equality, then apply toList_cons.
+      have h_LHS : ((cons a t).append s').toList h_combined =
+          a :: (t.append s').toList h_tail_combined := by
+        rw [show ((cons a t).append s').toList h_combined =
+              (cons a (t.append s')).toList h_cons_tail_combined from by
+          congr 1]
+        exact toList_cons h_cons_tail_combined
+      rw [h_LHS]
+      rw [toList_cons h_s]
+      rw [ih t h_t_term h_t_len h_tail_combined]
+      rfl
 
 end Stream'.Seq
 
