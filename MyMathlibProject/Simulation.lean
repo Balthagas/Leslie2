@@ -1477,6 +1477,23 @@ structure NextStepData
   /-- The new `R`-coupling: `R s_C' μ_A_next`. -/
   h_R_next : R s_C' μ_A_next
 
+/-- The `hyperStep` witness data carried by `MatchingState` for external
+weak transitions: the pre-emission distribution `μ_pre`, the external
+label `l`, and a per-state kernel-distribution `State → PMF (PMF State)`
+(matching `hyperStep`'s shape) with validity on `μ_pre.support`. Used by
+`computeNext`'s `externalEmit` case to emit `(l, μ)` for each `μ` in
+`(kernel m.cas).support` (assuming the support invariant on `m.cas`). -/
+structure HyperWitness (sys_A : LabelledSystem State_A Label) where
+  /-- The pre-emission abstract distribution (post-pretau in `weakStep`). -/
+  μ_pre : PMF State_A
+  /-- The external label being emitted. -/
+  l : Label
+  /-- The per-state kernel-distribution. -/
+  kernel : State_A → PMF (PMF State_A)
+  /-- Validity of `kernel` on `μ_pre.support`. -/
+  valid : ∀ s ∈ μ_pre.support, ∀ μ ∈ (kernel s).support,
+    sys_A.toSystem.step s l μ
+
 /-- A *matching state*: the concrete prefix being emulated, the current
 abstract distribution `R`-related to its end-state, and the in-flight
 weak-transition stage.
@@ -1527,6 +1544,11 @@ structure MatchingState (sim : ProbabilisticForwardSimulation sys_C sys_A R)
   state derived via `fromAbstractPrefix e_A`, this equals `e_A.endState`.
   Used by `computeNext` and validity proofs to align with `μ_A_current`. -/
   current_abstract_state : State_A
+  /-- Optional `hyperStep` witness for the in-flight external weak
+  transition. Populated by `setupNextTransition` in the external case;
+  cleared by `extendOnCompletion`. Read by `computeNext`'s
+  `externalEmit` case to emit `(witness.l, witness.kernel m.cas)`. -/
+  hyper_witness : Option (HyperWitness sys_A)
 
 namespace MatchingState
 
@@ -1616,9 +1638,9 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
       --      `advance` initialization.)
       none
   | some _, WeakStage.externalEmit =>
-    match m.next_step with
+    match m.hyper_witness with
     | none => none
-    | some ⟨l_C, _, μ_A_next, _⟩ => some (PMF.pure (l_C, μ_A_next))
+    | some w => some ((w.kernel m.current_abstract_state).map (Prod.mk w.l))
   | some σ, _ =>
     -- Mid-tau cases (tauInternal/preExternal/postExternal): bridge
     -- `WeakScheduler.next : AlterSeq → PMF (Option (l, μ))` to our
@@ -1705,14 +1727,23 @@ noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
       let μ_inter' : PMF State_A := h_step_w_spec.choose
       have h_step_w_spec_2 := h_step_w_spec.choose_spec
       have h_pre : weakTau sys_A m.μ_A_current μ_inter := h_step_w_spec_2.1
+      have h_hyper : hyperStep sys_A.toSystem μ_inter l_C μ_inter' := h_step_w_spec_2.2.1
       have h_post : weakTau sys_A μ_inter' (ω.bind id) := h_step_w_spec_2.2.2
       let σ_pre : WeakScheduler sys_A := h_pre.choose
       let σ_post : WeakScheduler sys_A := h_post.choose
+      -- Extract the hyperStep kernel for use in the externalEmit emission.
+      let hyper_kernel : State_A → PMF (PMF State_A) := h_hyper.kernel
+      have h_hyper_valid := h_hyper.kernel_step
       exact { m with
         weak_sched := some σ_pre
         post_weak_sched := some σ_post
         next_step := some ⟨l_C, s_C', μ_A_next, h_R_next⟩
-        stage := WeakStage.preExternal 0 }
+        stage := WeakStage.preExternal 0
+        hyper_witness := some
+          { μ_pre := μ_inter
+            l := l_C
+            kernel := hyper_kernel
+            valid := h_hyper_valid } }
 
 /-- Helper used by `advance`: on weak-transition completion, extend
 `e_C` by `next_step` if present, then call `setupNextTransition` to
@@ -1734,7 +1765,8 @@ noncomputable def extendOnCompletion (m : MatchingState sim pe_C) :
         weak_sched := none
         post_weak_sched := none
         stage := WeakStage.tauInternal 0
-        current_abstract_state := m.current_abstract_state }
+        current_abstract_state := m.current_abstract_state
+        hyper_witness := none }
   setupNextTransition extended
 
 /-- Advance the matching state after the abstract scheduler emitted a step
@@ -1866,7 +1898,8 @@ noncomputable def MatchingState.initial
         weak_sched := none
         post_weak_sched := none
         stage := WeakStage.tauInternal 0
-        current_abstract_state := s_A }
+        current_abstract_state := s_A
+        hyper_witness := none }
     -- Install the first weak transition via `setupNextTransition`.
     exact some base.setupNextTransition
   · exact none
@@ -2156,19 +2189,42 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                 · -- preExternal k
                   exact h_mid_tau (by unfold MatchingState.computeNext; rw [h_ws, h_st])
                 · -- externalEmit case.
-                  rcases h_ns : m.next_step with _ | nsd
-                  · -- next_step = none: computeNext m = none, contradicts h_compute.
+                  rcases h_hw : m.hyper_witness with _ | w
+                  · -- hyper_witness = none: computeNext m = none, contradicts h_compute.
                     exfalso
                     have h_cn_none : MatchingState.computeNext m = none := by
                       unfold MatchingState.computeNext
-                      rw [h_ws, h_st, h_ns]
+                      rw [h_ws, h_st, h_hw]
                     rw [h_cn_none] at h_compute
                     exact absurd h_compute (by simp)
-                  · -- next_step = some nsd: `d' = PMF.pure (l_C, μ_A_next)`.
-                    -- Validity needs the hyperStep witness from the
-                    -- `weakStep` decomposition — currently not stored in
-                    -- `MatchingState`. **Deferred** (architectural gap).
-                    sorry
+                  · -- hyper_witness = some w. Emission is `(w.kernel m.cas).map (Prod.mk w.l)`.
+                    -- h_supp: (l_A, μ_A) ∈ ((w.kernel m.cas).map (Prod.mk w.l)).support
+                    --   = (Prod.mk w.l) '' (w.kernel m.cas).support
+                    -- So l_A = w.l and μ_A ∈ (w.kernel m.cas).support.
+                    -- Validity via w.valid requires m.cas ∈ w.μ_pre.support — the
+                    -- support invariant from the weak-transition unrolling.
+                    -- **Sorry'd**: the invariant is non-trivial to maintain
+                    -- through `advance` (requires reasoning about σ_pre's run).
+                    have h_cn_eq : MatchingState.computeNext m =
+                        some ((w.kernel m.current_abstract_state).map (Prod.mk w.l)) := by
+                      unfold MatchingState.computeNext
+                      rw [h_ws, h_st, h_hw]
+                    rw [h_cn_eq] at h_compute
+                    have h_d_eq : d = (w.kernel m.current_abstract_state).map (Prod.mk w.l) :=
+                      (Option.some.inj h_compute).symm
+                    rw [h_d_eq, PMF.support_map, Set.mem_image] at h_supp
+                    obtain ⟨μ, h_μ_supp, h_eq⟩ := h_supp
+                    have h_l_eq : l_A = w.l := (Prod.mk.inj h_eq).1.symm
+                    have h_μ_eq : μ_A = μ := (Prod.mk.inj h_eq).2.symm
+                    have h_cas_in : m.current_abstract_state ∈ w.μ_pre.support := by
+                      -- Invariant: when stage = externalEmit and hyper_witness = some w,
+                      -- m.current_abstract_state ∈ w.μ_pre.support. **Deferred** —
+                      -- maintained through pre-tau evolution under σ_pre.
+                      sorry
+                    have h_step :=
+                      w.valid m.current_abstract_state h_cas_in μ h_μ_supp
+                    rw [h_l_eq, h_μ_eq]
+                    exact h_step
                 · -- postExternal k
                   exact h_mid_tau (by unfold MatchingState.computeNext; rw [h_ws, h_st]) }
     refine ⟨pe_A_scheduler, ?_⟩
