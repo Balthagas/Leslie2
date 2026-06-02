@@ -3416,15 +3416,124 @@ noncomputable def pe_A_faithful
           (PMF.pure none)
           MatchingState.computeNext_PMF
       valid := by
-        -- Validity case-split:
-        -- * fromAbstractPrefix returns none → next = PMF.pure none → vacuous.
-        -- * Returns some m, weak_sched = none → computeNext_PMF = pure none → vacuous.
-        -- * Returns some m, mid-tau stage → σ.next directly; σ.valid + endState bridge.
-        -- * Returns some m, externalEmit with witness w → w.kernel-derived;
-        --   HyperWitness.valid + cas bridge.
-        -- Bridge uses fromAbstractPrefix_endStateInv +
-        -- fromAbstractPrefix_current_abstract_state + stateAt-find characterization.
-        sorry }
+        classical
+        intro e_A n s h_term_e h_state_e l μ h_supp
+        -- BRIDGE: derive `s = e_A.endState ⟨n, h_term_e⟩`.
+        set h_term_combined : e_A.trans.Terminates := ⟨n, h_term_e⟩ with h_combined_def
+        have h_stateAt_find : e_A.stateAt (Nat.find h_term_combined) =
+            some (e_A.endState h_term_combined) :=
+          AlterSeq.stateAt_find_eq_endState e_A h_term_combined
+        have h_find_le_n : Nat.find h_term_combined ≤ n := Nat.find_le h_term_e
+        have h_s_eq_endState : s = e_A.endState h_term_combined := by
+          rcases lt_or_eq_of_le h_find_le_n with h_lt | h_eq
+          · -- Impossible: stateAt past Nat.find would be none.
+            exfalso
+            obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 :=
+              Nat.exists_eq_succ_of_ne_zero
+                (by omega : n ≠ 0)
+            change (e_A.trans.get? n').map Prod.snd = some s at h_state_e
+            -- n' ≥ Nat.find, so e_A.trans.get? n' = none (monotonic termination).
+            have h_n'_ge : Nat.find h_term_combined ≤ n' := Nat.lt_succ_iff.mp h_lt
+            have h_term_n' : e_A.trans.TerminatedAt n' :=
+              (Stream'.Seq.length_le_iff (h := h_term_combined)).mp h_n'_ge
+            rw [h_term_n'] at h_state_e
+            simp at h_state_e
+          · rw [h_eq] at h_stateAt_find
+            rw [h_stateAt_find] at h_state_e
+            exact (Option.some.inj h_state_e).symm
+        -- Case-split on fromAbstractPrefix.
+        cases h_fap : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A with
+        | none =>
+          simp only [h_fap, Option.elim_none] at h_supp
+          rw [PMF.support_pure] at h_supp
+          exact absurd h_supp (by simp)
+        | some m =>
+          simp only [h_fap, Option.elim_some] at h_supp
+          -- e_A.endState = m.current_abstract_state.
+          have h_cas_eq : m.current_abstract_state = e_A.endState h_term_combined :=
+            fromAbstractPrefix_current_abstract_state sim pe_C init_match h_match_R e_A
+              h_term_combined m h_fap
+          unfold MatchingState.computeNext_PMF at h_supp
+          rcases h_ws : m.weak_sched with _ | σ
+          · -- weak_sched = none: PMF.pure none. Vacuous.
+            rw [h_ws] at h_supp
+            simp only at h_supp
+            rw [PMF.support_pure] at h_supp
+            exact absurd h_supp (by simp)
+          · rw [h_ws] at h_supp
+            rcases h_st : m.stage with k | k | _ | k
+            all_goals rw [h_st] at h_supp
+            all_goals try (simp only at h_supp)
+            -- tauInternal: σ.next directly.
+            · -- σ.valid at σ_query_prefix gives sys_A.step at σ_query_prefix.endState.
+              -- Bridge: σ_query_prefix.endState = m.current_abstract_state = e_A.endState = s.
+              have h_endState_eq :
+                  m.σ_query_prefix.endState m.σ_query_prefix_term = m.current_abstract_state :=
+                fromAbstractPrefix_endStateInv sim pe_C init_match h_match_R e_A h_fap
+                  (by rw [h_ws]; simp)
+              have h_term_σ := Nat.find_spec m.σ_query_prefix_term
+              have h_stateAt_σ :=
+                AlterSeq.stateAt_find_eq_endState m.σ_query_prefix m.σ_query_prefix_term
+              have h_step := σ.valid m.σ_query_prefix (Nat.find m.σ_query_prefix_term)
+                (m.σ_query_prefix.endState m.σ_query_prefix_term) h_term_σ h_stateAt_σ (l, μ)
+                h_supp
+              rw [h_endState_eq, h_cas_eq, ← h_s_eq_endState] at h_step
+              exact h_step
+            -- preExternal: same.
+            · have h_endState_eq :
+                  m.σ_query_prefix.endState m.σ_query_prefix_term = m.current_abstract_state :=
+                fromAbstractPrefix_endStateInv sim pe_C init_match h_match_R e_A h_fap
+                  (by rw [h_ws]; simp)
+              have h_term_σ := Nat.find_spec m.σ_query_prefix_term
+              have h_stateAt_σ :=
+                AlterSeq.stateAt_find_eq_endState m.σ_query_prefix m.σ_query_prefix_term
+              have h_step := σ.valid m.σ_query_prefix (Nat.find m.σ_query_prefix_term)
+                (m.σ_query_prefix.endState m.σ_query_prefix_term) h_term_σ h_stateAt_σ (l, μ)
+                h_supp
+              rw [h_endState_eq, h_cas_eq, ← h_s_eq_endState] at h_step
+              exact h_step
+            -- externalEmit.
+            · cases h_hw : m.hyper_witness with
+              | none =>
+                rw [h_hw] at h_supp
+                simp only at h_supp
+                rw [PMF.support_pure] at h_supp
+                exact absurd h_supp (by simp)
+              | some w =>
+                rw [h_hw] at h_supp
+                dsimp only at h_supp
+                by_cases h_cas_in : m.current_abstract_state ∈ w.μ_pre.support
+                · rw [if_pos h_cas_in] at h_supp
+                  rw [PMF.support_map] at h_supp
+                  obtain ⟨μ', h_μ'_supp, h_eq⟩ := h_supp
+                  -- h_eq : (fun μ => some (w.l, μ)) μ' = some (l, μ)
+                  -- So (w.l, μ') = (l, μ), giving l = w.l and μ = μ'.
+                  have h_pair : (w.l, μ') = (l, μ) := Option.some.inj h_eq
+                  have h_l_eq : l = w.l := (Prod.mk.inj h_pair).1.symm
+                  have h_μ_eq : μ = μ' := (Prod.mk.inj h_pair).2.symm
+                  have h_step := w.valid m.current_abstract_state h_cas_in μ'
+                    (h_μ_eq.symm ▸ h_μ'_supp)
+                  -- h_step : sys_A.toSystem.step m.current_abstract_state w.l μ'
+                  rw [← h_l_eq] at h_step
+                  rw [← h_μ_eq] at h_step
+                  rw [h_cas_eq, ← h_s_eq_endState] at h_step
+                  exact h_step
+                · rw [if_neg h_cas_in] at h_supp
+                  rw [PMF.support_pure] at h_supp
+                  exact absurd h_supp (by simp)
+            -- postExternal: same as tauInternal.
+            · have h_endState_eq :
+                  m.σ_query_prefix.endState m.σ_query_prefix_term = m.current_abstract_state :=
+                fromAbstractPrefix_endStateInv sim pe_C init_match h_match_R e_A h_fap
+                  (by rw [h_ws]; simp)
+              have h_term_σ := Nat.find_spec m.σ_query_prefix_term
+              have h_stateAt_σ :=
+                AlterSeq.stateAt_find_eq_endState m.σ_query_prefix m.σ_query_prefix_term
+              have h_step := σ.valid m.σ_query_prefix (Nat.find m.σ_query_prefix_term)
+                (m.σ_query_prefix.endState m.σ_query_prefix_term) h_term_σ h_stateAt_σ (l, μ)
+                h_supp
+              rw [h_endState_eq, h_cas_eq, ← h_s_eq_endState] at h_step
+              exact h_step }
 
 /-- **Per-step concrete validity**: at a matching state `m`, when
 `pe_C.scheduler.next m.e_C = some d` and `(l_C, μ_C) ∈ d.support`, the
