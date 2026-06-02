@@ -92,7 +92,8 @@ end Stream'.Seq
 namespace PLTS
 
 structure System (State : Type) (Label : Type) where
-  init : State → Prop
+  /-- The unique initial state of the system. -/
+  init : State
   step : State → Label → PMF State → Prop
 
 /-- An alternating sequence of states and labels: an initial state followed by a
@@ -231,7 +232,7 @@ def is_partial_exec (e : AlterSeq State Label) (sys : System State Label) : Prop
     ∃ s μ, e.stateAt n = some s ∧ sys.step s l μ ∧ s' ∈ μ.support
 
 def is_exec (e : AlterSeq State Label) (sys : System State Label) : Prop :=
-  is_partial_exec e sys ∧ sys.init e.init
+  is_partial_exec e sys ∧ e.init = sys.init
 
 /-- A randomized scheduler for a PLTS `sys`. Given a finite execution prefix it
 either returns `none` (the scheduler stops on this prefix, producing no further
@@ -244,15 +245,35 @@ structure Scheduler (sys : System State Label) where
     e.trans.TerminatedAt n → e.stateAt n = some s →
     ∀ d, next e = some d → ∀ l μ, (l, μ) ∈ d.support → sys.step s l μ
 
-/-- A probabilistic execution: an initial distribution over states together
-with a scheduler resolving each step of the trace. -/
+/-- A probabilistic execution: a unique initial state together with a scheduler
+resolving each step of the trace. -/
 structure ProbabilisticExecution (sys : System State Label) where
-  init : PMF State
+  /-- The unique initial state of this execution. -/
+  initState : State
   scheduler : Scheduler sys
 
 namespace ProbabilisticExecution
 
 variable {sys : System State Label}
+
+/-- The initial distribution: a Dirac on `initState`. -/
+noncomputable def init (pe : ProbabilisticExecution sys) : PMF State :=
+  PMF.pure pe.initState
+
+theorem init_apply (pe : ProbabilisticExecution sys) (s : State) :
+    pe.init s = (PMF.pure pe.initState) s := rfl
+
+@[simp] theorem init_apply_self (pe : ProbabilisticExecution sys) :
+    pe.init pe.initState = 1 := by
+  unfold init; exact PMF.pure_apply_self _
+
+theorem init_apply_of_ne (pe : ProbabilisticExecution sys) {s : State}
+    (h : s ≠ pe.initState) : pe.init s = 0 := by
+  unfold init; exact PMF.pure_apply_of_ne _ _ h
+
+@[simp] theorem init_support (pe : ProbabilisticExecution sys) :
+    pe.init.support = {pe.initState} := by
+  unfold init; exact PMF.support_pure _
 
 /-- The one-step kernel of a probabilistic execution. Given a finite prefix `e`
 and a concrete next step `(l, s')`, returns the probability mass that the
@@ -389,7 +410,7 @@ returns `none` (validity vacuous). -/
 noncomputable def continuationFrom (pe : ProbabilisticExecution sys)
     (history : AlterSeq State Label) (h_term : history.trans.Terminates) :
     ProbabilisticExecution sys where
-  init := PMF.pure (history.endState h_term)
+  initState := history.endState h_term
   scheduler :=
     { next := fun e' =>
         open Classical in

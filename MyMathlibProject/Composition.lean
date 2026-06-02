@@ -41,7 +41,7 @@ namespace System
 synchronising on labels in `sync ⊆ Label`. -/
 def parallel (sys₁ : System State₁ Label) (sys₂ : System State₂ Label)
     (sync : Set Label) : System (State₁ × State₂) Label where
-  init p := sys₁.init p.1 ∧ sys₂.init p.2
+  init := (sys₁.init, sys₂.init)
   step p l μ :=
     -- Synchronised step: `l ∈ sync` and both components step.
     (l ∈ sync ∧

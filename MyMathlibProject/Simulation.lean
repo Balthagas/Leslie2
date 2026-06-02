@@ -249,7 +249,7 @@ the state relation `R : State_C → State_A → Prop`:
 structure StrongProbabilisticSimulation
     (sys_C : System State_C Label) (sys_A : System State_A Label)
     (R : State_C → State_A → Prop) where
-  init : ∀ s_C, sys_C.init s_C → ∃ s_A, sys_A.init s_A ∧ R s_C s_A
+  init : R sys_C.init sys_A.init
   step : ∀ s_C s_A, R s_C s_A →
     ∀ l μ_C, sys_C.step s_C l μ_C →
     ∃ μ_A, sys_A.step s_A l μ_A ∧ PMFRel R μ_C μ_A
@@ -486,7 +486,7 @@ internal/external label partition.
 structure WeakProbabilisticSimulation
     (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
     (R : State_C → State_A → Prop) where
-  init : ∀ s_C, sys_C.init s_C → ∃ s_A, sys_A.init s_A ∧ R s_C s_A
+  init : R sys_C.init sys_A.init
   step : ∀ s_C s_A, R s_C s_A →
     ∀ l μ_C, sys_C.step s_C l μ_C →
     ∃ μ_A : PMF State_A,
@@ -518,8 +518,7 @@ is concentrated on a single abstract state). -/
 structure ProbabilisticForwardSimulation
     (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
     (R : State_C → PMF State_A → Prop) where
-  init : ∀ s_C, sys_C.init s_C →
-    ∃ μ_A, (∀ s_A ∈ μ_A.support, sys_A.init s_A) ∧ R s_C μ_A
+  init : ∃ μ_A, (∀ s_A ∈ μ_A.support, s_A = sys_A.init) ∧ R sys_C.init μ_A
   step : ∀ s_C μ_A, R s_C μ_A →
     ∀ l μ_C, sys_C.step s_C l μ_C →
     ∃ ω : PMF (PMF State_A),
@@ -2741,7 +2740,7 @@ structure Coupling
   /-- The abstract probabilistic execution paired with `pe_C`. -/
   pe_A : ProbabilisticExecution sys_A.toSystem
   /-- The abstract initial distribution is supported on `sys_A`-initial states. -/
-  init_initial : ∀ s_A ∈ pe_A.init.support, sys_A.init s_A
+  init_initial : ∀ s_A ∈ pe_A.init.support, s_A = sys_A.init
   /-- The two executions assign equal probability to every finite trace. -/
   trace_coupled : TraceCoupled sys_C sys_A pe_C pe_A
 
