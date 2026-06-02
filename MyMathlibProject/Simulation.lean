@@ -1518,14 +1518,35 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
   sorry
 
 /-- Advance the matching state after the abstract scheduler emitted a step
-`(l_A, μ_A')`. Updates `μ_A_current` to a sample from `μ_A'`'s lift, and
-advances `stage` according to the weak-transition unrolling. May also
-advance `e_C` by one concrete step if the previous step completed the
-emulation of a concrete step. -/
+`(l_A, μ_A')`.
+
+Structurally, this is a state-machine transition on `m.stage`:
+* `tauInternal k` → `tauInternal (k + 1)` (advances within the internal-step
+  weakTau's unrolling).
+* `preExternal k` → `preExternal (k + 1)` (advances within the pre-tau).
+* `externalEmit` → `postExternal 0` (begins the post-tau after emitting
+  the external label).
+* `postExternal k` → `postExternal (k + 1)` (advances within the post-tau).
+
+When a weak transition reaches its `WeakScheduler`'s `runtime`, `e_C`
+should be advanced by one concrete step (consuming `pe_C.scheduler.next
+e_C`) and a fresh `WeakStage.tauInternal 0` / `preExternal 0` should be
+chosen depending on the new concrete label's internality. That "completion
+detection" — comparing `k+1` to the implicit runtime — is left as
+future-session refinement; the current stub just increments `k`.
+
+Similarly, `μ_A_current` and `h_R` should be updated based on the sampled
+abstract state (encoded by `μ_A'`'s collapse to a pure distribution); for
+now the stub keeps the previous values, leaving the `R`-coupling proof
+intact but conservative. -/
 noncomputable def advance (m : MatchingState sim pe_C)
-    (l_A : Label) (μ_A' : PMF State_A) :
+    (_l_A : Label) (_μ_A' : PMF State_A) :
     MatchingState sim pe_C :=
-  sorry
+  match m.stage with
+  | WeakStage.tauInternal k => { m with stage := WeakStage.tauInternal (k + 1) }
+  | WeakStage.preExternal k => { m with stage := WeakStage.preExternal (k + 1) }
+  | WeakStage.externalEmit => { m with stage := WeakStage.postExternal 0 }
+  | WeakStage.postExternal k => { m with stage := WeakStage.postExternal (k + 1) }
 
 end MatchingState
 
