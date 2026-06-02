@@ -2001,11 +2001,44 @@ theorem ProbabilisticForwardSimulation.exists_coupling
               have h_d_eq : d = d' := (Option.some.inj h_some).symm
               subst h_d_eq
               -- **State-alignment invariant**: `s_A = m.current_abstract_state`.
-              -- The matching state's `current_abstract_state` is set by
-              -- `fromAbstractPrefix` to be `e_A.endState` (= `s_A` since `n`
-              -- must equal `Nat.find` of the termination witness, derived
-              -- from `h_term_e` + `h_state_e`).
-              have h_state_align : s_A = m.current_abstract_state := by sorry
+              -- Decomposed into two equalities:
+              -- (i) `s_A = e_A.endState` — from `h_state_e` + `h_term_e`.
+              -- (ii) `e_A.endState = m.current_abstract_state` — from
+              --      `fromAbstractPrefix`'s `advance`-fold which preserves
+              --      this invariant inductively.
+              have h_term_C : e_A.trans.Terminates := ⟨n, h_term_e⟩
+              have h_state_align : s_A = m.current_abstract_state := by
+                -- (i) s_A = e_A.endState h_term_C.
+                have h_s_eq_endState : s_A = e_A.endState h_term_C := by
+                  -- Show n = Nat.find h_term_C, then use stateAt_find_eq_endState.
+                  have h_n_le : Nat.find h_term_C ≤ n := Nat.find_le h_term_e
+                  have h_n_ge : n ≤ Nat.find h_term_C := by
+                    -- If n > Nat.find h_term_C, then stateAt n = none.
+                    -- This contradicts h_state_e.
+                    by_contra h_gt
+                    push_neg at h_gt
+                    -- h_gt : Nat.find h_term_C < n.
+                    -- stateAt n: case on n.
+                    -- For n = 0: impossible since Nat.find h_term_C < 0 absurd.
+                    -- For n ≥ 1: stateAt n = (e_A.trans.get? (n-1)).map snd.
+                    -- n-1 ≥ Nat.find h_term_C, so get? (n-1) = none (terminated_stable).
+                    -- Thus stateAt n = none, contradicting h_state_e.
+                    sorry
+                  have h_n_eq : n = Nat.find h_term_C := le_antisymm h_n_ge h_n_le
+                  have h_eq := AlterSeq.stateAt_find_eq_endState e_A h_term_C
+                  rw [← h_n_eq] at h_eq
+                  rw [h_eq] at h_state_e
+                  exact (Option.some.inj h_state_e).symm
+                -- (ii) e_A.endState h_term_C = m.current_abstract_state.
+                have h_endState_eq : e_A.endState h_term_C = m.current_abstract_state := by
+                  -- `fromAbstractPrefix e_A = some m` and inductively the
+                  -- `advance` fold preserves `current_abstract_state =
+                  -- (last s_A' in e_A.trans, or e_A.init for empty)`. For
+                  -- finite `e_A`, this equals `e_A.endState`. **Deferred**
+                  -- — requires an induction lemma about `List.foldl` over
+                  -- `advance` and `endState`'s value.
+                  sorry
+                rw [h_s_eq_endState, h_endState_eq]
               rw [h_state_align]
               -- Goal: sys_A.toSystem.step m.current_abstract_state l_A μ_A.
               -- Validity sub-cases via `computeNext`'s structure:
