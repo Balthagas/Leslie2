@@ -1529,19 +1529,25 @@ variable {pe_C : ProbabilisticExecution sys_C.toSystem}
 -- indexes into the weak-transition unrolling, which itself comes from
 -- `sim.step`. To be filled in alongside `computeNext` below.
 
-/-- Compute the next abstract step from a matching state, by:
-* If the current weak transition has more abstract steps to play, emit
-  the next single step (via the WeakScheduler from `sim.step`).
-* If the current weak transition is finished, consult `pe_C.scheduler`
-  for the next concrete step, then start a fresh weak transition via
-  `sim.step` (`weakTau` if the new concrete label is internal,
-  `weakStep` if external) and emit its first abstract single step.
-* If `pe_C.scheduler.next e_C = none` (the concrete side stopped),
-  emit `none` (the abstract side stops too).
--/
-noncomputable def computeNext (m : MatchingState sim pe_C) :
-    Option (PMF (Label × PMF State_A)) :=
-  sorry
+/-- Compute the next abstract step from a matching state. Structurally
+case-analyzes on `m.weak_sched` × `m.stage`. The non-trivial cases need:
+* `weak_sched = none`: consult `pe_C.scheduler.next m.e_C`. If that
+  returns `none`, output `none` (concrete stopped). Else sample (l_C,
+  μ_C); for each (s_C' ∈ μ_C.support), use `sim.step` + `stepWitness`
+  to build a fresh `WeakScheduler` and `NextStepData`; output the
+  first abstract step of the weak transition. *Deferred.*
+* `weak_sched = some σ` with `stage = tauInternal k`, `preExternal k`,
+  `postExternal k`: emit `σ.next` at an appropriate prefix
+  representing position `k`. *Deferred.*
+* `weak_sched = some σ` with `stage = externalEmit`: emit the external
+  step `(l_C, μ_A_next)` from the bundled `next_step`. *Deferred.*
+
+For now, `computeNext` returns `none` everywhere — a "stop everywhere"
+stub. With this, `Scheduler.valid` is vacuous and the wider proof
+typechecks, but `h_build_pe_A`'s trace-coupling can't hold (pe_A
+emits nothing). Filling each case is the substantive remaining work. -/
+noncomputable def computeNext (_m : MatchingState sim pe_C) :
+    Option (PMF (Label × PMF State_A)) := none
 
 /-- Helper used by `advance`: on weak-transition completion, if a
 `next_concrete_step` was recorded, extend `e_C` by it. The new
