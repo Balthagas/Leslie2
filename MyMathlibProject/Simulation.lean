@@ -2183,6 +2183,40 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
     -- the recursion bottoms out without an unbounded chain of advances.
     MatchingState.liftOption (σ.next m.σ_query_prefix)
 
+/-- **Faithful `computeNext`** (Option (a) Phase 3): returns the full
+`PMF (Option (Label × PMF State_A))` directly without Classical-collapse.
+
+Key differences from the original `computeNext`:
+* `weak_sched = none`: returns `PMF.pure none` (deterministic halt).
+* `weak_sched = some σ, mid-tau stage`: returns `σ.next m.σ_query_prefix`
+  *directly* — no `liftOption` collapse, preserving the full σ distribution.
+* `externalEmit` with `hyper_witness = some w` and `cas ∈ w.μ_pre.support`:
+  returns `(w.kernel cas).map (fun μ => some (w.l, μ))` — a faithful PMF
+  over each `μ` in the kernel's support tagged with `w.l`.
+* All other cases: `PMF.pure none`. -/
+noncomputable def computeNext_PMF (m : MatchingState sim pe_C) :
+    PMF (Option (Label × PMF State_A)) :=
+  match m.weak_sched, m.stage with
+  | none, _ => PMF.pure none
+  | some _, WeakStage.externalEmit =>
+    match m.hyper_witness with
+    | none => PMF.pure none
+    | some w =>
+      letI : Decidable (m.current_abstract_state ∈ w.μ_pre.support) :=
+        Classical.propDecidable _
+      if m.current_abstract_state ∈ w.μ_pre.support then
+        (w.kernel m.current_abstract_state).map (fun μ => some (w.l, μ))
+      else
+        PMF.pure none
+  | some σ, _ =>
+    -- Mid-tau case: σ.next directly. No Classical collapse.
+    σ.next m.σ_query_prefix
+
+-- (pe_A_faithful definition and its `valid` proof require lemmas from
+-- later in the file — `fromAbstractPrefix_endStateInv`,
+-- `fromAbstractPrefix_current_abstract_state`, etc. — so it is added
+-- later, near where those invariants are proved.)
+
 /-- Helper used by `advance`: on weak-transition completion, install
 the next weak transition based on `pe_C.scheduler.next m.e_C`.
 
@@ -3352,6 +3386,45 @@ private lemma fromAbstractPrefix_endStateInv
       exact MatchingState.foldl_advance_endStateInv _ m₀ h_m₀_inv
     · have h_m_eq : m = m₀ := (Option.some.inj h).symm
       rw [h_m_eq]; exact h_m₀_inv
+
+/-- **`pe_A_faithful`**: the faithful abstract probabilistic execution
+constructed from a matching state. Its scheduler queries `fromAbstractPrefix`
+at each prefix and dispatches to `computeNext_PMF` — which preserves σ's
+full distribution (no Classical-choose collapse).
+
+The `valid` proof case-splits on `computeNext_PMF`'s structure
+(weak_sched × stage). Productive cases (mid-tau, externalEmit-with-witness)
+invoke σ.valid / HyperWitness.valid at the σ_query_prefix / cas, then
+bridge to the prefix's stateAt via `fromAbstractPrefix_endStateInv` /
+`fromAbstractPrefix_current_abstract_state` + stateAt-find characterization.
+
+Phase 4 will complete this validity proof and prove trace coupling for
+`pe_A_faithful` matches the concrete side via the now-faithful kernel. -/
+noncomputable def pe_A_faithful
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (s_A_init : State_A) :
+    MatchingState.PMFProbabilisticExecution sys_A.toSystem where
+  initState := s_A_init
+  scheduler :=
+    { next := fun e_A =>
+        (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).elim
+          (PMF.pure none)
+          MatchingState.computeNext_PMF
+      valid := by
+        -- Validity case-split:
+        -- * fromAbstractPrefix returns none → next = PMF.pure none → vacuous.
+        -- * Returns some m, weak_sched = none → computeNext_PMF = pure none → vacuous.
+        -- * Returns some m, mid-tau stage → σ.next directly; σ.valid + endState bridge.
+        -- * Returns some m, externalEmit with witness w → w.kernel-derived;
+        --   HyperWitness.valid + cas bridge.
+        -- Bridge uses fromAbstractPrefix_endStateInv +
+        -- fromAbstractPrefix_current_abstract_state + stateAt-find characterization.
+        sorry }
 
 /-- **Per-step concrete validity**: at a matching state `m`, when
 `pe_C.scheduler.next m.e_C = some d` and `(l_C, μ_C) ∈ d.support`, the
