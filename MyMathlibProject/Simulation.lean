@@ -2189,6 +2189,642 @@ private lemma fromAbstractPrefix_empty
       from Stream'.Seq.toList_nil]
     exact h_init.symm
 
+/-- The structural invariant maintained by matching states obtained from
+`fromAbstractPrefix`: either `weak_sched` is `none`, or `pe_C.scheduler`
+has a pending step at `m.e_C`. This is exactly the condition under which
+`computeNext m = none` follows from `pe_C.scheduler.next m.e_C = none`
+(which closes Case 2(a) of `trace_coupling_at_matching_state`). -/
+private def MatchingState.WeakSchedInv
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) : Prop :=
+  m.weak_sched = none ∨ ∃ d, pe_C.scheduler.next m.e_C = some d
+
+/-- `setupNextTransition` establishes the `weak_sched` invariant: either
+the input had `weak_sched = none` and `pe_C.scheduler` halts at `m.e_C`
+(so the output is the input, `weak_sched = none`), or `pe_C.scheduler`
+has a step there (in which case `weak_sched` is set to `some _` while
+`e_C` is preserved, witnessing the right disjunct). -/
+private lemma MatchingState.setupNextTransition_weakSchedInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C)
+    (h_in : m.weak_sched = none) :
+    m.setupNextTransition.WeakSchedInv := by
+  classical
+  unfold MatchingState.WeakSchedInv
+  rw [MatchingState.setupNextTransition_e_C]
+  unfold MatchingState.setupNextTransition
+  split
+  · rename_i h_d
+    left; exact h_in
+  · rename_i d h_d
+    right; exact ⟨d, h_d⟩
+
+/-- `extendOnCompletion` establishes the `weak_sched` invariant: the
+inner step clears `weak_sched` to `none`, and then `setupNextTransition`
+either keeps it `none` (when `pe_C` halts at the new `e_C`) or sets it to
+`some _` while exhibiting the concrete step. -/
+private lemma MatchingState.extendOnCompletion_weakSchedInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) :
+    m.extendOnCompletion.WeakSchedInv := by
+  unfold MatchingState.extendOnCompletion
+  -- The pre-setup state has weak_sched = none in both `next_step` arms.
+  refine MatchingState.setupNextTransition_weakSchedInv _ ?_
+  cases m.next_step with
+  | none => rfl
+  | some _ => rfl
+
+/-- `advance` preserves the `weak_sched` invariant: the new matching
+state either has `weak_sched = none` or `pe_C.scheduler` still has a
+step at the new `e_C`. -/
+private lemma MatchingState.advance_weakSchedInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (h_inv : m.WeakSchedInv)
+    (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').WeakSchedInv := by
+  classical
+  unfold MatchingState.advance
+  dsimp only
+  -- Split on m.weak_sched.
+  split
+  · -- weak_sched = none branch: result has weak_sched = none.
+    rename_i _ h_ws_none
+    left
+    change m.weak_sched = none
+    exact h_ws_none
+  rename_i σ h_ws_some
+  have h_pe_C : ∃ d, pe_C.scheduler.next m.e_C = some d := by
+    cases h_inv with
+    | inl h => rw [h] at h_ws_some; cases h_ws_some
+    | inr h => exact h
+  -- Split on m.stage.
+  split
+  · -- tauInternal k
+    rename_i k _
+    split_ifs with h_k
+    · right; exact h_pe_C
+    · exact MatchingState.extendOnCompletion_weakSchedInv _
+  · -- preExternal k
+    rename_i k _
+    split_ifs with h_k
+    · right; exact h_pe_C
+    · right; exact h_pe_C
+  · -- externalEmit: result has weak_sched := m.post_weak_sched, e_C = m.e_C.
+    cases h_post : m.post_weak_sched with
+    | none =>
+      left
+      rfl
+    | some σ_post =>
+      right; exact h_pe_C
+  · -- postExternal k
+    rename_i k _
+    split_ifs with h_k
+    · right; exact h_pe_C
+    · exact MatchingState.extendOnCompletion_weakSchedInv _
+
+/-- The `WeakSchedInv` invariant is preserved by `foldl advance`. -/
+private lemma MatchingState.foldl_advance_weakSchedInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (xs : List (Label × State_A)) (m₀ : MatchingState sim pe_C)
+    (h_inv : m₀.WeakSchedInv) :
+    (xs.foldl (fun m p => MatchingState.advance m p.1 p.2) m₀).WeakSchedInv := by
+  induction xs generalizing m₀ with
+  | nil => exact h_inv
+  | cons head tail ih =>
+    change (tail.foldl _ (MatchingState.advance m₀ head.1 head.2)).WeakSchedInv
+    exact ih _ (MatchingState.advance_weakSchedInv m₀ h_inv head.1 head.2)
+
+/-- The matching state returned by `fromAbstractPrefix` satisfies the
+`weak_sched` invariant. -/
+private lemma fromAbstractPrefix_weakSchedInv
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (e_A : AlterSeq State_A Label)
+    {m : MatchingState sim pe_C}
+    (h : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = some m) :
+    m.WeakSchedInv := by
+  classical
+  unfold MatchingState.fromAbstractPrefix at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i m₀ h_init
+    -- Get the invariant on m₀ (output of MatchingState.initial).
+    have h_m₀_inv : m₀.WeakSchedInv := by
+      unfold MatchingState.initial at h_init
+      split at h_init
+      · rename_i h_s_A_in
+        have h_eq : m₀ = _ := (Option.some.inj h_init).symm
+        rw [h_eq]
+        exact MatchingState.setupNextTransition_weakSchedInv _ rfl
+      · exact absurd h_init (by simp)
+    -- Case on whether e_A.trans terminates.
+    split at h
+    · -- terminates: m = foldl advance over toList.
+      have h_m_eq : m = _ := (Option.some.inj h).symm
+      rw [h_m_eq]
+      exact MatchingState.foldl_advance_weakSchedInv _ m₀ h_m₀_inv
+    · -- not terminates: m = m₀.
+      have h_m_eq : m = m₀ := (Option.some.inj h).symm
+      rw [h_m_eq]; exact h_m₀_inv
+
+/-- When `pe_C.scheduler` halts at `m.e_C`, the invariant forces
+`m.weak_sched = none`. -/
+private lemma MatchingState.weak_sched_none_of_pe_C_halts
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {m : MatchingState sim pe_C} (h_inv : m.WeakSchedInv)
+    (h_next : pe_C.scheduler.next m.e_C = none) :
+    m.weak_sched = none := by
+  cases h_inv with
+  | inl h => exact h
+  | inr h =>
+    obtain ⟨d, h_d⟩ := h
+    rw [h_d] at h_next
+    exact absurd h_next (by simp)
+
+/-- Auxiliary invariant: at the `externalEmit` or `preExternal k` stages,
+`post_weak_sched` is non-`none`. Combined with the biconditional, it
+ensures the `externalEmit`-swap in `advance` preserves the invariant. -/
+private def MatchingState.PostInv
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) : Prop :=
+  (m.stage = WeakStage.externalEmit ∨ ∃ k, m.stage = WeakStage.preExternal k) →
+    m.post_weak_sched ≠ none
+
+/-- Strong invariant: the biconditional `weak_sched = none ↔ pe_C.next = none`,
+combined with `PostInv`. Together they let us conclude
+`pe_C.scheduler.next m.e_C = some d → m.weak_sched = some σ`, which is
+required to enter the non-trivial branches of `computeNext` in Case 2(b). -/
+private def MatchingState.StrongInv
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) : Prop :=
+  (m.weak_sched = none ↔ pe_C.scheduler.next m.e_C = none) ∧ m.PostInv
+
+/-- `setupNextTransition` establishes `StrongInv` when its input has
+`weak_sched = none` and `stage = tauInternal 0` (the canonical state
+entering `setupNextTransition` in the codebase). -/
+private lemma MatchingState.setupNextTransition_strongInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C)
+    (h_ws : m.weak_sched = none)
+    (h_st : m.stage = WeakStage.tauInternal 0) :
+    m.setupNextTransition.StrongInv := by
+  classical
+  unfold MatchingState.setupNextTransition
+  -- The setup is one of three concrete shapes; we analyse each.
+  split
+  · -- pe_C.next m.e_C = none → output = m.
+    rename_i h_d
+    refine ⟨?_, ?_⟩
+    · exact ⟨fun _ => h_d, fun _ => h_ws⟩
+    · intro h_stage
+      -- m.stage = tauInternal 0, but h_stage says it's externalEmit/preExternal: false.
+      rw [h_st] at h_stage
+      rcases h_stage with h | ⟨k, h⟩ <;> cases h
+  · rename_i d h_d
+    dsimp only
+    split_ifs with h_int
+    · -- Internal: weak_sched = some σ, stage = tauInternal 0.
+      refine ⟨?_, ?_⟩
+      · refine ⟨fun h => ?_, fun h => ?_⟩
+        · have h' : (some _ : Option _) = none := h; cases h'
+        · rw [h_d] at h; cases h
+      · intro h_stage
+        rcases h_stage with h | ⟨k, h⟩ <;> cases h
+    · -- External: weak_sched = some σ_pre, stage = preExternal 0, post_weak_sched = some σ_post.
+      refine ⟨?_, ?_⟩
+      · refine ⟨fun h => ?_, fun h => ?_⟩
+        · have h' : (some _ : Option _) = none := h; cases h'
+        · rw [h_d] at h; cases h
+      · intro _ h
+        have h' : (some _ : Option _) = none := h; cases h'
+
+/-- `extendOnCompletion` establishes `StrongInv`. -/
+private lemma MatchingState.extendOnCompletion_strongInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) :
+    m.extendOnCompletion.StrongInv := by
+  unfold MatchingState.extendOnCompletion
+  refine MatchingState.setupNextTransition_strongInv _ ?_ ?_
+  · cases m.next_step with
+    | none => rfl
+    | some _ => rfl
+  · cases m.next_step with
+    | none => rfl
+    | some _ => rfl
+
+/-- `advance` preserves `StrongInv`. -/
+private lemma MatchingState.advance_strongInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (h_inv : m.StrongInv)
+    (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').StrongInv := by
+  classical
+  -- Strategy: instead of fighting structure-projection reductions inside
+  -- `change`/`show`, we prove that the result's `weak_sched`, `e_C`, and
+  -- `post_weak_sched` equal known things, then assemble the invariant.
+  unfold MatchingState.advance
+  dsimp only
+  split
+  · -- weak_sched = none branch. Result = { m with current_abstract_state := s_A' }.
+    rename_i _ h_ws_none
+    have h_pe_C_none : pe_C.scheduler.next m.e_C = none := h_inv.1.mp h_ws_none
+    refine ⟨?_, ?_⟩
+    · refine ⟨fun _ => h_pe_C_none, fun _ => h_ws_none⟩
+    · intro h_stage; exact h_inv.2 h_stage
+  rename_i σ h_ws_some
+  have h_pe_C_some : pe_C.scheduler.next m.e_C ≠ none := by
+    intro h
+    have := h_inv.1.mpr h
+    rw [h_ws_some] at this
+    cases this
+  -- For the `some σ` branches, all results either have weak_sched = some σ
+  -- (within-stage), or weak_sched = m.post_weak_sched (externalEmit swap),
+  -- or fall through to extendOnCompletion (handled by recursion).
+  -- The `e_C` is always `m.e_C` (only extendOnCompletion changes it).
+  split
+  · -- tauInternal k
+    rename_i k h_st_eq
+    split_ifs with h_k
+    · -- Within-stage: result.weak_sched = m.weak_sched = some σ, e_C = m.e_C.
+      refine ⟨?_, ?_⟩
+      · refine ⟨fun h => ?_, fun h => ?_⟩
+        · -- h says result.weak_sched = none, but it's = some σ.
+          have h' : m.weak_sched = none := h
+          rw [h_ws_some] at h'; cases h'
+        · exact absurd h h_pe_C_some
+      · intro h_stage
+        rcases h_stage with h | ⟨k', h⟩ <;> cases h
+    · exact MatchingState.extendOnCompletion_strongInv _
+  · -- preExternal k
+    rename_i k h_st_eq
+    have h_post_ne_none : m.post_weak_sched ≠ none :=
+      h_inv.2 (Or.inr ⟨k, h_st_eq⟩)
+    split_ifs with h_k
+    · refine ⟨?_, ?_⟩
+      · refine ⟨fun h => ?_, fun h => ?_⟩
+        · have h' : m.weak_sched = none := h
+          rw [h_ws_some] at h'; cases h'
+        · exact absurd h h_pe_C_some
+      · intro _; exact h_post_ne_none
+    · refine ⟨?_, ?_⟩
+      · refine ⟨fun h => ?_, fun h => ?_⟩
+        · have h' : m.weak_sched = none := h
+          rw [h_ws_some] at h'; cases h'
+        · exact absurd h h_pe_C_some
+      · intro _; exact h_post_ne_none
+  · -- externalEmit: result.weak_sched = m.post_weak_sched, post_weak_sched := none.
+    rename_i h_st_eq
+    have h_post_ne_none : m.post_weak_sched ≠ none :=
+      h_inv.2 (Or.inl h_st_eq)
+    refine ⟨?_, ?_⟩
+    · refine ⟨fun h => ?_, fun h => ?_⟩
+      · have h' : m.post_weak_sched = none := h
+        exact absurd h' h_post_ne_none
+      · exact absurd h h_pe_C_some
+    · intro h_stage
+      rcases h_stage with h | ⟨k', h⟩ <;> cases h
+  · -- postExternal k
+    rename_i k h_st_eq
+    split_ifs with h_k
+    · refine ⟨?_, ?_⟩
+      · refine ⟨fun h => ?_, fun h => ?_⟩
+        · have h' : m.weak_sched = none := h
+          rw [h_ws_some] at h'; cases h'
+        · exact absurd h h_pe_C_some
+      · intro h_stage
+        rcases h_stage with h | ⟨k', h⟩ <;> cases h
+    · exact MatchingState.extendOnCompletion_strongInv _
+
+/-- `StrongInv` is preserved by `foldl advance`. -/
+private lemma MatchingState.foldl_advance_strongInv
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (xs : List (Label × State_A)) (m₀ : MatchingState sim pe_C)
+    (h_inv : m₀.StrongInv) :
+    (xs.foldl (fun m p => MatchingState.advance m p.1 p.2) m₀).StrongInv := by
+  induction xs generalizing m₀ with
+  | nil => exact h_inv
+  | cons head tail ih =>
+    change (tail.foldl _ (MatchingState.advance m₀ head.1 head.2)).StrongInv
+    exact ih _ (MatchingState.advance_strongInv m₀ h_inv head.1 head.2)
+
+/-- The matching state returned by `fromAbstractPrefix` satisfies `StrongInv`. -/
+private lemma fromAbstractPrefix_strongInv
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (e_A : AlterSeq State_A Label)
+    {m : MatchingState sim pe_C}
+    (h : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = some m) :
+    m.StrongInv := by
+  classical
+  unfold MatchingState.fromAbstractPrefix at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i m₀ h_init
+    have h_m₀_inv : m₀.StrongInv := by
+      unfold MatchingState.initial at h_init
+      split at h_init
+      · rename_i h_s_A_in
+        have h_eq : m₀ = _ := (Option.some.inj h_init).symm
+        rw [h_eq]
+        exact MatchingState.setupNextTransition_strongInv _ rfl rfl
+      · exact absurd h_init (by simp)
+    split at h
+    · have h_m_eq : m = _ := (Option.some.inj h).symm
+      rw [h_m_eq]
+      exact MatchingState.foldl_advance_strongInv _ m₀ h_m₀_inv
+    · have h_m_eq : m = m₀ := (Option.some.inj h).symm
+      rw [h_m_eq]; exact h_m₀_inv
+
+/-- When `pe_C.scheduler` has a step at `m.e_C`, the strong invariant
+forces `m.weak_sched = some σ` for some `σ`. -/
+private lemma MatchingState.weak_sched_some_of_pe_C_step
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {m : MatchingState sim pe_C} (h_inv : m.StrongInv)
+    {d : PMF (Label × PMF State_C)} (h_next : pe_C.scheduler.next m.e_C = some d) :
+    ∃ σ, m.weak_sched = some σ := by
+  rcases h_ws : m.weak_sched with _ | σ
+  · exfalso
+    have := h_inv.1.mp h_ws
+    rw [h_next] at this
+    cases this
+  · exact ⟨σ, rfl⟩
+
+/-- **Per-step concrete validity**: at a matching state `m`, when
+`pe_C.scheduler.next m.e_C = some d` and `(l_C, μ_C) ∈ d.support`, the
+concrete step `sys_C.step (e_C.endState) l_C μ_C` is valid (via
+`pe_C.scheduler.valid`). -/
+private lemma MatchingState.step_of_pe_C_step
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C)
+    {d : PMF (Label × PMF State_C)}
+    (h_d : pe_C.scheduler.next m.e_C = some d)
+    {l_C : Label} {μ_C : PMF State_C}
+    (h_lμ_supp : (l_C, μ_C) ∈ d.support) :
+    sys_C.toSystem.step (m.e_C.endState m.h_term_C) l_C μ_C :=
+  pe_C.scheduler.valid m.e_C (Nat.find m.h_term_C)
+    (m.e_C.endState m.h_term_C) (Nat.find_spec m.h_term_C)
+    (AlterSeq.stateAt_find_eq_endState m.e_C m.h_term_C) d h_d l_C μ_C h_lμ_supp
+
+/-- **Per-step PMFRel coupling at a matching state**: the simulation's
+`stepWitness_pmfRel` applied to the matching state's `h_R` and the
+concrete step validity. This is the central coupling fact for Case 2(b). -/
+private lemma MatchingState.pmfRel_at_step
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C)
+    {d : PMF (Label × PMF State_C)}
+    (h_d : pe_C.scheduler.next m.e_C = some d)
+    {l_C : Label} {μ_C : PMF State_C}
+    (h_lμ_supp : (l_C, μ_C) ∈ d.support) :
+    PMFRel R μ_C (sim.stepWitness m.h_R (m.step_of_pe_C_step h_d h_lμ_supp)) :=
+  sim.stepWitness_pmfRel m.h_R (m.step_of_pe_C_step h_d h_lμ_supp)
+
+/-- The "tau-padding progress" of a matching state — a natural-number
+measure capturing how many mid-tau advances remain before either
+`extendOnCompletion` is triggered or `externalEmit` consumes a label
+from `τ`. Used as the second component of the lex termination measure
+for `trace_coupling_at_matching_state`'s well-founded recursion.
+
+* `weak_sched = none`: progress is `0` (no advance is in flight).
+* `weak_sched = some σ`, `stage = tauInternal k` / `postExternal k`:
+  `σ.runtime - k` (runtime steps remaining before completion).
+* `weak_sched = some σ`, `stage = preExternal k`: `σ.runtime - k + 1`
+  (the extra `+1` accounts for the upcoming `externalEmit` step).
+* `weak_sched = some σ`, `stage = externalEmit`: `0` (about to consume
+  a label from `τ` — first lex component decreases instead). -/
+private def MatchingState.tauProgress
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) : ℕ :=
+  match m.weak_sched with
+  | none => 0
+  | some σ =>
+    match m.stage with
+    | WeakStage.tauInternal k => σ.runtime - k
+    | WeakStage.preExternal k => σ.runtime - k + 1
+    | WeakStage.externalEmit => 0
+    | WeakStage.postExternal k => σ.runtime - k
+
+/-- Within-stage `tauInternal` advance strictly decreases `tauProgress`
+when `k + 1 < σ.runtime`. -/
+private lemma MatchingState.tauProgress_lt_of_advance_tauInternal
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) {σ : WeakScheduler sys_A} {k : ℕ}
+    (h_ws : m.weak_sched = some σ) (h_st : m.stage = WeakStage.tauInternal k)
+    (h_k : k + 1 < σ.runtime) (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').tauProgress < m.tauProgress := by
+  have h_m_prog : m.tauProgress = σ.runtime - k := by
+    unfold MatchingState.tauProgress; rw [h_ws, h_st]
+  have h_adv_prog : (m.advance l_A s_A').tauProgress = σ.runtime - (k + 1) := by
+    unfold MatchingState.tauProgress MatchingState.advance
+    dsimp only; rw [h_ws]; dsimp only; rw [h_st]; dsimp only; rw [if_pos h_k]
+  rw [h_m_prog, h_adv_prog]; omega
+
+/-- Within-stage `preExternal` advance strictly decreases `tauProgress`
+when `k + 1 < σ.runtime`. -/
+private lemma MatchingState.tauProgress_lt_of_advance_preExternal
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) {σ : WeakScheduler sys_A} {k : ℕ}
+    (h_ws : m.weak_sched = some σ) (h_st : m.stage = WeakStage.preExternal k)
+    (h_k : k + 1 < σ.runtime) (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').tauProgress < m.tauProgress := by
+  have h_m_prog : m.tauProgress = σ.runtime - k + 1 := by
+    unfold MatchingState.tauProgress; rw [h_ws, h_st]
+  have h_adv_prog : (m.advance l_A s_A').tauProgress = σ.runtime - (k + 1) + 1 := by
+    unfold MatchingState.tauProgress MatchingState.advance
+    dsimp only; rw [h_ws]; dsimp only; rw [h_st]; dsimp only; rw [if_pos h_k]
+  rw [h_m_prog, h_adv_prog]; omega
+
+/-- `preExternal` completion (`k + 1 ≥ σ.runtime`) advances to `externalEmit`,
+which strictly decreases `tauProgress` (from `σ.runtime - k + 1` to `0`). -/
+private lemma MatchingState.tauProgress_lt_of_advance_preExternal_to_externalEmit
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) {σ : WeakScheduler sys_A} {k : ℕ}
+    (h_ws : m.weak_sched = some σ) (h_st : m.stage = WeakStage.preExternal k)
+    (h_k : ¬ k + 1 < σ.runtime) (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').tauProgress < m.tauProgress := by
+  have h_m_prog : m.tauProgress = σ.runtime - k + 1 := by
+    unfold MatchingState.tauProgress; rw [h_ws, h_st]
+  have h_adv_prog : (m.advance l_A s_A').tauProgress = 0 := by
+    unfold MatchingState.tauProgress MatchingState.advance
+    dsimp only; rw [h_ws]; dsimp only; rw [h_st]; dsimp only; rw [if_neg h_k]
+  rw [h_m_prog, h_adv_prog]; omega
+
+/-- Within-stage `postExternal` advance strictly decreases `tauProgress`
+when `k + 1 < σ.runtime`. -/
+private lemma MatchingState.tauProgress_lt_of_advance_postExternal
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) {σ : WeakScheduler sys_A} {k : ℕ}
+    (h_ws : m.weak_sched = some σ) (h_st : m.stage = WeakStage.postExternal k)
+    (h_k : k + 1 < σ.runtime) (l_A : Label) (s_A' : State_A) :
+    (m.advance l_A s_A').tauProgress < m.tauProgress := by
+  have h_m_prog : m.tauProgress = σ.runtime - k := by
+    unfold MatchingState.tauProgress; rw [h_ws, h_st]
+  have h_adv_prog : (m.advance l_A s_A').tauProgress = σ.runtime - (k + 1) := by
+    unfold MatchingState.tauProgress MatchingState.advance
+    dsimp only; rw [h_ws]; dsimp only; rw [h_st]; dsimp only; rw [if_pos h_k]
+  rw [h_m_prog, h_adv_prog]; omega
+
+/-! ### Termination design notes
+
+The lex measure `(τ_length_when_terminating, m.tauProgress)` correctly
+decreases on these advance transitions:
+
+* **Within-stage** (`tauInternal`/`preExternal`/`postExternal` with
+  `k + 1 < σ.runtime`): same `τ`, `tauProgress` decreases.
+* **`preExternal` → `externalEmit`**: same `τ`, `tauProgress` drops to `0`.
+* **`externalEmit` → `postExternal 0`**: `τ` shrinks (external label
+  consumed via `consumeLabel`); `tauProgress` can rise to
+  `σ_post.runtime`, but lex's first component compensates.
+
+**Open obstacle for full well-founded setup**: `tauInternal`/`postExternal`
+completion (`k + 1 ≥ σ.runtime` → `extendOnCompletion`) installs a
+*fresh* weak transition via `setupNextTransition`. The new matching
+state's `tauProgress` is `σ_new.runtime`, which may exceed the
+pre-completion value. Same `τ`. So the lex measure does NOT strictly
+decrease at completions.
+
+This reflects a deeper issue: an arbitrary `pe_C` can interleave
+*unboundedly many* internal weak transitions before any external label,
+in which case `traceProb_C = 0` for any non-empty `τ` (no finite
+execution emits it). The proof for that pathological case is naturally
+*not* by structural recursion on the matching-state lifecycle; it
+should follow from a "zero-mass" argument on both sides.
+
+Tractable next steps:
+1. Split the theorem into the "trajectory terminates within bounded
+   internal work" case (where the lex measure suffices) and the
+   "diverges in internal work" case (where both sides are `0`).
+2. Or: bound the number of internal weak transitions by an explicit
+   fuel parameter, and prove the equation via induction on the fuel
+   plus a separate limit argument for the unfueled case.
+-/
+
+/-- **Foldl-extension consistency**: extending `history_A` by a single
+transition `(l_A, s_A')` corresponds to applying `advance` once to the
+matching state returned by `fromAbstractPrefix history_A`. This is the
+recursion's bridging lemma. -/
+private lemma fromAbstractPrefix_advance_consistency
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (history_A : AlterSeq State_A Label) (h_term_A : history_A.trans.Terminates)
+    {m : MatchingState sim pe_C}
+    (h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R history_A
+      = some m)
+    (l_A : Label) (s_A' : State_A) :
+    MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+      ⟨history_A.init, history_A.trans.append (Seq.cons (l_A, s_A') Seq.nil)⟩
+      = some (m.advance l_A s_A') := by
+  classical
+  -- Termination of the combined trans.
+  have h_singleton_term : (Seq.cons (l_A, s_A') Seq.nil).Terminates :=
+    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  have h_term_combined : (history_A.trans.append
+      (Seq.cons (l_A, s_A') Seq.nil)).Terminates :=
+    ⟨Nat.find h_term_A + 1,
+      Stream'.Seq.terminatedAt_append_find h_term_A
+        (show (Seq.cons (l_A, s_A') Seq.nil).TerminatedAt 1 from rfl)⟩
+  -- Unpack `h_matched`.
+  unfold MatchingState.fromAbstractPrefix at h_matched
+  split at h_matched
+  · exact absurd h_matched (by simp)
+  · rename_i m₀ h_init
+    rw [dif_pos h_term_A] at h_matched
+    have h_m_eq : m = (history_A.trans.toList h_term_A).foldl
+        (fun m p => MatchingState.advance m p.1 p.2) m₀ :=
+      (Option.some.inj h_matched).symm
+    -- Compute the toList of the combined trans.
+    have h_singleton_toList :
+        (Seq.cons (l_A, s_A') Seq.nil).toList h_singleton_term = [(l_A, s_A')] := by
+      rw [Stream'.Seq.toList_cons]
+      congr 1
+      exact Stream'.Seq.toList_nil
+    have h_toList_eq : (history_A.trans.append
+        (Seq.cons (l_A, s_A') Seq.nil)).toList h_term_combined
+        = history_A.trans.toList h_term_A ++ [(l_A, s_A')] := by
+      rw [Stream'.Seq.toList_append history_A.trans (Seq.cons (l_A, s_A') Seq.nil)
+          h_term_A h_singleton_term h_term_combined, h_singleton_toList]
+    -- Now compute the target.
+    unfold MatchingState.fromAbstractPrefix
+    rw [h_init]
+    dsimp only
+    rw [dif_pos h_term_combined]
+    rw [h_toList_eq, List.foldl_append]
+    rw [← h_m_eq]
+    rfl
+
+/-- `computeNext` at a "mid-tau" stage (tauInternal, preExternal, or
+postExternal — anything except externalEmit) reduces to
+`liftOption (σ.next ⟨m.current_abstract_state, Seq.nil⟩)`. -/
+private lemma MatchingState.computeNext_mid_tau
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {m : MatchingState sim pe_C} {σ : WeakScheduler sys_A}
+    (h_ws : m.weak_sched = some σ)
+    (h_st_ne : m.stage ≠ WeakStage.externalEmit) :
+    MatchingState.computeNext m =
+    MatchingState.liftOption (σ.next ⟨m.current_abstract_state, Seq.nil⟩) := by
+  unfold MatchingState.computeNext
+  rw [h_ws]
+  cases h_st : m.stage with
+  | tauInternal k => rfl
+  | preExternal k => rfl
+  | externalEmit => exact absurd h_st h_st_ne
+  | postExternal k => rfl
+
+/-- `computeNext` at the `externalEmit` stage, when `hyper_witness = some w`
+and the current abstract state is in `w.μ_pre.support`, emits the
+hyper-step kernel times the external label. -/
+private lemma MatchingState.computeNext_externalEmit
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {m : MatchingState sim pe_C} {σ : WeakScheduler sys_A}
+    (h_ws : m.weak_sched = some σ)
+    (h_st : m.stage = WeakStage.externalEmit)
+    {w : HyperWitness sys_A} (h_w : m.hyper_witness = some w)
+    (h_cas : m.current_abstract_state ∈ w.μ_pre.support) :
+    MatchingState.computeNext m =
+    some ((w.kernel m.current_abstract_state).map (Prod.mk w.l)) := by
+  classical
+  unfold MatchingState.computeNext
+  rw [h_ws, h_st, h_w]
+  dsimp only
+  rw [if_pos h_cas]
+
 /-- **`continuationFrom` composition**: nested `continuationFrom`s flatten
 into a single one over the concatenated prefix. Requires the inner
 prefix's init to match the outer prefix's endState (otherwise the
@@ -2608,7 +3244,153 @@ private theorem trace_coupling_at_matching_state
     -- **DEFERRED**: Implementing each step would require ~300-400 lines of
     -- focused mathematical content. The architecture is clean; closing each
     -- step is a self-contained sub-problem.
-    sorry
+    --
+    -- ============================================================
+    -- Step 2 case-split: on `pe_C.scheduler.next m.e_C`.
+    -- ============================================================
+    classical
+    -- Helper: pe_X.kernel ⟨e.init, e.trans⟩ = pe_X.kernel e (structure η).
+    -- The kernel is 0 exactly when the scheduler stops at that prefix.
+    by_cases h_next_C : pe_C.scheduler.next m.e_C = none
+    · -- ----------------------------------------------------------
+      -- Case 2(a): pe_C halts at m.e_C. The concrete kernel vanishes
+      -- everywhere on m.e_C, so the LHS sum is 0.
+      -- ----------------------------------------------------------
+      have h_kernel_C_zero : ∀ (step : Label × State_C),
+          pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) step = 0 := by
+        intro step
+        change (pe_C.scheduler.next
+              (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)).elim 0 _ = 0
+        rw [show pe_C.scheduler.next
+              (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) =
+              pe_C.scheduler.next m.e_C from rfl]
+        rw [h_next_C]
+        rfl
+      -- LHS sum reduces to 0.
+      rw [show (∑' (l_first : Label) (s_first : State_C),
+              pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)
+                (l_first, s_first) *
+              (sys_C.consumeLabel l_first (Seq.cons l₀ τ')).elim 0
+                (fun τ'' => sys_C.traceProb
+                  ((pe_C.continuationFrom m.e_C m.h_term_C).continuationFrom
+                    ⟨m.e_C.endState m.h_term_C, Seq.cons (l_first, s_first) Seq.nil⟩
+                    ⟨1, by
+                      change (Seq.cons (l_first, s_first) Seq.nil).get? 1 = none
+                      rw [Stream'.Seq.get?_cons_succ]
+                      exact Stream'.Seq.terminatedAt_nil⟩) τ'')) = 0 from by
+        apply ENNReal.tsum_eq_zero.mpr; intro l_first
+        apply ENNReal.tsum_eq_zero.mpr; intro s_first
+        rw [h_kernel_C_zero (l_first, s_first)]
+        ring]
+      -- RHS sum: pe_A.kernel history_A also vanishes. Use the invariant
+      -- `WeakSchedInv` on the matching state from `fromAbstractPrefix` to
+      -- conclude `m.weak_sched = none`, which forces `computeNext m = none`,
+      -- which (via `h_sched_eq`) means `pe_A.scheduler.next history_A = none`,
+      -- making `pe_A.kernel history_A = 0`.
+      symm
+      apply ENNReal.tsum_eq_zero.mpr; intro l_first
+      apply ENNReal.tsum_eq_zero.mpr; intro s_first
+      have h_inv : m.WeakSchedInv :=
+        fromAbstractPrefix_weakSchedInv sim pe_C init_match h_match_R history_A _h_matched
+      have h_ws : m.weak_sched = none :=
+        MatchingState.weak_sched_none_of_pe_C_halts h_inv h_next_C
+      have h_compute : MatchingState.computeNext m = none := by
+        unfold MatchingState.computeNext
+        rw [h_ws]
+        rw [h_next_C]
+      have h_sched_next : pe_A.scheduler.next history_A = none := by
+        rw [_h_sched_eq]
+        change (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R history_A).bind
+          MatchingState.computeNext = none
+        rw [_h_matched]
+        change MatchingState.computeNext m = none
+        exact h_compute
+      rw [show pe_A.kernel (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)
+              (l_first, s_first) = 0 from by
+        change (pe_A.scheduler.next
+            (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)).elim 0 _ = 0
+        rw [show pe_A.scheduler.next
+              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) =
+              pe_A.scheduler.next history_A from rfl]
+        rw [h_sched_next]
+        rfl]
+      ring
+    · -- ----------------------------------------------------------
+      -- Case 2(b): pe_C.scheduler.next m.e_C = some d.
+      -- ----------------------------------------------------------
+      -- Extract `d` (the concrete step distribution).
+      obtain ⟨d, h_d⟩ : ∃ d, pe_C.scheduler.next m.e_C = some d :=
+        Option.ne_none_iff_exists'.mp h_next_C
+      -- Concrete-side kernel structure: `pe_C.kernel m.e_C (l, s) =
+      -- (d.bind (fun lμ => PMF.map (l, ·) lμ.2)) (l, s)`.
+      have h_kernel_C_form : ∀ (l : Label) (s : State_C),
+          pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) (l, s) =
+          (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) (l, s) := by
+        intro l s
+        change (pe_C.scheduler.next
+            (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)).elim 0 _ = _
+        rw [show pe_C.scheduler.next
+              (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) =
+              pe_C.scheduler.next m.e_C from rfl]
+        rw [h_d]
+        rfl
+      -- Strong invariant: `pe_C.scheduler.next m.e_C = some d → m.weak_sched = some σ`.
+      have h_strong : m.StrongInv :=
+        fromAbstractPrefix_strongInv sim pe_C init_match h_match_R history_A _h_matched
+      obtain ⟨σ, h_ws⟩ := MatchingState.weak_sched_some_of_pe_C_step h_strong h_d
+      -- Abstract-side scheduler: `pe_A.scheduler.next history_A = computeNext m`.
+      have h_pe_A_sched : pe_A.scheduler.next history_A = MatchingState.computeNext m := by
+        rw [_h_sched_eq]
+        change (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R history_A).bind
+          MatchingState.computeNext = _
+        rw [_h_matched]; rfl
+      -- Abstract-side kernel structure.
+      have h_kernel_A_form : ∀ (l : Label) (s : State_A),
+          pe_A.kernel (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) =
+          (MatchingState.computeNext m).elim 0
+            (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) (l, s)) := by
+        intro l s
+        change (pe_A.scheduler.next
+            (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)).elim 0 _ = _
+        rw [show pe_A.scheduler.next
+              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) =
+              pe_A.scheduler.next history_A from rfl]
+        rw [h_pe_A_sched]
+      -- ------------------------------------------------------------
+      -- Case-split on `m.stage` to unfold `computeNext m`.
+      -- Each branch reduces to a per-stage coupling claim, which in turn
+      -- needs the PMFRel coupling (via `sim.stepWitness_pmfRel`) and a
+      -- recursive call to `trace_coupling_at_matching_state` on the
+      -- post-step matching state. The recursion is well-founded on
+      -- `(τ.length, σ.runtime_remaining)` — restructuring the theorem as
+      -- a well-founded recursion is deferred to a follow-up session.
+      -- ------------------------------------------------------------
+      rcases h_st : m.stage with k_st | k_st | _ | k_st
+      · -- m.stage = tauInternal k_st. Mid-tau case.
+        have h_compute := MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
+          (h_st ▸ (fun h => WeakStage.noConfusion h))
+        -- `computeNext m = liftOption (σ.next ⟨m.current_abstract_state, Seq.nil⟩)`.
+        -- Per-step coupling: σ emits abstract internal steps; the concrete
+        -- side via `d.bind` emits `(l_C, μ_C)` with PMFRel relation; the
+        -- continuations advance through `tauInternal (k_st + 1)` (within-stage)
+        -- or `extendOnCompletion` (at completion). Recursion on continuation.
+        sorry
+      · -- m.stage = preExternal k_st. Mid-tau case.
+        have h_compute := MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
+          (h_st ▸ (fun h => WeakStage.noConfusion h))
+        -- σ here is the pre-tau scheduler from `weakStep`. Continuations
+        -- advance through `preExternal (k_st + 1)` or transition to `externalEmit`.
+        sorry
+      · -- m.stage = externalEmit. Uses `m.hyper_witness`.
+        -- Sub-case on whether hyper_witness is present and cas ∈ μ_pre.support.
+        -- (The matching state coming from `setupNextTransition` external
+        -- always has hyper_witness = some _; sub-sorries here mirror that.)
+        sorry
+      · -- m.stage = postExternal k_st. Mid-tau case.
+        have h_compute := MatchingState.computeNext_mid_tau (m := m) (σ := σ) h_ws
+          (h_st ▸ (fun h => WeakStage.noConfusion h))
+        -- σ here is the post-tau scheduler. At completion: `extendOnCompletion`.
+        sorry
 
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
