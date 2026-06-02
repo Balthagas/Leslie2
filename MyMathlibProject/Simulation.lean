@@ -2292,7 +2292,21 @@ private theorem per_state_trace_coupling
     ∑' (s_A : State_A), init_match s_C s_A *
       sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
         Stream'.Seq.terminates_nil) τ := by
-  sorry
+  -- Case on τ. The nil case is direct; cons requires induction.
+  cases τ with
+  | nil =>
+    rw [sys_C.traceProb_nil_eq_one,
+        show (∑' (s_A : State_A), init_match s_C s_A *
+            sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
+              Stream'.Seq.terminates_nil) Seq.nil) =
+          ∑' (s_A : State_A), init_match s_C s_A from by
+          refine tsum_congr (fun s_A => ?_)
+          rw [sys_A.traceProb_nil_eq_one, mul_one]]
+    exact (PMF.tsum_coe (init_match s_C)).symm
+  | cons l₀ τ' =>
+    -- Inductive case: apply `traceProb_first_step` and use PMFRel coupling.
+    -- **DEFERRED**.
+    sorry
 
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
