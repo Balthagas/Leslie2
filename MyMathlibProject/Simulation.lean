@@ -1226,14 +1226,40 @@ theorem LabelledSystem.traceProb_first_step
       exact ls.traceProb_continuationFrom_init_restrict pe _ _ τ'
   rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ => by
     rw [h_inner_restrict s₀ l₀ s₁])))]
-  -- Step 4: match the LHS (TraceDecomp sum) with the rewritten RHS.
-  -- The remaining work is a bijection between:
-  --  • TraceDecomp's `(s₀, l₀, s₁, e_rest)` with `consumeLabel = some (trace e_rest)`
-  --  • iterated `(s₀, l₀, s₁)` plus inner `e_rest` with `consumeLabel = some τ' ∧
-  --    trace e_rest = τ' ∧ init = s₁`
-  -- These are equivalent (consumeLabel = some τ' ∧ trace e_rest = τ' ↔
-  -- consumeLabel = some (trace e_rest)), via three `psigmaEquivSigma` unfolds
-  -- + `tsum_sigma'` × 3 + a final `Equiv.tsum_eq` on the inner subtype rebracketing.
+  -- Step 4a: push `init * kernel` inside `Option.elim` and the inner tsum.
+  have h_distrib : ∀ (s₀ : State) (l₀ : Label) (s₁ : State),
+      pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+        (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+          (fun τ' => ∑' (e_rest : {e_rest : AlterSeq State Label //
+              e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+              e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+                (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)}),
+            (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+              e_rest.1 e_rest.2.1) =
+      (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+        (fun τ' => ∑' (e_rest : {e_rest : AlterSeq State Label //
+            e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+            e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)}),
+          pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+          (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+            e_rest.1 e_rest.2.1) := by
+    intros s₀ l₀ s₁
+    rcases Option.eq_none_or_eq_some (ls.consumeLabel l₀ (Seq.cons l τ))
+      with h | ⟨τ', h⟩
+    · rw [h]; simp
+    · rw [h]; simp only [Option.elim_some]
+      rw [ENNReal.tsum_mul_left]
+  rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ =>
+    h_distrib s₀ l₀ s₁)))]
+  -- Step 4b: match LHS (TraceDecomp Σ' sum) against the new RHS structure.
+  -- The RHS is now ∑' s₀ l₀ s₁, (consumeLabel ...).elim 0 (∑' e_rest, …).
+  -- After expanding `Option.elim` (none ↦ empty inner subtype) and combining
+  -- the outer sums with the inner via `psigmaEquivSigma` × 3 + `tsum_sigma'`,
+  -- both sides equal ∑' (s₀, l₀, s₁, e_rest with TraceDecomp constraints),
+  -- init * kernel * (continuationFrom).probOf e_rest.
   sorry
 
 /-- The trace probability of any trace is at most `1`.
