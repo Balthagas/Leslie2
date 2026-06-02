@@ -1515,6 +1515,10 @@ structure MatchingState (sim : ProbabilisticForwardSimulation sys_C sys_A R)
   /-- The `WeakScheduler` driving the current weak transition.
   `none` means "no weak transition in flight — start a fresh one next". -/
   weak_sched : Option (WeakScheduler sys_A)
+  /-- The post-`externalEmit` `WeakScheduler` for external weak transitions
+  (the post-tau of `weakStep`). Used when `stage` advances to
+  `postExternal 0`; at that point `weak_sched` is replaced by this. -/
+  post_weak_sched : Option (WeakScheduler sys_A)
   /-- Position within the current weak transition. Only meaningful when
   `weak_sched` is `some σ`. -/
   stage : WeakStage
@@ -1648,9 +1652,22 @@ noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
         next_step := some ⟨l_C, s_C', μ_A_next, h_R_next⟩
         stage := WeakStage.tauInternal 0 }
     · -- External: weakStep has pre-tau + hyperStep + post-tau structure.
-      -- Storing both pre and post WeakSchedulers requires an extra field
-      -- in MatchingState (e.g., `post_weak_sched`). **Deferred.**
-      exact m
+      have h_step_w : weakStep sys_A m.μ_A_current l_C (ω.bind id) :=
+        sim.stepWitness_weakStep m.h_R h_step h_int
+      -- weakStep: ∃ μ μ', weakTau sys_A μ_init μ ∧ hyperStep ∧ weakTau sys_A μ' μ_final.
+      let μ_inter : PMF State_A := h_step_w.choose
+      have h_step_w_spec := h_step_w.choose_spec
+      let μ_inter' : PMF State_A := h_step_w_spec.choose
+      have h_step_w_spec_2 := h_step_w_spec.choose_spec
+      have h_pre : weakTau sys_A m.μ_A_current μ_inter := h_step_w_spec_2.1
+      have h_post : weakTau sys_A μ_inter' (ω.bind id) := h_step_w_spec_2.2.2
+      let σ_pre : WeakScheduler sys_A := h_pre.choose
+      let σ_post : WeakScheduler sys_A := h_post.choose
+      exact { m with
+        weak_sched := some σ_pre
+        post_weak_sched := some σ_post
+        next_step := some ⟨l_C, s_C', μ_A_next, h_R_next⟩
+        stage := WeakStage.preExternal 0 }
 
 /-- Helper used by `advance`: on weak-transition completion, extend
 `e_C` by `next_step` if present, then call `setupNextTransition` to
@@ -1660,7 +1677,7 @@ noncomputable def extendOnCompletion (m : MatchingState sim pe_C) :
   let extended : MatchingState sim pe_C :=
     match m.next_step with
     | none =>
-      { m with weak_sched := none, stage := WeakStage.tauInternal 0 }
+      { m with weak_sched := none, post_weak_sched := none, stage := WeakStage.tauInternal 0 }
     | some ⟨l_C, s_C', μ_A_next, h_R_next⟩ =>
       { e_C := ⟨m.e_C.init, m.e_C.trans.append (Seq.cons (l_C, s_C') Seq.nil)⟩
         h_term_C := ⟨Nat.find m.h_term_C + 1,
@@ -1670,6 +1687,7 @@ noncomputable def extendOnCompletion (m : MatchingState sim pe_C) :
         h_R := (AlterSeq.endState_append_singleton m.e_C m.h_term_C l_C s_C').symm ▸ h_R_next
         next_step := none
         weak_sched := none
+        post_weak_sched := none
         stage := WeakStage.tauInternal 0 }
   setupNextTransition extended
 
@@ -1707,7 +1725,11 @@ noncomputable def advance (m : MatchingState sim pe_C)
       else
         { m with stage := WeakStage.externalEmit }
     | WeakStage.externalEmit =>
-      { m with stage := WeakStage.postExternal 0 }
+      -- Transition from external-emit to the post-tau: swap weak_sched.
+      { m with
+        weak_sched := m.post_weak_sched
+        post_weak_sched := none
+        stage := WeakStage.postExternal 0 }
     | WeakStage.postExternal k =>
       if k + 1 < σ.runtime then
         { m with stage := WeakStage.postExternal (k + 1) }
@@ -1758,6 +1780,7 @@ noncomputable def MatchingState.initial
           exact h_match_R s_C h_s_C_supp
         next_step := none
         weak_sched := none
+        post_weak_sched := none
         stage := WeakStage.tauInternal 0 }
     -- Install the first weak transition via `setupNextTransition`.
     exact some base.setupNextTransition
