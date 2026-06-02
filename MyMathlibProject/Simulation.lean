@@ -2281,13 +2281,26 @@ private lemma weighted_traceProb_pure
   · intro s h_ne
     rw [PMF.pure_apply_of_ne s_0 s h_ne, zero_mul]
 
-/-- **Per-step kernel coupling**: given a state `s_C` R-coupled to `μ_A`, the
-kernel-times-continuation sum over concrete emissions equals the
-`μ_A`-weighted sum over abstract emissions (where the abstract kernel
-comes from the matching state's WeakScheduler driven by `s_C`'s concrete
-step). This is the *per-step* version of the trace coupling; the cons
-case of `weighted_trace_coupling` reduces to a sum of this lemma over
-`s_C ∈ μ_C.support`. -/
+/-- **Per-step trace coupling**: this is the cons case of the trace coupling
+specialized to a single R-coupled pair `(s_C, μ_A)`. Equivalent to
+`weighted_trace_coupling` with `μ_C := PMF.pure s_C` and `f := fun _ => μ_A`,
+applied to a cons trace.
+
+The continuations are made explicit (`traceProb` on `continuationFrom`):
+this makes the link between the two sides crisp, since both sides use the
+same `consumeLabel` and the trace prob over the same continuation trace
+`(Seq.cons l₀ τ')` on the respective post-step prefixes.
+
+Closing this is the central mathematical content: given `R s_C μ_A`, the
+concrete kernel's emissions are PMFRel-coupled to the abstract kernel's
+emissions, and the resulting continuation traceProbs are again
+R-coupled at the next state (via `next_step.h_R_next` in the matching
+state). Recursion bottoms out on a well-founded measure (external trace
+length + bounded tau-padding from σ.runtime).
+
+Note: when this is closed, the cons case of `weighted_trace_coupling`
+follows by `tsum_congr` over `s_C ∈ μ_C.support` plus standard tsum
+manipulations. -/
 private theorem step_kernel_coupling
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
@@ -2300,32 +2313,36 @@ private theorem step_kernel_coupling
       (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
         MatchingState.computeNext)
     (s_C : State_C) (μ_A : PMF State_A) (_h_R : R s_C μ_A)
-    (l : Label) (τ' : Seq Label)
-    (cont_C : State_C → Label → State_C → ENNReal)
-    (cont_A : State_A → Label → State_A → ENNReal) :
-    (∑' (l_first : Label) (s_first : State_C),
-        pe_C.kernel ⟨s_C, Seq.nil⟩ (l_first, s_first) *
-        cont_C s_C l_first s_first) =
-    ∑' (s_A : State_A) (l_first : Label) (s_first : State_A),
-      μ_A s_A * pe_A.kernel ⟨s_A, Seq.nil⟩ (l_first, s_first) *
-      cont_A s_A l_first s_first := by
-  -- **The mathematical heart of Segala's coupling** at the per-step level.
+    (l₀ : Label) (τ' : Seq Label) :
+    sys_C.traceProb (pe_C.continuationFrom ⟨s_C, Seq.nil⟩
+      Stream'.Seq.terminates_nil) (Seq.cons l₀ τ') =
+    ∑' (s_A : State_A), μ_A s_A *
+      sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
+        Stream'.Seq.terminates_nil) (Seq.cons l₀ τ') := by
+  -- **The mathematical heart of Segala's coupling.**
   -- Strategy:
-  --   1. From `h_R : R s_C μ_A`, extract `h_step : sys_C.toSystem.step _`
-  --      via `pe_C.scheduler.valid` at `⟨s_C, Seq.nil⟩` (when the scheduler
-  --      emits some `d`).
-  --   2. Apply `sim.stepWitness_pmfRel m.h_R h_step` to get
-  --      `PMFRel R μ_C ω` where `ω` is the abstract step witness.
-  --   3. The abstract pe_A's kernel emissions from `s_A` (driven by the
-  --      matching state's WeakScheduler) are coupled to the concrete kernel
-  --      via this PMFRel.
-  --   4. The continuations `cont_C` / `cont_A` carry the new R-coupling
-  --      (via `next_step.h_R_next`) — needs a hypothesis on `cont_C` /
-  --      `cont_A` linking them.
+  --   1. Apply `kernel_contA_eq_traceProb_from_state` in reverse on both
+  --      sides to expose the kernel-level form:
+  --        LHS = ∑' l_first s_first, pe_C.kernel ⟨s_C, _⟩ * cont_C
+  --        RHS = ∑' s_A l_first s_first, μ_A s_A * pe_A.kernel ⟨s_A, _⟩ * cont_A
+  --   2. Case on whether `pe_C.scheduler.next ⟨s_C, Seq.nil⟩` is `some d`:
+  --      - `none`: pe_C halts; LHS is 0 for non-nil trace (no IsTight prefix);
+  --        the matching state's `setupNextTransition` returns `m` with
+  --        `weak_sched = none`, so abstract kernel is also 0. Both sides 0.
+  --      - `some d`: apply `pe_C.scheduler.valid` + `sim.stepWitness_pmfRel`
+  --        to get `PMFRel R μ_C ω`. The PMFRel γ provides a joint distribution
+  --        coupling concrete (l_C, s_C') pairs to abstract (μ_A_next) pairs.
+  --   3. Bridge the abstract kernel to ω + WeakScheduler emissions. The
+  --      pe_A.kernel ⟨s_A, _⟩ for s_A ∈ μ_A.support is determined by
+  --      MatchingState.initial s_A → setupNextTransition. The emissions
+  --      tau-pad via σ (with σ.runtime bounded) before externalEmit.
+  --   4. The continuation traceProbs on the (l₀ :: τ') trace require
+  --      recursion. For external matching at the first external step, the
+  --      trace shortens to τ'. For tau-padding, the trace stays the same but
+  --      σ.runtime decreases.
   --
-  -- This lemma needs more careful statement to link `cont_C` and `cont_A`
-  -- via the matching state's continuation structure. Currently the signature
-  -- is too weak (no link between the two continuations). **DEFERRED.**
+  -- Well-founded recursion bottoms out on `(τ'.length, σ.runtime)`.
+  -- **DEFERRED.**
   sorry
 
 /-- The **PMFRel-style coupling** stating Segala's theorem in its full
