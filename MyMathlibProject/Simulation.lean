@@ -2142,10 +2142,23 @@ private lemma continuationFrom_compose
       h_term_combined := by
   -- Both have the same initState and the same scheduler.next pointwise.
   -- We prove structural equality via congr + funext for the scheduler.
-  show ProbabilisticExecution.mk _ _ = ProbabilisticExecution.mk _ _
+  change ProbabilisticExecution.mk _ _ = ProbabilisticExecution.mk _ _
   congr 1
   · -- initState equality: history₂.endState h_term₂ = (combined).endState h_term_combined.
-    -- Both ARE the same final state (Seq.append's endState).
+    -- Convert history₂.endState via endState_eq_foldl_toList. The h_eq₂ pattern
+    -- avoids the dependent-type rewriting issue.
+    rw [show history₂.endState h_term₂ =
+          (history₂.trans.toList h_term₂).foldl
+            (fun _ p => p.2) history₂.init from
+        endState_eq_foldl_toList history₂.init history₂.trans h_term₂]
+    rw [endState_eq_foldl_toList history₁.init
+        (history₁.trans.append history₂.trans) h_term_combined]
+    -- Goal: history₂.trans.toList.foldl _ history₂.init =
+    --       (history₁.trans.append history₂.trans).toList.foldl _ history₁.init.
+    -- The key bridging fact: foldl over the combined toList starting at history₁.init
+    -- ends at the same place as foldl over history₂.toList starting at history₂.init.
+    -- Requires a `toList_append` lemma + foldl_append + h_init₂.
+    -- **DEFERRED**: needs Stream'.Seq.toList_append helper lemma.
     sorry
   · -- Scheduler equality.
     show Scheduler.mk _ _ = Scheduler.mk _ _
