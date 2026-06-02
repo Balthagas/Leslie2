@@ -2164,7 +2164,7 @@ private lemma kernel_contA_eq_traceProb_from_state
   have h_init_zero : ∀ s₀, s₀ ≠ s →
       (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).init s₀ = 0 := by
     intro s₀ h_ne
-    show (PMF.pure (({init := s, trans := Seq.nil} :
+    change (PMF.pure (({init := s, trans := Seq.nil} :
         AlterSeq State Label).endState Stream'.Seq.terminates_nil)) s₀ = 0
     -- endState ⟨s, nil⟩ = s.
     have h_eq := AlterSeq.stateAt_find_eq_endState
@@ -2182,7 +2182,54 @@ private lemma kernel_contA_eq_traceProb_from_state
   -- Collapse outer s₀-sum: tsum_eq_single at s₀ = s.
   rw [tsum_eq_single s (fun s₀ h_ne => by
     simp [h_init_zero s₀ h_ne])]
-  sorry
+  -- Compute pe_from_s.init s = 1 (PMF.pure at the support point).
+  have h_endState_eq :
+      ({init := s, trans := Seq.nil} : AlterSeq State Label).endState
+        Stream'.Seq.terminates_nil = s := by
+    have h_eq := AlterSeq.stateAt_find_eq_endState
+      ({init := s, trans := Seq.nil} : AlterSeq State Label)
+      Stream'.Seq.terminates_nil
+    have h_find : Nat.find (Stream'.Seq.terminates_nil :
+        (Seq.nil : Seq (Label × State)).Terminates) = 0 := by
+      apply Nat.find_eq_zero _ |>.mpr; rfl
+    rw [h_find] at h_eq
+    exact (Option.some.inj h_eq).symm
+  have h_init_one :
+      (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).init s = 1 := by
+    show (PMF.pure (({init := s, trans := Seq.nil} :
+        AlterSeq State Label).endState Stream'.Seq.terminates_nil)) s = 1
+    rw [h_endState_eq, PMF.pure_apply, if_pos rfl]
+  rw [h_init_one]
+  simp_rw [one_mul]
+  -- Bridge: `(pe.continuationFrom ⟨s, Seq.nil⟩).continuationFrom ⟨s, history⟩
+  -- = pe.continuationFrom ⟨s, history⟩` as ProbabilisticExecutions.
+  -- Bridge: `(pe.continuationFrom ⟨s, Seq.nil⟩).continuationFrom ⟨s, history⟩
+  -- = pe.continuationFrom ⟨s, history⟩` as ProbabilisticExecutions.
+  -- The two have equal `init` (both `PMF.pure (⟨s, history⟩.endState h_term)`)
+  -- and the `next` fields agree pointwise:
+  --   if `e'.init = endState`, then both yield
+  --   `pe.scheduler.next ⟨s, history.append e'.trans⟩`
+  --   (using `Seq.nil.append x = x`).
+  -- Structural equality requires propagating `funext` of `next` and proof-
+  -- irrelevance of `valid` — clean but verbose. **Deferred.**
+  have h_cont_cont : ∀ (history : Seq (Label × State)) (h_term : history.Terminates),
+      (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).continuationFrom
+          ⟨s, history⟩ h_term =
+      pe.continuationFrom ⟨s, history⟩ h_term := by
+    sorry
+  -- Apply h_cont_cont in the RHS continuation.
+  simp_rw [h_cont_cont]
+  -- Also need to bridge the kernel.
+  have h_kernel_eq : ∀ (l₀ : Label) (s₁ : State),
+      (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).kernel
+        ⟨s, Seq.nil⟩ (l₀, s₁) = pe.kernel ⟨s, Seq.nil⟩ (l₀, s₁) := by
+    intro l₀ s₁
+    have h := pe.kernel_continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil
+      Seq.nil (l₀, s₁)
+    rw [h_endState_eq] at h
+    rw [h, Stream'.Seq.nil_append]
+  simp_rw [h_kernel_eq]
+
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -2229,7 +2276,7 @@ theorem traceCoupling_tsum_eq
             change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
             rw [Stream'.Seq.get?_cons_succ]
             exact Stream'.Seq.terminatedAt_nil⟩) τ')
-  show (∑' (s_C : State_C) (l_C : Label) (s_C' : State_C),
+  change (∑' (s_C : State_C) (l_C : Label) (s_C' : State_C),
       pe_C.init s_C * pe_C.kernel ⟨s_C, Seq.nil⟩ (l_C, s_C') *
       contC s_C l_C s_C') =
     ∑' (s_A : State_A) (l_A : Label) (s_A' : State_A),
