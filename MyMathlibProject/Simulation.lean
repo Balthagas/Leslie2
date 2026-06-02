@@ -1773,6 +1773,40 @@ noncomputable def advance (m : MatchingState sim pe_C)
       else
         m'.extendOnCompletion
 
+/-- `setupNextTransition` preserves `current_abstract_state`. **Deferred** —
+the definition is built in tactic mode with `by classical; rcases ...; by_cases`,
+which does not unfold cleanly; refactoring `setupNextTransition` into term-mode
+match would unblock this. -/
+private lemma setupNextTransition_current_abstract_state
+    (m : MatchingState sim pe_C) :
+    m.setupNextTransition.current_abstract_state = m.current_abstract_state := by
+  sorry
+
+/-- `extendOnCompletion` preserves `current_abstract_state`. -/
+private lemma extendOnCompletion_current_abstract_state
+    (m : MatchingState sim pe_C) :
+    m.extendOnCompletion.current_abstract_state = m.current_abstract_state := by
+  unfold MatchingState.extendOnCompletion
+  rw [setupNextTransition_current_abstract_state]
+  cases m.next_step with
+  | none => rfl
+  | some d => rfl
+
+/-- `advance` sets `current_abstract_state := s_A'`. -/
+private lemma advance_current_abstract_state
+    (m : MatchingState sim pe_C) (l_A : Label) (s_A' : State_A) :
+    (MatchingState.advance m l_A s_A').current_abstract_state = s_A' := by
+  unfold MatchingState.advance
+  dsimp only
+  split
+  · rfl
+  rename_i σ _
+  split
+  all_goals first
+    | rfl
+    | (split_ifs <;>
+        first | rfl | exact extendOnCompletion_current_abstract_state _)
+
 end MatchingState
 
 /-- The *initial* matching state for an abstract state `s_A`, given:
