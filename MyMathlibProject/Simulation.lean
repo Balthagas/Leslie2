@@ -221,6 +221,20 @@ theorem filter_cons_neg {p : α → Prop} (a : α) (s : Seq α) (h : ¬ p a) :
   · right
     exact ⟨a, s, h, rfl, rfl⟩
 
+/-- `toList` of an `append` is the list-level concatenation of the two
+constituent `toList`s. This is the natural extension of `Stream'.Seq.toList`
+to appended sequences.
+
+**Proof sketch** (deferred): induct on `Nat.find h_s`. Base case: s = nil
+(from `TerminatedAt 0` ↔ nil); then `nil.append s' = s'` (via `nil_append`).
+Inductive case: `s = cons a t` (from `s.length = n + 1`); use `cons_append`,
+`toList_cons`, and the IH on `t`. -/
+theorem toList_append {α : Type*}
+    (s s' : Seq α) (h_s : s.Terminates) (h_s' : s'.Terminates)
+    (h_combined : (s.append s').Terminates) :
+    (s.append s').toList h_combined = s.toList h_s ++ s'.toList h_s' := by
+  sorry
+
 end Stream'.Seq
 
 namespace PLTS
@@ -2153,13 +2167,17 @@ private lemma continuationFrom_compose
         endState_eq_foldl_toList history₂.init history₂.trans h_term₂]
     rw [endState_eq_foldl_toList history₁.init
         (history₁.trans.append history₂.trans) h_term_combined]
-    -- Goal: history₂.trans.toList.foldl _ history₂.init =
-    --       (history₁.trans.append history₂.trans).toList.foldl _ history₁.init.
-    -- The key bridging fact: foldl over the combined toList starting at history₁.init
-    -- ends at the same place as foldl over history₂.toList starting at history₂.init.
-    -- Requires a `toList_append` lemma + foldl_append + h_init₂.
-    -- **DEFERRED**: needs Stream'.Seq.toList_append helper lemma.
-    sorry
+    -- Apply toList_append: (h₁ ++ h₂).toList = h₁.toList ++ h₂.toList.
+    rw [Stream'.Seq.toList_append history₁.trans history₂.trans h_term₁ h_term₂]
+    -- Apply List.foldl_append: (xs ++ ys).foldl f init = ys.foldl f (xs.foldl f init).
+    rw [List.foldl_append]
+    -- Goal: h₂.toList.foldl _ h₂.init = h₂.toList.foldl _ (h₁.toList.foldl _ h₁.init).
+    -- It suffices to show: h₂.init = h₁.toList.foldl _ h₁.init.
+    -- RHS = h₁.endState (via endState_eq_foldl_toList in reverse) = h₂.init (by h_init₂).
+    congr 1
+    rw [← endState_eq_foldl_toList history₁.init history₁.trans h_term₁]
+    change history₂.init = history₁.endState h_term₁
+    exact h_init₂
   · -- Scheduler equality.
     show Scheduler.mk _ _ = Scheduler.mk _ _
     congr 1
@@ -2319,6 +2337,7 @@ private lemma kernel_contA_eq_traceProb_from_state
     rw [h_endState_eq] at h
     rw [h, Stream'.Seq.nil_append]
   simp_rw [h_kernel_eq]
+
 /-- **Matching-state-indexed trace coupling**: the canonical form of the
 Segala coupling. Given a matching state `m` paired with an abstract
 prefix `history_A` (via `fromAbstractPrefix`), the trace probability of
