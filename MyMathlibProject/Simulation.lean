@@ -1254,12 +1254,19 @@ theorem LabelledSystem.traceProb_first_step
       rw [ENNReal.tsum_mul_left]
   rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ =>
     h_distrib s₀ l₀ s₁)))]
-  -- Step 4b: match LHS (TraceDecomp Σ' sum) against the new RHS structure.
-  -- The RHS is now ∑' s₀ l₀ s₁, (consumeLabel ...).elim 0 (∑' e_rest, …).
-  -- After expanding `Option.elim` (none ↦ empty inner subtype) and combining
-  -- the outer sums with the inner via `psigmaEquivSigma` × 3 + `tsum_sigma'`,
-  -- both sides equal ∑' (s₀, l₀, s₁, e_rest with TraceDecomp constraints),
-  -- init * kernel * (continuationFrom).probOf e_rest.
+  -- Step 4b: combine `Option.elim` + inner sum into a single inner sum
+  -- with the constraint `consumeLabel = some (trace e_rest)`. The `none`
+  -- branch yields an empty subtype; the `some τ'` branch reindexes via
+  -- an Equiv between `{trace = τ' ∧ …}` and `{consumeLabel = some
+  -- (trace) ∧ …}`. Step 4c: collapse iterated sums into TraceDecomp's
+  -- Σ' via `psigmaEquivSigma` × 3 + `tsum_sigma'` × 3 and match.
+  --
+  -- Step 4b attempted in-tree but `rw [h_some]` in the `some` case
+  -- substitutes `consumeLabel` in the binder of the *outer* goal's
+  -- target subtype (changing it from `consumeLabel = some (trace)` to
+  -- `some τ' = some (trace)`), creating a binder-type mismatch with the
+  -- target Equiv. Needs a more surgical rewrite (`conv` at a specific
+  -- position, or transporting via `h_some.symm` after the some-branch).
   sorry
 
 /-- The trace probability of any trace is at most `1`.
