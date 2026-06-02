@@ -2205,18 +2205,42 @@ private lemma kernel_contA_eq_traceProb_from_state
   -- = pe.continuationFrom ⟨s, history⟩` as ProbabilisticExecutions.
   -- Bridge: `(pe.continuationFrom ⟨s, Seq.nil⟩).continuationFrom ⟨s, history⟩
   -- = pe.continuationFrom ⟨s, history⟩` as ProbabilisticExecutions.
-  -- The two have equal `init` (both `PMF.pure (⟨s, history⟩.endState h_term)`)
-  -- and the `next` fields agree pointwise:
-  --   if `e'.init = endState`, then both yield
-  --   `pe.scheduler.next ⟨s, history.append e'.trans⟩`
-  --   (using `Seq.nil.append x = x`).
-  -- Structural equality requires propagating `funext` of `next` and proof-
-  -- irrelevance of `valid` — clean but verbose. **Deferred.**
   have h_cont_cont : ∀ (history : Seq (Label × State)) (h_term : history.Terminates),
       (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).continuationFrom
           ⟨s, history⟩ h_term =
       pe.continuationFrom ⟨s, history⟩ h_term := by
-    sorry
+    intro history h_term
+    -- Both have init = PMF.pure (⟨s, history⟩.endState h_term).
+    -- Schedulers' `next` agree pointwise (via `Seq.nil.append = id`).
+    -- `valid` are propositions, equal by proof irrelevance.
+    -- Use mk-equality to break into fields.
+    show ProbabilisticExecution.mk _ _ = ProbabilisticExecution.mk _ _
+    congr 1
+    show Scheduler.mk _ _ = Scheduler.mk _ _
+    congr 1
+    · funext e'
+      classical
+      show (if e'.init = (⟨s, history⟩ : AlterSeq State Label).endState h_term then
+          (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).scheduler.next
+            ⟨s, history.append e'.trans⟩
+          else none) =
+        if e'.init = (⟨s, history⟩ : AlterSeq State Label).endState h_term then
+          pe.scheduler.next ⟨s, history.append e'.trans⟩
+          else none
+      by_cases h_init : e'.init = (⟨s, history⟩ : AlterSeq State Label).endState h_term
+      · rw [if_pos h_init, if_pos h_init]
+        show (if (⟨s, history.append e'.trans⟩ : AlterSeq State Label).init =
+            (⟨s, Seq.nil⟩ : AlterSeq State Label).endState
+              Stream'.Seq.terminates_nil then
+            pe.scheduler.next ⟨s, Seq.nil.append (history.append e'.trans)⟩
+            else none) =
+          pe.scheduler.next ⟨s, history.append e'.trans⟩
+        rw [if_pos h_endState_eq.symm]
+        congr 1
+        show (⟨s, Seq.nil.append (history.append e'.trans)⟩ : AlterSeq State Label) =
+          ⟨s, history.append e'.trans⟩
+        rw [Stream'.Seq.nil_append]
+      · rw [if_neg h_init, if_neg h_init]
   -- Apply h_cont_cont in the RHS continuation.
   simp_rw [h_cont_cont]
   -- Also need to bridge the kernel.
