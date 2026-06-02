@@ -1529,22 +1529,79 @@ noncomputable def advance (m : MatchingState sim pe_C)
 
 end MatchingState
 
+/-- The *initial* matching state for an abstract state `s_A`, given:
+* `pe_C` and `init_match` from `exists_coupling`'s STEP 1.
+* `h_match_R`: the `R`-coupling between concrete initial states and their
+  matched abstract distributions.
+
+Picks (via Classical) a concrete initial state `s_C ∈ pe_C.init.support`
+with `s_A ∈ (init_match s_C).support`. The starting `MatchingState`:
+* `e_C := ⟨s_C, Seq.nil⟩` (the trivial empty concrete prefix at `s_C`).
+* `μ_A_current := init_match s_C`.
+* `h_R := h_match_R s_C h_s_C_supp` (`R s_C (init_match s_C)`).
+* `stage := tauInternal 0` (initial sentinel).
+Returns `none` if no such concrete state exists. -/
+noncomputable def MatchingState.initial
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (s_A : State_A) :
+    Option (MatchingState sim pe_C) := by
+  classical
+  by_cases h_exists : ∃ s_C, s_C ∈ pe_C.init.support ∧ s_A ∈ (init_match s_C).support
+  · let s_C := h_exists.choose
+    have h_s_C_supp : s_C ∈ pe_C.init.support := h_exists.choose_spec.1
+    refine some ⟨⟨s_C, Seq.nil⟩, Stream'.Seq.terminates_nil,
+      init_match s_C, ?_, WeakStage.tauInternal 0⟩
+    -- R s_C (init_match s_C) at endState ⟨s_C, nil⟩ = s_C.
+    -- The endState of ⟨s_C, nil⟩ is s_C (the init).
+    have h_endState : (⟨s_C, (Seq.nil : Seq (Label × State_C))⟩ :
+        AlterSeq State_C Label).endState Stream'.Seq.terminates_nil = s_C := by
+      -- endState defined via stateAt at Nat.find h. For nil, Nat.find = 0,
+      -- and stateAt 0 = some init = some s_C.
+      have h_eq := AlterSeq.stateAt_find_eq_endState
+        ({init := s_C, trans := Seq.nil} : AlterSeq State_C Label)
+        Stream'.Seq.terminates_nil
+      -- For nil, Nat.find = 0.
+      have h_find : Nat.find (Stream'.Seq.terminates_nil :
+          (Seq.nil : Seq (Label × State_C)).Terminates) = 0 := by
+        apply Nat.find_eq_zero _ |>.mpr
+        rfl
+      rw [h_find] at h_eq
+      exact (Option.some.inj h_eq).symm
+    rw [h_endState]
+    exact h_match_R s_C h_s_C_supp
+  · exact none
+
 /-- For each abstract prefix `e_A`, the (Classical) matching state that
 the scheduler should consult to determine `compute_next e_A`. Computed by
 threading `MatchingState.advance` through `e_A.trans` from the initial
-matching state corresponding to `e_A.init`.
-
-The initial matching state for an abstract state `s_A`: pick (via Classical)
-a concrete initial state `s_C ∈ pe_C.init.support` with `s_A ∈
-(init_match s_C).support`. The `R`-coupling comes from `h_match_R s_C`.
-The `stage` starts at the "begin next concrete step" sentinel. -/
+matching state corresponding to `e_A.init`. -/
 noncomputable def MatchingState.fromAbstractPrefix
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
     (e_A : AlterSeq State_A Label) :
-    Option (MatchingState sim pe_C) :=
-  sorry
+    Option (MatchingState sim pe_C) := by
+  classical
+  -- Initial state from `e_A.init`.
+  match h_init : MatchingState.initial sim pe_C init_match h_match_R e_A.init with
+  | none => exact none
+  | some m₀ =>
+    -- Thread `advance` through `e_A.trans`. For infinite `e_A.trans`,
+    -- there's no clean "fold" — but `advance` would only be applied at
+    -- positions where the abstract scheduler has been queried, i.e., on
+    -- finite prefixes. We finesse by only folding through `toList` when
+    -- `e_A.trans` is finite; for infinite `e_A.trans` we return the
+    -- initial state (it's used only at finite positions, where validity
+    -- check applies, so this is sound).
+    by_cases h_fin : e_A.trans.Terminates
+    · exact some ((e_A.trans.toList h_fin).foldl
+        (fun m ⟨l_A, s_A'⟩ => MatchingState.advance m l_A
+          (PMF.pure s_A')) m₀)  -- placeholder: advance with `pure s_A'` PMF
+    · exact some m₀
 
 end ProbabilisticForwardSimulation
 
