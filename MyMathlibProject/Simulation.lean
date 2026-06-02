@@ -2524,9 +2524,20 @@ private theorem trace_coupling_at_matching_state
     --         (l_first, s_first) * cont_A
     -- Simplify Seq.append Seq.nil → identity.
     simp_rw [Stream'.Seq.append_nil]
-    -- Per-step coupling via `sim.stepWitness_pmfRel` chained through `m`.
-    -- Continuation recurses with advanced matching state + extended history_A.
-    -- **DEFERRED**: bulk of the mathematical content remains.
+    -- Apply `continuationFrom_compose` on both sides to flatten nested
+    -- continuationFroms in the cont factors.
+    -- For each (l_first, s_first):
+    --   (pe_X.continuationFrom history_X).continuationFrom
+    --     ⟨history_X.endState, Seq.cons (l_first, s_first) Seq.nil⟩ =
+    --   pe_X.continuationFrom ⟨history_X.init, history_X.trans.append
+    --     (Seq.cons (l_first, s_first) Seq.nil)⟩
+    -- (Via continuationFrom_compose with h_init₂ = rfl.)
+    -- This step exposes the extended prefix structure for the recursive call.
+    -- **DEFERRED**: After this, the per-step coupling via
+    -- `sim.stepWitness_pmfRel` chained through `m`, plus the recursion on
+    -- continuation with advanced matching state + extended history_A
+    -- (well-founded on `(τ.length, σ.runtime)`), constitutes the bulk of
+    -- Segala's coupling theorem.
     sorry
 
 theorem traceCoupling_tsum_eq
@@ -2657,17 +2668,60 @@ theorem traceCoupling_tsum_eq
     simp_rw [mul_assoc (init_match s_C s_A), ENNReal.tsum_mul_left]
     rfl]
   -- ============================================================
-  -- STAGES 4-7: per-state coupling.
-  -- With the matching-state-indexed lemma `trace_coupling_at_matching_state`,
-  -- the per-state coupling follows: at s_C = pe_C.initState (forced by
-  -- Dirac init), we build a matching state via `MatchingState.initial`
-  -- for `history_A := ⟨pe_A.initState, Seq.nil⟩`, and the lemma gives
-  -- the trace-coupling identity. The `∑' s_A, init_match s_C s_A * ...`
-  -- collapses because `init_match s_C` (= μ_A₀ in the use case) is itself
-  -- Dirac on `sys_A.init`.
-  -- **DEFERRED**: this wiring is mechanical and requires
-  -- `trace_coupling_at_matching_state`'s body to be closed first.
-  sorry
+  -- STAGES 4-7: per-state coupling via `trace_coupling_at_matching_state`.
+  -- ============================================================
+  -- From s_C ∈ pe_C.init.support (Dirac), s_C = pe_C.initState.
+  rw [pe_C.init_support, Set.mem_singleton_iff] at h_s_C_supp
+  subst h_s_C_supp
+  -- From h_init_eq + Dirac, init_match pe_C.initState = pe_A.init = PMF.pure pe_A.initState.
+  have h_init_match_eq : init_match pe_C.initState = PMF.pure pe_A.initState := by
+    have : pe_A.init = init_match pe_C.initState := by
+      rw [h_init_eq]
+      show pe_C.init.bind init_match = init_match pe_C.initState
+      change (PMF.pure pe_C.initState).bind init_match = init_match pe_C.initState
+      exact PMF.pure_bind pe_C.initState init_match
+    -- pe_A.init = PMF.pure pe_A.initState by definition.
+    change init_match pe_C.initState = PMF.pure pe_A.initState
+    rw [← this]; rfl
+  -- Build the matching state m via fromAbstractPrefix at ⟨pe_A.initState, Seq.nil⟩.
+  have h_pe_A_in_support : pe_A.initState ∈ (init_match pe_C.initState).support := by
+    rw [h_init_match_eq, PMF.support_pure]
+    exact rfl
+  obtain ⟨m, h_matched⟩ : ∃ m, MatchingState.fromAbstractPrefix sim pe_C init_match
+      h_match_R ⟨pe_A.initState, Seq.nil⟩ = some m := by
+    rw [fromAbstractPrefix_empty]
+    unfold MatchingState.initial
+    rw [dif_pos h_pe_A_in_support]
+    exact ⟨_, rfl⟩
+  -- m.e_C = ⟨pe_C.initState, Seq.nil⟩ via setupNextTransition_e_C + base.
+  have h_m_e_C : m.e_C = ⟨pe_C.initState, Seq.nil⟩ := by
+    rw [fromAbstractPrefix_empty] at h_matched
+    unfold MatchingState.initial at h_matched
+    rw [dif_pos h_pe_A_in_support] at h_matched
+    have h_eq : m = _ := (Option.some.inj h_matched).symm
+    rw [h_eq, MatchingState.setupNextTransition_e_C]
+  -- Apply trace_coupling_at_matching_state.
+  have h_trace := trace_coupling_at_matching_state sim pe_C init_match h_match_R
+    pe_A h_sched_eq m ⟨pe_A.initState, Seq.nil⟩ Stream'.Seq.terminates_nil h_matched
+    (Seq.cons l τ)
+  -- LHS bridge: pe_C.continuationFrom m.e_C = pe_C.continuationFrom ⟨pe_C.initState, Seq.nil⟩.
+  rw [show pe_C.continuationFrom ⟨pe_C.initState, Seq.nil⟩ Stream'.Seq.terminates_nil =
+        pe_C.continuationFrom m.e_C m.h_term_C from by
+    congr 1
+    exact h_m_e_C.symm]
+  -- LHS now matches the new lemma's LHS.
+  rw [h_trace]
+  -- RHS bridge: collapse the s_A-sum via the Dirac init_match.
+  rw [show (∑' (s_A : State_A), init_match pe_C.initState s_A *
+        sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
+            Stream'.Seq.terminates_nil) (Seq.cons l τ)) =
+        sys_A.traceProb (pe_A.continuationFrom ⟨pe_A.initState, Seq.nil⟩
+            Stream'.Seq.terminates_nil) (Seq.cons l τ) from by
+    rw [tsum_eq_single pe_A.initState]
+    · rw [h_init_match_eq, PMF.pure_apply, if_pos rfl, one_mul]
+    · intro s_A h_ne
+      rw [h_init_match_eq, PMF.pure_apply_of_ne pe_A.initState s_A h_ne,
+          zero_mul]]
 
 end ProbabilisticForwardSimulation
 
