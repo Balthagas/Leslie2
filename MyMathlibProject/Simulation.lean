@@ -2316,10 +2316,18 @@ private theorem trace_coupling_at_matching_state
     -- Both sides: traceProb _ Seq.nil = 1 (independent of pe).
     rw [sys_C.traceProb_nil_eq_one, sys_A.traceProb_nil_eq_one]
   | cons l₀ τ' =>
-    -- Inductive case: apply `traceProb_first_step` on both sides,
-    -- relate kernels via `sim.stepWitness_pmfRel` + matching state,
-    -- recurse on continuation traceProbs with the advanced matching state.
-    -- **DEFERRED**: the bulk of the mathematical content remains.
+    -- Inductive case: apply traceProb_first_step on both sides.
+    rw [sys_C.traceProb_first_step (pe_C.continuationFrom m.e_C m.h_term_C) l₀ τ']
+    rw [sys_A.traceProb_first_step (pe_A.continuationFrom history_A h_term_A) l₀ τ']
+    -- Goal: tsum over (s₀, l_first, s_first) on both sides.
+    -- LHS: pe = pe_C.continuationFrom m.e_C, init = PMF.pure (m.e_C.endState).
+    -- RHS: pe = pe_A.continuationFrom history_A, init = PMF.pure (history_A.endState).
+    -- Both inits are Dirac; the s₀-sums collapse to s₀ = endState.
+    -- Then by `kernel_continuationFrom`, the kernels reduce to pe_X.kernel
+    -- at the extended prefix.
+    -- Per-step coupling via sim.stepWitness_pmfRel through m + continuation
+    -- via advanced matching state.
+    -- **DEFERRED**: bulk of the mathematical content remains.
     sorry
 
 theorem traceCoupling_tsum_eq
