@@ -2302,14 +2302,53 @@ private theorem weighted_trace_coupling
     (τ : Seq Label) :
     weighted_traceProb sys_C pe_C μ_C τ =
     weighted_traceProb sys_A pe_A (μ_C.bind f) τ := by
-  -- **Proof deferred**: this is the strongest form of the coupling claim.
-  -- Reduces by induction on `τ`:
-  -- * `τ = nil`: both sides equal 1 (PMF mass).
-  -- * `τ = cons l₀ τ'`: apply first_step on both sides; the kernel-level
-  --   coupling follows from `stepWitness_pmfRel`; the continuation is
-  --   another weighted_trace_coupling call on shorter trace + new (R, f)
-  --   pair via the matching state's `next_step.h_R_next`.
-  sorry
+  -- Case on τ. Nil case: both sides equal 1 (PMF mass).
+  cases τ with
+  | nil =>
+    unfold weighted_traceProb
+    -- LHS: ∑' s, μ_C s * traceProb pe_C_from_s nil = ∑' s, μ_C s * 1 = 1.
+    -- RHS: ∑' s_A, (μ_C.bind f) s_A * traceProb pe_A_from_sA nil = 1.
+    have h_lhs : (∑' (s : State_C), μ_C s * sys_C.traceProb
+        (pe_C.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil)
+          Seq.nil) = 1 := by
+      simp_rw [sys_C.traceProb_nil_eq_one, mul_one]
+      exact PMF.tsum_coe μ_C
+    have h_rhs : (∑' (s_A : State_A), (μ_C.bind f) s_A * sys_A.traceProb
+        (pe_A.continuationFrom ⟨s_A, Seq.nil⟩ Stream'.Seq.terminates_nil)
+          Seq.nil) = 1 := by
+      simp_rw [sys_A.traceProb_nil_eq_one, mul_one]
+      exact PMF.tsum_coe (μ_C.bind f)
+    rw [h_lhs, h_rhs]
+  | cons l₀ τ' =>
+    -- Inductive case: apply `kernel_contA_eq_traceProb_from_state` to expose
+    -- the kernel-level structure on both sides.
+    unfold weighted_traceProb
+    -- LHS = ∑' s_C, μ_C s_C * traceProb (pe_C_from_sC) (l₀ :: τ')
+    --     = ∑' s_C, μ_C s_C * (∑' l_first s_first, pe_C.kernel ⟨s_C, _⟩ * cont_C)
+    simp_rw [← kernel_contA_eq_traceProb_from_state sys_C pe_C _ l₀ τ',
+             ← kernel_contA_eq_traceProb_from_state sys_A pe_A _ l₀ τ']
+    -- The remaining goal is the per-step coupling:
+    --   ∑' s_C, μ_C s_C * (∑' l_first s_first, pe_C.kernel * cont_C s_C l_first s_first) =
+    --   ∑' s_A, (μ_C.bind f) s_A * (∑' l_first s_first, pe_A.kernel * cont_A s_A l_first s_first)
+    -- Closing this requires:
+    --   1. Unfolding `(μ_C.bind f) s_A = ∑' s_C, μ_C s_C * f s_C s_A` and
+    --      reorganizing tsums to reduce to a per-s_C inner equality.
+    --   2. At each s_C ∈ μ_C.support (where R s_C (f s_C) holds via h_coupled),
+    --      use `sim.stepWitness_pmfRel` to obtain a PMFRel-coupling between
+    --      `pe_C.kernel ⟨s_C, _⟩` (a PMF over `(l_C, s_C')`) and an abstract
+    --      witness PMF `ω` (a PMF over abstract distributions).
+    --   3. The continuation factor `cont_C s_C l_first s_first` (= traceProb on
+    --      continuation pe) recursively matches `cont_A` via another
+    --      `weighted_trace_coupling` invocation with:
+    --        - new μ_C' = pe_C.kernel emission distribution
+    --        - new f' = derived from the matching state's `h_R_next` chain
+    --        - smaller τ (for external matching) or unchanged (for internal —
+    --          well-founded by σ.runtime).
+    --
+    -- **DEFERRED**: this is the mathematical heart of Segala's theorem, requiring
+    -- well-founded recursion on a custom measure (external trace length +
+    -- bounded tau-padding count from σ.runtime).
+    sorry
 private theorem per_state_trace_coupling
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
