@@ -2013,6 +2013,52 @@ noncomputable def LabelledSystem.traceProbPMF
       e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e},
     pe.probOf e.1 e.2.1
 
+/-- **`traceProbPMF` at nil equals 1**, mirroring `traceProb_nil_eq_one`.
+The tight finite executions with empty trace bijection with initial states
+(via `e ↦ e.init`), and each contributes `pe.init e.init`. The sum is
+`pe.init.tsum_coe = 1`. -/
+theorem LabelledSystem.traceProbPMF_nil_eq_one
+    {State Label : Type} (ls : LabelledSystem State Label)
+    (pe : PMFProbabilisticExecution ls.toSystem) :
+    LabelledSystem.traceProbPMF ls pe Seq.nil = 1 := by
+  unfold LabelledSystem.traceProbPMF
+  let e_equiv : {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = Seq.nil ∧ ls.IsTight e} ≃ State :=
+    { toFun := fun e => e.1.init
+      invFun := fun s =>
+        ⟨⟨s, Seq.nil⟩,
+          Stream'.Seq.terminates_nil,
+          ls.trace_init s,
+          Or.inl Stream'.Seq.terminatedAt_nil⟩
+      left_inv := by
+        rintro ⟨⟨init, trans⟩, hTerm, hTrace, hTight⟩
+        have h_trans_nil : trans = Seq.nil :=
+          trans_nil_of_tight_trace_nil ls ⟨init, trans⟩ hTrace hTight
+        subst h_trans_nil
+        rfl
+      right_inv := fun _ => rfl }
+  have h_probOf : ∀ (a : {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = Seq.nil ∧ ls.IsTight e}),
+      pe.probOf a.1 a.2.1 = pe.init a.1.init := by
+    rintro ⟨⟨init, trans⟩, hTerm, hTrace, hTight⟩
+    have h_trans_nil : trans = Seq.nil :=
+      trans_nil_of_tight_trace_nil ls ⟨init, trans⟩ hTrace hTight
+    subst h_trans_nil
+    unfold PMFProbabilisticExecution.probOf
+    change pe.init init * pe.probOfRemaining ⟨init, Seq.nil⟩
+        ((Seq.nil : Seq (Label × State)).toList hTerm) = pe.init init
+    have h_toList : (Seq.nil : Seq (Label × State)).toList hTerm = [] :=
+      Stream'.Seq.toList_nil
+    rw [h_toList]
+    unfold PMFProbabilisticExecution.probOfRemaining
+    simp
+  rw [tsum_congr h_probOf]
+  rw [show
+      (∑' a : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.nil ∧ ls.IsTight e},
+        pe.init a.1.init) = ∑' s, pe.init s from e_equiv.tsum_eq pe.init]
+  exact pe.init.tsum_coe
+
 /-- Convert an existing `Scheduler` into a `PMFScheduler`. The conversion is
 the natural embedding `Option (PMF (l, μ)) → PMF (Option (l, μ))`:
 * `none ↦ PMF.pure none` (Dirac on halt).
@@ -4883,22 +4929,48 @@ private lemma pe_A_probOf_eq_init_times_aux
   exact probOfRemaining_eq_aux sim pe_C init_match h_match_R pe_A h_sched_eq
     (e_A.trans.toList h_fin) ⟨e_A.init, Seq.nil⟩ Stream'.Seq.terminates_nil h_matched
 
-/-- **Matching-state-indexed trace coupling**: the canonical form of the
-Segala coupling. Given a matching state `m` paired with an abstract
-prefix `history_A` (via `fromAbstractPrefix`), the trace probability of
-`pe_C` continuing from `m.e_C` matches the trace probability of `pe_A`
-continuing from `history_A`.
+/-- **Faithful trace coupling theorem** (Phase 4): the equality form of
+trace coupling, using `pe_A_faithful` and `traceProbPMF`. With Option (a)'s
+faithful design, the per-step kernels preserve σ's full distribution, so
+the per-step mass equations (`fd5810d`) apply directly without the
+Classical-collapse obstacle that blocked the original theorem.
 
-This formulation captures the matching-state invariant directly,
-avoiding the "anchored to initial state" issue of formulations using
-arbitrary `(s_C, μ_A)` pairs.
+This is the main Phase 4 deliverable. Cases:
+* `nil`: both `traceProb` / `traceProbPMF` at nil equal 1.
+* `cons`: applies the per-step mass equations using `computeNext_PMF`'s
+  distribution-preserving emission. -/
+private theorem trace_coupling_at_matching_state_faithful
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (s_A_init : State_A)
+    (m : MatchingState sim pe_C)
+    (history_A : AlterSeq State_A Label) (h_term_A : history_A.trans.Terminates)
+    (_h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+      history_A = some m)
+    (τ : Seq Label) :
+    sys_C.traceProb (pe_C.continuationFrom m.e_C m.h_term_C) τ =
+    MatchingState.LabelledSystem.traceProbPMF sys_A
+      ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+        history_A h_term_A) τ := by
+  cases τ with
+  | nil =>
+    rw [sys_C.traceProb_nil_eq_one]
+    rw [MatchingState.LabelledSystem.traceProbPMF_nil_eq_one]
+  | cons l₀ τ' =>
+    -- Inductive case (deferred to subsequent Phase 4 work):
+    -- Apply traceProb_first_step on the C-side and an analogous lemma
+    -- on the A-side (traceProbPMF_first_step, to be developed).
+    -- Use per_step_mass_marginal_concrete / _abstract (fd5810d) to
+    -- bridge the per-step kernels via PMFRel γ.
+    sorry
 
-**Proof**: Architecture D (bijection / mass redistribution) — see the
-section comment above. Cases:
-* `nil`: both traceProbs are 1.
-* `cons l τ'`: currently proven via the per-step decomposition
-  (with 8 sub-sorries to be replaced by D1-D4 once that infrastructure
-  is in place). -/
+/-- (Original `trace_coupling_at_matching_state` — superseded by the
+faithful version above. Retained for reference; its 8 Case 2(b)
+sub-sorries are obsolete once the faithful proof is complete.) -/
 private theorem trace_coupling_at_matching_state
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
