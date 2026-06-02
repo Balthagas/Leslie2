@@ -2318,7 +2318,7 @@ private theorem per_state_trace_coupling
     (init_match : State_C → PMF State_A)
     (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
     (pe_A : ProbabilisticExecution sys_A.toSystem)
-    (s_C : State_C) (τ : Seq Label)
+    (s_C : State_C) (h_s_C_supp : s_C ∈ pe_C.init.support) (τ : Seq Label)
     (_h_sched_eq : pe_A.scheduler.next = fun e_A =>
       (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
         MatchingState.computeNext) :
@@ -2334,12 +2334,7 @@ private theorem per_state_trace_coupling
     _h_sched_eq (PMF.pure s_C) init_match (fun s_C' h_s_C' => by
       rw [PMF.mem_support_pure_iff] at h_s_C'
       rw [h_s_C']
-      classical
-      by_cases h : s_C ∈ pe_C.init.support
-      · exact h_match_R s_C h
-      · -- When s_C ∉ pe_C.init.support, side-condition can't be discharged
-        -- directly. **Sorry'd**: outside main use case.
-        sorry) τ
+      exact h_match_R s_C h_s_C_supp) τ
   rw [weighted_traceProb_pure] at h_general
   rw [h_general]
   unfold weighted_traceProb
@@ -2449,6 +2444,16 @@ theorem traceCoupling_tsum_eq
       simp_rw [mul_assoc (pe_C.init s_C), ENNReal.tsum_mul_left]]
   -- Both sides are now ∑' s_C, pe_C.init s_C * (inner). Reduce to per-s_C.
   refine tsum_congr (fun s_C => ?_)
+  -- Case-split on whether s_C ∈ pe_C.init.support. For s_C out of support,
+  -- pe_C.init s_C = 0 collapses both sides to 0. In-support uses
+  -- `per_state_trace_coupling` which requires the support hypothesis.
+  classical
+  by_cases h_s_C_supp : s_C ∈ pe_C.init.support
+  swap
+  · have h_zero : pe_C.init s_C = 0 := by
+      rwa [PMF.mem_support_iff, not_not] at h_s_C_supp
+    rw [h_zero]
+    ring
   congr 1
   -- ============================================================
   -- STAGE 3: recognize each side as `traceProb pe_from_state (l :: τ)`
@@ -2475,7 +2480,7 @@ theorem traceCoupling_tsum_eq
   -- ============================================================
   -- STAGES 4-7: dispatch to the per-state coupling lemma.
   exact per_state_trace_coupling sim pe_C init_match h_match_R pe_A s_C
-    (Seq.cons l τ) h_sched_eq
+    h_s_C_supp (Seq.cons l τ) h_sched_eq
 
 end ProbabilisticForwardSimulation
 
