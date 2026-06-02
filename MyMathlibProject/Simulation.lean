@@ -2196,7 +2196,7 @@ private lemma kernel_contA_eq_traceProb_from_state
     exact (Option.some.inj h_eq).symm
   have h_init_one :
       (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).init s = 1 := by
-    show (PMF.pure (({init := s, trans := Seq.nil} :
+    change (PMF.pure (({init := s, trans := Seq.nil} :
         AlterSeq State Label).endState Stream'.Seq.terminates_nil)) s = 1
     rw [h_endState_eq, PMF.pure_apply, if_pos rfl]
   rw [h_init_one]
@@ -2214,13 +2214,13 @@ private lemma kernel_contA_eq_traceProb_from_state
     -- Schedulers' `next` agree pointwise (via `Seq.nil.append = id`).
     -- `valid` are propositions, equal by proof irrelevance.
     -- Use mk-equality to break into fields.
-    show ProbabilisticExecution.mk _ _ = ProbabilisticExecution.mk _ _
+    change ProbabilisticExecution.mk _ _ = ProbabilisticExecution.mk _ _
     congr 1
     show Scheduler.mk _ _ = Scheduler.mk _ _
     congr 1
     · funext e'
       classical
-      show (if e'.init = (⟨s, history⟩ : AlterSeq State Label).endState h_term then
+      change (if e'.init = (⟨s, history⟩ : AlterSeq State Label).endState h_term then
           (pe.continuationFrom ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil).scheduler.next
             ⟨s, history.append e'.trans⟩
           else none) =
@@ -2229,7 +2229,7 @@ private lemma kernel_contA_eq_traceProb_from_state
           else none
       by_cases h_init : e'.init = (⟨s, history⟩ : AlterSeq State Label).endState h_term
       · rw [if_pos h_init, if_pos h_init]
-        show (if (⟨s, history.append e'.trans⟩ : AlterSeq State Label).init =
+        change (if (⟨s, history.append e'.trans⟩ : AlterSeq State Label).init =
             (⟨s, Seq.nil⟩ : AlterSeq State Label).endState
               Stream'.Seq.terminates_nil then
             pe.scheduler.next ⟨s, Seq.nil.append (history.append e'.trans)⟩
@@ -2253,6 +2253,46 @@ private lemma kernel_contA_eq_traceProb_from_state
     rw [h_endState_eq] at h
     rw [h, Stream'.Seq.nil_append]
   simp_rw [h_kernel_eq]
+
+/-- **Per-state trace coupling**: starting from any concrete state `s_C`, the
+trace probability of `pe_C` equals the `init_match`-weighted average of trace
+probabilities of `pe_A` starting from each `s_A` in `init_match s_C`'s support.
+
+This is the *core inductive claim* of Segala's theorem at the per-state level.
+It is universally quantified over `τ` (any trace), so the proof requires
+induction on `τ`'s structure — typically via `traceProb_first_step` at each
+step plus `stepWitness_pmfRel` for the coupling.
+
+**Inductive structure**:
+* `τ = Seq.nil`: `traceProb pe nil = 1 - (mass of non-empty support)`. The
+  per-state claim reduces to an init-coupling identity using `h_match_R`.
+* `τ = Seq.cons l₀ τ'`: apply `traceProb_first_step` on both sides; the
+  resulting tsums match via `stepWitness_pmfRel` at the kernel level, with
+  the continuation case reducing to the IH on the shorter trace `τ'` (or
+  the same `τ'` if `l₀` is internal — tau-padding case requiring a
+  separate well-founded measure).
+
+**Proof deferred**: this is the heart of Segala's theorem; requires
+substantial induction infrastructure (probably well-founded on the "external
+trace length" so tau-padding cycles are bounded). -/
+private theorem per_state_trace_coupling
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : ProbabilisticExecution sys_A.toSystem)
+    (s_C : State_C) (τ : Seq Label)
+    (_h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+        MatchingState.computeNext) :
+    sys_C.traceProb (pe_C.continuationFrom ⟨s_C, Seq.nil⟩
+      Stream'.Seq.terminates_nil) τ =
+    ∑' (s_A : State_A), init_match s_C s_A *
+      sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
+        Stream'.Seq.terminates_nil) τ := by
+  sorry
 
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
@@ -2372,16 +2412,9 @@ theorem traceCoupling_tsum_eq
     simp_rw [mul_assoc (init_match s_C s_A), ENNReal.tsum_mul_left]
     rfl]
   -- ============================================================
-  -- STAGES 4-7: the per-state coupling claim.
-  -- Goal: traceProb sys_C (pe_C.continuationFrom ⟨s_C, Seq.nil⟩) (l :: τ) =
-  --       ∑' s_A, init_match s_C s_A *
-  --         traceProb sys_A (pe_A.continuationFrom ⟨s_A, Seq.nil⟩) (l :: τ).
-  -- This is the per-`s_C` coupling: starting from `s_C`, the concrete
-  -- trace probability matches the `init_match`-weighted average of
-  -- the abstract trace probabilities starting from each `s_A` in
-  -- `init_match s_C`'s support. Requires Stage 2 (pe_A.kernel expansion)
-  -- folded into the per-step coupling argument. **DEFERRED.**
-  sorry
+  -- STAGES 4-7: dispatch to the per-state coupling lemma.
+  exact per_state_trace_coupling sim pe_C init_match h_match_R pe_A s_C
+    (Seq.cons l τ) h_sched_eq
 
 end ProbabilisticForwardSimulation
 
