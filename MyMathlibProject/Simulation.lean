@@ -3765,6 +3765,155 @@ private lemma ExternalDecomp.chain_eq_stepWitness_bind
   rw [← decomp.h_hyper.post_eq_bind]
   exact decomp.σ_post_run_eq
 
+/-! ### Architecture D infrastructure: D1 (`pe_A.probOf` characterization)
+
+`pe_A.kernel` at any abstract prefix `e_A` decomposes via `computeNext`
+of the matching state at that prefix; `pe_A.probOf e_A` then unfolds as
+a foldl over `e_A`'s transitions, with each factor a matching-state
+kernel mass. -/
+
+/-- **D1 per-step kernel = computeNext-based kernel**. When the matching
+state from `fromAbstractPrefix` at prefix `e_A` is `some m`, the
+`pe_A.kernel` value equals the matching-state-derived kernel formula.
+
+This is the bridge between `pe_A`'s "low-level" kernel API and the
+matching-state structure that drives D3/D4's mass accounting. -/
+private lemma pe_A_kernel_at_matching_state
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : ProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+        MatchingState.computeNext)
+    (e_A : AlterSeq State_A Label) {m : MatchingState sim pe_C}
+    (h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A
+      = some m)
+    (step : Label × State_A) :
+    pe_A.kernel e_A step =
+    (MatchingState.computeNext m).elim 0
+      (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) step) := by
+  unfold ProbabilisticExecution.kernel
+  rw [h_sched_eq]
+  change ((MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+      MatchingState.computeNext).elim 0 _ = _
+  rw [h_matched]
+  rfl
+
+/-- **D1 kernel is 0 when no matching state**. The `none` case of
+`fromAbstractPrefix` makes `computeNext` vacuous via `Option.bind`,
+yielding `pe_A.kernel e_A step = 0`. -/
+private lemma pe_A_kernel_zero_when_no_matching_state
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : ProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+        MatchingState.computeNext)
+    (e_A : AlterSeq State_A Label)
+    (h_none : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = none)
+    (step : Label × State_A) :
+    pe_A.kernel e_A step = 0 := by
+  unfold ProbabilisticExecution.kernel
+  rw [h_sched_eq]
+  change ((MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+      MatchingState.computeNext).elim 0 _ = 0
+  rw [h_none]
+  rfl
+
+/-- **D1: matching-state-aware `probOfRemaining`**, the recursive form
+expressing the running probability as a product of `computeNext`-derived
+per-step masses chained through `advance`. -/
+private noncomputable def probOfRemaining_aux
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (xs : List (Label × State_A)) : ENNReal :=
+  List.rec
+    (motive := fun _ => MatchingState sim pe_C → ENNReal)
+    (fun _ => 1)
+    (fun hd _rest ih cur_m =>
+      (MatchingState.computeNext cur_m).elim 0
+          (fun d_A => (d_A.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) hd) *
+      ih (cur_m.advance hd.1 hd.2))
+    xs m
+
+/-- **D1: `probOfRemaining` factors through matching states**. For any
+prefix `pre` with matching state `some m` and terminating trans,
+`pe_A.probOfRemaining pre xs` equals the matching-state-aware
+`probOfRemaining_aux m xs`. Proved by induction on `xs`, using
+`fromAbstractPrefix_advance_consistency` to advance the matching state
+at each step. -/
+private lemma probOfRemaining_eq_aux
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : ProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+        MatchingState.computeNext)
+    (xs : List (Label × State_A)) (pre : AlterSeq State_A Label)
+    (h_term : pre.trans.Terminates)
+    {m : MatchingState sim pe_C}
+    (h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R pre
+      = some m) :
+    pe_A.probOfRemaining pre xs = probOfRemaining_aux m xs := by
+  induction xs generalizing pre m with
+  | nil => rfl
+  | cons hd rest ih =>
+    rw [pe_A.probOfRemaining_cons pre hd rest]
+    rw [pe_A_kernel_at_matching_state sim pe_C init_match h_match_R pe_A h_sched_eq
+      pre h_matched hd]
+    change _ = (MatchingState.computeNext m).elim 0 _ * probOfRemaining_aux _ rest
+    congr 1
+    have h_term' : (pre.trans.append (Seq.cons hd Seq.nil)).Terminates :=
+      ⟨Nat.find h_term + 1,
+        Stream'.Seq.terminatedAt_append_find h_term
+          (show (Seq.cons hd Seq.nil).TerminatedAt 1 from rfl)⟩
+    have h_matched' : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+        ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩
+        = some (m.advance hd.1 hd.2) :=
+      fromAbstractPrefix_advance_consistency sim pe_C init_match h_match_R
+        pre h_term h_matched hd.1 hd.2
+    exact ih ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩ h_term' h_matched'
+
+/-- **D1: `pe_A.probOf` factors through the initial matching state**.
+The whole-execution probability equals `pe_A.init e_A.init` times the
+matching-state-aware product, where the product is taken over `e_A`'s
+transitions starting from the matching state at `⟨e_A.init, Seq.nil⟩`. -/
+private lemma pe_A_probOf_eq_init_times_aux
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : ProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+        MatchingState.computeNext)
+    (e_A : AlterSeq State_A Label) (h_fin : e_A.trans.Terminates)
+    {m₀ : MatchingState sim pe_C}
+    (h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+      ⟨e_A.init, Seq.nil⟩ = some m₀) :
+    pe_A.probOf e_A h_fin =
+    pe_A.init e_A.init * probOfRemaining_aux m₀ (e_A.trans.toList h_fin) := by
+  unfold ProbabilisticExecution.probOf
+  congr 1
+  exact probOfRemaining_eq_aux sim pe_C init_match h_match_R pe_A h_sched_eq
+    (e_A.trans.toList h_fin) ⟨e_A.init, Seq.nil⟩ Stream'.Seq.terminates_nil h_matched
+
 /-- **Matching-state-indexed trace coupling**: the canonical form of the
 Segala coupling. Given a matching state `m` paired with an abstract
 prefix `history_A` (via `fromAbstractPrefix`), the trace probability of
