@@ -1347,9 +1347,54 @@ theorem LabelledSystem.traceProb_first_step
     subst h_init
     rfl
   rw [tsum_congr h_summand_eq]
-  -- Step 4c.2 + 4c.3 remaining: build the master Equiv between
-  -- TraceDecomp and the Σ-form, then apply Equiv.tsum_eq + tsum_sigma' × 3.
-  sorry
+  -- Step 4c.2: master Equiv between `TraceDecomp l τ` and the Σ-form.
+  -- Constraint order is rearranged + `init = s₁` ↔ `init = endState ⟨s₀,
+  -- cons (l₀, s₁) nil⟩ _` via `endState_singleton_cons`.
+  let e_master : ls.TraceDecomp l τ ≃
+      Σ s₀ : State, Σ l₀ : Label, Σ s₁ : State,
+        {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+          ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)} :=
+    { toFun := fun ⟨s₀, l₀, s₁, e_rest, h_init, h_term, h_tight, h_consume⟩ =>
+        ⟨s₀, l₀, s₁, ⟨e_rest, h_term, h_tight,
+          h_init.trans (AlterSeq.endState_singleton_cons s₀ l₀ s₁).symm,
+          h_consume⟩⟩
+      invFun := fun ⟨s₀, l₀, s₁, e_rest, h_term, h_tight, h_init_endState, h_consume⟩ =>
+        ⟨s₀, l₀, s₁, ⟨e_rest,
+          h_init_endState.trans (AlterSeq.endState_singleton_cons s₀ l₀ s₁),
+          h_term, h_tight, h_consume⟩⟩
+      left_inv := fun ⟨_, _, _, ⟨_, _, _, _, _⟩⟩ => rfl
+      right_inv := fun ⟨_, _, _, ⟨_, _, _, _, _⟩⟩ => rfl }
+  -- Step 4c.3: define the per-Sigma-element summand G and chain.
+  let G : (Σ s₀ : State, Σ l₀ : Label, Σ s₁ : State,
+      {e_rest : AlterSeq State Label //
+        e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+        e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+        ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)}) → ENNReal :=
+    fun b => pe.init b.1 * pe.kernel ⟨b.1, Seq.nil⟩ (b.2.1, b.2.2.1) *
+      (pe.continuationFrom ⟨b.1, Seq.cons (b.2.1, b.2.2.1) Seq.nil⟩
+        (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+        b.2.2.2.1 b.2.2.2.2.1
+  -- Final chain: LHS = ∑' d, G (e_master d) = ∑' b, G b = (RHS).
+  calc (∑' d : ls.TraceDecomp l τ,
+          pe.init d.1 * pe.kernel ⟨d.1, Seq.nil⟩ (d.2.1, d.2.2.1) *
+            (pe.continuationFrom ⟨d.1, Seq.cons (d.2.1, d.2.2.1) Seq.nil⟩
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+              d.2.2.2.1 d.2.2.2.2.2.1)
+      = ∑' d, G (e_master d) := by
+        apply tsum_congr
+        rintro ⟨_, _, _, ⟨_, _, _, _, _⟩⟩
+        rfl
+    _ = ∑' b, G b := e_master.tsum_eq G
+    _ = _ := by
+        rw [ENNReal.tsum_sigma']
+        apply tsum_congr; intro s₀
+        rw [ENNReal.tsum_sigma']
+        apply tsum_congr; intro l₀
+        rw [ENNReal.tsum_sigma']
 
 /-- The trace probability of any trace is at most `1`.
 
