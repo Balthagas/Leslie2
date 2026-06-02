@@ -1580,30 +1580,44 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
     | some ⟨l_C, _, μ_A_next, _⟩ => some (PMF.pure (l_C, μ_A_next))
   | some _, _ => none
 
-/-- Helper used by `advance`: on weak-transition completion, if a
-`next_concrete_step` was recorded, extend `e_C` by it. The new
-`h_term_C` is derived via `terminatedAt_append_find`. The new `h_R`
-proof remains as a `sorry` — this is the one semantic gap that
-requires Classical-extraction from `sim.step`'s `PMFRel` coupling
-(future refinement).
+/-- Helper used by `advance`: on weak-transition completion, install the
+next weak transition based on `pe_C.scheduler.next m.e_C`. Stub —
+returns `m` unchanged for now. A full implementation would:
+1. If `pe_C.scheduler.next m.e_C = none`, leave `weak_sched = none` and
+   `next_step = none` (pe_C has stopped; matching state's final form).
+2. If `some d`, Classical-pick `(l_C, μ_C)` from `d.support`, pick
+   `s_C' ∈ μ_C.support`, apply `sim.step` using `m.h_R` to get a
+   `stepWitness` and a `WeakScheduler σ`, Classical-pick
+   `μ_A_next ∈ stepWitness.support` such that `R s_C' μ_A_next` via
+   `PMFRel`, populate `weak_sched := some σ`, `next_step := some
+   ⟨l_C, s_C', μ_A_next, h_R_next⟩`, `stage := tauInternal 0` (or
+   `preExternal 0` if `l_C` is external). -/
+noncomputable def setupNextTransition (m : MatchingState sim pe_C) :
+    MatchingState sim pe_C :=
+  match pe_C.scheduler.next m.e_C with
+  | none => m  -- pe_C stopped; this is the final state.
+  | some _ => m  -- placeholder: Classical-extraction deferred.
 
-If `next_concrete_step = none`, just clear `weak_sched` and reset
-`stage`. -/
+/-- Helper used by `advance`: on weak-transition completion, extend
+`e_C` by `next_step` if present, then call `setupNextTransition` to
+install the next weak transition. -/
 noncomputable def extendOnCompletion (m : MatchingState sim pe_C) :
     MatchingState sim pe_C :=
-  match m.next_step with
-  | none =>
-    { m with weak_sched := none, stage := WeakStage.tauInternal 0 }
-  | some ⟨l_C, s_C', μ_A_next, h_R_next⟩ =>
-    { e_C := ⟨m.e_C.init, m.e_C.trans.append (Seq.cons (l_C, s_C') Seq.nil)⟩
-      h_term_C := ⟨Nat.find m.h_term_C + 1,
-        Stream'.Seq.terminatedAt_append_find m.h_term_C
-          (show (Seq.cons (l_C, s_C') Seq.nil).TerminatedAt 1 from rfl)⟩
-      μ_A_current := μ_A_next
-      h_R := (AlterSeq.endState_append_singleton m.e_C m.h_term_C l_C s_C').symm ▸ h_R_next
-      next_step := none
-      weak_sched := none
-      stage := WeakStage.tauInternal 0 }
+  let extended : MatchingState sim pe_C :=
+    match m.next_step with
+    | none =>
+      { m with weak_sched := none, stage := WeakStage.tauInternal 0 }
+    | some ⟨l_C, s_C', μ_A_next, h_R_next⟩ =>
+      { e_C := ⟨m.e_C.init, m.e_C.trans.append (Seq.cons (l_C, s_C') Seq.nil)⟩
+        h_term_C := ⟨Nat.find m.h_term_C + 1,
+          Stream'.Seq.terminatedAt_append_find m.h_term_C
+            (show (Seq.cons (l_C, s_C') Seq.nil).TerminatedAt 1 from rfl)⟩
+        μ_A_current := μ_A_next
+        h_R := (AlterSeq.endState_append_singleton m.e_C m.h_term_C l_C s_C').symm ▸ h_R_next
+        next_step := none
+        weak_sched := none
+        stage := WeakStage.tauInternal 0 }
+  setupNextTransition extended
 
 /-- Advance the matching state after the abstract scheduler emitted a step
 `(l_A, μ_A')`. State-machine on `m.weak_sched` + `m.stage`:
