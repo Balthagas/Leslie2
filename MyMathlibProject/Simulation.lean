@@ -2341,13 +2341,18 @@ private theorem trace_coupling_at_matching_state
       (pe_A.continuationFrom history_A h_term_A).init_apply_self
     simp_rw [h_init_C, one_mul]
     simp_rw [h_init_A, one_mul]
-    -- Goal (kernel form, both sides):
-    --   ∑' l_first s_first, (pe_C.continuationFrom m.e_C).kernel
-    --     ⟨m.e_C.endState, Seq.nil⟩ (l_first, s_first) * (cont_C ...) =
-    --   ∑' l_first s_first, (pe_A.continuationFrom history_A).kernel
-    --     ⟨history_A.endState, Seq.nil⟩ (l_first, s_first) * (cont_A ...)
-    -- Bridge: use `kernel_continuationFrom` to reduce to pe_X.kernel at
-    -- extended prefixes. Then per-step coupling via stepWitness_pmfRel.
+    -- Apply `kernel_continuationFrom` on both sides to reduce kernels to
+    -- `pe_X.kernel` at the extended prefix (m.e_C / history_A).
+    simp_rw [pe_C.kernel_continuationFrom m.e_C m.h_term_C Seq.nil]
+    simp_rw [pe_A.kernel_continuationFrom history_A h_term_A Seq.nil]
+    -- Goal: ∑' l_first s_first, pe_C.kernel ⟨m.e_C.init, m.e_C.trans.append Seq.nil⟩
+    --         (l_first, s_first) * cont_C =
+    --       ∑' l_first s_first, pe_A.kernel ⟨history_A.init, history_A.trans.append Seq.nil⟩
+    --         (l_first, s_first) * cont_A
+    -- Simplify Seq.append Seq.nil → identity.
+    simp_rw [Stream'.Seq.append_nil]
+    -- Per-step coupling via `sim.stepWitness_pmfRel` chained through `m`.
+    -- Continuation recurses with advanced matching state + extended history_A.
     -- **DEFERRED**: bulk of the mathematical content remains.
     sorry
 
