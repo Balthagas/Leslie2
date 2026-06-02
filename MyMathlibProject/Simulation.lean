@@ -2310,7 +2310,17 @@ private theorem trace_coupling_at_matching_state
     (τ : Seq Label) :
     sys_C.traceProb (pe_C.continuationFrom m.e_C m.h_term_C) τ =
     sys_A.traceProb (pe_A.continuationFrom history_A h_term_A) τ := by
-  sorry
+  -- Case on τ.
+  cases τ with
+  | nil =>
+    -- Both sides: traceProb _ Seq.nil = 1 (independent of pe).
+    rw [sys_C.traceProb_nil_eq_one, sys_A.traceProb_nil_eq_one]
+  | cons l₀ τ' =>
+    -- Inductive case: apply `traceProb_first_step` on both sides,
+    -- relate kernels via `sim.stepWitness_pmfRel` + matching state,
+    -- recurse on continuation traceProbs with the advanced matching state.
+    -- **DEFERRED**: the bulk of the mathematical content remains.
+    sorry
 
 theorem traceCoupling_tsum_eq
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
