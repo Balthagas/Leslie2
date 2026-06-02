@@ -1975,6 +1975,31 @@ theorem ProbabilisticForwardSimulation.exists_coupling
       ∃ pe_A_scheduler : Scheduler sys_A.toSystem,
         ∀ l τ, sys_C.traceProb pe_C (Seq.cons l τ) =
           sys_A.traceProb ⟨pe_A_init, pe_A_scheduler⟩ (Seq.cons l τ) := by
+    -- Build pe_A_scheduler from MatchingState machinery.
+    let pe_A_scheduler : Scheduler sys_A.toSystem :=
+      { next := fun e_A =>
+          (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).bind
+            MatchingState.computeNext
+        valid := by
+          -- Validity: for any e_A's terminated prefix at position n with
+          -- state s_A, and `next e_A = some d`, every (l, μ) ∈ d.support
+          -- must be a valid `sys_A.step s_A l μ`. This follows from:
+          -- * `MatchingState.computeNext`'s case analysis:
+          --   - none: vacuous.
+          --   - externalEmit: emit (l_C, μ_A_next); valid via hyperStep
+          --     extraction from `weakStep`'s middle component.
+          --   - mid-tau via `liftOption`: emit step extracted from σ.next,
+          --     valid via `WeakScheduler.valid`.
+          -- The proof requires invariants on `MatchingState` (e_A's state
+          -- ∈ μ_A_current.support) that aren't yet maintained by
+          -- `fromAbstractPrefix`. **Deferred.**
+          sorry }
+    refine ⟨pe_A_scheduler, ?_⟩
+    intro l τ
+    -- Trace-coupling proof: by induction on the trace via
+    -- `traceProb_first_step` applied to both sides. Each step's match
+    -- comes from `PMFRel`-coupling at the first transition (via
+    -- `stepWitness_pmfRel` chained through the matching state). **Deferred.**
     sorry
   obtain ⟨pe_A_scheduler, h_cons⟩ := h_build_pe_A
   -- Combine the nil case (from `traceProb_nil_eq_one`) and the cons case
