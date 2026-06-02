@@ -2319,14 +2319,35 @@ private theorem trace_coupling_at_matching_state
     -- Inductive case: apply traceProb_first_step on both sides.
     rw [sys_C.traceProb_first_step (pe_C.continuationFrom m.e_C m.h_term_C) l₀ τ']
     rw [sys_A.traceProb_first_step (pe_A.continuationFrom history_A h_term_A) l₀ τ']
-    -- Goal: tsum over (s₀, l_first, s_first) on both sides.
-    -- LHS: pe = pe_C.continuationFrom m.e_C, init = PMF.pure (m.e_C.endState).
-    -- RHS: pe = pe_A.continuationFrom history_A, init = PMF.pure (history_A.endState).
-    -- Both inits are Dirac; the s₀-sums collapse to s₀ = endState.
-    -- Then by `kernel_continuationFrom`, the kernels reduce to pe_X.kernel
-    -- at the extended prefix.
-    -- Per-step coupling via sim.stepWitness_pmfRel through m + continuation
-    -- via advanced matching state.
+    -- Collapse Dirac s₀-sums on both sides.
+    conv_lhs =>
+      rw [tsum_eq_single (m.e_C.endState m.h_term_C) (fun s₀ h_ne => by
+        apply ENNReal.tsum_eq_zero.mpr; intro l₀_1
+        apply ENNReal.tsum_eq_zero.mpr; intro s₁
+        rw [(pe_C.continuationFrom m.e_C m.h_term_C).init_apply_of_ne h_ne]
+        ring)]
+    conv_rhs =>
+      rw [tsum_eq_single (history_A.endState h_term_A) (fun s₀ h_ne => by
+        apply ENNReal.tsum_eq_zero.mpr; intro l₀_1
+        apply ENNReal.tsum_eq_zero.mpr; intro s₁
+        rw [(pe_A.continuationFrom history_A h_term_A).init_apply_of_ne h_ne]
+        ring)]
+    -- Clean up the Dirac mass `init endState = 1` on both sides.
+    have h_init_C : (pe_C.continuationFrom m.e_C m.h_term_C).init
+        (m.e_C.endState m.h_term_C) = 1 :=
+      (pe_C.continuationFrom m.e_C m.h_term_C).init_apply_self
+    have h_init_A : (pe_A.continuationFrom history_A h_term_A).init
+        (history_A.endState h_term_A) = 1 :=
+      (pe_A.continuationFrom history_A h_term_A).init_apply_self
+    simp_rw [h_init_C, one_mul]
+    simp_rw [h_init_A, one_mul]
+    -- Goal (kernel form, both sides):
+    --   ∑' l_first s_first, (pe_C.continuationFrom m.e_C).kernel
+    --     ⟨m.e_C.endState, Seq.nil⟩ (l_first, s_first) * (cont_C ...) =
+    --   ∑' l_first s_first, (pe_A.continuationFrom history_A).kernel
+    --     ⟨history_A.endState, Seq.nil⟩ (l_first, s_first) * (cont_A ...)
+    -- Bridge: use `kernel_continuationFrom` to reduce to pe_X.kernel at
+    -- extended prefixes. Then per-step coupling via stepWitness_pmfRel.
     -- **DEFERRED**: bulk of the mathematical content remains.
     sorry
 
