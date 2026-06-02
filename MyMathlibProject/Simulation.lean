@@ -1640,7 +1640,13 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
   | some _, WeakStage.externalEmit =>
     match m.hyper_witness with
     | none => none
-    | some w => some ((w.kernel m.current_abstract_state).map (Prod.mk w.l))
+    | some w =>
+      letI : Decidable (m.current_abstract_state ∈ w.μ_pre.support) :=
+        Classical.propDecidable _
+      if m.current_abstract_state ∈ w.μ_pre.support then
+        some ((w.kernel m.current_abstract_state).map (Prod.mk w.l))
+      else
+        none
   | some σ, _ =>
     -- Mid-tau cases (tauInternal/preExternal/postExternal): bridge
     -- `WeakScheduler.next : AlterSeq → PMF (Option (l, μ))` to our
@@ -2197,34 +2203,35 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                       rw [h_ws, h_st, h_hw]
                     rw [h_cn_none] at h_compute
                     exact absurd h_compute (by simp)
-                  · -- hyper_witness = some w. Emission is `(w.kernel m.cas).map (Prod.mk w.l)`.
-                    -- h_supp: (l_A, μ_A) ∈ ((w.kernel m.cas).map (Prod.mk w.l)).support
-                    --   = (Prod.mk w.l) '' (w.kernel m.cas).support
-                    -- So l_A = w.l and μ_A ∈ (w.kernel m.cas).support.
-                    -- Validity via w.valid requires m.cas ∈ w.μ_pre.support — the
-                    -- support invariant from the weak-transition unrolling.
-                    -- **Sorry'd**: the invariant is non-trivial to maintain
-                    -- through `advance` (requires reasoning about σ_pre's run).
-                    have h_cn_eq : MatchingState.computeNext m =
-                        some ((w.kernel m.current_abstract_state).map (Prod.mk w.l)) := by
-                      unfold MatchingState.computeNext
-                      rw [h_ws, h_st, h_hw]
-                    rw [h_cn_eq] at h_compute
-                    have h_d_eq : d = (w.kernel m.current_abstract_state).map (Prod.mk w.l) :=
-                      (Option.some.inj h_compute).symm
-                    rw [h_d_eq, PMF.support_map, Set.mem_image] at h_supp
-                    obtain ⟨μ, h_μ_supp, h_eq⟩ := h_supp
-                    have h_l_eq : l_A = w.l := (Prod.mk.inj h_eq).1.symm
-                    have h_μ_eq : μ_A = μ := (Prod.mk.inj h_eq).2.symm
-                    have h_cas_in : m.current_abstract_state ∈ w.μ_pre.support := by
-                      -- Invariant: when stage = externalEmit and hyper_witness = some w,
-                      -- m.current_abstract_state ∈ w.μ_pre.support. **Deferred** —
-                      -- maintained through pre-tau evolution under σ_pre.
-                      sorry
-                    have h_step :=
-                      w.valid m.current_abstract_state h_cas_in μ h_μ_supp
-                    rw [h_l_eq, h_μ_eq]
-                    exact h_step
+                  · -- hyper_witness = some w. Emission is guarded on
+                    -- `m.cas ∈ w.μ_pre.support`; on that branch, emission is
+                    -- `(w.kernel m.cas).map (Prod.mk w.l)` and validity follows
+                    -- from `w.valid m.cas h_cas_in`.
+                    classical
+                    by_cases h_cas_in : m.current_abstract_state ∈ w.μ_pre.support
+                    · have h_cn_eq : MatchingState.computeNext m =
+                          some ((w.kernel m.current_abstract_state).map (Prod.mk w.l)) := by
+                        unfold MatchingState.computeNext
+                        rw [h_ws, h_st, h_hw]
+                        simp [h_cas_in]
+                      rw [h_cn_eq] at h_compute
+                      have h_d_eq : d = (w.kernel m.current_abstract_state).map (Prod.mk w.l) :=
+                        (Option.some.inj h_compute).symm
+                      rw [h_d_eq, PMF.support_map, Set.mem_image] at h_supp
+                      obtain ⟨μ, h_μ_supp, h_eq⟩ := h_supp
+                      have h_l_eq : l_A = w.l := (Prod.mk.inj h_eq).1.symm
+                      have h_μ_eq : μ_A = μ := (Prod.mk.inj h_eq).2.symm
+                      have h_step :=
+                        w.valid m.current_abstract_state h_cas_in μ h_μ_supp
+                      rw [h_l_eq, h_μ_eq]
+                      exact h_step
+                    · exfalso
+                      have h_cn_none : MatchingState.computeNext m = none := by
+                        unfold MatchingState.computeNext
+                        rw [h_ws, h_st, h_hw]
+                        simp [h_cas_in]
+                      rw [h_cn_none] at h_compute
+                      exact absurd h_compute (by simp)
                 · -- postExternal k
                   exact h_mid_tau (by unfold MatchingState.computeNext; rw [h_ws, h_st]) }
     refine ⟨pe_A_scheduler, ?_⟩
