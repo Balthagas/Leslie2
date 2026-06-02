@@ -2786,19 +2786,17 @@ theorem ProbabilisticForwardSimulation.exists_coupling
   -- STEP 1: Build the initial-distribution matching function.
   -- With pe_C.init = PMF.pure pe_C.initState = PMF.pure sys_C.init, the
   -- relevant s_C in the support is just sys_C.init, matched to μ_A₀.
-  obtain ⟨init_match, h_match_R, h_match_init⟩ :
-      ∃ f : State_C → PMF State_A,
-        (∀ s_C ∈ pe_C.init.support, R s_C (f s_C)) ∧
-        (∀ s_C ∈ pe_C.init.support, ∀ s_A ∈ (f s_C).support, s_A = sys_A.init) := by
-    classical
-    refine ⟨fun _ => μ_A₀, ?_, ?_⟩
-    · intro s_C h_s_C
-      -- s_C ∈ pe_C.init.support implies s_C = pe_C.initState = sys_C.init.
-      rw [pe_C.init_support, Set.mem_singleton_iff] at h_s_C
-      rw [h_s_C, h_init]
-      exact h_R_init
-    · intro s_C h_s_C s_A h_s_A
-      exact h_μ_A₀_supp s_A h_s_A
+  let init_match : State_C → PMF State_A := fun _ => μ_A₀
+  have h_match_R : ∀ s_C ∈ pe_C.init.support, R s_C (init_match s_C) := by
+    intro s_C h_s_C
+    rw [pe_C.init_support, Set.mem_singleton_iff] at h_s_C
+    change R s_C μ_A₀
+    rw [h_s_C, h_init]
+    exact h_R_init
+  have h_match_init : ∀ s_C ∈ pe_C.init.support,
+      ∀ s_A ∈ (init_match s_C).support, s_A = sys_A.init := by
+    intro s_C _ s_A h_s_A
+    exact h_μ_A₀_supp s_A h_s_A
   -- STEP 2: `pe_A.initState := sys_A.init` (the unique abstract initial state).
   -- Since μ_A₀.support ⊆ {sys_A.init}, we have μ_A₀ = PMF.pure sys_A.init,
   -- and pe_C.init.bind init_match = init_match sys_C.init = μ_A₀ =
@@ -3019,7 +3017,35 @@ theorem ProbabilisticForwardSimulation.exists_coupling
     have h_init_eq :
         (⟨sys_A.init, pe_A_scheduler⟩ : ProbabilisticExecution sys_A.toSystem).init =
         pe_C.init.bind init_match := by
-      sorry
+      -- First, prove μ_A₀ = PMF.pure sys_A.init using h_μ_A₀_supp + total mass 1.
+      have h_μ_A₀_eq : μ_A₀ = PMF.pure sys_A.init := by
+        ext s
+        classical
+        rw [PMF.pure_apply]
+        by_cases h : s = sys_A.init
+        · subst h
+          rw [if_pos rfl]
+          have h_tsum : ∑' x, μ_A₀ x = 1 := PMF.tsum_coe μ_A₀
+          rw [tsum_eq_single sys_A.init (fun y h_ne => ?_)] at h_tsum
+          · exact h_tsum
+          · apply (PMF.apply_eq_zero_iff μ_A₀ y).mpr
+            intro h_y_supp
+            exact h_ne (h_μ_A₀_supp y h_y_supp)
+        · rw [if_neg h]
+          apply (PMF.apply_eq_zero_iff μ_A₀ s).mpr
+          intro h_s_supp
+          exact h (h_μ_A₀_supp s h_s_supp)
+      -- pe_A.init = PMF.pure sys_A.init = μ_A₀ = pe_C.init.bind (fun _ => μ_A₀).
+      change PMF.pure sys_A.init = pe_C.init.bind init_match
+      rw [← h_μ_A₀_eq]
+      -- Goal: μ_A₀ = pe_C.init.bind init_match.
+      -- init_match = fun _ => μ_A₀, and pe_C.init is a PMF (total mass 1).
+      -- pe_C.init.bind (fun _ => μ_A₀) = μ_A₀.
+      ext s
+      rw [PMF.bind_apply]
+      simp_rw [show init_match = fun _ => μ_A₀ from rfl]
+      rw [ENNReal.tsum_mul_right]
+      rw [PMF.tsum_coe, one_mul]
     exact ProbabilisticForwardSimulation.traceCoupling_tsum_eq
       sim pe_C init_match h_match_R ⟨sys_A.init, pe_A_scheduler⟩ l τ h_init_eq rfl
   obtain ⟨pe_A_scheduler, h_cons⟩ := h_build_pe_A
