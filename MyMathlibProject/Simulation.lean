@@ -1327,11 +1327,28 @@ theorem LabelledSystem.traceProb_first_step
         _ = ∑' b, F b := e_inner.tsum_eq F
   rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ =>
     h_combine s₀ l₀ s₁)))]
-  -- Step 4c: collapse iterated outer sums + inner into TraceDecomp's Σ'.
-  -- Via `psigmaEquivSigma` × 3 + `tsum_sigma'` × 3 on the LHS to expose
-  -- nested `∑' s₀ ∑' l₀ ∑' s₁ ∑' e_rest`, matching the rewritten RHS;
-  -- then bridge `⟨s₁, e.trans⟩ = e` via `init = endState = s₁` and
-  -- match summand-wise.
+  -- Step 4c.1: in the LHS summand, substitute `⟨d.2.2.1, d.2.2.2.1.trans⟩`
+  -- with `d.2.2.2.1` (= e_rest), justified by `d.2.2.2.2.1 : e_rest.init = s₁`.
+  have h_summand_eq : ∀ d : ls.TraceDecomp l τ,
+      pe.init d.1 * pe.kernel ⟨d.1, Seq.nil⟩ (d.2.1, d.2.2.1) *
+        (pe.continuationFrom ⟨d.1, Seq.cons (d.2.1, d.2.2.1) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+          ⟨d.2.2.1, d.2.2.2.1.trans⟩
+          (Stream'.Seq.terminates_tail_of_cons
+            (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1) =
+      pe.init d.1 * pe.kernel ⟨d.1, Seq.nil⟩ (d.2.1, d.2.2.1) *
+        (pe.continuationFrom ⟨d.1, Seq.cons (d.2.1, d.2.2.1) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+          d.2.2.2.1
+          d.2.2.2.2.2.1 := by
+    rintro ⟨s₀, l₀, s₁, ⟨e_rest, h_init, h_term, h_tight, h_consume⟩⟩
+    rcases e_rest with ⟨init, trans⟩
+    simp only at h_init
+    subst h_init
+    rfl
+  rw [tsum_congr h_summand_eq]
+  -- Step 4c.2 + 4c.3 remaining: build the master Equiv between
+  -- TraceDecomp and the Σ-form, then apply Equiv.tsum_eq + tsum_sigma' × 3.
   sorry
 
 /-- The trace probability of any trace is at most `1`.
