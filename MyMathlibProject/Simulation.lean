@@ -2776,36 +2776,33 @@ theorem ProbabilisticForwardSimulation.exists_coupling
     {R : State_C → PMF State_A → Prop}
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (h_init : ∀ s_C ∈ pe_C.init.support, sys_C.init s_C) :
+    (h_init : pe_C.initState = sys_C.init) :
     Nonempty (Coupling sim pe_C) := by
-  -- STEP 0: `Nonempty State_A` (extract a witness from `sim.init` applied to
-  -- any element of `pe_C.init.support`).
+  -- STEP 0: extract μ_A₀ from sim.init.
+  obtain ⟨μ_A₀, h_μ_A₀_supp, h_R_init⟩ := sim.init
   haveI hne_A : Nonempty State_A := by
-    obtain ⟨s_C₀, h_s_C₀⟩ := pe_C.init.support_nonempty
-    obtain ⟨μ_A, _, _⟩ := sim.init s_C₀ (h_init s_C₀ h_s_C₀)
-    obtain ⟨s_A, _⟩ := μ_A.support_nonempty
+    obtain ⟨s_A, _⟩ := μ_A₀.support_nonempty
     exact ⟨s_A⟩
   -- STEP 1: Build the initial-distribution matching function.
+  -- With pe_C.init = PMF.pure pe_C.initState = PMF.pure sys_C.init, the
+  -- relevant s_C in the support is just sys_C.init, matched to μ_A₀.
   obtain ⟨init_match, h_match_R, h_match_init⟩ :
       ∃ f : State_C → PMF State_A,
         (∀ s_C ∈ pe_C.init.support, R s_C (f s_C)) ∧
-        (∀ s_C ∈ pe_C.init.support, ∀ s_A ∈ (f s_C).support, sys_A.init s_A) := by
+        (∀ s_C ∈ pe_C.init.support, ∀ s_A ∈ (f s_C).support, s_A = sys_A.init) := by
     classical
-    refine ⟨fun s_C =>
-      if h : sys_C.init s_C then (sim.init s_C h).choose
-      else PMF.pure (Classical.arbitrary _), ?_, ?_⟩
+    refine ⟨fun _ => μ_A₀, ?_, ?_⟩
     · intro s_C h_s_C
-      have h := h_init s_C h_s_C
-      dsimp only
-      rw [dif_pos h]
-      exact (sim.init s_C h).choose_spec.2
+      -- s_C ∈ pe_C.init.support implies s_C = pe_C.initState = sys_C.init.
+      rw [pe_C.init_support, Set.mem_singleton_iff] at h_s_C
+      rw [h_s_C, h_init]
+      exact h_R_init
     · intro s_C h_s_C s_A h_s_A
-      have h := h_init s_C h_s_C
-      dsimp only at h_s_A
-      rw [dif_pos h] at h_s_A
-      exact (sim.init s_C h).choose_spec.1 s_A h_s_A
-  -- STEP 2: `pe_A.init`.
-  let pe_A_init : PMF State_A := pe_C.init.bind init_match
+      exact h_μ_A₀_supp s_A h_s_A
+  -- STEP 2: `pe_A.initState := sys_A.init` (the unique abstract initial state).
+  -- Since μ_A₀.support ⊆ {sys_A.init}, we have μ_A₀ = PMF.pure sys_A.init,
+  -- and pe_C.init.bind init_match = init_match sys_C.init = μ_A₀ =
+  -- PMF.pure sys_A.init. So pe_A.init is the Dirac on sys_A.init.
   -- STEP 3: construct `σ_A` such that the resulting probabilistic execution
   -- is trace-coupled to `pe_C`. Decomposed into three sub-pieces.
   classical
@@ -2854,7 +2851,7 @@ theorem ProbabilisticForwardSimulation.exists_coupling
   have h_build_pe_A :
       ∃ pe_A_scheduler : Scheduler sys_A.toSystem,
         ∀ l τ, sys_C.traceProb pe_C (Seq.cons l τ) =
-          sys_A.traceProb ⟨pe_A_init, pe_A_scheduler⟩ (Seq.cons l τ) := by
+          sys_A.traceProb ⟨sys_A.init, pe_A_scheduler⟩ (Seq.cons l τ) := by
     -- Build pe_A_scheduler from MatchingState machinery.
     let pe_A_scheduler : Scheduler sys_A.toSystem :=
       { next := fun e_A =>
@@ -3013,28 +3010,37 @@ theorem ProbabilisticForwardSimulation.exists_coupling
     -- listed in `traceCoupling_*_aux` below. Currently sorried as a
     -- single block; each `aux` lemma is its own scoped sorry.
     rw [sys_C.traceProb_first_step pe_C l τ,
-        sys_A.traceProb_first_step ⟨pe_A_init, pe_A_scheduler⟩ l τ]
+        sys_A.traceProb_first_step ⟨sys_A.init, pe_A_scheduler⟩ l τ]
+    -- The (⟨sys_A.init, ..⟩.init = pe_C.init.bind init_match) hypothesis:
+    -- LHS = PMF.pure sys_A.init; RHS = pe_C.init.bind (fun _ => μ_A₀) =
+    -- μ_A₀ (since pe_C.init = PMF.pure pe_C.initState, which after binding
+    -- gives μ_A₀). And μ_A₀.support ⊆ {sys_A.init} means μ_A₀ = PMF.pure
+    -- sys_A.init.
+    have h_init_eq :
+        (⟨sys_A.init, pe_A_scheduler⟩ : ProbabilisticExecution sys_A.toSystem).init =
+        pe_C.init.bind init_match := by
+      sorry
     exact ProbabilisticForwardSimulation.traceCoupling_tsum_eq
-      sim pe_C init_match h_match_R ⟨pe_A_init, pe_A_scheduler⟩ l τ rfl rfl
+      sim pe_C init_match h_match_R ⟨sys_A.init, pe_A_scheduler⟩ l τ h_init_eq rfl
   obtain ⟨pe_A_scheduler, h_cons⟩ := h_build_pe_A
   -- Combine the nil case (from `traceProb_nil_eq_one`) and the cons case
   -- (from `h_build_pe_A`) into full `TraceCoupled` via `of_nil_and_cons`.
   have h_traces : TraceCoupled sys_C sys_A pe_C
-      ⟨pe_A_init, pe_A_scheduler⟩ := by
+      ⟨sys_A.init, pe_A_scheduler⟩ := by
     apply TraceCoupled.of_nil_and_cons
     · rw [sys_C.traceProb_nil_eq_one pe_C,
-          sys_A.traceProb_nil_eq_one ⟨pe_A_init, pe_A_scheduler⟩]
+          sys_A.traceProb_nil_eq_one ⟨sys_A.init, pe_A_scheduler⟩]
     · exact h_cons
   -- Assemble the `Coupling`.
   refine ⟨{
-    pe_A := ⟨pe_A_init, pe_A_scheduler⟩
+    pe_A := ⟨sys_A.init, pe_A_scheduler⟩
     init_initial := ?_
     trace_coupled := h_traces
   }⟩
   intro s_A h_s_A
-  rw [PMF.mem_support_bind_iff] at h_s_A
-  obtain ⟨s_C, h_s_C, h_s_A_in⟩ := h_s_A
-  exact h_match_init s_C h_s_C s_A h_s_A_in
+  -- pe_A.init.support = {sys_A.init} via the Dirac structure.
+  rw [ProbabilisticExecution.init_support, Set.mem_singleton_iff] at h_s_A
+  exact h_s_A
 
 /-- **Segala's main theorem (trace inclusion)**: if `R` is a probabilistic
 forward simulation from `sys_C` to `sys_A`, then every concrete probabilistic
@@ -3057,7 +3063,7 @@ theorem traceInclusion
     {R : State_C → PMF State_A → Prop}
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (h_init : ∀ s_C ∈ pe_C.init.support, sys_C.init s_C) :
+    (h_init : pe_C.initState = sys_C.init) :
     ∃ pe_A : ProbabilisticExecution sys_A.toSystem,
       ∀ τ : Seq Label, sys_C.traceProb pe_C τ = sys_A.traceProb pe_A τ := by
   obtain ⟨c⟩ := sim.exists_coupling pe_C h_init
