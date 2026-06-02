@@ -1255,18 +1255,83 @@ theorem LabelledSystem.traceProb_first_step
   rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ =>
     h_distrib s₀ l₀ s₁)))]
   -- Step 4b: combine `Option.elim` + inner sum into a single inner sum
-  -- with the constraint `consumeLabel = some (trace e_rest)`. The `none`
-  -- branch yields an empty subtype; the `some τ'` branch reindexes via
-  -- an Equiv between `{trace = τ' ∧ …}` and `{consumeLabel = some
-  -- (trace) ∧ …}`. Step 4c: collapse iterated sums into TraceDecomp's
-  -- Σ' via `psigmaEquivSigma` × 3 + `tsum_sigma'` × 3 and match.
-  --
-  -- Step 4b attempted in-tree but `rw [h_some]` in the `some` case
-  -- substitutes `consumeLabel` in the binder of the *outer* goal's
-  -- target subtype (changing it from `consumeLabel = some (trace)` to
-  -- `some τ' = some (trace)`), creating a binder-type mismatch with the
-  -- target Equiv. Needs a more surgical rewrite (`conv` at a specific
-  -- position, or transporting via `h_some.symm` after the some-branch).
+  -- with the constraint `consumeLabel = some (trace e_rest)`.
+  have h_combine : ∀ (s₀ : State) (l₀ : Label) (s₁ : State),
+      (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+        (fun τ' => ∑' (e_rest : {e_rest : AlterSeq State Label //
+            e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+            e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)}),
+          pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+          (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+            e_rest.1 e_rest.2.1) =
+      ∑' (e_rest : {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+          ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)}),
+        pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+        (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+          e_rest.1 e_rest.2.1 := by
+    intros s₀ l₀ s₁
+    rcases Option.eq_none_or_eq_some (ls.consumeLabel l₀ (Seq.cons l τ))
+      with h_none | ⟨τ', h_some⟩
+    · -- none case: LHS = 0; RHS has empty subtype, sum = 0.
+      conv_lhs => rw [h_none, Option.elim_none]
+      symm
+      apply ENNReal.tsum_eq_zero.mpr
+      rintro ⟨_, _, _, _, h_consume⟩
+      rw [h_none] at h_consume
+      exact absurd h_consume (by simp)
+    · -- some τ' case: surgical `conv_lhs` so RHS's binder stays symbolic.
+      conv_lhs => rw [h_some]; rw [Option.elim_some]
+      -- Goal: ∑' (e : {term ∧ trace = τ' ∧ …}), F = ∑' (e : {term ∧ tight ∧ init ∧
+      -- consumeLabel = some (trace e)}), F. Build Equiv source ≃ target.
+      let e_inner : {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)} ≃
+          {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+          ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)} :=
+        { toFun := fun ⟨e, h_term', h_trace', h_tight', h_init'⟩ =>
+            ⟨e, h_term', h_tight', h_init', h_trace' ▸ h_some⟩
+          invFun := fun ⟨e, h_term', h_tight', h_init', h_consume'⟩ =>
+            ⟨e, h_term', by
+              have : some τ' = some (ls.trace e) := h_some ▸ h_consume'
+              exact (Option.some.inj this).symm,
+             h_tight', h_init'⟩
+          left_inv := fun ⟨_, _, _, _, _⟩ => rfl
+          right_inv := fun ⟨_, _, _, _, _⟩ => rfl }
+      let F : {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+          ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)} → ENNReal :=
+        fun e_rest => pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+          (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+            e_rest.1 e_rest.2.1
+      calc (∑' (c : {e_rest // e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧
+              ls.IsTight e_rest ∧ e_rest.init = _}),
+            pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+            (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ _).probOf c.1 c.2.1)
+          = ∑' c, F (e_inner c) := by
+            apply tsum_congr
+            rintro ⟨_, _, _, _, _⟩
+            rfl
+        _ = ∑' b, F b := e_inner.tsum_eq F
+  rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ =>
+    h_combine s₀ l₀ s₁)))]
+  -- Step 4c: collapse iterated outer sums + inner into TraceDecomp's Σ'.
+  -- Via `psigmaEquivSigma` × 3 + `tsum_sigma'` × 3 on the LHS to expose
+  -- nested `∑' s₀ ∑' l₀ ∑' s₁ ∑' e_rest`, matching the rewritten RHS;
+  -- then bridge `⟨s₁, e.trans⟩ = e` via `init = endState = s₁` and
+  -- match summand-wise.
   sorry
 
 /-- The trace probability of any trace is at most `1`.
