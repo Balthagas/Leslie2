@@ -2342,7 +2342,35 @@ private theorem step_kernel_coupling
   --      σ.runtime decreases.
   --
   -- Well-founded recursion bottoms out on `(τ'.length, σ.runtime)`.
-  -- **DEFERRED.**
+  --
+  -- Step 1: apply `kernel_contA_eq_traceProb_from_state` in reverse on both
+  -- sides to expose the kernel form.
+  rw [← kernel_contA_eq_traceProb_from_state sys_C pe_C s_C l₀ τ']
+  -- For RHS: apply the same in reverse inside the tsum.
+  rw [show (∑' (s_A : State_A), μ_A s_A *
+        sys_A.traceProb (pe_A.continuationFrom ⟨s_A, Seq.nil⟩
+            Stream'.Seq.terminates_nil) (Seq.cons l₀ τ')) =
+        ∑' (s_A : State_A) (l_first : Label) (s_first : State_A),
+          μ_A s_A * (pe_A.kernel ⟨s_A, Seq.nil⟩ (l_first, s_first) *
+            (sys_A.consumeLabel l_first (Seq.cons l₀ τ')).elim 0
+              (fun τ'' => sys_A.traceProb
+                (pe_A.continuationFrom ⟨s_A, Seq.cons (l_first, s_first) Seq.nil⟩
+                  ⟨1, by
+                    change (Seq.cons (l_first, s_first) Seq.nil).get? 1 = none
+                    rw [Stream'.Seq.get?_cons_succ]
+                    exact Stream'.Seq.terminatedAt_nil⟩) τ'')) from by
+    refine tsum_congr (fun s_A => ?_)
+    rw [← kernel_contA_eq_traceProb_from_state sys_A pe_A s_A l₀ τ']
+    simp_rw [← ENNReal.tsum_mul_left]]
+  -- Goal now (kernel form):
+  --   ∑' l_first s_first, pe_C.kernel ⟨s_C, Seq.nil⟩ (l_first, s_first) *
+  --     (consumeLabel l_first (l₀ :: τ')).elim 0 (continuation_C) =
+  --   ∑' s_A l_first s_first, μ_A s_A * (pe_A.kernel ⟨s_A, Seq.nil⟩ (l_first, s_first) *
+  --     (consumeLabel l_first (l₀ :: τ')).elim 0 (continuation_A))
+  --
+  -- Step 2-4 (case on `pe_C.scheduler.next`, apply `stepWitness_pmfRel`,
+  -- bridge to pe_A.kernel via matching state, recurse on continuations)
+  -- remain to be done. **DEFERRED.**
   sorry
 
 /-- The **PMFRel-style coupling** stating Segala's theorem in its full
