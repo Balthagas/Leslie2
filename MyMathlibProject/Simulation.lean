@@ -2524,20 +2524,90 @@ private theorem trace_coupling_at_matching_state
     --         (l_first, s_first) * cont_A
     -- Simplify Seq.append Seq.nil → identity.
     simp_rw [Stream'.Seq.append_nil]
-    -- Apply `continuationFrom_compose` on both sides to flatten nested
-    -- continuationFroms in the cont factors.
-    -- For each (l_first, s_first):
+    -- ============================================================
+    -- MATH CORE — laid out as a sequence of sub-claims (each sorried):
+    -- ============================================================
+    -- After the manipulations above, the goal is:
+    --   ∑' l_first s_first, pe_C.kernel m.e_C (l_first, s_first) * cont_C =
+    --   ∑' l_first s_first, pe_A.kernel history_A (l_first, s_first) * cont_A
+    -- where:
+    --   cont_C l_first s_first = (consumeLabel l_first (l₀ :: τ')).elim 0
+    --     (fun τ'' => traceProb ((pe_C.continuationFrom m.e_C).continuationFrom
+    --       ⟨m.e_C.endState, [(l_first, s_first)]⟩) τ'')
+    --   cont_A — analogous.
+    --
+    -- **Step 1: Flatten the nested continuationFroms via
+    -- `continuationFrom_compose`.**
+    -- For each (l_first, s_first) and τ'':
     --   (pe_X.continuationFrom history_X).continuationFrom
-    --     ⟨history_X.endState, Seq.cons (l_first, s_first) Seq.nil⟩ =
+    --     ⟨history_X.endState, [(l_first, s_first)]⟩ =
     --   pe_X.continuationFrom ⟨history_X.init, history_X.trans.append
-    --     (Seq.cons (l_first, s_first) Seq.nil)⟩
-    -- (Via continuationFrom_compose with h_init₂ = rfl.)
-    -- This step exposes the extended prefix structure for the recursive call.
-    -- **DEFERRED**: After this, the per-step coupling via
-    -- `sim.stepWitness_pmfRel` chained through `m`, plus the recursion on
-    -- continuation with advanced matching state + extended history_A
-    -- (well-founded on `(τ.length, σ.runtime)`), constitutes the bulk of
-    -- Segala's coupling theorem.
+    --     [(l_first, s_first)]⟩
+    -- This requires `continuationFrom_compose` with `h_init₂ : history₂.init
+    -- = history₁.endState` discharged by `rfl` (since history₂.init = endState
+    -- of history_X by construction).
+    --
+    -- **Step 2: Case on `pe_C.scheduler.next m.e_C`.**
+    -- (a) `none`: pe_C halts at m.e_C, so `pe_C.kernel m.e_C = 0` everywhere,
+    --     hence LHS = 0. On the abstract side: by `h_matched`,
+    --     `pe_A.scheduler.next history_A = (some m).bind computeNext =
+    --     computeNext m`. With `m`'s state having `weak_sched = none` and
+    --     `pe_C.next m.e_C = none` (the `setupNextTransition` `none`-branch
+    --     just returns `m` unchanged), `computeNext m` returns `none`. So
+    --     pe_A.kernel = 0 too. Both sides 0.
+    -- (b) `some d`: continue with step extraction.
+    --
+    -- **Step 3: Extract concrete step witness.**
+    -- From `pe_C.scheduler.valid` at m.e_C with `pe_C.scheduler.next m.e_C =
+    -- some d`: for each `(l_C, μ_C) ∈ d.support`, `sys_C.step (m.e_C.endState)
+    -- l_C μ_C`. Apply `sim.stepWitness_pmfRel` with `m.h_R : R
+    -- (m.e_C.endState) m.μ_A_current` and this concrete step:
+    --   ∃ γ : PMF (State_C × PMF State_A), PMFRel R μ_C ω where
+    --   ω := sim.stepWitness m.h_R h_step;
+    --   PMF.map fst γ = μ_C, PMF.map snd γ = ω;
+    --   ∀ p ∈ γ.support, R p.1 p.2.
+    --
+    -- **Step 4: Bridge to pe_A.kernel history_A.**
+    -- `pe_A.kernel history_A` uses `pe_A.scheduler.next history_A =
+    -- computeNext m`. After `setupNextTransition` in `MatchingState.initial`:
+    -- - Internal `l_C` (sys_C.internal l_C): m has `weak_sched := some σ`
+    --   from `weakTau` witness; `stage := tauInternal 0`. `computeNext` emits
+    --   `liftOption (σ.next ⟨m.current_abstract_state, Seq.nil⟩)`.
+    -- - External `l_C`: m has `weak_sched := some σ_pre`, `stage := preExternal 0`,
+    --   `hyper_witness := some w`. `computeNext` emits via the (preExternal
+    --   case is also mid-tau, so uses σ_pre.next).
+    --
+    -- **Step 5: Per-step kernel coupling via PMFRel.**
+    -- The mass `pe_C.kernel m.e_C (l_C, s_C') = ∑' μ_C, d (l_C, μ_C) * μ_C s_C'`.
+    -- For each (l_C, μ_C, s_C') with positive mass, use γ to find a matching
+    -- abstract distribution μ_A' with R s_C' μ_A' and μ_A' contributes to
+    -- (ω.bind id) via the kernel.
+    -- The abstract kernel `pe_A.kernel history_A (l_A, s_A')` involves the
+    -- WeakScheduler emissions; mass matching uses the PMFRel coupling.
+    --
+    -- **Step 6: Recursion on continuation.**
+    -- For each (l_first, s_first) with positive kernel mass on both sides:
+    -- - Build the new matching state `m' = MatchingState.advance m l_first s_first`.
+    --   (Advance updates `current_abstract_state` and may transition `stage`;
+    --   e_C extends only on weak-transition completion via `extendOnCompletion`.)
+    -- - Build new history_A' = history_A extended by `[(l_first, s_first)]`.
+    -- - Show: `fromAbstractPrefix history_A' = some m'` (the advance is
+    --   consistent with `fromAbstractPrefix`'s foldl over the extended trans).
+    -- - Apply IH on `τ''` (which is either `τ'` for external matching or
+    --   `l₀ :: τ'` for internal tau-padding) with the new (m', history_A').
+    --
+    -- **Step 7: Termination.**
+    -- `termination_by (τ.length, m.σ.remaining_runtime)` (lex order).
+    -- External step: `τ.length` decreases (consumeLabel returns shorter τ).
+    -- Tau-padding: `τ.length` stays the same but `m.σ.remaining_runtime`
+    -- decreases (advance increments `stage`'s index toward `σ.runtime`).
+    -- When `runtime` is reached, `weak_sched`'s `stops` constraint forces
+    -- emissions to halt (some `none`), bringing the kernel to 0 and forcing
+    -- terminal contribution.
+    --
+    -- **DEFERRED**: Implementing each step would require ~300-400 lines of
+    -- focused mathematical content. The architecture is clean; closing each
+    -- step is a self-contained sub-problem.
     sorry
 
 theorem traceCoupling_tsum_eq
