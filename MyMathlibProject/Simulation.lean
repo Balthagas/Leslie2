@@ -1552,11 +1552,23 @@ a single-step `PMF.pure` emit, losing proportional information. A
 finer bridge should `condition` on the `some` mass to preserve
 probabilities. -/
 noncomputable def liftOption {α : Type*} (p : PMF (Option α)) :
-    Option (PMF α) := by
+    Option (PMF α) :=
+  letI : Decidable (∃ a, some a ∈ p.support) := Classical.propDecidable _
+  if h : ∃ a, some a ∈ p.support then some (PMF.pure h.choose) else none
+
+lemma liftOption_eq_some_iff {α : Type*} (p : PMF (Option α)) (q : PMF α) :
+    liftOption p = some q ↔
+      ∃ (h : ∃ a, some a ∈ p.support), q = PMF.pure h.choose := by
   classical
-  by_cases h : ∃ a, some a ∈ p.support
-  · exact some (PMF.pure h.choose)
-  · exact none
+  unfold liftOption
+  split_ifs with h
+  · refine ⟨?_, ?_⟩
+    · intro h_eq
+      exact ⟨h, (Option.some.inj h_eq).symm⟩
+    · rintro ⟨_, rfl⟩; rfl
+  · simp only [false_iff, not_exists]
+    intro h_ex _
+    exact h h_ex
 
 /-- Compute the next abstract step from a matching state. Structurally
 case-analyzes on `m.weak_sched` × `m.stage`:
@@ -1611,13 +1623,11 @@ noncomputable def computeNext (m : MatchingState sim pe_C) :
     -- Mid-tau cases (tauInternal/preExternal/postExternal): bridge
     -- `WeakScheduler.next : AlterSeq → PMF (Option (l, μ))` to our
     -- `Scheduler.next : AlterSeq → Option (PMF (l, μ))` via
-    -- `MatchingState.liftOption`. This is a coarse bridge —
-    -- collapses the probability distribution to a single-step
-    -- emit when any `some` is in the support — and loses
-    -- information; a future refinement should condition on the
-    -- `some` mass to preserve proportions.
+    -- `MatchingState.liftOption`. The query state is
+    -- `m.current_abstract_state` (the actual abstract state at this
+    -- prefix), so `σ.valid` directly gives validity for the emission.
     MatchingState.liftOption
-      (σ.next ⟨m.μ_A_current.support_nonempty.choose, Seq.nil⟩)
+      (σ.next ⟨m.current_abstract_state, Seq.nil⟩)
 
 /-- Helper used by `advance`: on weak-transition completion, install
 the next weak transition based on `pe_C.scheduler.next m.e_C`.
@@ -2110,15 +2120,41 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                 rw [h_cn_none] at h_compute
                 exact absurd h_compute (by simp)
               · -- weak_sched = some σ. Case on stage.
+                -- Shared mid-tau validity: when stage ≠ externalEmit,
+                -- `computeNext m = liftOption (σ.next ⟨m.cas, Seq.nil⟩)`.
+                -- `σ.valid` at this prefix (TerminatedAt 0, stateAt 0 = m.cas)
+                -- gives `sys_A.step m.cas (l, μ)` for any `some (l, μ)` in
+                -- the support; combined with `liftOption_eq_some_iff`, this
+                -- closes validity.
+                have h_mid_tau : ∀ (h_st_eq : MatchingState.computeNext m =
+                    MatchingState.liftOption
+                      (σ.next ⟨m.current_abstract_state, Seq.nil⟩)),
+                    sys_A.toSystem.step m.current_abstract_state l_A μ_A := by
+                  intro h_st_eq
+                  rw [h_st_eq] at h_compute
+                  rw [MatchingState.liftOption_eq_some_iff] at h_compute
+                  obtain ⟨h_exists, h_d'_eq⟩ := h_compute
+                  subst h_d'_eq
+                  rw [PMF.mem_support_iff] at h_supp
+                  simp only [PMF.pure_apply] at h_supp
+                  have h_pair_eq : (l_A, μ_A) = h_exists.choose := by
+                    by_contra h_ne
+                    rw [if_neg h_ne] at h_supp
+                    exact absurd h_supp (by norm_num)
+                  have h_choose_supp := h_exists.choose_spec
+                  have h_term : (Seq.nil : Seq (Label × State_A)).TerminatedAt 0 := rfl
+                  have h_state :
+                      (⟨m.current_abstract_state, Seq.nil⟩ : AlterSeq State_A Label).stateAt 0
+                        = some m.current_abstract_state := rfl
+                  have h_valid := σ.valid ⟨m.current_abstract_state, Seq.nil⟩ 0
+                    m.current_abstract_state h_term h_state _ h_choose_supp
+                  rw [← h_pair_eq] at h_valid
+                  exact h_valid
                 rcases h_st : m.stage with k | k | _ | k
-                · -- tauInternal k — mid-tau case. **Deferred.**
-                  -- `computeNext m = liftOption (σ.next ⟨a, Seq.nil⟩)` for some
-                  -- `a := m.μ_A_current.support_nonempty.choose`. Validity
-                  -- needs `WeakScheduler.valid` σ at `⟨a, Seq.nil⟩, 0, a` plus
-                  -- bridging the state mismatch `a ≠ m.current_abstract_state`.
-                  sorry
-                · -- preExternal k — mid-tau case. **Deferred.** Same as above.
-                  sorry
+                · -- tauInternal k
+                  exact h_mid_tau (by unfold MatchingState.computeNext; rw [h_ws, h_st])
+                · -- preExternal k
+                  exact h_mid_tau (by unfold MatchingState.computeNext; rw [h_ws, h_st])
                 · -- externalEmit case.
                   rcases h_ns : m.next_step with _ | nsd
                   · -- next_step = none: computeNext m = none, contradicts h_compute.
@@ -2133,8 +2169,8 @@ theorem ProbabilisticForwardSimulation.exists_coupling
                     -- `weakStep` decomposition — currently not stored in
                     -- `MatchingState`. **Deferred** (architectural gap).
                     sorry
-                · -- postExternal k — mid-tau case. **Deferred.** Same as above.
-                  sorry }
+                · -- postExternal k
+                  exact h_mid_tau (by unfold MatchingState.computeNext; rw [h_ws, h_st]) }
     refine ⟨pe_A_scheduler, ?_⟩
     intro l τ
     -- Trace-coupling proof: by induction on the trace via
