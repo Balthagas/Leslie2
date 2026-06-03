@@ -4640,11 +4640,18 @@ private def buildToListA (toList_C : List (Label × State_C))
 /-- **List-level s_A-marginal of joint_mass_path** (§9.4 auxiliary):
 summing `joint_mass_path m toList_C (buildToListA toList_C s_A_list)` over
 all `s_A_list` of length `toList_C.length` equals
-`pe_C.probOfRemaining m.e_C toList_C`. The proof is by induction on
-`toList_C`; the step case uses the s_A-marginal of `μ_A_next.s_A = 1`,
-the m_1 indicator collapse (via `MatchingState.ext_of_data`), the γ-
-first-marginal (`PMFRelDecomp.fst_apply_eq_tsum`), and
-`probOfRemaining_cons`. -/
+`pe_C.probOfRemaining m.e_C toList_C`, for matching states `m` with a
+valid R-witness. The proof is by induction on `toList_C`; the step case
+uses the s_A-marginal of `μ_A_next.s_A = 1`, the m_1 indicator collapse
+(via `MatchingState.ext_of_data`), the γ-first-marginal
+(`PMFRelDecomp.fst_apply_eq_tsum`), and `probOfRemaining_cons`.
+
+The `has_valid_R` hypothesis is required: at non-valid `m`,
+`joint_mass_path m _ _ = 0` regardless of toList_C, but
+`pe_C.probOfRemaining m.e_C toList_C` may be nonzero. The recursive
+applications in the step case have `h_valid` automatic because the
+canonical extension's μ_A_chain is non-empty (the `Or.inl` disjunct
+of `has_valid_R`). -/
 private lemma joint_mass_path_marginal_s_A_aux
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -4652,13 +4659,14 @@ private lemma joint_mass_path_marginal_s_A_aux
     {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
     (toList_C : List (Label × State_C)) :
     ∀ (m : MatchingState sim pe_C μ_A_init h_init_R),
+      m.has_valid_R →
       (∑' (s_A_list : {l : List State_A // l.length = toList_C.length}),
           joint_mass_path m toList_C (buildToListA toList_C s_A_list.1)) =
       pe_C.probOfRemaining m.e_C toList_C := by
   classical
   induction toList_C with
   | nil =>
-    intro m
+    intro m _h_valid
     -- The subtype `{l : List State_A // l.length = ([] : List _).length}` reduces to
     -- `{l // l.length = 0}` which has the unique element `[]`.
     show (∑' (s_A_list : {l : List State_A // l.length = ([] : List (Label × State_C)).length}),
@@ -4676,7 +4684,7 @@ private lemma joint_mass_path_marginal_s_A_aux
       have : l = [] := List.length_eq_zero_iff.mp hl
       exact Subtype.ext this
   | cons hd rest ih =>
-    intro m
+    intro m h_valid
     -- Step case: induct on rest. The key combinatorial moves:
     --   1. Reindex the subtype sum to (s_A : State_A) × (rest_s_A_list : {l // l.length = rest.length}).
     --   2. Unfold joint_mass_path's cons branch.
