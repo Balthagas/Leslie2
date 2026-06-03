@@ -2443,7 +2443,84 @@ noncomputable def current_μ_A
   if h : m.μ_A_chain = [] then μ_A_init
   else m.μ_A_chain.getLast h
 
+/-- The "current" concrete state associated with a matching state: the
+end-state of `e_C`. The full result type is `State_C`. -/
+noncomputable def current_s_C
+    (m : MatchingState sim pe_C μ_A_init h_init_R) : State_C :=
+  m.e_C.endState m.e_C_term
+
+/-- A matching state has a "valid" `R`-witness if either:
+* its `μ_A_chain` is non-empty (so the struct's `h_R` field applies), OR
+* `μ_A_chain = []` and `e_C.trans = Seq.nil` and `e_C.init ∈ pe_C.init.support`
+  (so `h_init_R` applies, with `e_C.endState = e_C.init`).
+
+`fromAbstractPrefix` only places positive mass on matching states with
+this property, so all proofs work within this fragment. -/
+def has_valid_R
+    (m : MatchingState sim pe_C μ_A_init h_init_R) : Prop :=
+  m.μ_A_chain ≠ [] ∨
+    (m.e_C.trans = Seq.nil ∧ m.e_C.init ∈ pe_C.init.support)
+
+/-- For `m` with `has_valid_R`, extract the trajectory's R-witness
+`R (m.current_s_C) (m.current_μ_A)`. -/
+noncomputable def current_R
+    {m : MatchingState sim pe_C μ_A_init h_init_R}
+    (h_valid : m.has_valid_R) :
+    R m.current_s_C m.current_μ_A := by
+  unfold current_s_C current_μ_A
+  classical
+  rcases h_valid with h_nonempty | ⟨h_trans_nil, h_init_supp⟩
+  · -- Non-empty chain case: use m.h_R.
+    rw [dif_neg h_nonempty]
+    exact m.h_R h_nonempty
+  · -- Empty-chain case: μ_A_chain = [] (from h_init_R applicability),
+    -- but `m.has_valid_R` only states e_C.trans = nil ∧ e_C.init ∈ support.
+    -- However for the `current_μ_A` calc we need μ_A_chain = []. The
+    -- has_valid_R definition's left disjunct (`m.μ_A_chain ≠ []`) was ruled
+    -- out by being in the right disjunct only iff μ_A_chain = [].
+    -- Actually has_valid_R right disjunct doesn't force μ_A_chain = [].
+    -- We need an additional case-split.
+    by_cases h_chain : m.μ_A_chain = []
+    · rw [dif_pos h_chain]
+      -- Now: R (m.e_C.endState m.e_C_term) μ_A_init.
+      -- e_C.endState when trans = nil equals e_C.init.
+      have h_endState : m.e_C.endState m.e_C_term = m.e_C.init := by
+        have h_find : Nat.find m.e_C_term = 0 := by
+          apply Nat.eq_zero_of_le_zero
+          apply Nat.find_le
+          rw [h_trans_nil]
+          exact Stream'.Seq.terminatedAt_nil
+        have h_stateAt : m.e_C.stateAt (Nat.find m.e_C_term) = some m.e_C.init := by
+          rw [h_find]; rfl
+        have h_endState_some :=
+          AlterSeq.stateAt_find_eq_endState m.e_C m.e_C_term
+        rw [h_stateAt] at h_endState_some
+        exact (Option.some.inj h_endState_some).symm
+      rw [h_endState]
+      exact h_init_R m.e_C.init h_init_supp
+    · -- m.μ_A_chain ≠ []: fall back to the first disjunct.
+      rw [dif_neg h_chain]
+      exact m.h_R h_chain
+
 end MatchingState
+
+/-! #### Step-witness extraction from `pe_C`'s scheduler validity -/
+
+/-- Given a prefix `e_C` of `pe_C` with a `Terminates` witness, the
+distribution `d` returned by `pe_C.scheduler.next e_C`, and a support
+membership `(l, μ_C) ∈ d.support`, the scheduler's `valid` field
+provides the corresponding step witness
+`sys_C.step (e_C.endState e_C_term) l μ_C`. -/
+theorem pe_C_step_witness
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (e_C : AlterSeq State_C Label) (e_C_term : e_C.trans.Terminates)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next e_C = some d)
+    (l : Label) (μ_C : PMF State_C) (h_supp : (l, μ_C) ∈ d.support) :
+    sys_C.toSystem.step (e_C.endState e_C_term) l μ_C :=
+  pe_C.scheduler.valid e_C (Nat.find e_C_term) (e_C.endState e_C_term)
+    (Nat.find_spec e_C_term) (AlterSeq.stateAt_find_eq_endState e_C e_C_term)
+    d h_d_eq l μ_C h_supp
 
 /-! #### `MatchingStateKernel` and `fromAbstractPrefix` (§3.2)
 
