@@ -1,7 +1,7 @@
 ================================================================================
                   TRACE INCLUSION VIA FORWARD SIMULATION
                   ====================================
-                  Self-Contained Proof Plan (revised v4)
+                  Self-Contained Proof Plan (revised v4.2)
 ================================================================================
 
 This plan describes the mathematical proof of trace inclusion through a
@@ -35,7 +35,7 @@ TRACE_INCLUSION_PLAN_REVIEW.txt. The major changes from v3 are:
   * "No induction on τ" softened to acknowledge finite-product / tsum
     manipulations over execution length.
 
-Revision v4.1 (this revision) records the `joint_kernel_at_d` split
+Revision v4.1 records the `joint_kernel_at_d` split
 adopted in the Lean implementation to side-step a recurring "motive not
 type correct" obstacle:
 
@@ -53,6 +53,96 @@ type correct" obstacle:
   * The mathematical content is unchanged. The split is purely a Lean
     mechanics convenience and downstream proofs of §9.3, §9.4, §9.5
     all benefit by working against the d-explicit form.
+
+Revision v4.2 (this revision) corrects a structural bug in
+`joint_mass_path`'s recursion that made the original Lean definition
+diverge to `⊤` for every non-empty trajectory, rendering §9.4 / §9.5
+unprovable as originally written:
+
+  * BUG. The original recursion for the cons case was
+
+        joint_mass_path m_prev (hC :: restC) (hA :: restA) :=
+          if hC.1 = hA.1 then
+            ∑' (m_next : MatchingState), joint_kernel m_prev hA.1 hC.2 hA.2
+              · [m_next.e_C = m_prev.e_C ++ (hC.1, hC.2) ∧
+                 m_next.μ_A_chain.length = m_prev.μ_A_chain.length + 1]
+              · joint_mass_path m_next restC restA
+          else 0
+
+    The indicator only constrains `m_next.μ_A_chain`'s **length**, not its
+    entries. By definitional proof irrelevance for `MatchingState`'s
+    `e_C_term` and `h_R` fields, an m_next satisfying the indicator is
+    parameterised by `m_next.μ_A_chain[m_prev.μ_A_chain.length] : PMF
+    State_A`, which is uncountable for any non-trivial `State_A`. The
+    `∑' m_next, [indicator] · 1 = ⊤`, so `joint_mass_path` returns `⊤`
+    rather than the intended product of joint_kernel factors. A
+    concrete PLTS witnessing the divergence is in `JointMassBug.lean`.
+
+  * FIX (v4.2). The cons case integrates the (μ_C, μ_A_next) γ-samples
+    explicitly with γ-weight, and the indicator on m_next constrains
+    BOTH `m_next.e_C` and `m_next.μ_A_chain` (fully — chain entries are
+    extension by μ_A_next):
+
+        joint_mass_path m_prev (hC :: restC) (hA :: restA) :=
+          if hC.1 = hA.1 then
+            if h_valid : m_prev.has_valid_R then
+              if h_some : (scheduler.next m_prev.e_C).isSome then
+                let d := (scheduler.next m_prev.e_C).get h_some
+                ∑' (μ_C : PMF State_C), d (hA.1, μ_C) · (
+                  if h_supp : (hA.1, μ_C) ∈ d.support then
+                    ∑' (μ_A_next : PMF State_A),
+                      γ_{m_prev, (hA.1, μ_C)}(hC.2, μ_A_next) ·
+                      μ_A_next hA.2 ·
+                      ∑' (m_next : MatchingState),
+                        [m_next.e_C = m_prev.e_C ++ (hC.1, hC.2) ∧
+                         m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]] ·
+                        joint_mass_path m_next restC restA
+                  else 0)
+              else 0
+            else 0
+          else 0
+
+    The inner `∑' m_next` over the fully-constraining indicator collapses
+    to the single canonical extension via `MatchingState.ext_of_data`
+    (the same tool used in §9.3 sub-lemmas). The γ-weight on `μ_A_next`
+    suppresses contributions where R doesn't hold (via R_on_support).
+
+    Equivalent reformulation (mathematically the same): drop the inner
+    `∑' m_next` and use a `canonical_advance` helper that builds the
+    extension MatchingState directly. The above form is preferred
+    because it reuses the existing `MatchingState.ext_of_data`
+    infrastructure and avoids a separate `canonical_advance` definition
+    that would need conditional R-proof handling.
+
+  * IMPACT ON §9.4 STATEMENT. The originally-written Lean encoding fixed
+    `init_A` as a parameter and summed `joint_mass(e_C, e_A)` over e_A's
+    with `e_A.init = init_A`. This LHS carries an unintegrated
+    `μ_A_init(init_A)` factor that does not appear on the RHS
+    (`pe_C.probOf e_C`), so the equation fails unless `μ_A_init` is a
+    Dirac at `init_A`. The fix is to NOT fix `init_A`: sum over all
+    `e_A ∈ Joint(τ)` (i.e., including the choice of `e_A.init`). Then
+    `∑' init_A, μ_A_init(init_A) = 1` (PMF total mass) absorbs the
+    factor, restoring `pe_C.probOf(e_C)` on the RHS.
+
+  * IMPACT ON §9.5 STATEMENT. Unchanged: §9.5 fixes `e_A` (including
+    `e_A.init`) and sums over `e_C` with `e_C.init ∈ pe_C.init.support`.
+    The `pe_C.init.tsum = 1` (PMF total) absorbs naturally; the
+    `μ_A_init(e_A.init)` factor on the LHS matches `pe_A.init` on the
+    RHS.
+
+  * IMPACT ON DOWNSTREAM PROOFS. None of the proven theorems
+    (mass conservation, m_dist_posterior_predictive, the §9.3
+    sub-lemmas, the Days-1-through-Week-2c work) reference
+    `joint_mass_path` or `joint_mass`, so the v4.2 fix is local. The
+    `§9.4`/`§9.5` proof outlines below are unchanged in spirit; the
+    redesigned recursion makes them well-posed and proof-amenable.
+
+  * The mathematical content of the plan is unchanged: `joint_mass(e_C,
+    e_A) := pe_C.init(e_C.init) · μ_A_init(e_A.init) · ∏_k
+    joint_kernel(m_k, ...)` is still the intended formula, and §4
+    through §9 still describe the same construction. v4.2 is purely a
+    Lean-side correction of how the m_k chain is threaded through the
+    recursion.
 
 Architectural decisions (v4):
   * The theorem is stated over `sys_A^w` (the weak-step closure of sys_A).
@@ -1046,18 +1136,58 @@ Joint(τ).
       ∑' (e_A : (e_C, e_A) ∈ Joint(τ)), joint_mass(e_C, e_A)
       = pe_C.probOf(e_C).
 
-  Proof: factor joint_mass as init · ∏_k joint_kernel(m_k, ...).
-  Summing over s_A_0, ..., s_A_{n-1} (the abstract state choices in
-  e_A) marginalises each joint_kernel(m_k, l_k, s_C_k, ·) over s_A_k,
-  yielding pe_C.kernel(m_k.e_C, (l_k, s_C_k)) (= pe_C-step-kernel at
-  this prefix). Multiplying across k yields pe_C.probOf(e_C).
+  ! WATCH OUT — the sum on the LHS is over all `e_A ∈ Joint(τ)`,
+  including the choice of `e_A.init`. The Lean encoding must NOT fix
+  `init_A` as a parameter: the `μ_A_init(e_A.init)` factor on the LHS
+  requires `∑' init_A, μ_A_init(init_A) = 1` (PMF total) to be absorbed
+  into the RHS. (v4.2 documents this; the originally-written Lean
+  statement had a spurious `init_A` parameter and was unprovable.)
+
+  Proof: factor joint_mass as `pe_C.init · μ_A_init · ∏_k
+  joint_kernel(m_k, ...)`.
+
+  ! WATCH OUT (v4.2) — the `∏_k joint_kernel(m_k, ...)` factorisation
+  is NOT syntactically present in `joint_mass_path`'s recursion. The
+  v4.2 cons branch is
+
+      ∑' μ_C, d(l, μ_C) · (if h_supp then
+        ∑' μ_A_next, γ_{m_prev}(s_C, μ_A_next) · μ_A_next(s_A) ·
+          (∑' m_next, [...] · joint_mass_path m_next restC restA)
+      else 0)
+
+  where the (μ_C, μ_A_next) γ-integration is interleaved with the
+  inner recursive call. The `joint_kernel(m_prev, l, s_C, s_A)`
+  expression — which IS this `(μ_C, μ_A_next)` integration with `s_A`
+  unfree — is recovered only AFTER summing s_A over μ_A_next.s_A
+  (giving the γ-second-marginal collapse) and the rest of the
+  telescope below. The factored form is the *result* of the
+  telescope, not the *starting point*.
+
+  Summing over (init_A, s_A_0, ..., s_A_{n-1}) (the abstract state
+  choices in e_A), proceed from the innermost step outwards. At each
+  step k, the inner sum has form
+
+      ∑' s_A_k, μ_A_next_k(s_A_k) · (rest)
+
+  Since rest at step k+1 depends on s_A_k only via `m_{k+1}.μ_A_chain`
+  (which is `m_k.μ_A_chain ++ [μ_A_next_k]` — independent of s_A_k),
+  we can pull rest out: `∑' s_A_k, μ_A_next_k(s_A_k) = 1` (PMF total
+  mass). The next step's γ-marginal-over-μ_A_next via
+  `PMFRelDecomp.fst_apply_eq_tsum` gives `∑' μ_A_next_k, γ_k(s_C_k,
+  μ_A_next_k) = μ_C_k(s_C_k)`, which combined with `∑' μ_C_k, d_k(l_k,
+  μ_C_k) · μ_C_k(s_C_k) = pe_C.kernel(m_k.e_C, (l_k, s_C_k))` gives
+  the per-step kernel factor. Multiplying across k yields
+  `pe_C.probOfRemaining`. The outer `∑' init_A, μ_A_init(init_A) = 1`
+  combines with `pe_C.init(e_C.init)` to give `pe_C.probOf(e_C)`.
 
   Note (factorisation soundness): each m_k depends only on
-  (s_C_0, ..., s_C_{k-1}) (and on history_A's prior abstract states),
-  not on s_A_k or any later sample. So summing over s_A_k at step k
-  is well-defined — past matching states are fixed.
+  (s_C_0, ..., s_C_{k-1}) (and on the γ-sampled μ_A_next's, which are
+  integrated by γ-weights at each step), not on s_A_k or any later
+  abstract sample. So summing over s_A_k at step k is well-defined
+  — past matching states are fixed.
 
-  Uses: §5's marginal-over-s_A at each step.
+  Uses: §5's marginal-over-s_A at each step;
+  `PMFRelDecomp.fst_apply_eq_tsum` (γ's first marginal).
 
 9.5  joint_marginalises_to_pe_A.
 
@@ -1084,13 +1214,27 @@ Joint(τ).
     form e_C = ⟨e_C.init, e_C'.trans.append (cons (l_{n-1}, s_C_{n-1}) nil)⟩
     for some e_C' of length n-1 and some s_C_{n-1}.
 
-    Step factorisation of joint_mass (consequence of joint_mass_path's
-    cons-end recursion):
+    Step factorisation of joint_mass:
         joint_mass(e_C, e_A)
           = (∑' m_prev, ⟨joint-mass over (e_C', e_A') threading m_prev⟩) ·
              joint_kernel(m_{n-1}, l_{n-1}, s_C_{n-1}, s_A_{n-1})
         ─ where m_{n-1} is the matching state at the boundary
         ─ ! m_{n-1} depends on the trajectory (e_C', γ-sampled μ_A_chain).
+
+    ! WATCH OUT (v4.2) — this cons-end factorisation, like §9.4's
+    `∏_k joint_kernel(m_k, ...)` form, is NOT syntactically present in
+    `joint_mass_path`'s recursion. `joint_mass_path` recurses at the
+    FRONT (cons head, recursion on tail). The cons-end factorisation
+    is recovered by unfolding n-1 levels of joint_mass_path to reach
+    the innermost call `joint_mass_path m_{n-1} [(l_{n-1}, s_C_{n-1})]
+    [(l_{n-1}, s_A_{n-1})]`; the last step's body is `∑' μ_C, d ·
+    (∑' μ_A_next, γ · μ_A_next.s_A_{n-1} · ∑' m_n, [indicator] · 1)`,
+    and the inner `∑' m_n` collapses via MatchingState.ext_of_data
+    (single canonical witness per μ_A_next). What remains is exactly
+    `joint_kernel(m_{n-1}, l_{n-1}, s_C_{n-1}, s_A_{n-1})`. So the
+    factorisation is an algebraic identity, established by an
+    auxiliary `joint_mass_path_append_singleton`-style lemma rather
+    than by `rfl` on the recursion.
 
     Sum the joint_mass over e_C ∈ Joint(τ). Split the sum as
         ∑' e_C, joint_mass(e_C, e_A)
@@ -1120,6 +1264,21 @@ Joint(τ).
     aggregates exactly the fromAbstractPrefix structure of m_kernel_{n-1}.
     (Strictly, this requires a separate Lemma 9.5.a relating joint_mass_path
     to fromAbstractPrefix; we treat it as a sub-step.)
+
+    ! NICE PROPERTY (v4.2) — the redesigned `joint_mass_path` now has
+    the same recursive shape as `step_weight` / `fromAbstractPrefix_list`:
+    each level integrates `(μ_C, μ_A_next)` with γ-weights and uses a
+    chain-fully-constraining indicator on the canonical extension.
+    So 9.5.a's re-indexing identity is now a near-direct correspondence
+    between the two definitions, level by level, rather than requiring
+    a separate "summing m_next aggregates the chain" argument. The
+    expected proof is induction on the trajectory length: at the base
+    (empty trajectory), both joint_mass_path and fromAbstractPrefix_base
+    evaluate to the initial-mass form; at the step, both have the same
+    γ-weighted chain-extension structure, so the per-level re-indexing
+    reduces to matching pe_C.init's role in joint_mass with the
+    s_C-marginal at fromAbstractPrefix's step_weight (via the
+    PMFRelDecomp.fst_apply_eq_tsum bridge from §9.4).
 
     Once re-indexed, apply m_dist_posterior_predictive (§9.3) at step n-1:
         ∑' m, m_kernel_{n-1}(m) · per_state_kernel(m, l_{n-1}, s_A_{n-1})
@@ -1194,19 +1353,28 @@ To add (v4-specific):
       structural check, not used in the marginal proofs).
   [✓] MatchingState (4-field record, v4).
   [✓] advance_pe_C_step (single advance function).
+  [✓] MatchingState.ext_of_data (data-only extensionality via
+      definitional proof irrelevance for the Prop fields; PROVEN).
   [✓] MatchingStateKernel : AlterSeq → MatchingState → ENNReal.
-  [~] fromAbstractPrefix : defined via fromAbstractPrefix_list recursion
+  [✓] step_weight (refactored v4.1-style: thin `if isSome` wrapper over
+      `step_weight_at_d`, which takes d/h_d_eq as explicit args).
+  [✓] fromAbstractPrefix : defined via fromAbstractPrefix_list recursion
       on the reversed transitions; fromAbstractPrefix_base (concrete);
-      step_weight (concrete). Build passes; mass conservation still sorry.
-  [ ] fromAbstractPrefix_mass_conservation: still sorry (interleaved with
-      m_dist_posterior_predictive's induction per §3.2 / §9.3).
+      step_weight (concrete).
+  [✓] fromAbstractPrefix_mass_conservation: PROVEN by strong induction
+      on (history_A.trans.toList).length, using the cycle-breaking
+      `m_dist_posterior_predictive_with_mass` and the auxiliary
+      `fromAbstractPrefix_base_tsum_eq` for the base case.
   [✓] blockEmission_general : (m, d, h_d_eq, h_valid) → PMF (Label × PMF State_A).
   [✓] pe_A_emit_at_state + pe_A_emission_distribution (via PMF.normalize).
-  [~] pe_A_of_simulation.valid: proved as a real composed proof; depends
-      on the structural invariant current_μ_A_support_contains_history_A_endState
-      (still sorry — requires induction on fromAbstractPrefix's recursion).
+  [✓] current_μ_A_support_contains_history_A_endState: PROVEN by
+      case-split on toList.reverse (head + tail), using
+      `step_weight_pos_implies_structure` to extract the canonical
+      chain extension at non-empty trajectories.
+  [✓] pe_A_of_simulation.valid: real composed proof; the structural
+      invariant dependency is now discharged.
   [✓] pe_A : PMFProbabilisticExecution sys_A^w (constructor done; valid
-      depends on the structural-invariant sorry above).
+      proven).
 
 The joint-space lemmas (§9):
   [✓] tightExecsA_characterisation (§9.2). Replaced by four practical
@@ -1216,39 +1384,71 @@ The joint-space lemmas (§9):
         * tightExecsA_characterisation (dichotomy form)
         * isTight_append_external
       (Plus `fromList` helper.)
-  [✓] Joint(τ) and joint_mass definitions (via joint_mass_path +
-      initial_matching_state).
-  [~] joint_kernel definition (with explicit m parameter): concrete.
-      v4.1 split partially in place — the current single-form
-      `joint_kernel` uses isSome+get. Refactor to joint_kernel_at_d +
-      bridge `joint_kernel_eq_at_d` is the next planned step to
-      unblock §9.3 sub-lemma A.
+  [✓] Joint(τ) definition; joint_mass definition. Both done in code.
+  [~] joint_mass_path : the v4.2 redesign (γ-weighted (μ_C, μ_A_next)
+      integration with chain fully constrained by μ_A_next) replaces
+      the original buggy recursion. Pending implementation; see
+      v4.2 note above. `JointMassBug.lean` is the regression test
+      documenting the original divergence.
+  [✓] joint_kernel definition (v4.1 split: joint_kernel_at_d (d-explicit)
+      + wrapper + `joint_kernel_eq_at_d` bridge).
   [✓] joint_kernel_marginal_s_A (= "joint_marginal_concrete"): PROVEN.
   [✓] joint_kernel_marginal_s_C: rfl by definition of per_state_kernel.
-  [ ] per_state_kernel_eq_at_d (corollary of joint_kernel_eq_at_d):
-      pending the joint_kernel_at_d split.
-  [ ] blockEmission_general_emission_marginal (§9.3 sub-lemma A):
+  [✓] per_state_kernel_eq_at_d (corollary of joint_kernel_eq_at_d):
+      PROVEN.
+  [✓] blockEmission_general_emission_marginal (§9.3 sub-lemma A):
       ∑' μ, blockEmission_general m d _ _ (l, μ) * μ s_A = per_state_kernel m l s_A.
-      Statement in code; proof sorry pending the joint_kernel_at_d
-      split.
-  [ ] pe_A_kernel_via_m_kernel (§9.3 sub-lemma B, multiplicative form):
+      PROVEN.
+  [✓] pe_A_kernel_via_m_kernel (§9.3 sub-lemma B, multiplicative form):
       pe_A.kernel history_A_k (l, s_A) · Z =
-        ∑' m, m_kernel_k(m) · per_state_kernel(m, l, s_A).
-  [ ] probOfRemaining_append_singleton + probOf_append_singleton
+        ∑' m, m_kernel_k(m) · per_state_kernel(m, l, s_A). PROVEN.
+  [✓] probOfRemaining_append_singleton + probOf_append_singleton
       (§9.3 sub-lemma C): end-step probOf factorisation for
-      PMFProbabilisticExecution.
-  [ ] m_dist_posterior_predictive (§9.3) — composes sub-lemmas A, B, C
-      with mass conservation. The proof's central composition. Currently
-      sorry; proof outline documented (multiplicative form, no division).
-  [ ] joint_marginalises_to_pe_C (§9.4). Currently sorry; proof outline
-      documented (uses joint_kernel_marginal_s_A telescope).
+      PMFProbabilisticExecution. PROVEN.
+  [✓] m_dist_posterior_predictive (§9.3, both forms) — composes
+      sub-lemmas A, B, C with mass conservation. v4.1's
+      m_dist_posterior_predictive_with_mass takes the mass-conservation
+      hypothesis explicitly (avoiding the kernel-level cycle with
+      `fromAbstractPrefix_mass_conservation`); the original
+      `m_dist_posterior_predictive` is now a corollary. Both PROVEN.
+  [✓] Stream'.Seq.exists_split_last (Seq-splitting helper): any
+      terminating non-empty Seq can be split as previous.append (cons
+      last nil) for terminating previous. Used by mass conservation's
+      step case and by current_μ_A_support_contains_history_A_endState.
+      PROVEN.
+  [✓] step_weight_pos_implies_structure + matchingState_indicator_sum_eq_one
+      (§3.2 / §9.3 auxiliaries used in step_weight_marginal_eq_per_state_kernel
+      and current_μ_A_support's step case). PROVEN.
+  [✓] step_weight_marginal_eq_per_state_kernel (§3.2 marginal auxiliary
+      used by mass conservation's step case). PROVEN.
+  [ ] joint_marginalises_to_pe_C (§9.4): pending the v4.2 redesign of
+      joint_mass_path. Statement needs to NOT fix `init_A` (sum over
+      e_A with e_A.init free; `∑' init_A, μ_A_init(init_A) = 1`
+      absorbs the factor). Proof outline: per-step
+      `joint_kernel_marginal_s_A` telescope after expanding
+      joint_mass_path.
+  [ ] joint_mass_path_append_singleton (§9.5 cons-end factorisation,
+      v4.2): the algebraic identity that turns the front-recursive
+      `joint_mass_path m_0 (toList_C ++ [last_C]) (toList_A ++ [last_A])`
+      into `∑' m_{n-1}, joint_mass_path m_0 toList_C toList_A ·
+      [m_{n-1} ≈ trajectory(toList_C, toList_A)] · joint_kernel(m_{n-1},
+      ...)`. Recovers the cons-end factorisation by n-1 levels of
+      unfolding + collapsing the innermost `∑' m_n` indicator via
+      MatchingState.ext_of_data, with the surviving (μ_C, μ_A_next)
+      γ-integration recognised as `joint_kernel(m_{n-1}, ...)`.
+      Mirror of the existing `probOf_append_singleton` for
+      `PMFProbabilisticExecution`.
   [ ] joint_mass_path_eq_m_kernel_aggregate (§9.5 sub-lemma 9.5.a):
       bridges joint_mass-summed-over-e_C' to m_kernel-aggregated
-      per_state_kernel. New sub-lemma identified in v4.1's §9.5
-      refinement.
-  [ ] joint_marginalises_to_pe_A (§9.5). Currently sorry; proof outline
-      documented (uses re-indexing via 9.5.a + m_dist_posterior_predictive,
-      NOT direct IH application).
+      per_state_kernel. Sub-lemma identified in v4.1; the v4.2
+      joint_mass_path makes the m_next-chain extension explicit, so
+      the re-indexing now lines up with fromAbstractPrefix's
+      step_weight indicator level-by-level (induction on trajectory
+      length rather than ad-hoc "summing aggregates the chain").
+  [ ] joint_marginalises_to_pe_A (§9.5). Pending the v4.2 redesign of
+      joint_mass_path. Proof outline: induction on |e_A.trans|;
+      base case via pe_C.init.tsum = 1; step case via re-indexing
+      (9.5.a) + m_dist_posterior_predictive at step n-1.
 
 The main theorem:
   [ ] traceInclusion: the top-level theorem. Statement done in code;
@@ -1266,45 +1466,63 @@ have sub-sorries documented. [ ] not yet implemented or sorry.
 11. ESTIMATE OF EFFORT
 ================================================================================
 
-Removing dead code: ~1 day.
+Status: §1-§9.3 infrastructure complete; §9.4 / §9.5 / traceInclusion
+pending, blocked on v4.2's joint_mass_path redesign.
 
-Adding v4 infrastructure: ~4-6 days.
-  - sys_A^w + step relation: ~0.5 day.
-  - MatchingState + advance_pe_C_step (v4 record): ~0.5-1 day.
-  - MatchingStateKernel + fromAbstractPrefix (unnormalised measure):
-    ~1.5-2 days. Defining the recursion and proving the mass-conservation
-    invariant.
-  - blockEmission_general: ~0.5 day.
-  - pe_A_emission_distribution + pe_A constructor: ~1-1.5 days.
-  - Validity (sys_A^w.step validity for pe_A): ~0.5-1 day.
+DONE (≈3 weeks of focused work invested):
+  ✓ Dead-code removal.
+  ✓ sys_A^w + step relation.
+  ✓ MatchingState v4 + advance_pe_C_step + MatchingState.ext_of_data.
+  ✓ MatchingStateKernel + fromAbstractPrefix + step_weight_at_d split.
+  ✓ blockEmission_general + pe_A_emission_distribution + pe_A constructor.
+  ✓ pe_A_of_simulation.valid (via current_μ_A_support_contains_history_A_endState
+    + step_weight_pos_implies_structure).
+  ✓ Joint(τ) and joint_mass definitions (joint_mass_path original
+    definition; replaced by v4.2 redesign below).
+  ✓ joint_kernel_at_d / joint_kernel / joint_kernel_eq_at_d (v4.1 split).
+  ✓ joint_kernel_marginal_s_A / _s_C; per_state_kernel_eq_at_d.
+  ✓ tightExecsA structural lemmas (v4.1's four-lemma replacement).
+  ✓ m_dist_posterior_predictive (§9.3): both forms, with
+    sub-lemmas A (blockEmission_general_emission_marginal),
+    B (pe_A_kernel_via_m_kernel multiplicative form),
+    C (probOf_append_singleton).
+  ✓ fromAbstractPrefix_mass_conservation: strong induction on toList
+    length, with Seq-splitting helper exists_split_last,
+    fromAbstractPrefix_base_tsum_eq for the base case, and
+    m_dist_posterior_predictive_with_mass + step_weight_marginal_eq_per_state_kernel
+    for the step case.
+  ✓ matchingState_indicator_sum_eq_one + MatchingState.ext_of_data
+    (the indicator-collapse infrastructure used throughout §9.3 and
+    needed for v4.2's redesigned joint_mass_path).
 
-Joint-space identities:
-  - Joint(τ), joint_mass, joint_kernel definitions (with explicit m parameter): ~0.5 day.
-  - joint_kernel_at_d / joint_kernel / joint_kernel_eq_at_d (v4.1 split): ~0.5 day.
-  - joint_marginal_concrete (= joint_kernel_marginal_s_A) — ~1 day.
-  - joint_marginal_abstract (= joint_kernel_marginal_s_C) — rfl by
-    definition of per_state_kernel.
-  - tightExecsA structural lemmas (v4.1's four-lemma replacement for
-    the Fin n → Bool enumeration): ~0.5-1 day combined.
-  - m_dist_posterior_predictive: ~2-3 days. Decomposed in v4.1 into:
-      * blockEmission_general_emission_marginal (~0.5-1 day; depends
-        on the joint_kernel_at_d split).
-      * pe_A_kernel_via_m_kernel (~0.5-1 day; uses sub-lemma above).
-      * probOf_append_singleton + probOfRemaining_append_singleton
-        (~0.5 day; List.foldl_append + Stream'.Seq.toList_append).
-      * Final composition with mass conservation (~0.5 day).
-  - joint_marginalises_to_pe_C: ~1 day.
-  - joint_marginalises_to_pe_A: ~2-3 days (uses m_dist_posterior_predictive
-    + the variable-length tightExecsA structure).
-  - traceInclusion (composition): ~1 day.
+REMAINING:
+  - v4.2 joint_mass_path redesign (~1-2 hours of refactor):
+      * Replace the cons branch (currently sums m_next over chain-length-
+        constrained indicator only) with γ-weighted (μ_C, μ_A_next)
+        integration + chain-fully-constrained indicator.
+      * Update joint_mass_path / joint_mass docstrings.
+      * Restate §9.4 lemma without fixing init_A.
+      * Optionally retire / archive JointMassBug.lean.
+  - joint_marginalises_to_pe_C (§9.4): ~1-2 days, using
+    PMFRelDecomp.fst_apply_eq_tsum and pe_C.kernel's per-step
+    factorisation. Telescope from innermost step outward.
+  - joint_mass_path_eq_m_kernel_aggregate (§9.5 sub-lemma 9.5.a):
+    ~1-2 days, induction on trajectory length. Bridges
+    joint_mass_path's recursion to fromAbstractPrefix's step_weight
+    indicator. The v4.2 redesign makes this re-indexing more direct
+    (chain extension is explicit via μ_A_next).
+  - joint_marginalises_to_pe_A (§9.5): ~1-2 days using 9.5.a +
+    m_dist_posterior_predictive at step n-1.
+  - traceInclusion (composition): ~0.5-1 day.
 
-Total: 3-4 weeks of focused work.
+Total remaining: ~5-8 days of focused work.
 
-Dominant cost items:
-  - MatchingStateKernel + mass-conservation invariant (~1.5-2 days).
-  - m_dist_posterior_predictive (~2-3 days, now decomposed into A/B/C
-    sub-lemmas in v4.1).
-  - joint_marginalises_to_pe_A (~2-3 days).
+Dominant cost items remaining:
+  - joint_mass_path_eq_m_kernel_aggregate (§9.5.a): the re-indexing
+    from joint_mass to fromAbstractPrefix structure. Now well-posed
+    after v4.2 redesign.
+  - joint_marginalises_to_pe_A (§9.5): composes 9.5.a +
+    m_dist_posterior_predictive.
 
 These are the explicit proof obligations that v3 hid under
 "by construction" / "PMF MatchingState" framing. v4.1 makes the
@@ -1355,6 +1573,21 @@ PMF-execution structure:
     composed with mass conservation.
   * `tightExecsA_characterisation`: variable-length structural
     enumeration of TightExecsA(τ).
+  * `joint_mass_path` recursion (v4.2): the cons-case integrates each
+    step's (μ_C, μ_A_next) γ-samples with γ-weight, and threads the
+    chain via a fully-constraining `m_next` indicator that ties
+    `m_next.μ_A_chain` to `m_prev.μ_A_chain ++ [μ_A_next]`. The inner
+    m_next sum collapses to a single canonical witness via
+    `MatchingState.ext_of_data` (using Lean's definitional proof
+    irrelevance for Prop fields). The v4.0 / v4.1 recursion lacked
+    the chain-equality clause; only chain *length* was fixed, which
+    let the m_next sum range over uncountably many chain extensions
+    and made `joint_mass_path` diverge to ⊤ (see `JointMassBug.lean`).
+  * Strong-induction Seq-splitting helper `Stream'.Seq.exists_split_last`
+    (Lean infrastructure): peels the last element from a terminating
+    non-empty Seq into `previous.append (cons last nil)`. Shared by
+    mass conservation's step case, current_μ_A_support's cons branch,
+    and §9.5's last-step decomposition.
 
 No σ-run identities, no σ.runFromState bridges, no active-vs-halt
 mass accounting, no induction on τ (though finite-product / tsum
