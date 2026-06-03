@@ -1667,7 +1667,7 @@ private theorem foldl_seq_append_eq_ofList (xs : List (Label × State)) (init : 
   | nil =>
     simp [Stream'.Seq.ofList_nil, Stream'.Seq.append_nil]
   | cons hd rest ih =>
-    show List.foldl _ (init.append (Seq.cons hd Seq.nil)) rest = _
+    change List.foldl _ (init.append (Seq.cons hd Seq.nil)) rest = _
     rw [ih, Stream'.Seq.ofList_cons, Stream'.Seq.append_assoc]
     congr 1
     show (Seq.cons hd Seq.nil).append (Stream'.Seq.ofList rest) =
@@ -1694,12 +1694,13 @@ theorem probOfRemaining_append_singleton (pe : PMFProbabilisticExecution sys)
     unfold probOfRemaining
     simp only [List.foldl]
     rcases pre with ⟨init, trans⟩
-    show pe.kernel ⟨init, trans⟩ last * 1 = 1 * pe.kernel ⟨init, trans⟩ last
+    change pe.kernel ⟨init, trans⟩ last * 1 = 1 * pe.kernel ⟨init, trans⟩ last
     ring
   | cons hd rest ih =>
     -- xs = hd :: rest. (hd :: rest) ++ [last] = hd :: (rest ++ [last]).
     -- LHS: probOfRemaining pre (hd :: (rest ++ [last]))
-    --   = pe.kernel pre hd * probOfRemaining ⟨pre.init, pre.trans.append (cons hd nil)⟩ (rest ++ [last])
+    --   = pe.kernel pre hd * probOfRemaining ⟨pre.init, pre.trans.append (cons hd nil)⟩
+    --     (rest ++ [last])
     --       (by probOfRemaining_cons)
     --   = pe.kernel pre hd * (probOfRemaining ⟨pre.init, pre.trans.append (cons hd nil)⟩ rest *
     --       pe.kernel ⟨pre.init, walked-from-(cons hd nil)⟩ last)
@@ -1713,9 +1714,12 @@ theorem probOfRemaining_append_singleton (pe : PMFProbabilisticExecution sys)
     rw [show ((hd :: rest) ++ [last] : List _) = hd :: (rest ++ [last]) from rfl,
         probOfRemaining_cons, probOfRemaining_cons]
     rw [ih ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩]
-    -- After rw [ih]: pe.kernel pre hd * (probOfRem ... rest * pe.kernel ⟨_, foldl ... extended rest⟩ last).
-    -- After probOfRemaining_cons on RHS: (pe.kernel pre hd * probOfRem ... rest) * pe.kernel ⟨_, foldl ... pre (hd :: rest)⟩ last.
-    -- Need: foldl ... extended rest = foldl ... pre.trans (hd :: rest), which is definitional via List.foldl.
+    -- After rw [ih]: pe.kernel pre hd * (probOfRem ... rest
+    --                                 * pe.kernel ⟨_, foldl ... extended rest⟩ last).
+    -- After probOfRemaining_cons on RHS: (pe.kernel pre hd * probOfRem ... rest)
+    --                                    * pe.kernel ⟨_, foldl ... pre (hd :: rest)⟩ last.
+    -- Need: foldl ... extended rest = foldl ... pre.trans (hd :: rest),
+    -- which is definitional via List.foldl.
     simp only [List.foldl, mul_assoc]
 
 /-- **End-step factorisation for `pe.probOf`** (plan v4.1 §9.3 sub-lemma C):
@@ -1745,7 +1749,8 @@ theorem probOf_append_singleton (pe : PMFProbabilisticExecution sys)
   rw [probOfRemaining_append_singleton]
   -- Now: pe.init init * (probOfRemaining ⟨init, nil⟩ (trans.toList h_term) *
   --        pe.kernel ⟨init, foldl ... Seq.nil (trans.toList h_term)⟩ last)
-  --    = pe.init init * probOfRemaining ⟨init, nil⟩ (trans.toList h_term) * pe.kernel ⟨init, trans⟩ last
+  --    = pe.init init * probOfRemaining ⟨init, nil⟩ (trans.toList h_term)
+  --                   * pe.kernel ⟨init, trans⟩ last
   -- The foldl form simplifies via foldl_seq_append_eq_ofList + ofList_toList:
   -- foldl ... Seq.nil (trans.toList h_term) = Seq.nil.append (Seq.ofList (trans.toList h_term))
   --   = Seq.ofList (trans.toList h_term)  [by nil_append]
@@ -3168,13 +3173,36 @@ private theorem joint_kernel_eq_at_d
     (h_d_eq : pe_C.scheduler.next m.e_C = some d)
     (h_valid : m.has_valid_R)
     (l : Label) (s_C : State_C) (s_A : State_A) :
-    joint_kernel m l s_C s_A = joint_kernel_at_d m d h_d_eq h_valid l s_C s_A :=
-  -- Bridge between `joint_kernel` (using `.isSome`+`.get`) and `joint_kernel_at_d`
-  -- (taking explicit d, h_d_eq). The dependent typing of `(o).get h_some` resists
-  -- direct tactics; workable via Option.casesOn with motive carrying the equation
-  -- (~10-15 lines), or HEq machinery. Deferred to a follow-up; downstream proofs
-  -- use the per_state_kernel_at_d / joint_kernel_at_d forms directly.
-  sorry
+    joint_kernel m l s_C s_A = joint_kernel_at_d m d h_d_eq h_valid l s_C s_A := by
+  classical
+  unfold joint_kernel
+  rw [dif_pos h_valid]
+  have h_some : (pe_C.scheduler.next m.e_C).isSome = true := by rw [h_d_eq]; rfl
+  rw [dif_pos h_some]
+  -- Goal: joint_kernel_at_d m ((pe_C.scheduler.next m.e_C).get h_some)
+  --                          (Option.eq_some_of_isSome h_some) h_valid l s_C s_A
+  --     = joint_kernel_at_d m d h_d_eq h_valid l s_C s_A
+  -- Use Eq.recOn on h_d_eq.symm to transport h_d_eq's d into position.
+  -- Concretely: from h_d_eq : pe_C.scheduler.next m.e_C = some d, we know that
+  -- both sides are joint_kernel_at_d m d' (proof of pe_C... = some d') h_valid ...
+  -- with d' = d, and any two such proofs are equal by Subsingleton.
+  have h_d_get : (pe_C.scheduler.next m.e_C).get h_some = d := by
+    have h_pair : pe_C.scheduler.next m.e_C = some ((pe_C.scheduler.next m.e_C).get h_some) :=
+      Option.eq_some_of_isSome h_some
+    -- Avoid `rw [h_d_eq] at h_pair` (dependent rewrite). Compose equations directly:
+    have h_eq_some : some d = some ((pe_C.scheduler.next m.e_C).get h_some) :=
+      h_d_eq.symm.trans h_pair
+    exact (Option.some.inj h_eq_some).symm
+  -- Rewrite the goal via h_d_get. The dependent eq_some_of_isSome term's
+  -- expected type `pe_C... = some ((pe_C...).get h_some)` becomes
+  -- `pe_C... = some d` after rewriting — matching h_d_eq's type.
+  -- By proof irrelevance, the two `pe_C... = some d` proofs are equal.
+  subst h_d_get
+  -- After subst (h_d_get viewing d as the variable to replace by .get h_some):
+  -- d has been replaced by (pe_C.scheduler.next m.e_C).get h_some.
+  -- h_d_eq's type becomes pe_C... = some ((pe_C...).get h_some) = the eq_some_of_isSome.
+  -- By proof irrelevance, the two joint_kernel_at_d's are equal.
+  rfl
 
 -- per_state_kernel_at_d and per_state_kernel_eq_at_d are placed
 -- after the existing per_state_kernel definition below.
@@ -3360,17 +3388,11 @@ private theorem blockEmission_general_emission_marginal_at_d
       blockEmission_general m d h_d_eq h_valid (l, μ) * μ s_A) =
     per_state_kernel_at_d m d h_d_eq h_valid l s_A := by
   -- Both sides reduce to ∑' μ_C, d (l, μ_C) * (ω_{m,l,μ_C}.bind id) s_A.
-  -- Full proof: ~60-80 lines of tsum manipulation. Strategy outlined:
-  -- LHS: unfold blockEmission_general (d.bind); apply PMF.bind_apply,
-  -- PMF.map_apply on the in-support branch; use ENNReal.tsum_mul_right
-  -- + ENNReal.tsum_comm to swap ∑' μ ↔ ∑' (l', μ_C); collapse l ≠ l'
-  -- cases via tsum_eq_single; collapse out-of-support via d = 0.
-  -- RHS: unfold per_state_kernel_at_d + joint_kernel_at_d; swap ∑' s_C
-  -- ↔ ∑' μ_C; use γ's snd marginal (PMFRelDecomp.snd_apply_eq_tsum) to
-  -- collapse ∑' s_C, γ(s_C, μ_A_next) = ω(μ_A_next); apply PMF.bind_apply
-  -- to get (ω.bind id) s_A.
-  -- The two sides match definitionally at the form
-  --   ∑' μ_C, d (l, μ_C) * (if h_supp then (ω.bind id) s_A else 0).
+  -- LHS: PMF.bind_apply + ENNReal.tsum_comm + PMF.map_apply + tsum_eq_single l
+  --      (∑' (l', μ_C) → ∑' μ_C with l' = l forced by indicator).
+  -- RHS: tsum_comm on s_C ↔ μ_C; γ snd marginal collapses ∑' s_C, γ(s_C, μ_A_next) = ω(μ_A_next);
+  --      then ∑' μ_A_next, ω μ_A_next * μ_A_next s_A = (ω.bind id) s_A.
+  -- ~60-80 lines. Deferred to follow-up.
   sorry
 
 /-- **§9.3 sub-lemma A** (`blockEmission_general_emission_marginal`):
