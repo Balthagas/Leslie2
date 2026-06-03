@@ -3409,7 +3409,12 @@ noncomputable def pe_A_of_simulation
           · exact Or.inl (sim.stepWitness_weakTau (m.current_R h_valid) _ h_int)
           · exact Or.inr (sim.stepWitness_weakStep (m.current_R h_valid) _ h_ext) }
 
-/-! #### Mass-conservation invariant on `fromAbstractPrefix` (§3.2) -/
+/-! #### Mass-conservation helper (base case)
+
+The full mass-conservation invariant on `fromAbstractPrefix` requires both
+`step_weight_marginal_eq_per_state_kernel` and `m_dist_posterior_predictive_with_mass`
+(defined further below). The helper for the base case is independent and
+lives here. -/
 
 /-- **Base-case mass conservation**: the total mass of `fromAbstractPrefix_base`
 over all matching states equals `μ_A_init s_A_init`. Proof via re-indexing
@@ -3473,69 +3478,6 @@ private lemma fromAbstractPrefix_base_tsum_eq
       rw [if_pos ⟨rfl, rfl, h_s_C_in_supp⟩]
   rw [h_reindex, ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
 
-
-/-- **Mass-conservation invariant**: the total mass of the matching-state
-posterior at `history_A` equals `pe_A.probOf history_A`.
-
-Proof structure (strong induction on `(history_A.trans.toList h_term).length`):
-* **Base case** (length 0): `trans = Seq.nil`. Sum of `fromAbstractPrefix_base`
-  over `m` collapses via initial-state indicator (parallel to
-  `matchingState_indicator_sum_eq_one`) to `μ_A_init(s_A_init) ·
-  pe_C.init.tsum = μ_A_init(s_A_init) = pe_A.probOf(⟨s_A_init, Seq.nil⟩)`.
-* **Step case** (length n+1): split `trans = previous_trans.append (cons last
-  nil)`. Apply `fromAbstractPrefix_list`'s cons recursion to extract the
-  outer `∑' m_prev, fromAbstractPrefix(previous) * step_weight(...)`. Swap
-  sums; collapse the `m_new`-sum via `step_weight_marginal_eq_per_state_kernel`
-  to `∑' m_prev, fromAbstractPrefix(previous) * per_state_kernel(...)`. Apply
-  `m_dist_posterior_predictive_with_mass` with the IH-derived `h_mass` to
-  identify with `pe_A.probOf(previous ++ [last])`. -/
-theorem fromAbstractPrefix_mass_conservation
-    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
-    (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (μ_A_init : PMF State_A)
-    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (history_A : AlterSeq State_A Label) (h_term : history_A.trans.Terminates) :
-    (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m) =
-      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf
-        history_A h_term := by
-  -- Strong induction on the list-length of history_A's transitions.
-  generalize h_len_eq : (history_A.trans.toList h_term).length = n
-  induction n using Nat.strong_induction_on generalizing history_A h_term with
-  | _ n ih =>
-    rcases Nat.eq_zero_or_pos n with h_zero | h_pos
-    · -- Base case: trans.toList = [], so trans = Seq.nil.
-      have h_toList_nil : history_A.trans.toList h_term = [] := by
-        apply List.length_eq_zero_iff.mp; rw [h_len_eq]; exact h_zero
-      have h_trans_length : history_A.trans.length h_term = 0 := by
-        rw [← Stream'.Seq.length_toList, h_toList_nil]; rfl
-      have h_trans_nil : history_A.trans = Seq.nil :=
-        Stream'.Seq.length_eq_zero.mp h_trans_length
-      -- LHS: unfold fromAbstractPrefix to fromAbstractPrefix_base, apply helper.
-      have h_LHS :
-          (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m) =
-          μ_A_init history_A.init := by
-        have h_unfold : ∀ m,
-            fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m =
-            fromAbstractPrefix_base sim pe_C μ_A_init h_init_R history_A.init m := by
-          intro m
-          unfold fromAbstractPrefix
-          rw [h_toList_nil]
-          rfl
-        simp_rw [h_unfold]
-        exact fromAbstractPrefix_base_tsum_eq sim pe_C μ_A_init h_init_R history_A.init
-      -- RHS: pe_A.probOf at empty trans = pe_A.init history_A.init = μ_A_init history_A.init.
-      have h_RHS :
-          (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf history_A h_term =
-          μ_A_init history_A.init := by
-        unfold PMFProbabilisticExecution.probOf
-        rw [h_toList_nil]
-        unfold PMFProbabilisticExecution.probOfRemaining
-        simp only [List.foldl, mul_one]
-        rfl
-      exact h_LHS.trans h_RHS.symm
-    · -- Step case: trans non-empty. Split into previous ++ [last], apply
-      -- step_weight_marginal_eq_per_state_kernel + m_dist_posterior_predictive_with_mass.
-      sorry
 
 /-! #### Joint kernel, joint mass, joint marginals (§5, §8)
 
@@ -4351,6 +4293,121 @@ theorem m_dist_posterior_predictive_with_mass
       pe_A_kernel_via_m_kernel sim pe_C μ_A_init h_init_R history_A_k h_term_k l s_A
         h_Z_eq_zero h_Z_ne_top
     rw [← h_sub_B, ← h_mass, mul_comm]
+
+/-! #### Mass-conservation invariant on `fromAbstractPrefix` (§3.2) -/
+
+/-- **Mass-conservation invariant**: the total mass of the matching-state
+posterior at `history_A` equals `pe_A.probOf history_A`.
+
+Proof structure (strong induction on `(history_A.trans.toList h_term).length`):
+* **Base case** (length 0): `trans = Seq.nil`. Sum of `fromAbstractPrefix_base`
+  over `m` collapses via initial-state indicator (parallel to
+  `matchingState_indicator_sum_eq_one`) to `μ_A_init(s_A_init) ·
+  pe_C.init.tsum = μ_A_init(s_A_init) = pe_A.probOf(⟨s_A_init, Seq.nil⟩)`.
+* **Step case** (length n+1): split `trans = previous_trans.append (cons last
+  nil)`. Apply `fromAbstractPrefix_list`'s cons recursion to extract the
+  outer `∑' m_prev, fromAbstractPrefix(previous) * step_weight(...)`. Swap
+  sums; collapse the `m_new`-sum via `step_weight_marginal_eq_per_state_kernel`
+  to `∑' m_prev, fromAbstractPrefix(previous) * per_state_kernel(...)`. Apply
+  `m_dist_posterior_predictive_with_mass` with the IH-derived `h_mass` to
+  identify with `pe_A.probOf(previous ++ [last])`. -/
+theorem fromAbstractPrefix_mass_conservation
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (history_A : AlterSeq State_A Label) (h_term : history_A.trans.Terminates) :
+    (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m) =
+      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf
+        history_A h_term := by
+  -- Strong induction on the list-length of history_A's transitions.
+  generalize h_len_eq : (history_A.trans.toList h_term).length = n
+  induction n using Nat.strong_induction_on generalizing history_A h_term with
+  | _ n ih =>
+    rcases Nat.eq_zero_or_pos n with h_zero | h_pos
+    · -- Base case: trans.toList = [], so trans = Seq.nil.
+      have h_toList_nil : history_A.trans.toList h_term = [] := by
+        apply List.length_eq_zero_iff.mp; rw [h_len_eq]; exact h_zero
+      have h_trans_length : history_A.trans.length h_term = 0 := by
+        rw [← Stream'.Seq.length_toList, h_toList_nil]; rfl
+      have h_trans_nil : history_A.trans = Seq.nil :=
+        Stream'.Seq.length_eq_zero.mp h_trans_length
+      have h_LHS :
+          (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m) =
+          μ_A_init history_A.init := by
+        have h_unfold : ∀ m,
+            fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m =
+            fromAbstractPrefix_base sim pe_C μ_A_init h_init_R history_A.init m := by
+          intro m
+          unfold fromAbstractPrefix
+          rw [h_toList_nil]
+          rfl
+        simp_rw [h_unfold]
+        exact fromAbstractPrefix_base_tsum_eq sim pe_C μ_A_init h_init_R history_A.init
+      have h_RHS :
+          (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf history_A h_term =
+          μ_A_init history_A.init := by
+        unfold PMFProbabilisticExecution.probOf
+        rw [h_toList_nil]
+        unfold PMFProbabilisticExecution.probOfRemaining
+        simp only [List.foldl, mul_one]
+        rfl
+      exact h_LHS.trans h_RHS.symm
+    · -- Step case: trans non-empty. Split into previous ++ [last], apply
+      -- step_weight_marginal_eq_per_state_kernel + m_dist_posterior_predictive_with_mass.
+      have h_toList_ne : history_A.trans.toList h_term ≠ [] := by
+        intro h_nil
+        have : (history_A.trans.toList h_term).length = 0 := by rw [h_nil]; rfl
+        rw [h_len_eq] at this
+        omega
+      obtain ⟨previous_trans, last, h_prev_term, h_trans_eq, h_prev_toList_eq, h_last_eq⟩ :=
+        Stream'.Seq.exists_split_last history_A.trans h_term h_toList_ne
+      let previous_history_A : AlterSeq State_A Label := ⟨history_A.init, previous_trans⟩
+      have h_prev_term' : previous_history_A.trans.Terminates := h_prev_term
+      have h_prev_len : (previous_history_A.trans.toList h_prev_term').length = n - 1 := by
+        change (previous_trans.toList h_prev_term).length = n - 1
+        rw [h_prev_toList_eq, List.length_dropLast, h_len_eq]
+      have h_IH :
+          (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R previous_history_A h_prev_term' m) =
+          (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf previous_history_A h_prev_term' :=
+        ih (n - 1) (Nat.sub_lt h_pos Nat.zero_lt_one) previous_history_A h_prev_term' h_prev_len
+      have h_toList_history_A : history_A.trans.toList h_term =
+          previous_trans.toList h_prev_term ++ [last] := by
+        rw [h_prev_toList_eq, h_last_eq]
+        exact (List.dropLast_append_getLast h_toList_ne).symm
+      have h_rev : (history_A.trans.toList h_term).reverse =
+          last :: (previous_trans.toList h_prev_term).reverse := by
+        rw [h_toList_history_A, List.reverse_append, List.reverse_cons, List.reverse_nil,
+            List.nil_append, List.singleton_append]
+      have h_recursion : ∀ m,
+          fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m =
+          ∑' m_prev,
+            fromAbstractPrefix sim pe_C μ_A_init h_init_R previous_history_A h_prev_term' m_prev *
+            step_weight sim pe_C μ_A_init h_init_R m_prev m last.1 last.2 := by
+        intro m
+        unfold fromAbstractPrefix
+        rw [h_rev]
+        rfl
+      simp_rw [h_recursion]
+      rw [ENNReal.tsum_comm]
+      simp_rw [ENNReal.tsum_mul_left]
+      simp_rw [step_weight_marginal_eq_per_state_kernel]
+      rw [m_dist_posterior_predictive_with_mass sim pe_C μ_A_init h_init_R
+        previous_history_A h_prev_term' last.1 last.2 h_IH]
+      -- Lift via h_trans_eq to relate the reconstructed AlterSeq to history_A.
+      have h_aux : ∀ (e : AlterSeq State_A Label) (h : e.trans.Terminates)
+          (_h_trans_eq : e.trans = previous_trans.append (Seq.cons last Seq.nil)),
+          (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf
+            ⟨e.init, previous_trans.append (Seq.cons (last.1, last.2) Seq.nil)⟩
+            ⟨Nat.find h_prev_term + 1, Stream'.Seq.terminatedAt_append_find h_prev_term
+              (show (Seq.cons (last.1, last.2) Seq.nil).TerminatedAt 1 from rfl)⟩ =
+          (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf e h := by
+        intro e h h_trans
+        cases e with
+        | mk init_e trans_e =>
+          subst h_trans
+          rfl
+      exact h_aux history_A h_term h_trans_eq
 
 theorem m_dist_posterior_predictive
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
