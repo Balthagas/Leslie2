@@ -2785,7 +2785,7 @@ private theorem pe_A_emission_support_extract
   have h_exists : ∃ m, (PMF.normalize _ h0 hFin) m *
       (pe_A_emit_at_state m) (some (l, μ)) ≠ 0 := by
     by_contra h_all
-    push_neg at h_all
+    push Not at h_all
     exact h_supp (ENNReal.tsum_eq_zero.mpr h_all)
   obtain ⟨m, h_m_ne⟩ := h_exists
   rw [ne_eq, mul_eq_zero, not_or] at h_m_ne
@@ -2915,7 +2915,7 @@ private theorem stateAt_eq_endState_at_terminator
         obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hn_pos.ne'
         rw [hj]; rfl
       rw [h_get_none] at h_stateAt_def
-      simp at h_stateAt_def
+      simp only [Option.map_none] at h_stateAt_def
       rw [h_stateAt_def] at h_stateAt_n
       simp at h_stateAt_n
     · -- Nat.find h_term > 0 and n ≥ Nat.find h_term.
@@ -2931,7 +2931,7 @@ private theorem stateAt_eq_endState_at_terminator
           obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hn_pos.ne'
           rw [hj]; rfl
         rw [h_get_none] at h_stateAt_def
-        simp at h_stateAt_def
+        simp only [Option.map_none] at h_stateAt_def
         rw [h_stateAt_def] at h_stateAt_n
         exact absurd h_stateAt_n (by simp)
 
@@ -3011,10 +3011,37 @@ at `m`'s R-coupling.
 ∏_k joint_kernel(m_k, l_k, s_C_k, s_A_k)`, where `m_k` is the matching
 state at step k (advanced from `m_0` by the prior trajectory). -/
 
+/-- **`joint_kernel_at_d`** — inner form of `joint_kernel` parameterised
+by `d` and `h_d_eq` (plan v4.1, §5). This is the closed-form expression
+that lives inside `joint_kernel`'s `dif_pos h_valid`/`dif_pos h_some`
+branch, lifted to a top-level definition. Taking `d` as an explicit
+argument allows proofs that bridge with `blockEmission_general` (also
+d-explicit) to operate on a common form without dependent-rewrite
+hazards on `(Option).get`. -/
+noncomputable def joint_kernel_at_d
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m.e_C = some d)
+    (h_valid : m.has_valid_R)
+    (l : Label) (s_C : State_C) (s_A : State_A) : ENNReal :=
+  ∑' (μ_C : PMF State_C),
+    d (l, μ_C) * (
+      open Classical in
+      if h_supp : (l, μ_C) ∈ d.support then
+        ∑' (μ_A_next : PMF State_A),
+          (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+              (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp))
+          ).γ (s_C, μ_A_next) * μ_A_next s_A
+      else 0)
+
 /-- The per-step joint kernel, parameterised by the matching state `m`.
 Returns 0 when `m` lacks an R-witness, or `pe_C.scheduler.next m.e_C = none`
 (pe_C has halted at this prefix), or `(l, μ_C) ∉ d.support`. Implemented
-via `Option.isSome`+`get` to avoid `match`-with-binder issues in proofs. -/
+as a thin wrapper over `joint_kernel_at_d`. -/
 noncomputable def joint_kernel
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -3025,18 +3052,39 @@ noncomputable def joint_kernel
   open Classical in
   if h_valid : m.has_valid_R then
     if h_some : (pe_C.scheduler.next m.e_C).isSome then
-      let d := (pe_C.scheduler.next m.e_C).get h_some
-      let h_d_eq : pe_C.scheduler.next m.e_C = some d := Option.eq_some_of_isSome h_some
-      ∑' (μ_C : PMF State_C),
-        d (l, μ_C) * (
-          if h_supp : (l, μ_C) ∈ d.support then
-            ∑' (μ_A_next : PMF State_A),
-              (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
-                  (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp))
-              ).γ (s_C, μ_A_next) * μ_A_next s_A
-          else 0)
+      joint_kernel_at_d m ((pe_C.scheduler.next m.e_C).get h_some)
+        (Option.eq_some_of_isSome h_some) h_valid l s_C s_A
     else 0
   else 0
+
+/-- **Bridge lemma** (plan v4.1, §5): `joint_kernel` equals
+`joint_kernel_at_d` when supplied with the matching `d` and `h_d_eq`.
+
+Proof strategy: introduce a generic `aux` function parameterised over
+the Option-value `o` and an equation `pe_C.scheduler.next m.e_C = o`,
+prove the equation holds when `o = some d`, then specialise. -/
+private theorem joint_kernel_eq_at_d
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m.e_C = some d)
+    (h_valid : m.has_valid_R)
+    (l : Label) (s_C : State_C) (s_A : State_A) :
+    joint_kernel m l s_C s_A = joint_kernel_at_d m d h_d_eq h_valid l s_C s_A :=
+  -- The dependent typing of `(pe_C.scheduler.next m.e_C).get h_some` in
+  -- `joint_kernel`'s body resists `rcases`, `generalize`, `subst`, `conv_lhs +
+  -- rw`, and direct `rw [dif_pos h_some]`. Workable via HEq + manual
+  -- congr_arg machinery, or by redefining joint_kernel using a dependent
+  -- `Option.casesOn` with motive `fun o => pe_C.scheduler.next m.e_C = o →
+  -- ENNReal`. Deferred to a follow-up; downstream proofs use
+  -- joint_kernel_at_d directly without this bridge where possible.
+  sorry
+
+-- per_state_kernel_at_d and per_state_kernel_eq_at_d are placed
+-- after the existing per_state_kernel definition below.
 
 /-- **Per-step joint marginal over `s_A` (§5)**: summing `joint_kernel`
 over the abstract end-state recovers `pe_C`'s per-step kernel. Requires
@@ -3067,7 +3115,11 @@ theorem joint_kernel_marginal_s_A
   have h_d_eq : pe_C.scheduler.next m.e_C = some d := Option.eq_some_of_isSome h_some
   -- Rewrite the RHS using h_d_eq + Option.elim_some.
   conv_rhs => rw [h_d_eq, Option.elim_some]
-  -- LHS: ∑' s_A, ∑' μ_C, d(l,μ_C) * (if h_supp then ∑' μ_A_next, γ(s_C,μ_A_next) * μ_A_next s_A else 0)
+  -- Unfold joint_kernel_at_d to get the tsum form.
+  unfold joint_kernel_at_d
+  -- LHS: ∑' s_A, ∑' μ_C, d(l,μ_C)
+  -- * (if h_supp then ∑' μ_A_next, γ(s_C,μ_A_next)
+  -- * μ_A_next s_A else 0)
   -- Swap tsums.
   rw [ENNReal.tsum_comm]
   -- Now: ∑' μ_C, ∑' s_A, d(l,μ_C) * (...)
@@ -3095,7 +3147,7 @@ theorem joint_kernel_marginal_s_A
       simp only [dif_neg h_supp, tsum_zero, mul_zero]
       have h_d_zero : d (l, μ_C) = 0 := by
         rw [PMF.mem_support_iff] at h_supp
-        push_neg at h_supp
+        push Not at h_supp
         exact h_supp
       rw [h_d_zero, zero_mul]
   -- Apply h_inner.
@@ -3146,6 +3198,37 @@ noncomputable def per_state_kernel
     (m : MatchingState sim pe_C μ_A_init h_init_R)
     (l : Label) (s_A : State_A) : ENNReal :=
   ∑' s_C, joint_kernel m l s_C s_A
+
+/-- **`per_state_kernel_at_d`** — d-explicit form of `per_state_kernel`.
+The s_C-marginal of `joint_kernel_at_d`. -/
+noncomputable def per_state_kernel_at_d
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m.e_C = some d)
+    (h_valid : m.has_valid_R)
+    (l : Label) (s_A : State_A) : ENNReal :=
+  ∑' s_C, joint_kernel_at_d m d h_d_eq h_valid l s_C s_A
+
+/-- **Corollary**: `per_state_kernel` equals its d-explicit form under
+the matching hypotheses. (Follows from `joint_kernel_eq_at_d` applied
+under the s_C-tsum.) -/
+private theorem per_state_kernel_eq_at_d
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m.e_C = some d)
+    (h_valid : m.has_valid_R)
+    (l : Label) (s_A : State_A) :
+    per_state_kernel m l s_A = per_state_kernel_at_d m d h_d_eq h_valid l s_A := by
+  unfold per_state_kernel per_state_kernel_at_d
+  exact tsum_congr fun s_C => joint_kernel_eq_at_d m d h_d_eq h_valid l s_C s_A
 
 /-- **Per-step joint marginal over `s_C` (§5)**: by definition,
 `per_state_kernel m l s_A = ∑' s_C, joint_kernel m l s_C s_A`. -/
