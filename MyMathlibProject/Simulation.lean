@@ -2817,7 +2817,7 @@ private theorem blockEmission_general_apply_eq
       rw [if_neg h_pair_ne]
     · simp only [dif_neg h_supp]
       have h_d_zero : d (l', μ_C) = 0 := by
-        rw [PMF.mem_support_iff] at h_supp; push_neg at h_supp; exact h_supp
+        rw [PMF.mem_support_iff] at h_supp; push Not at h_supp; exact h_supp
       rw [h_d_zero, zero_mul]
   -- l' = l case.
   refine tsum_congr (fun μ_C => ?_)
@@ -2833,7 +2833,7 @@ private theorem blockEmission_general_apply_eq
   · simp only [dif_neg h_supp]
     -- d (l, μ_C) = 0
     have h_d_zero : d (l, μ_C) = 0 := by
-      rw [PMF.mem_support_iff] at h_supp; push_neg at h_supp; exact h_supp
+      rw [PMF.mem_support_iff] at h_supp; push Not at h_supp; exact h_supp
     rw [h_d_zero, zero_mul, zero_mul]
 
 /-- **Per-matching-state emission**: the `PMF (Option (Label × PMF State_A))`
@@ -3451,21 +3451,96 @@ private theorem blockEmission_general_emission_marginal_at_d
     (∑' μ : PMF State_A,
       blockEmission_general m d h_d_eq h_valid (l, μ) * μ s_A) =
     per_state_kernel_at_d m d h_d_eq h_valid l s_A := by
-  -- With the helper `blockEmission_general_apply_eq` now available,
-  -- the proof structure is:
-  -- 1. Rewrite LHS's blockEmission_general via the helper.
-  -- 2. tsum_mul_right + tsum_comm to swap ∑' μ ↔ ∑' μ_C.
-  -- 3. Unfold per_state_kernel_at_d on RHS; tsum_comm to swap ∑' s_C ↔ ∑' μ_C.
-  -- 4. Element-wise (per μ_C): factor d(l, μ_C); inner sums reduce.
-  -- 5. For in-support case: ∑' μ, ω μ * μ s_A = (ω.bind id) s_A via PMF.bind_apply;
-  --    ∑' s_C ∑' μ_A_next, γ * μ_A_next s_A = (ω.bind id) s_A via
-  --    per_step_mass_marginal_abstract.
-  -- 6. For not-in-support: both sides 0 since d(l, μ_C) = 0.
-  -- This proof structure is documented and partially attempted; specific
-  -- intermediate `rw [show ... from ...]` steps run into associativity/
-  -- ENNReal.tsum_mul_left pattern-matching issues. Deferred (likely needs
-  -- careful staged proof with separate helper lemmas for each manipulation).
-  sorry
+  classical
+  -- Define the common intermediate form `mid`.
+  set mid : ENNReal := ∑' μ_C : PMF State_C, d (l, μ_C) *
+    (open Classical in
+     if h_supp : (l, μ_C) ∈ d.support then
+       ((sim.stepWitness (m.current_R h_valid)
+         (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp)).bind id) s_A
+     else 0) with hmid_def
+  -- LHS = mid (5-step reduction).
+  have h_LHS_eq_mid : (∑' μ : PMF State_A,
+      blockEmission_general m d h_d_eq h_valid (l, μ) * μ s_A) = mid := by
+    -- Step 1: rewrite blockEmission_general via the helper.
+    have h1 : (∑' μ : PMF State_A,
+        blockEmission_general m d h_d_eq h_valid (l, μ) * μ s_A) =
+        ∑' μ : PMF State_A,
+          (∑' μ_C : PMF State_C, d (l, μ_C) *
+            (open Classical in
+             if h_supp : (l, μ_C) ∈ d.support then
+               sim.stepWitness (m.current_R h_valid)
+                 (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp) μ
+             else 0)) * μ s_A := by
+      apply tsum_congr; intro μ
+      rw [blockEmission_general_apply_eq]
+    rw [h1]
+    -- Step 2: distribute μ s_A into the inner sum.
+    have h2 : (∑' μ : PMF State_A,
+        (∑' μ_C : PMF State_C, d (l, μ_C) *
+          (open Classical in
+           if h_supp : (l, μ_C) ∈ d.support then
+             sim.stepWitness (m.current_R h_valid)
+               (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp) μ
+           else 0)) * μ s_A) =
+        ∑' μ : PMF State_A, ∑' μ_C : PMF State_C,
+          d (l, μ_C) *
+            (open Classical in
+             if h_supp : (l, μ_C) ∈ d.support then
+               sim.stepWitness (m.current_R h_valid)
+                 (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp) μ
+             else 0) * μ s_A := by
+      apply tsum_congr; intro μ
+      rw [ENNReal.tsum_mul_right]
+    rw [h2]
+    -- Step 3: swap tsums.
+    rw [ENNReal.tsum_comm]
+    rw [hmid_def]
+    -- Per μ_C: factor d and reduce inner.
+    apply tsum_congr; intro μ_C
+    -- Goal: ∑' μ, d * if-clause * μ s_A = d * (if h_supp then (ω.bind id) s_A else 0)
+    -- Step 4: re-associate to put d at the front.
+    have h4 : (∑' μ : PMF State_A, d (l, μ_C) *
+          (open Classical in
+           if h_supp : (l, μ_C) ∈ d.support then
+             sim.stepWitness (m.current_R h_valid)
+               (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp) μ
+           else 0) * μ s_A) =
+        ∑' μ : PMF State_A, d (l, μ_C) *
+          ((open Classical in
+            if h_supp : (l, μ_C) ∈ d.support then
+              sim.stepWitness (m.current_R h_valid)
+                (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp) μ
+            else 0) * μ s_A) := by
+      apply tsum_congr; intro μ; ring
+    rw [h4]
+    rw [ENNReal.tsum_mul_left]
+    -- Step 5: inner reduction. d * ∑' μ, (if h_supp then ω μ else 0) * μ s_A
+    --       = d * (if h_supp then (ω.bind id) s_A else 0)
+    congr 1
+    by_cases h_supp : (l, μ_C) ∈ d.support
+    · simp only [dif_pos h_supp]
+      -- ∑' μ, ω μ * μ s_A = (ω.bind id) s_A
+      rw [PMF.bind_apply]; rfl
+    · simp only [dif_neg h_supp]
+      -- ∑' μ, 0 * μ s_A = 0
+      simp
+  -- RHS = mid (3-step reduction).
+  have h_RHS_eq_mid : per_state_kernel_at_d m d h_d_eq h_valid l s_A = mid := by
+    unfold per_state_kernel_at_d joint_kernel_at_d
+    rw [ENNReal.tsum_comm]
+    rw [hmid_def]
+    apply tsum_congr
+    intro μ_C
+    rw [ENNReal.tsum_mul_left]
+    congr 1
+    by_cases h_supp : (l, μ_C) ∈ d.support
+    · simp only [dif_pos h_supp]
+      exact per_step_mass_marginal_abstract sim (m.current_R h_valid)
+        (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp) s_A
+    · simp only [dif_neg h_supp]
+      simp
+  exact h_LHS_eq_mid.trans h_RHS_eq_mid.symm
 
 /-- **§9.3 sub-lemma A** (`blockEmission_general_emission_marginal`):
 `blockEmission_general`'s emission marginal at `(l, s_A)` equals
