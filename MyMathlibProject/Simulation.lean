@@ -2508,20 +2508,44 @@ noncomputable def fromAbstractPrefix_base
   then μ_A_init s_A_init * pe_C.init m.e_C.init
   else 0
 
-/-- The unnormalised posterior `fromAbstractPrefix history_A h_term m` —
-defined inductively on `history_A.trans.toList h_term`. Base case yields
-`fromAbstractPrefix_base`; step case integrates against `step_weight`. -/
+/-- **List-based recursion** for `fromAbstractPrefix`. Parameters:
+* `s_A_init`: the head of `history_A` (`history_A.init`);
+* `rev_trans`: the transitions of `history_A` in REVERSE order — i.e.,
+  the most recent step is the HEAD;
+* `m_new`: the matching state to evaluate at.
+
+Recursion:
+* `[]` (empty history): yields `fromAbstractPrefix_base`.
+* `(l, s_A) :: rest` (last step is `(l, s_A)`, earlier prefix is reversed `rest`):
+  `∑' m_prev, fromAbstractPrefix_list rest m_prev * step_weight m_prev m_new l s_A`. -/
+noncomputable def fromAbstractPrefix_list
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (s_A_init : State_A) :
+    List (Label × State_A) →
+      MatchingState sim pe_C μ_A_init h_init_R → ENNReal
+  | List.nil =>
+      fun m => fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m
+  | List.cons head rest =>
+      fun m_new =>
+        ∑' m_prev,
+          fromAbstractPrefix_list sim pe_C μ_A_init h_init_R s_A_init rest m_prev *
+          step_weight sim pe_C μ_A_init h_init_R m_prev m_new head.1 head.2
+
+/-- The unnormalised posterior `fromAbstractPrefix history_A h_term m`:
+defined as `fromAbstractPrefix_list` applied to `history_A.init` and
+the reversed transitions of `history_A`. -/
 noncomputable def fromAbstractPrefix
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init) :
     MatchingStateKernel sim pe_C μ_A_init h_init_R :=
-  fun _history_A _h_term _m =>
-    -- Recursion on history_A.trans.toList h_term (reverse-list induction):
-    --   [] case → fromAbstractPrefix_base sim pe_C μ_A_init h_init_R history_A.init m
-    --   (l_k, s_A_k) appended at end → ∑' m_prev, [prev value] * step_weight ...
-    sorry
+  fun history_A h_term =>
+    fromAbstractPrefix_list sim pe_C μ_A_init h_init_R history_A.init
+      (history_A.trans.toList h_term).reverse
 
 /-! #### `blockEmission_general` and `pe_A_emission_distribution` (§2) -/
 
