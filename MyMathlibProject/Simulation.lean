@@ -2546,27 +2546,32 @@ abbrev MatchingStateKernel
 `pe_C.scheduler.next m_prev.e_C = some d`, sums over `(μ_C, s_C', μ_A_next)`
 in γ's support of `d(l_k, μ_C) · γ(s_C', μ_A_next) · μ_A_next(s_A_k)` with
 indicators forcing `m_new` to be `m_prev` advanced by `(l_k, s_C', μ_A_next)`.
-When `pe_C.scheduler.next m_prev.e_C = none`, returns 0. -/
+When `pe_C.scheduler.next m_prev.e_C = none` or `m_prev` lacks a valid R,
+returns 0. -/
 noncomputable def step_weight
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (_m_prev _m_new : MatchingState sim pe_C μ_A_init h_init_R)
-    (_l_k : Label) (_s_A_k : State_A) : ENNReal :=
-  -- Mathematically:
-  --   match pe_C.scheduler.next m_prev.e_C with
-  --   | none => 0
-  --   | some d =>
-  --       ∑' (μ_C : PMF State_C),
-  --         d (l_k, μ_C) *
-  --         (∑' (s_C' : State_C) (μ_A_next : PMF State_A),
-  --           γ_{m_prev, (l_k, μ_C)}(s_C', μ_A_next) *
-  --           μ_A_next s_A_k *
-  --           [m_new.e_C = m_prev.e_C.append (cons (l_k, s_C') nil)] *
-  --           [m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]])
-  -- TODO: concretize once step-witness extraction from d.support is built.
-  sorry
+    (m_prev m_new : MatchingState sim pe_C μ_A_init h_init_R)
+    (l_k : Label) (s_A_k : State_A) : ENNReal :=
+  open Classical in
+  if h_valid : m_prev.has_valid_R then
+    match h_next : pe_C.scheduler.next m_prev.e_C with
+    | none => 0
+    | some d =>
+        ∑' (μ_C : PMF State_C),
+          d (l_k, μ_C) * (
+            if h_supp : (l_k, μ_C) ∈ d.support then
+              ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                    (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_next l_k μ_C h_supp))
+                ).γ (s_C', μ_A_next) * μ_A_next s_A_k *
+                (if m_new.e_C = ⟨m_prev.e_C.init,
+                    m_prev.e_C.trans.append (Seq.cons (l_k, s_C') Seq.nil)⟩ ∧
+                  m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+            else 0)
+  else 0
 
 /-- The base value of `fromAbstractPrefix` at the empty-trans prefix:
 `μ_A_init(s_A_init) · pe_C.init(m.e_C.init)`, gated by indicators that
