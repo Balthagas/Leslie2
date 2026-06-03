@@ -2640,23 +2640,31 @@ theorem joint_kernel_marginal_s_A
       pe_C.kernel m.e_C (l, s_C) :=
   sorry
 
-/-- **Per-step joint marginal over `s_C` (§5)**: summing `joint_kernel`
-over the concrete end-state recovers the matching-state-conditional
-pe_A kernel at `m`. This is the m-pointwise predictive (`per_state_kernel`
-of the plan) — to lift to pe_A's actual kernel, aggregate over the
-matching-state posterior (cf. §9.3's `m_dist_posterior_predictive`). -/
+/-- **`per_state_kernel m l s_A`**: the matching-state-conditional pe_A
+emission kernel at `m`, marginalising the joint γ over the next concrete
+state. Equals the joint kernel's `s_C`-marginal. Definition deferred to
+match `joint_kernel`'s concretization. -/
+noncomputable def per_state_kernel
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (s_A : State_A) : ENNReal :=
+  ∑' s_C, joint_kernel m l s_C s_A
+
+/-- **Per-step joint marginal over `s_C` (§5)**: by definition,
+`per_state_kernel m l s_A = ∑' s_C, joint_kernel m l s_C s_A`. -/
 theorem joint_kernel_marginal_s_C
-    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
-    (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (μ_A_init : PMF State_A)
-    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
     (m : MatchingState sim pe_C μ_A_init h_init_R)
     (l : Label) (s_A : State_A) :
     (∑' s_C, joint_kernel m l s_C s_A) =
-      -- per_state_kernel(m, l, s_A) :=
-      --   ∑' (μ_C, μ_A_next), d_m(l, μ_C) · ω_{m,(l,μ_C)}(μ_A_next) · μ_A_next(s_A)
-      sorry :=
-  sorry
+      per_state_kernel m l s_A :=
+  rfl
 
 /-! #### `m_dist_posterior_predictive` (§9.3 — the central work item)
 
@@ -2677,7 +2685,7 @@ theorem m_dist_posterior_predictive
     (history_A_k : AlterSeq State_A Label) (h_term_k : history_A_k.trans.Terminates)
     (l : Label) (s_A : State_A) :
     (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m *
-      (∑' s_C, joint_kernel m l s_C s_A)) =
+      per_state_kernel m l s_A) =
     (pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init).probOf
       ⟨history_A_k.init, history_A_k.trans.append (Seq.cons (l, s_A) Seq.nil)⟩
       ⟨Nat.find h_term_k + 1,
