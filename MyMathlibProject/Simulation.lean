@@ -4798,8 +4798,8 @@ private lemma joint_mass_path_marginal_s_A_aux
                      ).γ ((hd.1, hd.2).2, μ_A_next) * μ_A_next (hd.1, s_A).2 *
                      ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
                        (if m_next.e_C = ⟨m.e_C.init,
-                             m.e_C.trans.append (Seq.cons ((hd.1, hd.2).1, (hd.1, hd.2).2) Seq.nil)⟩ ∧
-                           m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next]
+                             m.e_C.trans.append (Seq.cons ((hd.1, hd.2).1, (hd.1, hd.2).2) Seq.nil)⟩
+                              ∧ m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next]
                          then 1 else 0) *
                        joint_mass_path m_next rest
                          (List.zipWith (fun p s_A => (p.1, s_A)) rest rest_s_A_list)
@@ -4871,7 +4871,8 @@ private lemma joint_mass_path_marginal_s_A_aux
         -- Abbreviate the m_next-sum indicator (depends only on μ_A_next and b).
         -- This is now: ∑' b a μ_A_next, γ (hd.2, μ_A_next) * μ_A_next a *
         --                ∑' m_next, [ind μ_A_next] * jmp m_next rest (zw rest b.1).
-        -- Reorder: bring μ_A_next outermost (3 swaps: b↔a, then a↔μ_A_next inside b, then b↔μ_A_next).
+        -- Reorder: bring μ_A_next outermost (3 swaps: b↔a, then a↔μ_A_next inside b,
+        --                                                  then b↔μ_A_next).
         rw [ENNReal.tsum_comm,
             tsum_congr (fun (_ : State_A) => ENNReal.tsum_comm),
             ENNReal.tsum_comm]
@@ -4956,7 +4957,7 @@ private lemma joint_mass_path_marginal_s_A_aux
         congr 1
         -- Goal: ∑' μ_A_next, γ (hd.2, μ_A_next) = μ_C hd.2.
         rw [← (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
-            (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq hd.1 μ_C h_supp))).fst_apply_eq_tsum hd.2]
+        (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq hd.1 μ_C h_supp))).fst_apply_eq_tsum hd.2]
       · -- ¬h_supp: d (hd.1, μ_C) = 0.
         have h_d0 : d (hd.1, μ_C) = 0 := by
           rw [PMF.mem_support_iff] at h_supp
@@ -5025,8 +5026,219 @@ theorem joint_marginalises_to_pe_C
                   ∀ k h₁ h₂, ((e_A.trans.toList h_term).get ⟨k, h₁⟩).1 =
                              ((e_C.trans.toList e_C_term).get ⟨k, h₂⟩).1}),
         joint_mass sim pe_C μ_A_init h_init_R e_C e_C_term e_A.1 e_A.2.choose) =
-      pe_C.probOf e_C e_C_term :=
-  sorry
+      pe_C.probOf e_C e_C_term := by
+  classical
+  set toList_C : List (Label × State_C) := e_C.trans.toList e_C_term with h_toList_C_def
+  set n : ℕ := toList_C.length with h_n_def
+  -- Case split on whether e_C.init is in pe_C.init.support.
+  by_cases h_init_supp : e_C.init ∈ pe_C.init.support
+  swap
+  · -- ¬h_init_supp: pe_C.init e_C.init = 0, so both sides are 0.
+    have h_init_zero : pe_C.init e_C.init = 0 := by
+      rw [PMF.mem_support_iff] at h_init_supp
+      push Not at h_init_supp
+      exact h_init_supp
+    rw [ProbabilisticExecution.probOf, h_init_zero, zero_mul]
+    apply ENNReal.tsum_eq_zero.mpr
+    intro e_A
+    unfold joint_mass
+    rw [h_init_zero, zero_mul, zero_mul]
+  -- Main case: e_C.init ∈ pe_C.init.support.
+  -- Define the initial matching state m_0 and verify it has valid R.
+  set m_0 : MatchingState sim pe_C μ_A_init h_init_R :=
+    initial_matching_state sim pe_C μ_A_init h_init_R e_C.init with h_m0_def
+  have h_m0_valid : m_0.has_valid_R := by
+    right
+    refine ⟨?_, h_init_supp⟩
+    · change (initial_matching_state sim pe_C μ_A_init h_init_R e_C.init).e_C.trans = Seq.nil
+      rfl
+  have h_m0_eC : m_0.e_C = ⟨e_C.init, Seq.nil⟩ := rfl
+  -- Build the equiv between the LHS subtype and State_A × {l // l.length = n}.
+  let S_LHS : Type :=
+    {e_A : AlterSeq State_A Label //
+      ∃ h_term : e_A.trans.Terminates,
+        (e_A.trans.toList h_term).length = n ∧
+        ∀ k h₁ h₂, ((e_A.trans.toList h_term).get ⟨k, h₁⟩).1 =
+                   (toList_C.get ⟨k, h₂⟩).1}
+  let S_RHS : Type := State_A × {l : List State_A // l.length = n}
+  -- Build the bijection.
+  let toFun : S_LHS → S_RHS := fun e_A =>
+    (e_A.1.init,
+      ⟨(e_A.1.trans.toList e_A.2.choose).map Prod.snd, by
+        rw [List.length_map]
+        exact e_A.2.choose_spec.1⟩)
+  let invFun : S_RHS → S_LHS := fun p => by
+    refine ⟨⟨p.1, Stream'.Seq.ofList (buildToListA toList_C p.2.1)⟩, ?_⟩
+    have h_toList_eq : (Stream'.Seq.ofList (buildToListA toList_C p.2.1)).toList
+        (Stream'.Seq.terminates_ofList _) = buildToListA toList_C p.2.1 :=
+      Stream'.Seq.toList_ofList _
+    have h_len_zip : (buildToListA toList_C p.2.1).length = n := by
+      change (List.zipWith _ toList_C p.2.1).length = n
+      rw [List.length_zipWith, p.2.2]
+      omega
+    refine ⟨Stream'.Seq.terminates_ofList _, ?_, ?_⟩
+    · -- Length matches.
+      change ((Stream'.Seq.ofList (buildToListA toList_C p.2.1)).toList _).length = n
+      rw [h_toList_eq]
+      exact h_len_zip
+    · -- Labels match.
+      intro k h₁ h₂
+      have h_k_lt_l : k < p.2.1.length := by rw [p.2.2]; exact h₂
+      have h_k_lt_zip : k < (buildToListA toList_C p.2.1).length := by
+        rw [h_len_zip, h_n_def]; exact h₂
+      -- Substitute LHS via h_toList_eq.
+      simp only [List.get_eq_getElem]
+      have h_get_lhs :
+          ((Stream'.Seq.ofList (buildToListA toList_C p.2.1)).toList _)[k]'h₁ =
+          (buildToListA toList_C p.2.1)[k]'h_k_lt_zip := by
+        congr 1
+      rw [h_get_lhs]
+      change ((List.zipWith (fun (p : Label × State_C) (s_A : State_A) => (p.1, s_A))
+        toList_C p.2.1)[k]'_).1 = _
+      simp [List.getElem_zipWith]
+  have h_left_inv : Function.LeftInverse invFun toFun := by
+    intro e_A
+    -- Need to show invFun (toFun e_A) = e_A.
+    apply Subtype.ext
+    change (⟨e_A.1.init, Stream'.Seq.ofList _⟩ : AlterSeq State_A Label) = e_A.1
+    obtain ⟨h_term_A, h_len_A, h_lab_A⟩ := e_A.2
+    have h_choose_eq : e_A.2.choose = h_term_A := Subsingleton.elim _ _
+    -- Show e_A.1 = ⟨e_A.1.init, e_A.1.trans⟩ and identify trans.
+    have h_zip_eq :
+        buildToListA toList_C ((e_A.1.trans.toList e_A.2.choose).map Prod.snd) =
+        e_A.1.trans.toList e_A.2.choose := by
+      unfold buildToListA
+      apply List.ext_get
+      · rw [List.length_zipWith, List.length_map]
+        have h_len' : (e_A.1.trans.toList e_A.2.choose).length = n :=
+          e_A.2.choose_spec.1
+        rw [h_len', h_n_def]
+        simp
+      · intro k h₁ h₂
+        -- LHS length: min toList_C.length (map list).length, and we know map len = n.
+        have h_len' : (e_A.1.trans.toList e_A.2.choose).length = n :=
+          e_A.2.choose_spec.1
+        have h_k_lt_A : k < (e_A.1.trans.toList e_A.2.choose).length := h₂
+        have h_k_lt_C : k < toList_C.length := by
+          rw [List.length_zipWith, List.length_map, h_len'] at h₁
+          have : k < min toList_C.length n := h₁
+          have h_min : min toList_C.length n = toList_C.length := by
+            rw [h_n_def]; exact min_self _
+          rw [h_min] at this
+          exact this
+        simp only [List.get_eq_getElem]
+        rw [List.getElem_zipWith, List.getElem_map]
+        change (toList_C[k].1, (e_A.1.trans.toList e_A.2.choose)[k].2) = _
+        have h_lab := e_A.2.choose_spec.2 k h_k_lt_A h_k_lt_C
+        ext
+        · -- First component: toList_C[k].1 = (e_A.1.trans.toList _)[k].1
+          simp only at h_lab ⊢
+          exact h_lab.symm
+        · rfl
+    have h_trans : Stream'.Seq.ofList (buildToListA toList_C
+        ((e_A.1.trans.toList e_A.2.choose).map Prod.snd)) = e_A.1.trans := by
+      rw [h_zip_eq, Stream'.Seq.ofList_toList]
+    change (⟨e_A.1.init, Stream'.Seq.ofList _⟩ : AlterSeq State_A Label) = e_A.1
+    rw [h_trans]
+  have h_right_inv : Function.RightInverse invFun toFun := by
+    intro p
+    obtain ⟨init_A, ⟨l, h_l⟩⟩ := p
+    -- toFun (invFun (init_A, ⟨l, h_l⟩)) = (init_A, ⟨l, h_l⟩).
+    apply Prod.ext
+    · -- init component.
+      rfl
+    · -- list component.
+      apply Subtype.ext
+      change ((Stream'.Seq.ofList (buildToListA toList_C l)).toList _).map Prod.snd = l
+      rw [Stream'.Seq.toList_ofList]
+      -- Now: (buildToListA toList_C l).map Prod.snd = l.
+      apply List.ext_get
+      · rw [List.length_map]
+        change (List.zipWith _ toList_C l).length = l.length
+        rw [List.length_zipWith, h_l, h_n_def]
+        simp
+      · intro k h₁ h₂
+        have h_k_lt_zip : k < (buildToListA toList_C l).length := by
+          rw [List.length_map] at h₁; exact h₁
+        have h_k_lt_C : k < toList_C.length := by
+          rw [show (buildToListA toList_C l).length =
+            min toList_C.length l.length from List.length_zipWith] at h_k_lt_zip
+          have := lt_of_lt_of_le h_k_lt_zip (min_le_left _ _)
+          exact this
+        simp only [List.get_eq_getElem]
+        rw [List.getElem_map]
+        change ((List.zipWith (fun (p : Label × State_C) (s_A : State_A) => (p.1, s_A))
+          toList_C l)[k]'_).2 = _
+        rw [List.getElem_zipWith]
+  let equiv : S_LHS ≃ S_RHS :=
+    { toFun := toFun
+      invFun := invFun
+      left_inv := h_left_inv
+      right_inv := h_right_inv }
+  -- Apply the equiv to the LHS tsum.
+  rw [show (∑' (e_A : S_LHS),
+        joint_mass sim pe_C μ_A_init h_init_R e_C e_C_term e_A.1 e_A.2.choose) =
+        ∑' (p : S_RHS),
+          joint_mass sim pe_C μ_A_init h_init_R e_C e_C_term
+            (equiv.symm p).1 (equiv.symm p).2.choose from
+      (Equiv.tsum_eq equiv.symm _).symm]
+  -- Unfold joint_mass.
+  have h_jm : ∀ (p : S_RHS),
+      joint_mass sim pe_C μ_A_init h_init_R e_C e_C_term
+        (equiv.symm p).1 (equiv.symm p).2.choose =
+      pe_C.init e_C.init * μ_A_init p.1 *
+        joint_mass_path m_0 toList_C (buildToListA toList_C p.2.1) := by
+    intro p
+    obtain ⟨init_A, ⟨l, h_l⟩⟩ := p
+    unfold joint_mass
+    change pe_C.init e_C.init * μ_A_init init_A *
+        joint_mass_path
+          (initial_matching_state sim pe_C μ_A_init h_init_R e_C.init)
+          (e_C.trans.toList e_C_term)
+          ((Stream'.Seq.ofList (buildToListA toList_C l)).toList _) =
+      pe_C.init e_C.init * μ_A_init init_A *
+        joint_mass_path m_0 toList_C (buildToListA toList_C l)
+    rw [Stream'.Seq.toList_ofList]
+  rw [tsum_congr h_jm]
+  -- Now: ∑' (p : State_A × {l // l.length = n}),
+  --   pe_C.init e_C.init * μ_A_init p.1
+  --                      * joint_mass_path m_0 toList_C (buildToListA toList_C p.2.1)
+  -- Rewrite the body: a * b * c = a * (b * c), via tsum_congr.
+  rw [show (∑' (p : S_RHS),
+        pe_C.init e_C.init * μ_A_init p.1 *
+          joint_mass_path m_0 toList_C (buildToListA toList_C p.2.1)) =
+      ∑' (p : S_RHS),
+        pe_C.init e_C.init *
+          (μ_A_init p.1 *
+            joint_mass_path m_0 toList_C (buildToListA toList_C p.2.1)) from
+      tsum_congr (fun p => by ring)]
+  -- Now: ∑' p, pe_C.init e_C.init * (...). Pull constant out.
+  rw [ENNReal.tsum_mul_left]
+  -- Split via ENNReal.tsum_prod'.
+  rw [ENNReal.tsum_prod']
+  -- ∑' (init_A : State_A) (l : {l // l.length = n}),
+  --   μ_A_init init_A * joint_mass_path m_0 toList_C (buildToListA toList_C l.1)
+  -- Pull μ_A_init init_A out of inner sum.
+  rw [show
+      (∑' (init_A : State_A) (s_A_list : {l : List State_A // l.length = n}),
+        μ_A_init init_A *
+          joint_mass_path m_0 toList_C (buildToListA toList_C s_A_list.1)) =
+      ∑' (init_A : State_A),
+        μ_A_init init_A *
+          ∑' (s_A_list : {l : List State_A // l.length = n}),
+            joint_mass_path m_0 toList_C (buildToListA toList_C s_A_list.1) from
+      tsum_congr (fun _ => ENNReal.tsum_mul_left)]
+  rw [ENNReal.tsum_mul_right]
+  -- ∑' init_A, μ_A_init init_A = 1.
+  rw [PMF.tsum_coe, one_mul]
+  -- Apply the aux lemma.
+  rw [joint_mass_path_marginal_s_A_aux toList_C m_0 h_m0_valid]
+  -- Now: pe_C.init e_C.init * pe_C.probOfRemaining m_0.e_C toList_C
+  --    = pe_C.probOf e_C e_C_term
+  -- pe_C.probOf unfolds to pe_C.init e_C.init * pe_C.probOfRemaining ⟨e_C.init, Seq.nil⟩ ...
+  -- m_0.e_C = ⟨e_C.init, Seq.nil⟩ definitionally.
+  unfold ProbabilisticExecution.probOf
+  rfl
 
 /-- **§9.5**: marginalising the joint over `e_C`'s state samples
 recovers `pe_A.probOf e_A`. Proven by induction on `e_A.trans` length,
