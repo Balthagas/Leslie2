@@ -4432,10 +4432,21 @@ Once `joint_kernel` and `joint_mass` are defined, the two marginal
 identities bridge `pe_C.probOf` and `pe_A.probOf` to a shared joint mass
 quantity, giving the trace coupling by tsum bijection. -/
 
-/-- **Path-value helper for joint_mass**: given the previous matching state
-`m_prev` and the remaining (concrete, abstract) transitions, compute the
-product of `joint_kernel` factors, summing over matching-state extensions
-at each step. -/
+/-- **Path-value helper for joint_mass** (v4.2 redesigned): given the
+previous matching state `m_prev` and the remaining (concrete, abstract)
+transitions, compute the product of `joint_kernel` factors. At each step,
+integrate the γ-samples `(μ_C, μ_A_next)` explicitly with γ-weight; the
+inner `m_next` sum is collapsed by a fully-constraining indicator that
+ties `m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]`.
+
+The recursion shape mirrors `step_weight_at_d` / `fromAbstractPrefix_list`:
+both definitions thread the chain via the canonical extension determined
+by the γ-sampled μ_A_next, so the §9.5.a re-indexing
+(`joint_mass_path_eq_m_kernel_aggregate`) becomes a level-by-level
+correspondence with fromAbstractPrefix.
+
+Returns `0` when labels mismatch, when `m_prev` lacks a valid R-witness,
+or when `pe_C.scheduler.next m_prev.e_C = none` (pe_C halted). -/
 noncomputable def joint_mass_path
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -4447,15 +4458,26 @@ noncomputable def joint_mass_path
   | List.cons hC restC, List.cons hA restA =>
       open Classical in
       if hC.1 = hA.1 then
-        -- Sum over the next matching state m_next, weighted by the
-        -- joint_kernel value at the current step and constrained to be
-        -- a one-step extension of m_prev.
-        ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
-          joint_kernel m_prev hA.1 hC.2 hA.2 *
-          (if m_next.e_C.init = m_prev.e_C.init ∧
-              m_next.e_C.trans = m_prev.e_C.trans.append (Seq.cons (hC.1, hC.2) Seq.nil) ∧
-              m_next.μ_A_chain.length = m_prev.μ_A_chain.length + 1 then 1 else 0) *
-          joint_mass_path m_next restC restA
+        if h_valid : m_prev.has_valid_R then
+          if h_some : (pe_C.scheduler.next m_prev.e_C).isSome then
+            ∑' (μ_C : PMF State_C),
+              ((pe_C.scheduler.next m_prev.e_C).get h_some) (hA.1, μ_C) * (
+                if h_supp : (hA.1, μ_C) ∈
+                    ((pe_C.scheduler.next m_prev.e_C).get h_some).support then
+                  ∑' (μ_A_next : PMF State_A),
+                    (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                        (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term _
+                          (Option.eq_some_of_isSome h_some) hA.1 μ_C h_supp))
+                    ).γ (hC.2, μ_A_next) * μ_A_next hA.2 *
+                    ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                      (if m_next.e_C = ⟨m_prev.e_C.init,
+                            m_prev.e_C.trans.append (Seq.cons (hC.1, hC.2) Seq.nil)⟩ ∧
+                          m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                        then 1 else 0) *
+                      joint_mass_path m_next restC restA
+                else 0)
+          else 0
+        else 0
       else 0
   | List.nil, List.cons _ _ => 0
   | List.cons _ _, List.nil => 0
@@ -4475,21 +4497,24 @@ noncomputable def initial_matching_state
   μ_A_chain := []
   h_R := fun h_ne => absurd rfl h_ne
 
-/-- **Joint mass**: `joint_mass e_C e_A` is the total probability of a
-joint (concrete, abstract) trajectory whose concrete part is `e_C` and
-abstract part is `e_A`. Defined as
+/-- **Joint mass** (v4.2): `joint_mass e_C e_A` is the total probability
+of a joint (concrete, abstract) trajectory whose concrete part is `e_C`
+and abstract part is `e_A`. Defined as
   `pe_C.init e_C.init * μ_A_init e_A.init * joint_mass_path(m_0, trans_C, trans_A)`
 where `m_0` is the `initial_matching_state` at `e_C.init`, and
-`joint_mass_path` accumulates `joint_kernel` factors along the
-trajectory while integrating over matching-state extensions.
+`joint_mass_path` (v4.2) integrates each step's γ-samples
+`(μ_C_k, μ_A_next_k)` with γ-weight and threads the chain via the
+canonical extension `m_k.μ_A_chain ++ [μ_A_next_k]`.
 
 Plan §4 says
   `joint_mass(e_C, e_A) := pe_C.init(e_C.init) · μ_A_init(e_A.init) ·
                           ∏_{k} joint_kernel(m_k, l_k, s_C_k, s_A_k)`
-with `m_k` determined by the trajectory. Our definition implements this
-via `joint_mass_path`'s recursion: at each step, sum over m_next
-satisfying the structural extension constraint, multiplied by
-`joint_kernel m_prev` and the rest of the path. -/
+with `m_k` determined by the trajectory. v4.2's `joint_mass_path`
+recursion realises this product as a γ-weighted nested integration; the
+`∏_k joint_kernel(m_k, ...)` factorisation is recovered as the *output*
+of the §9.4 telescope (γ-second-marginal collapse over `s_A`), not
+syntactically present in the recursion. See plan §4 / §9.4 for the
+correspondence. -/
 noncomputable def joint_mass
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -4612,14 +4637,14 @@ theorem joint_marginalises_to_pe_C
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (e_C : AlterSeq State_C Label) (e_C_term : e_C.trans.Terminates)
-    (init_A : State_A) :
+    (e_C : AlterSeq State_C Label) (e_C_term : e_C.trans.Terminates) :
     -- Summing joint_mass over (e_A : AlterSeq) with |e_A.trans| = |e_C.trans|
     -- and labels matching step-by-step yields pe_C.probOf e_C.
-    -- The summation domain: matching e_A's with init_A and proper labels.
+    -- The summation includes the choice of e_A.init: the μ_A_init(e_A.init)
+    -- factor on the LHS is absorbed by ∑' init_A, μ_A_init(init_A) = 1
+    -- (PMF total mass).
     (∑' (e_A : {e_A : AlterSeq State_A Label //
                 ∃ h_term : e_A.trans.Terminates,
-                  e_A.init = init_A ∧
                   (e_A.trans.toList h_term).length = (e_C.trans.toList e_C_term).length ∧
                   ∀ k h₁ h₂, ((e_A.trans.toList h_term).get ⟨k, h₁⟩).1 =
                              ((e_C.trans.toList e_C_term).get ⟨k, h₂⟩).1}),
