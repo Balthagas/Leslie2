@@ -3451,6 +3451,27 @@ theorem joint_kernel_marginal_s_C
       per_state_kernel m l s_A :=
   rfl
 
+/-- **MatchingState extensionality (data-only)**: two matching states with
+equal `e_C` and `μ_A_chain` fields are equal. The `e_C_term` and `h_R` fields
+are Prop, hence definitionally equal by Lean 4's proof irrelevance once the
+data fields align. -/
+private theorem MatchingState.ext_of_data
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    {m1 m2 : MatchingState sim pe_C μ_A_init h_init_R}
+    (h_e_C : m1.e_C = m2.e_C) (h_chain : m1.μ_A_chain = m2.μ_A_chain) :
+    m1 = m2 := by
+  cases m1 with
+  | mk e_C1 term1 chain1 hR1 =>
+    cases m2 with
+    | mk e_C2 term2 chain2 hR2 =>
+      simp only at h_e_C h_chain
+      subst h_e_C
+      subst h_chain
+      rfl
+
 /-- **Indicator-collapse sub-lemma**: for `(s_C', μ_A_next)` such that
 `R s_C' μ_A_next` holds, summing the canonical-extension indicator over all
 matching states yields `1`. The witness is `advance_pe_C_step m_prev l s_C'
@@ -3463,14 +3484,37 @@ private theorem matchingState_indicator_sum_eq_one
     {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
     (m_prev : MatchingState sim pe_C μ_A_init h_init_R)
     (l : Label) (s_C' : State_C) (μ_A_next : PMF State_A)
-    (_h_R : R s_C' μ_A_next) :
+    (h_R : R s_C' μ_A_next) :
     (∑' m_new : MatchingState sim pe_C μ_A_init h_init_R,
       (open Classical in
        if m_new.e_C = ⟨m_prev.e_C.init,
             m_prev.e_C.trans.append (Seq.cons (l, s_C') Seq.nil)⟩ ∧
           m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then (1 : ENNReal) else 0)) =
-      1 :=
-  sorry
+      1 := by
+  classical
+  let canonical : MatchingState sim pe_C μ_A_init h_init_R :=
+    MatchingState.advance_pe_C_step m_prev l s_C' μ_A_next h_R
+  have h_canonical_e_C :
+      canonical.e_C = ⟨m_prev.e_C.init,
+        m_prev.e_C.trans.append (Seq.cons (l, s_C') Seq.nil)⟩ := rfl
+  have h_canonical_chain :
+      canonical.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] := rfl
+  rw [tsum_eq_single canonical]
+  · -- value at canonical: indicator is 1.
+    rw [if_pos ⟨h_canonical_e_C, h_canonical_chain⟩]
+  · -- ∀ m_new ≠ canonical, indicator m_new = 0.
+    intro m_new h_ne
+    by_cases h_cond :
+        m_new.e_C = ⟨m_prev.e_C.init,
+          m_prev.e_C.trans.append (Seq.cons (l, s_C') Seq.nil)⟩ ∧
+        m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+    · -- Conditions match: by ext, m_new = canonical, contradicting h_ne.
+      exfalso
+      apply h_ne
+      exact MatchingState.ext_of_data
+        (h_cond.1.trans h_canonical_e_C.symm)
+        (h_cond.2.trans h_canonical_chain.symm)
+    · rw [if_neg h_cond]
 
 /-- **Auxiliary lemma (§3.2)**: summing `step_weight m_prev m_new l s_A` over
 the new matching state `m_new` recovers `per_state_kernel m_prev l s_A`.
