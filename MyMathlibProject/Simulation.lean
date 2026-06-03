@@ -2658,22 +2658,50 @@ noncomputable def blockEmission_general
       -- Outside support (mass 0 anyway): pick any deterministic value.
       PMF.pure (lμ.1, PMF.pure m.e_C.init |>.map (fun _ => sys_A.init)))
 
-/-- The `PMF (Option (Label × PMF State_A))` emitted by pe_A's scheduler
-at `history_A`. Aggregates over the matching-state posterior, splitting
-halt mass (matching states with `pe_C.scheduler.next m.e_C = none` or
-invalid R) from continue mass (via `blockEmission_general`).
+/-- **Per-matching-state emission**: the `PMF (Option (Label × PMF State_A))`
+that pe_A would emit if we *knew* the matching state were exactly `m`.
 
-Concretization deferred: requires normalising an ENNReal-valued
-expression into a PMF, which needs the mass-conservation invariant
-on `fromAbstractPrefix` (§3.2). -/
+* If `m` has valid R and `pe_C.scheduler.next m.e_C = some d`:
+  emit `(blockEmission_general m d _ _).map some` — sample a block step.
+* Otherwise (m lacks valid R, or pe_C has halted at m.e_C):
+  emit `PMF.pure none` (halt). -/
+noncomputable def pe_A_emit_at_state
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R) :
+    PMF (Option (Label × PMF State_A)) :=
+  open Classical in
+  if h_valid : m.has_valid_R then
+    match h_next : pe_C.scheduler.next m.e_C with
+    | none => PMF.pure none
+    | some d => (blockEmission_general m d h_next h_valid).map some
+  else PMF.pure none
+
+/-- The `PMF (Option (Label × PMF State_A))` emitted by pe_A's scheduler
+at `history_A`. Aggregates over the matching-state posterior:
+* Compute the unnormalised matching-state measure `m_kernel = fromAbstractPrefix`.
+* If its total mass is positive and finite, normalise to get a PMF over
+  matching states, then `bind` with `pe_A_emit_at_state`.
+* Otherwise (zero or infinite total mass, or non-terminating history_A):
+  fall back to `PMF.pure none`. -/
 noncomputable def pe_A_emission_distribution
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (_history_A : AlterSeq State_A Label) :
+    (history_A : AlterSeq State_A Label) :
     PMF (Option (Label × PMF State_A)) :=
-  sorry
+  open Classical in
+  if h_term : history_A.trans.Terminates then
+    let m_kernel := fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term
+    if h0 : (∑' m, m_kernel m) ≠ 0 then
+      if hFin : (∑' m, m_kernel m) ≠ ⊤ then
+        (PMF.normalize m_kernel h0 hFin).bind pe_A_emit_at_state
+      else PMF.pure none
+    else PMF.pure none
+  else PMF.pure none
 
 /-! #### `pe_A` as a `PMFProbabilisticExecution sys_A^w` -/
 
