@@ -1660,7 +1660,7 @@ theorem probOfRemaining_cons (pe : PMFProbabilisticExecution sys)
 
 /-- Auxiliary: `foldl (cons-extend)` over `xs` from an initial Seq `init`
 gives `init.append (Seq.ofList xs)`. Used by `probOf_append_singleton`. -/
-private theorem foldl_seq_append_eq_ofList (xs : List (Label × State)) (init : Seq (Label × State)) :
+private theorem foldl_seq_app_eq_ofList (xs : List (Label × State)) (init : Seq (Label × State)) :
     xs.foldl (fun acc hd => acc.append (Seq.cons hd Seq.nil)) init =
     init.append (Stream'.Seq.ofList xs) := by
   induction xs generalizing init with
@@ -1755,7 +1755,7 @@ theorem probOf_append_singleton (pe : PMFProbabilisticExecution sys)
   -- foldl ... Seq.nil (trans.toList h_term) = Seq.nil.append (Seq.ofList (trans.toList h_term))
   --   = Seq.ofList (trans.toList h_term)  [by nil_append]
   --   = trans  [by ofList_toList]
-  rw [foldl_seq_append_eq_ofList, Stream'.Seq.nil_append, Stream'.Seq.ofList_toList]
+  rw [foldl_seq_app_eq_ofList, Stream'.Seq.nil_append, Stream'.Seq.ofList_toList]
   ring
 
 /-- The faithful `continuationFrom`: a probabilistic execution starting at the
@@ -3576,7 +3576,8 @@ private theorem step_weight_marginal_eq_per_state_kernel
       rw [per_state_kernel_eq_at_d m_prev d h_d_eq h_valid]
       -- Set the decomp once per μ_C (γ in scope).
       -- Show both sides equal a common intermediate form:
-      --   ∑' μ_C, d(l, μ_C) * (if h_supp then ∑' (s_C, μ_A_next), γ(s_C, μ_A_next) * μ_A_next s_A else 0)
+      --   ∑' μ_C, d(l, μ_C) * (if h_supp then ∑' (s_C, μ_A_next), γ(s_C, μ_A_next) * μ_A_next s_A
+      --                                  else 0)
       set common : ENNReal := ∑' μ_C : PMF State_C, d (l, μ_C) *
         (open Classical in
          if h_supp : (l, μ_C) ∈ d.support then
@@ -3594,7 +3595,8 @@ private theorem step_weight_marginal_eq_per_state_kernel
         rw [ENNReal.tsum_comm]
         rw [hcommon_def]
         refine tsum_congr (fun μ_C => ?_)
-        -- Inner: ∑' m_new, d * (if h_supp then ∑' (s_C', μ_A_next), γ * μ_A_next.s_A * [ind] else 0)
+        -- Inner: ∑' m_new, d * (if h_supp then ∑' (s_C', μ_A_next), γ * μ_A_next.s_A
+        --                                                             * [ind] else 0)
         rw [ENNReal.tsum_mul_left]
         congr 1
         by_cases h_supp : (l, μ_C) ∈ d.support
