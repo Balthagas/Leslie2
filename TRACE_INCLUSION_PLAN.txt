@@ -35,6 +35,25 @@ TRACE_INCLUSION_PLAN_REVIEW.txt. The major changes from v3 are:
   * "No induction on τ" softened to acknowledge finite-product / tsum
     manipulations over execution length.
 
+Revision v4.1 (this revision) records the `joint_kernel_at_d` split
+adopted in the Lean implementation to side-step a recurring "motive not
+type correct" obstacle:
+
+  * `joint_kernel` is split into a parameterised inner form
+    `joint_kernel_at_d m d h_d_eq h_valid l s_C s_A` (taking d and the
+    proof `pe_C.scheduler.next m.e_C = some d` as explicit arguments)
+    and a thin wrapper `joint_kernel m l s_C s_A` that handles the
+    "scheduler halted?" `Option.isSome` check. A bridge lemma
+    `joint_kernel_eq_at_d` connects the two.
+  * `blockEmission_general` and `pe_A_emission_distribution` are
+    refactored to match the same external-d shape. This makes the key
+    intermediate lemma `blockEmission_general_emission_marginal`
+    (∑' μ, blockEmission * μ s_A = per_state_kernel) provable without
+    dependent rewrites under `(option).get`.
+  * The mathematical content is unchanged. The split is purely a Lean
+    mechanics convenience and downstream proofs of §9.3, §9.4, §9.5
+    all benefit by working against the d-explicit form.
+
 Architectural decisions (v4):
   * The theorem is stated over `sys_A^w` (the weak-step closure of sys_A).
     A flattening construction from sys_A^w to sys_A is sketched in
@@ -207,6 +226,21 @@ Construction of pe_A:
 
     Normalising by pe_A.probOf(history_A) gives the PMF.
 
+    Construction in Lean (v4.1). pe_A_emission_distribution is built
+    via `PMF.normalize m_kernel h0 hFin .bind pe_A_emit_at_state`,
+    where `pe_A_emit_at_state m` is the per-matching-state emission
+    (Some-branch: `(blockEmission_general m d _ _).map some` when m has
+    valid R and the scheduler returns `some d`; None-branch:
+    `PMF.pure none` otherwise). `PMF.normalize m_kernel h0 hFin`
+    requires `h0 : Z ≠ 0` and `hFin : Z ≠ ⊤`; the fallback for the
+    edge cases (h_term fails, Z = 0, or Z = ⊤) is `PMF.pure none`.
+    This concrete construction is what sub-lemma B
+    (`pe_A_kernel_via_m_kernel`) unfolds to derive the multiplicative
+    identity (★). The Z-factor in (★) comes from PMF.normalize's
+    explicit `(Z)⁻¹` scaling, which combines with the multiplication
+    by Z on the LHS to give a clean algebraic identity (no division
+    in the consumer-facing form).
+
   blockEmission_general(m, d) : PMF (Label × PMF State_A) :=
     d.bind (fun (l_C, μ_C) =>
       let h_step := pe_C.scheduler.valid m.e_C ... (l_C, μ_C) ...
@@ -219,6 +253,15 @@ Construction of pe_A:
 function of history_A alone iff `pe_A.probOf(history_A) > 0`. For
 history_A's outside pe_A's support (mass 0), the PMF is conventional
 (e.g., PMF.pure none).
+
+  Composition note. The PMF.pure none convention is HARMLESS in all
+  downstream identities: if pe_A.probOf(history_A) = 0, then by mass
+  conservation ∑' m, m_kernel_k(m) = 0, so every term in any
+  m_kernel_k-weighted sum vanishes regardless of pe_A.scheduler.next's
+  exact value. And pe_A.kernel at history_A enters multiplicatively
+  in pe_A.probOf at history_A++[step]; multiplied by 0 the entire
+  contribution is 0. So the convention doesn't pollute downstream
+  algebra.
 
 ! WATCH OUT — pe_A's μ in each emission satisfies sys_A^w.step
 (current state) l μ via the weakStep witness, NOT sys_A.step. So pe_A
@@ -307,16 +350,43 @@ each step: a per-pair R statement.
   0 otherwise. The integral over m_prev in fromAbstractPrefix's step
   case is a tsum (∑'), not a pointwise multiplication.
 
-  h_R derivation. step_weight does not explicitly track m_new.h_R.
-  Matching states m_new in m_kernel_{k+1}'s positive-mass support
-  satisfy:
-    m_new.e_C.lastState = s_C' (the specific concrete state from the
-                                  positive-mass γ-fiber),
-    m_new.μ_A_chain.last = μ_A_next,
-    h_R(m_new) := R s_C' μ_A_next  — supplied by γ's R-on-support for
-                  the specific (s_C', μ_A_next) with γ(s_C', μ_A_next) > 0.
-  Matching states not in this positive-mass support have step_weight = 0
-  and are absent from m_kernel_{k+1}'s support.
+  h_R derivation and support characterisation. step_weight does not
+  explicitly track m_new.h_R. The tsum over (μ_C, s_C', μ_A_next)
+  ranges over ALL triples; the two structural indicators on m_new
+  filter to triples consistent with m_new's data fields:
+
+    indicator₁: [m_new.e_C = m_prev.e_C ++ (l_k, s_C')]
+                (uniquely determines s_C' from m_new + m_prev),
+    indicator₂: [m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]]
+                (uniquely determines μ_A_next from m_new + m_prev).
+
+  Consequently, for any fixed (m_prev, m_new, l_k, s_A_k), AT MOST ONE
+  (s_C', μ_A_next) pair makes BOTH indicators simultaneously 1. The
+  triple's μ_C ranges freely (no indicator constrains it). So
+  step_weight reduces effectively to
+
+    step_weight(m_prev, m_new, l_k, s_A_k) = sum-over-valid-decomp
+      ∑' μ_C, d(l_k, μ_C) · γ(s_C'(m_new), μ_A_next(m_new)) · μ_A_next(m_new)(s_A_k)
+                                       [if the m_new-decomp is consistent]
+      0                                [otherwise]
+
+  where s_C'(m_new), μ_A_next(m_new) are read off m_new's structure (or
+  the step_weight is 0 if no such consistent decomposition exists).
+
+  Hence m_new is in m_kernel_{k+1}'s positive-mass support iff:
+    (a) m_new = advance_pe_C_step m_prev l_k s_C' μ_A_next _ for some
+        m_prev with m_kernel_k(m_prev) > 0, some μ_C with d(l_k, μ_C) > 0,
+        and some (s_C', μ_A_next) with γ(s_C', μ_A_next) > 0 and
+        μ_A_next(s_A_k) > 0;
+    (b) AND the resulting m_new is the structurally-determined extension
+        of m_prev (its e_C, μ_A_chain are uniquely determined by the
+        triple).
+
+  Matching states NOT of this form have step_weight = 0 against every
+  m_prev, and are therefore absent from m_kernel_{k+1}'s positive support.
+  The R-witness h_R(m_new) is supplied by γ's R-on-support property at
+  the unique (s_C', μ_A_next) pair: R(s_C', μ_A_next) holds whenever
+  γ(s_C', μ_A_next) > 0.
 
   Mass conservation invariant (the key invariant on this construction):
     ∀ history_A,
@@ -453,15 +523,31 @@ Lemma (γ second marginal — abstract side).
 
 Lemma (per-step joint kernel and its marginals). The joint kernel
 depends on the matching state m (which provides the prefix-relative
-d and the abstract distribution for sim's witness). Define:
+d and the abstract distribution for sim's witness). Define the inner
+form `joint_kernel_at_d` parameterised by (d, h_d_eq):
+
+    joint_kernel_at_d(m, d, h_d_eq, h_valid, l, s_C, s_A)
+      := ∑' (μ_C : PMF State_C),
+           d(l, μ_C) · [(l, μ_C) ∈ d.support] ·
+             (∑' μ_A_next : PMF State_A,
+                γ_{m, (l, μ_C)}(s_C, μ_A_next) · μ_A_next(s_A))
+
+  where γ_{m, (l, μ_C)} := (sim.stepWitness_pmfRel
+    (m.current_R h_valid) (pe_C_step_witness m.e_C m.e_C_term d h_d_eq
+      l μ_C h_supp)).decomp.γ.
+
+  Then define the wrapper:
 
     joint_kernel(m, l, s_C, s_A)
-      := ∑' (μ_C, μ_A_next),
-           d_m(l, μ_C) · γ_{m, (l, μ_C)}(s_C, μ_A_next) · μ_A_next(s_A).
+      := if m.has_valid_R ∧ ∃ d, pe_C.scheduler.next m.e_C = some d then
+           joint_kernel_at_d m d h_d_eq h_valid l s_C s_A
+         else 0.
 
-  where
-    d_m            := pe_C.scheduler.next m.e_C  (some d_m by assumption)
-    γ_{m, (l, μ_C)} := (sim.stepWitness_pmfRel m.h_R h_step_{l, μ_C}).γ
+  And the bridge lemma:
+
+    joint_kernel_eq_at_d:
+      ∀ d (h_d_eq : pe_C.scheduler.next m.e_C = some d) (h_valid),
+        joint_kernel m l s_C s_A = joint_kernel_at_d m d h_d_eq h_valid l s_C s_A.
 
   ! WATCH OUT — joint_kernel is trajectory-dependent through m. In §8 /
   §9, when we form ∏_k joint_kernel(m_k, l_k, s_C_k, s_A_k), each m_k is
@@ -469,6 +555,15 @@ d and the abstract distribution for sim's witness). Define:
   state after advancing m_0 by (l_0, s_C_0, μ_A_next_0), ..., (l_{k-1},
   s_C_{k-1}, μ_A_next_{k-1}). The notation joint_kernel_k is shorthand
   for joint_kernel(m_k, ...), with m_k determined by the prior trajectory.
+
+  ! WATCH OUT (Lean mechanics) — the split into joint_kernel_at_d +
+  wrapper is needed because the wrapper's `(pe_C.scheduler.next m.e_C).get`
+  form is dependent in its hypothesis. Proofs that need to bridge with
+  an externally-supplied d (such as `blockEmission_general_emission_marginal`)
+  use `joint_kernel_at_d` directly to avoid "motive not type correct"
+  errors on `Option.get` rewrites. The bridge proof of
+  `joint_kernel_eq_at_d` itself uses an `rcases` case-split on
+  `pe_C.scheduler.next m.e_C` (not a rewrite under `.get`).
 
   Marginal over s_A:
     ∑' s_A, joint_kernel(m, l, s_C, s_A)
@@ -789,6 +884,79 @@ Joint(τ).
   the same e_C but different μ_A_chain.last yield different sim
   witnesses and hence different per_state_kernels.
 
+  Lean-implementation form. The split from §5 carries through here:
+  define `per_state_kernel m l s_A := ∑' s_C, joint_kernel m l s_C s_A`
+  (the s_C-marginal of the wrapper joint_kernel). The bridge lemma
+  `per_state_kernel_eq_at_d` (corollary of `joint_kernel_eq_at_d`):
+    per_state_kernel m l s_A
+      = ∑' s_C, joint_kernel_at_d m d h_d_eq h_valid l s_C s_A
+  (when h_valid + h_d_eq) lets downstream proofs work against
+  joint_kernel_at_d.
+
+  Sub-lemma (blockEmission_general_emission_marginal). Pure algebraic
+  identity bridging pe_A's per-matching-state emission marginal to
+  per_state_kernel:
+
+    ∑' μ : PMF State_A,
+       blockEmission_general(m, d, h_d_eq, h_valid)(l, μ) · μ(s_A)
+      = per_state_kernel(m, l, s_A).
+
+  Proof (~50-80 lines): unfold blockEmission_general's d.bind via
+  PMF.bind_apply; swap ∑' μ and ∑' (l', μ_C); use PMF.map_apply on
+  the in-support branch (gives `if l = l' then ω μ else 0`); collapse
+  the l' = l selector via tsum_eq_single; apply PMF.bind_apply to
+  `∑' μ, ω μ * μ(s_A) = (ω.bind id)(s_A)`; bridge to the RHS via
+  `per_state_kernel_eq_at_d` + γ's second marginal
+  (`PMFRelDecomp.snd_apply_eq_tsum`) which collapses
+  `∑' s_C, γ(s_C, μ_A_next) = ω(μ_A_next)`.
+
+  Sub-lemma (pe_A_kernel_via_m_kernel — multiplicative form). pe_A's
+  per-step kernel at history_A_k satisfies
+
+    pe_A.kernel(history_A_k, (l, s_A)) · Z
+      = ∑' m, m_kernel_k(m) · per_state_kernel(m, l, s_A),
+
+  where Z := ∑' m, m_kernel_k(m). NO DIVISION: the lemma is stated and
+  used in the multiplicative form throughout, so it does not rely on
+  Z ≠ 0. The Z = 0 case is automatic (both sides 0: LHS because
+  PMF.normalize's fallback gives PMF.pure none with kernel value 0 at
+  (l, s_A); RHS because every m_kernel_k(m) ≤ Z = 0).
+
+  Proof (~40-60 lines): unfold pe_A.kernel via PMFProbabilisticExecution.kernel,
+  expand pe_A_emission_distribution's `PMF.normalize m_kernel_k h0 hFin.bind
+  pe_A_emit_at_state` construction (§2). PMF.normalize's value at m is
+  `m_kernel_k(m) · (Z)⁻¹`; the bind expands to
+  `∑' m, m_kernel_k(m) · (Z)⁻¹ · pe_A_emit_at_state m (some (l, μ))`.
+  Multiplying the whole expression by Z (rather than dividing pe_A.kernel
+  by Z) gives the multiplicative form, with the `(Z)⁻¹ · Z` collapsing
+  via `ENNReal.mul_inv_cancel` (or by case-split on Z = 0). Apply
+  blockEmission_general_emission_marginal to the inner emission marginal
+  to identify it with per_state_kernel.
+
+  ! WATCH OUT (no circularity) — Z = pe_A.probOf(history_A_k) only via
+  mass conservation, but pe_A_kernel_via_m_kernel does NOT consume mass
+  conservation. It is a pure algebraic identity about pe_A's kernel
+  unfolding. m_dist_posterior_predictive then composes mass conservation
+  (at step k) with pe_A_kernel_via_m_kernel and probOf_append_singleton
+  multiplicatively, without ever forming a quotient.
+
+  Sub-lemma (probOf_append_singleton). End-step factorisation for
+  PMFProbabilisticExecution.probOf:
+
+    pe.probOf(⟨init, trans.append (cons last nil)⟩, _term)
+      = pe.probOf(⟨init, trans⟩, _term0) · pe.kernel(⟨init, trans⟩, last).
+
+  Proof (~30-50 lines): unfold probOf as `pe.init init *
+  probOfRemaining ⟨init, nil⟩ (trans.append (cons last nil)).toList`.
+  Use Stream'.Seq.toList_append to rewrite toList = trans.toList ++ [last].
+  Apply List.foldl_append (which decomposes foldl over xs ++ [last]
+  into foldl on xs followed by step at last) — equivalently, prove a
+  helper `probOfRemaining_append_singleton`:
+    probOfRemaining pre (xs ++ [last]) = probOfRemaining pre xs ·
+      pe.kernel ⟨pre.init, pre.trans.append (Seq.ofList xs)⟩ last.
+  Combine with the characterisation of the accumulated prefix to get
+  the closed form.
+
   Lemma (m_dist_posterior_predictive, unnormalised form):
 
   For any history_A_k and any (l, s_A):
@@ -804,42 +972,65 @@ Joint(τ).
                               [by joint_kernel's s_C-marginal in §5]
       = pe_A.probOf(history_A_{k+1}).
 
-  Proof sketch:
-    By induction on k.
+  Proof sketch (Lean-implementation strategy, v4.1):
 
-    Base case (k = 0): m_kernel_0(m) is the indicator that m is the
-    initial matching state at some s_C_init ∈ pe_C.init.support,
-    weighted by μ_A_init(s_A_init) · pe_C.init(s_C_init) (the base-case
-    formula from §3.2). Substituting:
-      ∑' m, m_kernel_0(m) · per_state_kernel(m, l, s_A)
-        = μ_A_init(s_A_init) ·
-          ∑' s_C_init, pe_C.init(s_C_init) ·
-                       per_state_kernel(m_init(s_C_init), l, s_A).
-    The per_state_kernel here uses d, γ, ω at the initial concrete
-    prefix ⟨s_C_init, Seq.nil⟩, with μ_A = μ_A_init. The inner sum
-    equals pe_A's first-step kernel at history_A = ⟨s_A_init,
-    Seq.nil⟩, integrated over the concrete posterior; the outer
-    μ_A_init(s_A_init) factor accounts for pe_A.init(s_A_init).
-    Together this is pe_A.init(s_A_init) · pe_A.kernel(history_A,
-    (l, s_A)) = pe_A.probOf(history_A_1) by pe_A's probOf factorisation.
-    (~0.5 day in Lean.)
+    The proof composes three sub-lemmas (stated above):
+      A. blockEmission_general_emission_marginal
+      B. pe_A_kernel_via_m_kernel
+      C. probOf_append_singleton
+    plus mass conservation (fromAbstractPrefix_mass_conservation),
+    which is itself interleaved with this lemma (see §3.2's note).
 
-    Step case: assume the lemma holds at step k. At step k+1,
-    m_kernel_{k+1}(m_new) is given (§3.2) by integrating m_kernel_k
-    against step_weight (a TSUM, not a pointwise product):
+    The proof is purely multiplicative (NO DIVISION). Let
+    Z := ∑' m, m_kernel_k(m).
 
-      m_kernel_{k+1}(m_new) = ∑' m_prev, m_kernel_k(m_prev) ·
-                                step_weight(m_prev, m_new, l_k, s_A_k).
+    By sub-lemma C (end-step probOf factorisation):
+      pe_A.probOf(history_A_{k+1}) = pe_A.probOf(history_A_k) ·
+                                     pe_A.kernel(history_A_k, (l, s_A)).
 
-    Substituting into the LHS at step k+1 and unfolding step_weight
-    (which structurally IS joint_kernel(m_prev, l_k, s_C, s_A_k) with
-    constraints on m_new) recovers the form
-      ∑' m_prev, m_kernel_k(m_prev) ·
-                 (an outer factor at step k) ·
-                 (the per_state_kernel at m_new for (l, s_A)).
-    The outer factor at step k is joint_kernel marginalised over s_C
-    — which equals per_state_kernel at m_prev. Composing with the IH
-    yields the result for step k+1. (~2 days in Lean.)
+    By sub-lemma B (multiplicative form):
+      pe_A.kernel(history_A_k, (l, s_A)) · Z =
+        ∑' m, m_kernel_k(m) · per_state_kernel(m, l, s_A).         (★)
+
+    By mass conservation at step k (interleaved sorry):
+      Z = pe_A.probOf(history_A_k).
+
+    Multiply both sides of sub-lemma C by Z (= pe_A.probOf(history_A_k)
+    via mass conservation):
+      pe_A.probOf(history_A_{k+1}) · 1
+        = pe_A.probOf(history_A_k) · pe_A.kernel(history_A_k, (l, s_A))
+        = Z · pe_A.kernel(history_A_k, (l, s_A))
+        = ∑' m, m_kernel_k(m) · per_state_kernel(m, l, s_A)       [by (★)].
+
+    So
+      pe_A.probOf(history_A_{k+1})
+        = ∑' m, m_kernel_k(m) · per_state_kernel(m, l, s_A)
+    as required.
+
+    Edge case Z = 0 (no quotient needed). Mass conservation gives
+    pe_A.probOf(history_A_k) = 0, so by sub-lemma C
+    pe_A.probOf(history_A_{k+1}) = 0 · pe_A.kernel = 0. And the RHS
+    ∑' m, m_kernel_k(m) · per_state_kernel = 0 because every
+    m_kernel_k(m) = 0 when Z = 0 (a PMF-supported tsum is 0 iff every
+    summand is 0). Both sides 0. The multiplicative form (★) handles
+    Z = 0 trivially (0 = 0).
+
+    Old induction-on-k formulation (v4) for reference. Equivalent but
+    embedded the algebraic manipulation inside the induction step:
+
+      Base case (k = 0): m_kernel_0 is the indicator at the initial
+      matching state with weight μ_A_init(s_A_init) · pe_C.init(s_C_init).
+      pe_A.probOf(history_A_1) factorises through pe_A.init · pe_A.kernel,
+      matching the LHS sum.
+
+      Step case (k → k+1): unfold m_kernel_{k+1} via step_weight (§3.2's
+      Bayesian update). The result form ∑' m_prev, m_kernel_k(m_prev) ·
+      (outer factor) collapses via the IH and an outer joint_kernel
+      s_C-marginal application.
+
+    Both formulations rely on the sub-lemmas A, B, C above; v4.1's
+    presentation makes the algebra explicit, avoiding the implicit
+    interleaving of m_kernel's step_weight recursion with the induction.
 
   ! WATCH OUT — this is the proof's central work item. The
   equality is non-trivial: m_kernel's weights encode the Bayesian-
@@ -885,29 +1076,80 @@ Joint(τ).
     = μ_A_init(e_A.init) = pe_A.init(e_A.init) = pe_A.probOf(e_A)`.
 
     Step case (n ≥ 1): write e_A.trans = e_A'.trans ++ [(l_{n-1},
-    s_A_{n-1})] where e_A' is the truncation to length n-1. By IH,
+    s_A_{n-1})] where e_A' is the truncation to length n-1, with trace
+    τ' (= τ minus the last external label, if l_{n-1} is external; else
+    same as τ).
 
-        ∑' (e_C' : (e_C', e_A') ∈ Joint(τ')), joint_mass(e_C', e_A')
-          = pe_A.probOf(e_A')
+    Each e_C ∈ Joint(τ).fst-restriction with |e_C.trans| = n has the
+    form e_C = ⟨e_C.init, e_C'.trans.append (cons (l_{n-1}, s_C_{n-1}) nil)⟩
+    for some e_C' of length n-1 and some s_C_{n-1}.
 
-    where τ' is the trace of e_A's truncation. Now extend to length n.
-    Each e_C in Joint(τ).fst-restriction with e_C.length = n is
-    e_C'.trans ++ [(l_{n-1}, s_C_{n-1})] for some e_C' of length n-1
-    and some s_C_{n-1}. The joint_mass splits as
+    Step factorisation of joint_mass (consequence of joint_mass_path's
+    cons-end recursion):
         joint_mass(e_C, e_A)
-          = joint_mass(e_C', e_A') · joint_kernel(m_{n-1}, l_{n-1}, s_C_{n-1}, s_A_{n-1})
-    where m_{n-1} is the matching state determined by e_C' (and
-    history_A's first n-1 entries).
+          = (∑' m_prev, ⟨joint-mass over (e_C', e_A') threading m_prev⟩) ·
+             joint_kernel(m_{n-1}, l_{n-1}, s_C_{n-1}, s_A_{n-1})
+        ─ where m_{n-1} is the matching state at the boundary
+        ─ ! m_{n-1} depends on the trajectory (e_C', γ-sampled μ_A_chain).
 
-    Summing first over s_C_{n-1} of the last factor gives (by §5's
-    marginal-over-s_C) per_state_kernel(m_{n-1}, l_{n-1}, s_A_{n-1}).
-    Then summing over e_C' aggregates the IH-given pe_A.probOf(e_A')
-    weighted by per_state_kernel(m_{n-1}(e_C'), ...). By
-    m_dist_posterior_predictive (§9.3) applied at step n-1, this
-    m-aggregation yields pe_A.probOf(history_A_n) = pe_A.probOf(e_A).
+    Sum the joint_mass over e_C ∈ Joint(τ). Split the sum as
+        ∑' e_C, joint_mass(e_C, e_A)
+        = ∑' (e_C', s_C_{n-1}), <joint_mass(e_C, e_A) with e_C built from e_C', s_C_{n-1}>
+        = ∑' e_C', (∑' s_C_{n-1}, joint_mass(e_C, e_A))                    (★★)
+    where the inner sum marginalises s_C_{n-1} of the joint_kernel
+    factor (§5's marginal-over-s_C):
+        ∑' s_C_{n-1}, joint_kernel(m_{n-1}, l_{n-1}, s_C_{n-1}, s_A_{n-1})
+          = per_state_kernel(m_{n-1}, l_{n-1}, s_A_{n-1}).
+
+    !! KEY POINT (not bundled into the IH application): m_{n-1} depends
+    on e_C'. We CANNOT factor pe_A.probOf(e_A') out of the e_C'-sum
+    because the per_state_kernel factor varies with m_{n-1}(e_C'). The
+    proper move is to re-index the e_C'-sum to an m-sum via
+    fromAbstractPrefix's definition.
+
+    Concretely, joint_mass_path's recursion thread implies that summing
+    e_C' over Joint(τ') aggregates m_kernel_{n-1} at each matching
+    state m: there is a re-indexing identity
+
+        ∑' e_C' ∈ Joint(τ').fst-restriction,
+          joint_mass(e_C', e_A') · per_state_kernel(m_{n-1}(e_C'), l_{n-1}, s_A_{n-1})
+          = ∑' m, m_kernel_{n-1}(m) · per_state_kernel(m, l_{n-1}, s_A_{n-1})
+
+    obtained by unfolding joint_mass = pe_C.init * μ_A_init * joint_mass_path
+    and observing that joint_mass_path's m_next-summation at each level
+    aggregates exactly the fromAbstractPrefix structure of m_kernel_{n-1}.
+    (Strictly, this requires a separate Lemma 9.5.a relating joint_mass_path
+    to fromAbstractPrefix; we treat it as a sub-step.)
+
+    Once re-indexed, apply m_dist_posterior_predictive (§9.3) at step n-1:
+        ∑' m, m_kernel_{n-1}(m) · per_state_kernel(m, l_{n-1}, s_A_{n-1})
+          = pe_A.probOf(history_A_n)
+          = pe_A.probOf(e_A).
+
+    Combining (★★) + re-indexing + m_dist_posterior_predictive yields
+    ∑' e_C, joint_mass(e_C, e_A) = pe_A.probOf(e_A).
+
+    Note: the IH at length n-1 is NOT used directly in this proof. The
+    re-indexing identity bypasses the need for IH because it relates
+    the e_C'-sum directly to the m-sum that m_dist_posterior_predictive
+    handles.
 
   Uses: §5's marginal-over-s_C; §9.3's m_dist_posterior_predictive;
-  induction hypothesis at length n-1.
+  joint_mass-to-fromAbstractPrefix re-indexing (Lemma 9.5.a).
+
+  Sub-lemma 9.5.a (joint_mass_path_eq_m_kernel_aggregate). The e_C'-sum
+  of joint_mass weighted by per_state_kernel at the m-boundary equals
+  the m_kernel-aggregated per_state_kernel:
+
+    ∑' e_C', joint_mass(e_C', e_A') · per_state_kernel(m_{n-1}(e_C'), l, s_A)
+      = ∑' m, fromAbstractPrefix(history_A_n-1)(m) · per_state_kernel(m, l, s_A).
+
+  Proof: unfold joint_mass = pe_C.init · μ_A_init · joint_mass_path;
+  unfold joint_mass_path's recursion to see it as a chain of γ-positive
+  m_next selections weighted by joint_kernel. The combined effect is
+  exactly fromAbstractPrefix's recursive definition (by the same
+  step_weight indicators). Establish the equivalence by induction on
+  n-1 (the joint trajectory's length).
 
 ================================================================================
 10. CHECKLIST OF SUB-LEMMAS NEEDED
@@ -924,36 +1166,101 @@ Foundational PMF-execution infrastructure (already in Simulation.lean):
   ✓ PMFProbabilisticExecution.kernel, probOf, probOfRemaining.
   ✓ traceProbPMF, traceProbPMF_first_step, traceProbPMF_nil_eq_one.
   ✓ PMFProbabilisticExecution.continuationFrom + lemmas.
-  ✓ probOfRemaining_aux_PMF, probOfRemaining_eq_aux_PMF (to be adapted
-    for the v4 matching state).
+  ✓ probOfRemaining_aux_PMF, probOfRemaining_eq_aux_PMF (these σ-step-
+    matching-state-adapted lemmas were deleted in v4 Day 1's cleanup;
+    not needed for the v4 trace coupling proof).
+
+Additional foundational items added in v4:
+  ✓ PMFProbabilisticExecution.init refactored to PMF State (was Dirac
+    via initState : State); allows pe_A.init := μ_A_init.
+  ✓ pe_C_step_witness (sim-side step-witness extraction helper from
+    pe_C.scheduler.valid).
+  ✓ MatchingState.current_μ_A, current_s_C, has_valid_R, current_R
+    (PROVEN extraction of the trajectory's R-witness for matching
+    states with positive fromAbstractPrefix mass).
+  ✓ stateAt_eq_endState_at_terminator (canonical endState equals
+    stateAt at any TerminatedAt position; PROVEN).
 
 To add (v4-specific):
-  [ ] sys_A^w : LabelledSystem (the weak-step closure).
-  [ ] sys_A^w.step s l μ ↔ weakStep sys_A (PMF.pure s) l μ.
-  [ ] MatchingState (4-field record, v4).
-  [ ] advance_pe_C_step (single advance function).
-  [ ] MatchingStateKernel : AlterSeq → MatchingState → ENNReal.
-  [ ] fromAbstractPrefix : AlterSeq → (MatchingState → ENNReal)
-      (the unnormalised posterior).
-  [ ] fromAbstractPrefix_mass_conservation: ∀ history_A,
-      ∑' m, fromAbstractPrefix history_A m = pe_A.probOf(history_A).
-  [ ] blockEmission_general : MatchingState → PMF (Label × PMF State_A).
-  [ ] pe_A_emission_distribution : AlterSeq → PMF (Option (Label × PMF State_A)).
-  [ ] blockEmission_general_valid (sys_A^w.step validity).
-  [ ] pe_A : PMFProbabilisticExecution sys_A^w (constructor + valid).
+  [✓] sys_A^w : LabelledSystem (the weak-step closure; `weakClosure sys_A`
+      with notation `sys ^w`).
+  [~] sys_A^w.step s l μ semantics. Implementation deviates from plan
+      §2's `weakStep (PMF.pure s) l μ` to the more permissive
+        ∃ μ_A ω, s ∈ μ_A.support ∧ μ ∈ ω.support ∧
+                  (weakTau μ_A (ω.bind id) ∨ weakStep μ_A l (ω.bind id))
+      to make pe_A's validity proof go through with sim's PMF-level
+      witness (which gives weakStep from μ_A, not from a Dirac).
+      Trace-probability identities are unaffected (validity is a
+      structural check, not used in the marginal proofs).
+  [✓] MatchingState (4-field record, v4).
+  [✓] advance_pe_C_step (single advance function).
+  [✓] MatchingStateKernel : AlterSeq → MatchingState → ENNReal.
+  [~] fromAbstractPrefix : defined via fromAbstractPrefix_list recursion
+      on the reversed transitions; fromAbstractPrefix_base (concrete);
+      step_weight (concrete). Build passes; mass conservation still sorry.
+  [ ] fromAbstractPrefix_mass_conservation: still sorry (interleaved with
+      m_dist_posterior_predictive's induction per §3.2 / §9.3).
+  [✓] blockEmission_general : (m, d, h_d_eq, h_valid) → PMF (Label × PMF State_A).
+  [✓] pe_A_emit_at_state + pe_A_emission_distribution (via PMF.normalize).
+  [~] pe_A_of_simulation.valid: proved as a real composed proof; depends
+      on the structural invariant current_μ_A_support_contains_history_A_endState
+      (still sorry — requires induction on fromAbstractPrefix's recursion).
+  [✓] pe_A : PMFProbabilisticExecution sys_A^w (constructor done; valid
+      depends on the structural-invariant sorry above).
 
 The joint-space lemmas (§9):
-  [ ] tightExecsA_characterisation (§9.2).
-  [ ] Joint(τ) and joint_mass definitions.
-  [ ] joint_kernel definition (with explicit m parameter).
-  [ ] joint_marginal_concrete, joint_marginal_abstract (§5).
-  [ ] m_dist_posterior_predictive (§9.3) — the proof's central work item.
-  [ ] joint_marginalises_to_pe_C (§9.4).
-  [ ] joint_marginalises_to_pe_A (§9.5).
+  [✓] tightExecsA_characterisation (§9.2). Replaced by four practical
+      structural lemmas, all PROVEN:
+        * tightExecsA_trans_nil_iff
+        * tightExec_has_external_last
+        * tightExecsA_characterisation (dichotomy form)
+        * isTight_append_external
+      (Plus `fromList` helper.)
+  [✓] Joint(τ) and joint_mass definitions (via joint_mass_path +
+      initial_matching_state).
+  [~] joint_kernel definition (with explicit m parameter): concrete.
+      v4.1 split partially in place — the current single-form
+      `joint_kernel` uses isSome+get. Refactor to joint_kernel_at_d +
+      bridge `joint_kernel_eq_at_d` is the next planned step to
+      unblock §9.3 sub-lemma A.
+  [✓] joint_kernel_marginal_s_A (= "joint_marginal_concrete"): PROVEN.
+  [✓] joint_kernel_marginal_s_C: rfl by definition of per_state_kernel.
+  [ ] per_state_kernel_eq_at_d (corollary of joint_kernel_eq_at_d):
+      pending the joint_kernel_at_d split.
+  [ ] blockEmission_general_emission_marginal (§9.3 sub-lemma A):
+      ∑' μ, blockEmission_general m d _ _ (l, μ) * μ s_A = per_state_kernel m l s_A.
+      Statement in code; proof sorry pending the joint_kernel_at_d
+      split.
+  [ ] pe_A_kernel_via_m_kernel (§9.3 sub-lemma B, multiplicative form):
+      pe_A.kernel history_A_k (l, s_A) · Z =
+        ∑' m, m_kernel_k(m) · per_state_kernel(m, l, s_A).
+  [ ] probOfRemaining_append_singleton + probOf_append_singleton
+      (§9.3 sub-lemma C): end-step probOf factorisation for
+      PMFProbabilisticExecution.
+  [ ] m_dist_posterior_predictive (§9.3) — composes sub-lemmas A, B, C
+      with mass conservation. The proof's central composition. Currently
+      sorry; proof outline documented (multiplicative form, no division).
+  [ ] joint_marginalises_to_pe_C (§9.4). Currently sorry; proof outline
+      documented (uses joint_kernel_marginal_s_A telescope).
+  [ ] joint_mass_path_eq_m_kernel_aggregate (§9.5 sub-lemma 9.5.a):
+      bridges joint_mass-summed-over-e_C' to m_kernel-aggregated
+      per_state_kernel. New sub-lemma identified in v4.1's §9.5
+      refinement.
+  [ ] joint_marginalises_to_pe_A (§9.5). Currently sorry; proof outline
+      documented (uses re-indexing via 9.5.a + m_dist_posterior_predictive,
+      NOT direct IH application).
 
 The main theorem:
-  [ ] traceInclusion: the top-level theorem proved by composing the
-      joint mass-conservation arguments (§4 / §8).
+  [ ] traceInclusion: the top-level theorem. Statement done in code;
+      composition proof sorry; outlined as
+        sys_C.traceProb pe_C τ
+          = ∑' e_C ∈ TightExecsC(τ), pe_C.probOf(e_C)
+          = ∑' (e_C, e_A) ∈ Joint(τ), joint_mass(e_C, e_A)   [§9.4]
+          = ∑' e_A ∈ TightExecsA(τ), pe_A.probOf(e_A)         [§9.5]
+          = sys_A^w.traceProbPMF pe_A τ.
+
+Legend: [✓] proven in code, no sorry. [~] structurally in place; may
+have sub-sorries documented. [ ] not yet implemented or sorry.
 
 ================================================================================
 11. ESTIMATE OF EFFORT
@@ -973,13 +1280,19 @@ Adding v4 infrastructure: ~4-6 days.
 
 Joint-space identities:
   - Joint(τ), joint_mass, joint_kernel definitions (with explicit m parameter): ~0.5 day.
-  - joint_marginal_concrete, joint_marginal_abstract: ~1.5 days
-    (mostly tsum rearrangement + γ-marginal applications).
-  - tightExecsA_characterisation: ~1-2 days (the variable-length
-    structural lemma).
-  - m_dist_posterior_predictive: ~2-3 days. The proof's central work
-    item: induction on history_A.trans length with careful tsum
-    manipulation, unfolding step_weight and the posterior structure.
+  - joint_kernel_at_d / joint_kernel / joint_kernel_eq_at_d (v4.1 split): ~0.5 day.
+  - joint_marginal_concrete (= joint_kernel_marginal_s_A) — ~1 day.
+  - joint_marginal_abstract (= joint_kernel_marginal_s_C) — rfl by
+    definition of per_state_kernel.
+  - tightExecsA structural lemmas (v4.1's four-lemma replacement for
+    the Fin n → Bool enumeration): ~0.5-1 day combined.
+  - m_dist_posterior_predictive: ~2-3 days. Decomposed in v4.1 into:
+      * blockEmission_general_emission_marginal (~0.5-1 day; depends
+        on the joint_kernel_at_d split).
+      * pe_A_kernel_via_m_kernel (~0.5-1 day; uses sub-lemma above).
+      * probOf_append_singleton + probOfRemaining_append_singleton
+        (~0.5 day; List.foldl_append + Stream'.Seq.toList_append).
+      * Final composition with mass conservation (~0.5 day).
   - joint_marginalises_to_pe_C: ~1 day.
   - joint_marginalises_to_pe_A: ~2-3 days (uses m_dist_posterior_predictive
     + the variable-length tightExecsA structure).
@@ -989,11 +1302,15 @@ Total: 3-4 weeks of focused work.
 
 Dominant cost items:
   - MatchingStateKernel + mass-conservation invariant (~1.5-2 days).
-  - m_dist_posterior_predictive (~2-3 days).
+  - m_dist_posterior_predictive (~2-3 days, now decomposed into A/B/C
+    sub-lemmas in v4.1).
   - joint_marginalises_to_pe_A (~2-3 days).
 
 These are the explicit proof obligations that v3 hid under
-"by construction" / "PMF MatchingState" framing.
+"by construction" / "PMF MatchingState" framing. v4.1 makes the
+m_dist_posterior_predictive proof more tractable by extracting the
+algebraic content into sub-lemmas A, B, C, leaving the induction-on-k
+structure to compose them with mass conservation.
 
 ================================================================================
 12. SUMMARY
@@ -1025,8 +1342,17 @@ Key new infrastructure beyond the existing γ-marginal API and the
 PMF-execution structure:
   * `MatchingStateKernel`: unnormalised posterior measure with mass
     conservation invariant.
+  * `joint_kernel_at_d` + wrapper `joint_kernel` + bridge
+    `joint_kernel_eq_at_d` (v4.1): the inner `joint_kernel_at_d`
+    takes d and h_d_eq as explicit parameters, allowing proofs that
+    bridge with `blockEmission_general` (also d-explicit) to operate
+    on a common form without dependent-rewrite hazards.
   * `m_dist_posterior_predictive`: links pe_A's kernel (m_kernel-
-    aggregated) to the joint kernel's abstract marginal.
+    aggregated) to the joint kernel's abstract marginal. v4.1
+    decomposes its proof into sub-lemmas A
+    (`blockEmission_general_emission_marginal`), B
+    (`pe_A_kernel_via_m_kernel`), C (`probOf_append_singleton`),
+    composed with mass conservation.
   * `tightExecsA_characterisation`: variable-length structural
     enumeration of TightExecsA(τ).
 
