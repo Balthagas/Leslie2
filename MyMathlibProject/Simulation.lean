@@ -3013,7 +3013,8 @@ state at step k (advanced from `m_0` by the prior trajectory). -/
 
 /-- The per-step joint kernel, parameterised by the matching state `m`.
 Returns 0 when `m` lacks an R-witness, or `pe_C.scheduler.next m.e_C = none`
-(pe_C has halted at this prefix), or `(l, μ_C) ∉ d.support`. -/
+(pe_C has halted at this prefix), or `(l, μ_C) ∉ d.support`. Implemented
+via `Option.isSome`+`get` to avoid `match`-with-binder issues in proofs. -/
 noncomputable def joint_kernel
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -3023,17 +3024,18 @@ noncomputable def joint_kernel
     (l : Label) (s_C : State_C) (s_A : State_A) : ENNReal :=
   open Classical in
   if h_valid : m.has_valid_R then
-    match h_next : pe_C.scheduler.next m.e_C with
-    | none => 0
-    | some d =>
-        ∑' (μ_C : PMF State_C),
-          d (l, μ_C) * (
-            if h_supp : (l, μ_C) ∈ d.support then
-              ∑' (μ_A_next : PMF State_A),
-                (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
-                    (pe_C_step_witness pe_C m.e_C m.e_C_term d h_next l μ_C h_supp))
-                ).γ (s_C, μ_A_next) * μ_A_next s_A
-            else 0)
+    if h_some : (pe_C.scheduler.next m.e_C).isSome then
+      let d := (pe_C.scheduler.next m.e_C).get h_some
+      let h_d_eq : pe_C.scheduler.next m.e_C = some d := Option.eq_some_of_isSome h_some
+      ∑' (μ_C : PMF State_C),
+        d (l, μ_C) * (
+          if h_supp : (l, μ_C) ∈ d.support then
+            ∑' (μ_A_next : PMF State_A),
+              (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+                  (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp))
+              ).γ (s_C, μ_A_next) * μ_A_next s_A
+          else 0)
+    else 0
   else 0
 
 /-- **Per-step joint marginal over `s_A` (§5)**: summing `joint_kernel`
@@ -3048,14 +3050,89 @@ theorem joint_kernel_marginal_s_A
     (h_valid : m.has_valid_R)
     (l : Label) (s_C : State_C) :
     (∑' s_A, joint_kernel m l s_C s_A) =
-      pe_C.kernel m.e_C (l, s_C) :=
-  -- Proof outline (~50-80 lines): under h_valid, unfold both sides;
-  -- when pe_C.scheduler.next m.e_C = none, both are 0; otherwise
-  -- swap ∑' s_A and ∑' μ_C, apply per_step_mass_marginal_concrete
-  -- to compute ∑' (s_A) (μ_A_next), γ(s_C, μ_A_next) * μ_A_next s_A
-  -- = μ_C s_C; then identify the result with pe_C.kernel via
-  -- the bind/map expansion.
-  sorry
+      pe_C.kernel m.e_C (l, s_C) := by
+  classical
+  unfold joint_kernel ProbabilisticExecution.kernel
+  simp only [dif_pos h_valid]
+  by_cases h_some : (pe_C.scheduler.next m.e_C).isSome
+  swap
+  · -- Scheduler returns none: both sides are 0.
+    simp only [dif_neg h_some, tsum_zero]
+    rcases Option.eq_none_or_eq_some (pe_C.scheduler.next m.e_C) with h_none | ⟨d, h_some_eq⟩
+    · rw [h_none]; rfl
+    · exfalso; rw [h_some_eq] at h_some; exact h_some rfl
+  simp only [dif_pos h_some]
+  -- Get d from the some-witness.
+  set d := (pe_C.scheduler.next m.e_C).get h_some with h_d_def
+  have h_d_eq : pe_C.scheduler.next m.e_C = some d := Option.eq_some_of_isSome h_some
+  -- Rewrite the RHS using h_d_eq + Option.elim_some.
+  conv_rhs => rw [h_d_eq, Option.elim_some]
+  -- LHS: ∑' s_A, ∑' μ_C, d(l,μ_C) * (if h_supp then ∑' μ_A_next, γ(s_C,μ_A_next) * μ_A_next s_A else 0)
+  -- Swap tsums.
+  rw [ENNReal.tsum_comm]
+  -- Now: ∑' μ_C, ∑' s_A, d(l,μ_C) * (...)
+  -- Factor d(l, μ_C) out of the inner sum and combine the if.
+  have h_inner : ∀ μ_C : PMF State_C,
+      (∑' s_A : State_A, d (l, μ_C) * (
+        if h_supp : (l, μ_C) ∈ d.support then
+          ∑' (μ_A_next : PMF State_A),
+            (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+                (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp))
+            ).γ (s_C, μ_A_next) * μ_A_next s_A
+        else 0)) =
+      d (l, μ_C) * μ_C s_C := by
+    intro μ_C
+    rw [ENNReal.tsum_mul_left]
+    by_cases h_supp : (l, μ_C) ∈ d.support
+    · simp only [dif_pos h_supp]
+      -- After tsum_mul_left and dif_pos, goal is
+      --   d(l, μ_C) * ∑' s_A μ_A_next, γ(s_C, μ_A_next) * μ_A_next s_A = d(l, μ_C) * μ_C s_C
+      -- Use per_step_mass_marginal_concrete and congr.
+      have h_step := pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp
+      have h_marg := per_step_mass_marginal_concrete sim (m.current_R h_valid) h_step s_C
+      rw [h_marg]
+    · -- ¬ (l, μ_C) ∈ d.support: d(l, μ_C) = 0.
+      simp only [dif_neg h_supp, tsum_zero, mul_zero]
+      have h_d_zero : d (l, μ_C) = 0 := by
+        rw [PMF.mem_support_iff] at h_supp
+        push_neg at h_supp
+        exact h_supp
+      rw [h_d_zero, zero_mul]
+  -- Apply h_inner.
+  rw [tsum_congr h_inner]
+  -- RHS: (d.bind (fun lμ => PMF.map (lμ.1, ·) lμ.2)) (l, s_C)
+  rw [PMF.bind_apply]
+  -- = ∑' lμ, d lμ * (PMF.map (lμ.1, ·) lμ.2) (l, s_C)
+  -- Need to show ∑' μ_C, d(l, μ_C) * μ_C s_C = ∑' lμ, d lμ * (PMF.map (lμ.1, ·) lμ.2) (l, s_C)
+  -- RHS unfolds to ∑' (l', μ_C), d(l', μ_C) * if l = l' then μ_C s_C else 0.
+  rw [ENNReal.tsum_prod']
+  -- ∑' l', ∑' μ_C, d (l', μ_C) * (PMF.map (l', ·) μ_C) (l, s_C)
+  have h_inner_map : ∀ (l' : Label) (μ_C : PMF State_C),
+      (PMF.map (fun s => (l', s)) μ_C) (l, s_C) =
+      (if l = l' then μ_C s_C else 0) := by
+    intro l' μ_C
+    rw [PMF.map_apply]
+    by_cases h_l : l = l'
+    · subst h_l
+      rw [if_pos rfl]
+      rw [tsum_eq_single s_C (fun s h_ne => by simp [Prod.mk.injEq, Ne.symm h_ne])]
+      simp
+    · rw [if_neg h_l]
+      apply ENNReal.tsum_eq_zero.mpr
+      intro s
+      have : (l, s_C) ≠ (l', s) := fun h => h_l (Prod.mk.inj h).1
+      simp [this]
+  simp_rw [h_inner_map]
+  -- ∑' l', ∑' μ_C, d (l', μ_C) * (if l = l' then μ_C s_C else 0)
+  rw [tsum_eq_single l (fun l' h_ne => ?_)]
+  · -- l' = l case.
+    apply tsum_congr
+    intro μ_C
+    rw [if_pos rfl]
+  · -- l' ≠ l: inner is 0.
+    apply ENNReal.tsum_eq_zero.mpr
+    intro μ_C
+    rw [if_neg (Ne.symm h_ne), mul_zero]
 
 /-- **`per_state_kernel m l s_A`**: the matching-state-conditional pe_A
 emission kernel at `m`, marginalising the joint γ over the next concrete
