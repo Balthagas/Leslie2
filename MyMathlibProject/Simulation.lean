@@ -2652,12 +2652,44 @@ abbrev MatchingStateKernel
   (history_A : AlterSeq State_A Label) → history_A.trans.Terminates →
     MatchingState sim pe_C μ_A_init h_init_R → ENNReal
 
+/-- **`step_weight_at_d`** — d-explicit form of `step_weight` (mirrors the
+`joint_kernel_at_d` / `per_state_kernel_at_d` split). Taking `d` and the
+equation `h_d_eq : pe_C.scheduler.next m_prev.e_C = some d` as explicit
+arguments avoids the dependent-match pattern that would otherwise live
+inside `step_weight`. -/
+noncomputable def step_weight_at_d
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (m_prev m_new : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m_prev.e_C = some d)
+    (h_valid : m_prev.has_valid_R)
+    (l_k : Label) (s_A_k : State_A) : ENNReal :=
+  ∑' (μ_C : PMF State_C),
+    d (l_k, μ_C) * (
+      open Classical in
+      if h_supp : (l_k, μ_C) ∈ d.support then
+        ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+          (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+              (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l_k μ_C h_supp))
+          ).γ (s_C', μ_A_next) * μ_A_next s_A_k *
+          (if m_new.e_C = ⟨m_prev.e_C.init,
+              m_prev.e_C.trans.append (Seq.cons (l_k, s_C') Seq.nil)⟩ ∧
+            m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+      else 0)
+
 /-- The per-step Bayesian update factor (§3.2 step case): when
 `pe_C.scheduler.next m_prev.e_C = some d`, sums over `(μ_C, s_C', μ_A_next)`
 in γ's support of `d(l_k, μ_C) · γ(s_C', μ_A_next) · μ_A_next(s_A_k)` with
 indicators forcing `m_new` to be `m_prev` advanced by `(l_k, s_C', μ_A_next)`.
 When `pe_C.scheduler.next m_prev.e_C = none` or `m_prev` lacks a valid R,
-returns 0. -/
+returns 0.
+
+Thin wrapper over `step_weight_at_d` (parallels `joint_kernel`'s wrapper
+over `joint_kernel_at_d`). The `isSome`/`get` pattern avoids dependent
+matches on `Option`, keeping downstream proofs tractable. -/
 noncomputable def step_weight
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -2667,20 +2699,11 @@ noncomputable def step_weight
     (l_k : Label) (s_A_k : State_A) : ENNReal :=
   open Classical in
   if h_valid : m_prev.has_valid_R then
-    match h_next : pe_C.scheduler.next m_prev.e_C with
-    | none => 0
-    | some d =>
-        ∑' (μ_C : PMF State_C),
-          d (l_k, μ_C) * (
-            if h_supp : (l_k, μ_C) ∈ d.support then
-              ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
-                (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
-                    (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_next l_k μ_C h_supp))
-                ).γ (s_C', μ_A_next) * μ_A_next s_A_k *
-                (if m_new.e_C = ⟨m_prev.e_C.init,
-                    m_prev.e_C.trans.append (Seq.cons (l_k, s_C') Seq.nil)⟩ ∧
-                  m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
-            else 0)
+    if h_some : (pe_C.scheduler.next m_prev.e_C).isSome then
+      step_weight_at_d sim pe_C μ_A_init h_init_R m_prev m_new
+        ((pe_C.scheduler.next m_prev.e_C).get h_some)
+        (Option.eq_some_of_isSome h_some) h_valid l_k s_A_k
+    else 0
   else 0
 
 /-- The base value of `fromAbstractPrefix` at the empty-trans prefix:
@@ -3427,6 +3450,63 @@ theorem joint_kernel_marginal_s_C
     (∑' s_C, joint_kernel m l s_C s_A) =
       per_state_kernel m l s_A :=
   rfl
+
+/-- **Auxiliary lemma (§3.2)**: summing `step_weight m_prev m_new l s_A` over
+the new matching state `m_new` recovers `per_state_kernel m_prev l s_A`.
+
+Proof structure:
+* **Degenerate cases** (¬h_valid, scheduler.next = none): both sides equal 0.
+* **Main case** (h_valid, scheduler.next = some d):
+  - Use Fubini (`ENNReal.tsum_comm`) to swap `∑' m_new` with the inner
+    `∑' (μ_C, s_C', μ_A_next)`.
+  - For each `(s_C', μ_A_next)`, collapse `∑' m_new, [m_new.e_C = X ∧
+    m_new.μ_A_chain = Y]` to the indicator of `R s_C' μ_A_next` (via
+    definitional proof irrelevance for MatchingState's `e_C_term` / `h_R`
+    fields and `advance_pe_C_step`'s canonical extension).
+  - Absorb the `R` indicator into γ's support (γ > 0 ⟹ R via R_on_support).
+  - Bridge to `per_state_kernel_at_d` via `per_state_kernel_eq_at_d`.
+
+Plan v4.1 §3.2 step-case definition is precisely this identity. -/
+private theorem step_weight_marginal_eq_per_state_kernel
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (m_prev : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (s_A : State_A) :
+    (∑' m_new, step_weight sim pe_C μ_A_init h_init_R m_prev m_new l s_A) =
+      per_state_kernel m_prev l s_A := by
+  classical
+  by_cases h_valid : m_prev.has_valid_R
+  · by_cases h_some : (pe_C.scheduler.next m_prev.e_C).isSome
+    · -- Main case: h_valid and scheduler.next = some d.
+      sorry
+    · -- None branch: step_weight = 0 and per_state_kernel = 0.
+      have h_each : ∀ m_new : MatchingState sim pe_C μ_A_init h_init_R,
+          step_weight sim pe_C μ_A_init h_init_R m_prev m_new l s_A = 0 := by
+        intro m_new
+        unfold step_weight
+        rw [dif_pos h_valid, dif_neg h_some]
+      simp_rw [h_each]
+      rw [tsum_zero]
+      unfold per_state_kernel joint_kernel
+      symm
+      apply ENNReal.tsum_eq_zero.mpr
+      intro s_C
+      simp [dif_pos h_valid, dif_neg h_some]
+  · -- ¬h_valid: step_weight = 0 and per_state_kernel = 0.
+    have h_each : ∀ m_new : MatchingState sim pe_C μ_A_init h_init_R,
+        step_weight sim pe_C μ_A_init h_init_R m_prev m_new l s_A = 0 := by
+      intro m_new
+      unfold step_weight
+      rw [dif_neg h_valid]
+    simp_rw [h_each]
+    rw [tsum_zero]
+    unfold per_state_kernel joint_kernel
+    symm
+    apply ENNReal.tsum_eq_zero.mpr
+    intro s_C
+    simp [dif_neg h_valid]
 
 /-! #### `m_dist_posterior_predictive` (§9.3 — the central work item)
 
