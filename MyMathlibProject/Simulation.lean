@@ -4744,7 +4744,20 @@ private lemma joint_mass_path_marginal_s_A_aux
         · simp
         · exfalso; rw [h_eq] at h_some; simp at h_some
       rw [h_kernel, zero_mul]
-    -- h_some: main case. The substantial manipulations below.
+    -- h_some: main case. Set up d and h_d_eq.
+    set d : PMF (Label × PMF State_C) := (pe_C.scheduler.next m.e_C).get h_some with hd_def
+    have h_d_eq : pe_C.scheduler.next m.e_C = some d := Option.eq_some_of_isSome h_some
+    -- Step 1: re-index the s_A_list sum to State_A × {l // l.length = rest.length}.
+    rw [show (∑' (s_A_list : {l : List State_A // l.length = (hd :: rest).length}),
+              joint_mass_path m (hd :: rest) (buildToListA (hd :: rest) s_A_list.1)) =
+            ∑' (p : State_A × {l : List State_A // l.length = rest.length}),
+              joint_mass_path m (hd :: rest)
+                (buildToListA (hd :: rest) (consSubtypeEquiv rest.length p).1) from
+        (Equiv.tsum_eq (consSubtypeEquiv rest.length) _).symm]
+    -- The (consSubtypeEquiv n p).1 = p.1 :: p.2.1, so buildToListA gives (hd.1, p.1) :: ...
+    simp only [consSubtypeEquiv, Equiv.ofBijective, Equiv.coe_fn_mk]
+    -- After Equiv simp, the sum body has explicit s_A :: rest_s_A_list form. The remaining
+    -- substitution + integration manipulation is documented in the inline comments.
     sorry
 
 /-- **§9.4**: marginalising the joint over `e_A`'s state samples
