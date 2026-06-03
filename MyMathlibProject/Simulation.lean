@@ -4955,6 +4955,233 @@ private lemma probOfRemaining_eq_aux
         pre h_term h_matched hd.1 hd.2
     exact ih ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩ h_term' h_matched'
 
+/-! ### Architecture D infrastructure: D1 (faithful PMF port)
+
+The PMF analogues of the D1 lemmas above, driven by `computeNext_PMF`
+(a `PMF (Option (Label × PMF State_A))`) instead of `computeNext` (an
+`Option (PMF (Label × PMF State_A))`). The kernel at a step `(l, s)` is
+`∑' μ, computeNext_PMF m (some (l, μ)) * μ s` — the distribution-preserving
+form that does NOT Classical-collapse σ's choice. -/
+
+/-- **D1-PMF per-step kernel = computeNext_PMF-based kernel**. When the
+matching state from `fromAbstractPrefix` at prefix `e_A` is `some m`,
+the faithful `pe_A.kernel` value equals the matching-state-derived kernel
+formula via `computeNext_PMF`. -/
+private lemma pe_A_faithful_kernel_at_matching_state
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : MatchingState.PMFProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).elim
+        (PMF.pure none) MatchingState.computeNext_PMF)
+    (e_A : AlterSeq State_A Label) {m : MatchingState sim pe_C}
+    (h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A
+      = some m)
+    (step : Label × State_A) :
+    pe_A.kernel e_A step =
+    ∑' μ : PMF State_A, MatchingState.computeNext_PMF m (some (step.1, μ)) * μ step.2 := by
+  unfold MatchingState.PMFProbabilisticExecution.kernel
+  rw [h_sched_eq]
+  change ∑' μ : PMF State_A,
+    ((MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).elim
+      (PMF.pure none) MatchingState.computeNext_PMF) (some (step.1, μ)) * μ step.2 = _
+  rw [h_matched]
+  rfl
+
+/-- **D1-PMF kernel is 0 when no matching state**. The `none` case of
+`fromAbstractPrefix` makes the scheduler emit `PMF.pure none`, whose value
+at any `some _` is 0, yielding `pe_A.kernel e_A step = 0`. -/
+private lemma pe_A_faithful_kernel_zero_when_no_matching_state
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : MatchingState.PMFProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).elim
+        (PMF.pure none) MatchingState.computeNext_PMF)
+    (e_A : AlterSeq State_A Label)
+    (h_none : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A = none)
+    (step : Label × State_A) :
+    pe_A.kernel e_A step = 0 := by
+  unfold MatchingState.PMFProbabilisticExecution.kernel
+  rw [h_sched_eq]
+  change ∑' μ : PMF State_A,
+    ((MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).elim
+      (PMF.pure none) MatchingState.computeNext_PMF) (some (step.1, μ)) * μ step.2 = 0
+  rw [h_none]
+  change ∑' μ : PMF State_A, (PMF.pure none : PMF (Option (Label × PMF State_A)))
+    (some (step.1, μ)) * μ step.2 = 0
+  apply ENNReal.tsum_eq_zero.mpr
+  intro μ
+  rw [PMF.pure_apply_of_ne _ _ (by simp)]
+  ring
+
+/-- **D1-PMF: matching-state-aware `probOfRemaining`** (faithful), the
+recursive form expressing the running PMF probability as a product of
+`computeNext_PMF`-derived per-step masses chained through `advance`. -/
+private noncomputable def probOfRemaining_aux_PMF
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (xs : List (Label × State_A)) : ENNReal :=
+  List.rec
+    (motive := fun _ => MatchingState sim pe_C → ENNReal)
+    (fun _ => 1)
+    (fun hd _rest ih cur_m =>
+      (∑' μ : PMF State_A,
+        MatchingState.computeNext_PMF cur_m (some (hd.1, μ)) * μ hd.2) *
+      ih (cur_m.advance hd.1 hd.2))
+    xs m
+
+/-- **D1-PMF: `probOfRemaining` factors through matching states** (faithful).
+For any prefix `pre` with matching state `some m` and terminating trans,
+the faithful `pe_A.probOfRemaining pre xs` equals the matching-state-aware
+`probOfRemaining_aux_PMF m xs`. -/
+private lemma probOfRemaining_eq_aux_PMF
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : MatchingState.PMFProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).elim
+        (PMF.pure none) MatchingState.computeNext_PMF)
+    (xs : List (Label × State_A)) (pre : AlterSeq State_A Label)
+    (h_term : pre.trans.Terminates)
+    {m : MatchingState sim pe_C}
+    (h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R pre
+      = some m) :
+    pe_A.probOfRemaining pre xs = probOfRemaining_aux_PMF m xs := by
+  induction xs generalizing pre m with
+  | nil => rfl
+  | cons hd rest ih =>
+    rw [pe_A.probOfRemaining_cons pre hd rest]
+    rw [pe_A_faithful_kernel_at_matching_state sim pe_C init_match h_match_R pe_A
+      h_sched_eq pre h_matched hd]
+    change _ = (∑' μ : PMF State_A,
+        MatchingState.computeNext_PMF m (some (hd.1, μ)) * μ hd.2) *
+        probOfRemaining_aux_PMF _ rest
+    congr 1
+    have h_term' : (pre.trans.append (Seq.cons hd Seq.nil)).Terminates :=
+      ⟨Nat.find h_term + 1,
+        Stream'.Seq.terminatedAt_append_find h_term
+          (show (Seq.cons hd Seq.nil).TerminatedAt 1 from rfl)⟩
+    have h_matched' : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+        ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩
+        = some (m.advance hd.1 hd.2) :=
+      fromAbstractPrefix_advance_consistency sim pe_C init_match h_match_R
+        pre h_term h_matched hd.1 hd.2
+    exact ih ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩ h_term' h_matched'
+
+/-- **D1-PMF: `pe_A.continuationFrom.probOf` factors through the matching
+state at `history`**. The continuation's per-execution probability equals
+its `init`-Dirac factor (vanishes off `history.endState`) times the
+matching-state-aware product driven by `m = fromAbstractPrefix history`.
+
+This is the D1 form actually used by `trace_coupling_at_matching_state_faithful`:
+the matching state `m` is the one at `history_A`, and `e_local`'s trans list
+threads `advance m` to compute the running probability. -/
+private lemma pe_A_faithful_continuationFrom_probOf_eq_init_times_aux
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : MatchingState.PMFProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).elim
+        (PMF.pure none) MatchingState.computeNext_PMF)
+    (history : AlterSeq State_A Label) (h_term : history.trans.Terminates)
+    {m : MatchingState sim pe_C}
+    (h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R history
+      = some m)
+    (e_local : AlterSeq State_A Label) (h_e_local : e_local.trans.Terminates) :
+    (pe_A.continuationFrom history h_term).probOf e_local h_e_local =
+    (pe_A.continuationFrom history h_term).init e_local.init *
+      probOfRemaining_aux_PMF m (e_local.trans.toList h_e_local) := by
+  classical
+  unfold MatchingState.PMFProbabilisticExecution.probOf
+  by_cases h_init : e_local.init = history.endState h_term
+  · -- Productive case: init matches; the continuation's kernel reduces to
+    -- pe_A's kernel on the history-extended prefix.
+    congr 1
+    -- Reduce continuation.probOfRemaining via probOfRemaining_continuationFrom.
+    rw [show (pe_A.continuationFrom history h_term).probOfRemaining
+        ⟨e_local.init, Seq.nil⟩ (e_local.trans.toList h_e_local) =
+        (pe_A.continuationFrom history h_term).probOfRemaining
+        ⟨history.endState h_term, Seq.nil⟩ (e_local.trans.toList h_e_local) from by
+      rw [h_init]]
+    rw [MatchingState.PMFProbabilisticExecution.probOfRemaining_continuationFrom
+      pe_A history h_term _]
+    -- Now apply D1-PMF probOfRemaining_eq_aux_PMF.
+    exact probOfRemaining_eq_aux_PMF sim pe_C init_match h_match_R pe_A h_sched_eq
+      (e_local.trans.toList h_e_local) ⟨history.init, history.trans⟩ h_term h_matched
+  · -- Non-matching init: both factors include an init = 0, so both sides are 0.
+    have h_init_zero : (pe_A.continuationFrom history h_term).init e_local.init = 0 :=
+      MatchingState.PMFProbabilisticExecution.init_apply_of_ne _ h_init
+    rw [h_init_zero, zero_mul, zero_mul]
+
+/-- **D1-PMF unfolding (nil)**: `probOfRemaining_aux_PMF m [] = 1`. -/
+private lemma probOfRemaining_aux_PMF_nil
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) :
+    probOfRemaining_aux_PMF m [] = 1 := rfl
+
+/-- **D1-PMF unfolding (cons)**: `probOfRemaining_aux_PMF m (hd :: rest)`
+unfolds into the head kernel mass times `probOfRemaining_aux_PMF` on the
+advanced matching state. -/
+private lemma probOfRemaining_aux_PMF_cons
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) (hd : Label × State_A) (rest : List (Label × State_A)) :
+    probOfRemaining_aux_PMF m (hd :: rest) =
+    (∑' μ : PMF State_A,
+      MatchingState.computeNext_PMF m (some (hd.1, μ)) * μ hd.2) *
+    probOfRemaining_aux_PMF (m.advance hd.1 hd.2) rest := rfl
+
+/-- **D1-PMF: `pe_A.probOf` factors through the initial matching state**
+(faithful). The whole-execution PMF probability equals `pe_A.init e_A.init`
+times the matching-state-aware product, where the product is taken over
+`e_A`'s transitions starting from the matching state at
+`⟨e_A.init, Seq.nil⟩`. -/
+private lemma pe_A_faithful_probOf_eq_init_times_aux
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (init_match : State_C → PMF State_A)
+    (h_match_R : ∀ s_C, s_C ∈ pe_C.init.support → R s_C (init_match s_C))
+    (pe_A : MatchingState.PMFProbabilisticExecution sys_A.toSystem)
+    (h_sched_eq : pe_A.scheduler.next = fun e_A =>
+      (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R e_A).elim
+        (PMF.pure none) MatchingState.computeNext_PMF)
+    (e_A : AlterSeq State_A Label) (h_fin : e_A.trans.Terminates)
+    {m₀ : MatchingState sim pe_C}
+    (h_matched : MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+      ⟨e_A.init, Seq.nil⟩ = some m₀) :
+    pe_A.probOf e_A h_fin =
+    pe_A.init e_A.init * probOfRemaining_aux_PMF m₀ (e_A.trans.toList h_fin) := by
+  unfold MatchingState.PMFProbabilisticExecution.probOf
+  congr 1
+  exact probOfRemaining_eq_aux_PMF sim pe_C init_match h_match_R pe_A h_sched_eq
+    (e_A.trans.toList h_fin) ⟨e_A.init, Seq.nil⟩ Stream'.Seq.terminates_nil h_matched
+
 /-! ### Architecture D infrastructure: D2 (block boundaries)
 
 Structural facts about how `m.e_C` grows along the `advance` chain. Each
@@ -5255,6 +5482,293 @@ private theorem D3_block_mass_conservation_internal
   rw [← h_eq]
   exact ENNReal.le_tsum s_C'
 
+/-- **D3 central — per-s_C' fiber decomposition (equation)**: the
+abstract end-state distribution `ω.bind id` decomposes as a sum over
+concrete samples `s_C'` of γ-derived fiber masses. This is the equation
+form of `D3_block_mass_conservation_internal`'s inequality.
+
+Direct corollary of `per_step_mass_marginal_abstract` — exposes the
+per-`s_C'` fiber `(∑' μ_A_next, γ(s_C', μ_A_next) * μ_A_next s_A_final)`
+as the contribution of concrete state `s_C'` to the abstract end-state
+distribution at `s_A_final`. The fiber's total mass (summed over `s_A_final`)
+is `μ_C(s_C')`, by `PMFRelDecomp.fst_apply_eq_tsum`. -/
+private theorem D3_fiber_decomp_internal
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (s_A_final : State_A) :
+    ((sim.stepWitness h_R h_step).bind id) s_A_final =
+    ∑' (s_C' : State_C), ∑' (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) *
+      μ_A_next s_A_final :=
+  (per_step_mass_marginal_abstract sim h_R h_step s_A_final).symm
+
+/-- **D3 central — σ_int block mass via σ.run (equation, pointwise)**:
+in the internal case, the σ_int-block's end-state mass at `s_A_final`,
+when computed by binding the starting abstract distribution `μ_A`
+through `σ_int.run`, equals the abstract step-witness mass at `s_A_final`.
+
+This is the pointwise equation form of `σ_internal_run_eq` applied at
+`s_A_final`. Bridges the σ.run-based mass accounting (used in the D3
+block analysis) to the simulation step witness's marginal. -/
+private theorem D3_block_mass_internal_via_run
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_int : sys_C.internal l) (s_A_final : State_A) :
+    (μ_A.bind (sim.stepWitness_weakTau h_R h_step h_int).choose.run) s_A_final =
+    ((sim.stepWitness h_R h_step).bind id) s_A_final :=
+  congrArg (fun p : PMF State_A => p s_A_final)
+    (ProbabilisticForwardSimulation.σ_internal_run_eq sim h_R h_step h_int)
+
+/-- **D3 central — concrete-sample fiber's total mass equals μ_C(s_C')**:
+summing the γ-derived fiber mass over `s_A_final` yields `μ_C(s_C')`.
+This is `PMFRelDecomp.fst_apply_eq_tsum` applied to the simulation
+step's γ. Directly couples the fiber's "abstract end-state distribution"
+to the concrete sample's pe_C mass. -/
+private theorem D3_fiber_total_mass_eq_μ_C
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (s_C' : State_C) :
+    ∑' (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) =
+    μ_C s_C' :=
+  ((PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).fst_apply_eq_tsum s_C').symm
+
+/-- **D3 central — full block mass identity (internal case)**: combining
+the fiber decomposition and σ.run identity, the σ_int block's end-state
+distribution at `s_A_final` decomposes as a sum over concrete samples
+`s_C'` of γ-fiber masses:
+  `(μ_A.bind σ_int.run) s_A_final = ∑' s_C', (γ-fiber s_C' at s_A_final)`.
+This is the central per-block mass-conservation equation used by D4 to
+reindex the abstract tsum into the concrete tsum: each `s_C'`-fiber
+becomes one pe_C step's contribution. -/
+private theorem D3_block_mass_internal_decomp
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_int : sys_C.internal l) (s_A_final : State_A) :
+    (μ_A.bind (sim.stepWitness_weakTau h_R h_step h_int).choose.run) s_A_final =
+    ∑' (s_C' : State_C), ∑' (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) *
+      μ_A_next s_A_final := by
+  rw [D3_block_mass_internal_via_run sim h_R h_step h_int s_A_final]
+  exact D3_fiber_decomp_internal sim h_R h_step s_A_final
+
+/-! ### D3 central equations — external case
+
+The external-case analogues of the internal D3 lemmas. The external
+block is the three-phase chain (σ_pre.run → hyperStep.kernel → σ_post.run);
+the chain composition is captured by `ExternalDecomp.chain_eq_stepWitness_bind`.
+The γ fiber decomposition is identical to the internal case (depends only
+on the PMFRel γ, which is the same for both internal and external steps). -/
+
+/-- **D3 central — external block mass via σ_pre + hyper + σ_post chain
+(equation, pointwise)**: in the external case, the composed chain's
+end-state mass at `s_A_final`, when computed by binding the starting
+abstract distribution `μ_A` through the three-phase chain, equals the
+abstract step-witness mass at `s_A_final`.
+
+This is the pointwise equation form of `ExternalDecomp.chain_eq_stepWitness_bind`
+applied at `s_A_final`. -/
+private theorem D3_block_mass_external_via_chain
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_ext : ¬ sys_C.internal l) (s_A_final : State_A) :
+    (((μ_A.bind (externalDecomp sim h_R h_step h_ext).h_pre.choose.run).bind
+        (fun s => ((externalDecomp sim h_R h_step h_ext).h_hyper.kernel s).bind id)).bind
+        (externalDecomp sim h_R h_step h_ext).h_post.choose.run) s_A_final =
+    ((sim.stepWitness h_R h_step).bind id) s_A_final :=
+  congrArg (fun p : PMF State_A => p s_A_final)
+    (ExternalDecomp.chain_eq_stepWitness_bind (externalDecomp sim h_R h_step h_ext))
+
+/-- **D3 central — fiber decomposition (external case)**: the abstract
+end-state distribution `ω.bind id` decomposes as a sum over concrete
+samples `s_C'` of γ-derived fiber masses. Direct corollary of
+`per_step_mass_marginal_abstract` (identical to internal). -/
+private theorem D3_fiber_decomp_external
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (_h_ext : ¬ sys_C.internal l) (s_A_final : State_A) :
+    ((sim.stepWitness h_R h_step).bind id) s_A_final =
+    ∑' (s_C' : State_C), ∑' (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) *
+      μ_A_next s_A_final :=
+  (per_step_mass_marginal_abstract sim h_R h_step s_A_final).symm
+
+/-- **D3 central — full block mass identity (external case)**: combining
+the fiber decomposition and the σ_pre + hyper + σ_post chain identity,
+the external block's end-state distribution at `s_A_final` decomposes as
+a sum over concrete samples `s_C'` of γ-fiber masses. Composes
+`D3_block_mass_external_via_chain` with `D3_fiber_decomp_external`. -/
+private theorem D3_block_mass_external_decomp
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    {s_C : State_C} {μ_A : PMF State_A} (h_R : R s_C μ_A)
+    {l : Label} {μ_C : PMF State_C} (h_step : sys_C.step s_C l μ_C)
+    (h_ext : ¬ sys_C.internal l) (s_A_final : State_A) :
+    (((μ_A.bind (externalDecomp sim h_R h_step h_ext).h_pre.choose.run).bind
+        (fun s => ((externalDecomp sim h_R h_step h_ext).h_hyper.kernel s).bind id)).bind
+        (externalDecomp sim h_R h_step h_ext).h_post.choose.run) s_A_final =
+    ∑' (s_C' : State_C), ∑' (μ_A_next : PMF State_A),
+      (PMFRel.decomp (sim.stepWitness_pmfRel h_R h_step)).γ (s_C', μ_A_next) *
+      μ_A_next s_A_final := by
+  rw [D3_block_mass_external_via_chain sim h_R h_step h_ext s_A_final]
+  exact D3_fiber_decomp_external sim h_R h_step h_ext s_A_final
+
+/-! ### D3 bridge: σ-active-trajectory mass ↔ `probOfRemaining_aux_PMF`
+
+To use D3's central equations inside D4, we need to bridge the matching
+state's chain mass (the running product computed by `probOfRemaining_aux_PMF`
+over a list `xs`) to a σ-level abstraction (`σ.runFromState`-style).
+
+The matching state's chain product `probOfRemaining_aux_PMF m xs` for a
+single trajectory `xs : List (Label × State_A)` is the "**active**
+σ-trajectory probability" — the probability that σ.next emits a `some`
+at each step, sampling the trajectory `xs` exactly. It excludes
+contributions where σ.next halts (emits `none`) mid-block, because the
+per-step kernel `∑' μ, σ.next ... (some (l, μ)) * μ s` only counts the
+some-branch.
+
+`σ.runFromState n e s` includes both branches (none halts at current
+state; some advances). So in general,
+  `(∑' xs of length n ending at s_final, σ-active-traj-mass xs)
+   ≤ (σ.runFromState n e s) s_final`.
+Equality holds when σ never emits `none` mid-block — see
+`WeakScheduler.run_active_eq_run_when_no_mid_halt` below for the
+sufficient condition. -/
+
+/-- **σ active trajectory mass**: the probability under σ.runFromState's
+non-halting branch, summed over all length-`n` trajectories ending at
+`s_final` starting from `(e, s)`. Defined recursively so each step
+extracts the `some`-marginal of σ.next, mirroring `probOfRemaining_aux_PMF`'s
+per-step kernel form.
+
+Named without the `WeakScheduler.` namespace prefix (we're inside
+`namespace ProbabilisticForwardSimulation`); access via the explicit
+`σActiveTrajMass σ ...` form rather than dot notation. -/
+noncomputable def σActiveTrajMass
+    {State Label : Type} {sys : LabelledSystem State Label}
+    (σ : WeakScheduler sys) :
+    ℕ → AlterSeq State Label → State → State → ENNReal
+  | 0,     _, s, s_final =>
+    open Classical in if s = s_final then 1 else 0
+  | n + 1, e, _, s_final => ∑' (l : Label) (s' : State),
+      (∑' (μ : PMF State), σ.next e (some (l, μ)) * μ s') *
+      σActiveTrajMass σ n
+        ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s' s_final
+
+/-- **Bridge — matching state chain ↔ σ active trajectory mass**.
+
+For `m` at a **mid-tau** stage (one of `tauInternal k`, `preExternal k`,
+`postExternal k`) with `m.weak_sched = some σ` and a consistent
+`m.σ_query_prefix`, summing `probOfRemaining_aux_PMF m xs` over `xs`
+of length `n` ending at `s_A_final` equals
+`σ.activeTrajMass n m.σ_query_prefix m.current_abstract_state s_A_final`.
+
+This is the structural bridge linking the matching-state-driven chain
+product to the σ-level abstraction. The proof inducts on `n`, using:
+* `MatchingState.computeNext_mid_tau` to rewrite `computeNext_PMF m`
+  as `σ.next m.σ_query_prefix` (faithful PMF version).
+* `MatchingState.advance` in mid-tau extends `σ_query_prefix` by
+  the step `(l, s')` and updates `current_abstract_state := s'`,
+  matching `activeTrajMass`'s recursion structure.
+* The list-over-xs tsum decomposes via `tsum_eq_tsum_of_ne_zero_bij`
+  or equivalent splitting into head and tail. -/
+private theorem matching_state_chain_eq_σ_active_traj
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) {σ : WeakScheduler sys_A}
+    (_h_ws : m.weak_sched = some σ)
+    (_h_st_ne : m.stage ≠ WeakStage.externalEmit)
+    (n : ℕ) (s_A_final : State_A) :
+    (∑' (xs : { xs : List (Label × State_A) //
+        xs.length = n ∧ ∃ h : xs ≠ [], (xs.getLast h).2 = s_A_final ∨ n = 0 }),
+      probOfRemaining_aux_PMF m xs.1) =
+    σActiveTrajMass σ n m.σ_query_prefix m.current_abstract_state s_A_final := by
+  -- Inducts on n. Base case n = 0: only xs = [] contributes;
+  --   probOfRemaining_aux_PMF m [] = 1, and activeTrajMass 0 _ s s_final
+  --   = if s = s_final then 1 else 0. The subtype's "n = 0" branch
+  --   collapses correctly.
+  -- Step case n+1: split xs = head :: rest; probOfRemaining_aux_PMF
+  --   factors as kernel(m, head) * probOfRemaining_aux_PMF (m.advance) rest;
+  --   in mid-tau, the kernel equals the σ.next some-marginal at m.σ_query_prefix;
+  --   m.advance updates m.σ_query_prefix consistently with activeTrajMass's
+  --   prefix extension.
+  -- The full proof requires:
+  --   * a subtype enumeration that splits {xs : length = n+1, last = s_final}
+  --     as Σ (head : Label × State_A), {rest : length = n, last = s_final},
+  --   * applying the induction hypothesis at the advanced matching state,
+  --   * commuting the head sum with the inner tsum.
+  -- Deferred: structurally clean but ~80-120 lines of subtype shuffling.
+  sorry
+
+/-- **σActiveTrajMass ≤ σ.runFromState (pointwise)**. The active
+trajectory mass is bounded above by the full σ.runFromState mass —
+the difference is exactly the `none`-branch (halt) contributions
+accumulated through the σ.runFromState recursion. Equality holds
+when σ never emits `none` mid-block (i.e., when `σ.next e none = 0`
+for all prefixes shorter than `σ.runtime`). -/
+private theorem σActiveTrajMass_le_runFromState
+    {State Label : Type} {sys : LabelledSystem State Label}
+    (σ : WeakScheduler sys) (n : ℕ)
+    (e : AlterSeq State Label) (s : State) (s_final : State) :
+    σActiveTrajMass σ n e s s_final ≤ σ.runFromState n e s s_final := by
+  classical
+  induction n generalizing e s with
+  | zero =>
+    -- Base case: both sides equal `if s = s_final then 1 else 0`.
+    change (if s = s_final then (1 : ENNReal) else 0) ≤
+      (PMF.pure s : PMF State) s_final
+    rw [PMF.pure_apply]
+    by_cases h : s = s_final
+    · rw [if_pos h, if_pos h.symm]
+    · rw [if_neg h, if_neg (fun h_eq => h h_eq.symm)]
+  | succ n ih =>
+    -- Step case: σActiveTrajMass extracts the some-marginal of σ.next;
+    -- σ.runFromState includes both the none-branch (halt) and some-branches.
+    -- The IH gives the inductive step; the only residual is the reindex from
+    -- ∑' (l, s') (some-marginal kernel) to the full ∑' opt with both branches.
+    -- Deferred: ~40 lines of tsum reindexing across Option-sum + PMF.bind unfolding.
+    sorry
+
+/-- **Composed bridge — matching state chain mass ≤ σ.run mass via
+runFromState**: a direct corollary of the two bridges above, useful for
+D4's mass-bound arguments. -/
+private theorem matching_state_chain_le_σ_run
+    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {R : State_C → PMF State_A → Prop}
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    (m : MatchingState sim pe_C) {σ : WeakScheduler sys_A}
+    (h_ws : m.weak_sched = some σ)
+    (h_st_ne : m.stage ≠ WeakStage.externalEmit)
+    (n : ℕ) (s_A_final : State_A) :
+    (∑' (xs : { xs : List (Label × State_A) //
+        xs.length = n ∧ ∃ h : xs ≠ [], (xs.getLast h).2 = s_A_final ∨ n = 0 }),
+      probOfRemaining_aux_PMF m xs.1) ≤
+    σ.runFromState n m.σ_query_prefix m.current_abstract_state s_A_final := by
+  rw [matching_state_chain_eq_σ_active_traj m h_ws h_st_ne n s_A_final]
+  exact σActiveTrajMass_le_runFromState σ n _ _ _
+
 /-- **Mid-tau per-step kernel value**: in tauInternal / preExternal /
 postExternal stages with `weak_sched = some σ` and σ.next having a
 `some` emission, the matching-state-derived kernel at step `hd = (l, s)`
@@ -5343,16 +5857,36 @@ private lemma pe_A_probOf_eq_init_times_aux
   exact probOfRemaining_eq_aux sim pe_C init_match h_match_R pe_A h_sched_eq
     (e_A.trans.toList h_fin) ⟨e_A.init, Seq.nil⟩ Stream'.Seq.terminates_nil h_matched
 
-/-- **Faithful trace coupling theorem** (Phase 4): the equality form of
-trace coupling, using `pe_A_faithful` and `traceProbPMF`. With Option (a)'s
-faithful design, the per-step kernels preserve σ's full distribution, so
-the per-step mass equations (`fd5810d`) apply directly without the
-Classical-collapse obstacle that blocked the original theorem.
+/-- **Faithful trace coupling theorem** (Phase 4, Architecture D): the
+equality form of trace coupling, using `pe_A_faithful` and `traceProbPMF`.
 
-This is the main Phase 4 deliverable. Cases:
-* `nil`: both `traceProb` / `traceProbPMF` at nil equal 1.
-* `cons`: applies the per-step mass equations using `computeNext_PMF`'s
-  distribution-preserving emission. -/
+**Proof strategy: Architecture D (bijection / mass redistribution).** This
+proof does **NOT** decompose τ via `traceProb_first_step` (the old
+per-step recursive approach blocked by `σ'.runtime` having no syntactic
+bound). Instead, both sides are unfolded as tsums over tight finite
+executions and the equality is established by a direct bijection at the
+tsum level:
+
+* **D1**: characterize `pe_A_faithful.probOf e_A` as a matching-state-aware
+  product `init_A.endState * probOfRemaining_aux_PMF m₀ (e_A.trans.toList _)`,
+  where `m₀ = fromAbstractPrefix history_A` and `probOfRemaining_aux_PMF`
+  chains `computeNext_PMF`-derived per-step masses through `advance`.
+* **D2**: decompose each `e_A`'s trans-list into *weak-transition blocks*,
+  each corresponding to one `pe_C` step `(l_C, s_C') ∈ d.support` committed
+  at an `extendOnCompletion` boundary.
+* **D3**: per-block mass conservation — the σ-trajectory mass through one
+  block equals the pe_C step mass `d(l_C, μ_C) * μ_C(s_C')`. Composes
+  PMFRel γ + σ.run mass conservation + hyperStep kernel mass.
+* **D4**: tsum reindex — rewrite `∑' e_A pe_A_faithful.probOf e_A` via the
+  block decomposition to factor σ-draw masses (which sum to 1) out, yielding
+  `∑' e_C pe_C.probOf e_C`.
+
+No recursion on τ is needed because the bijection handles all trace
+lengths simultaneously.
+
+**Status**: D1 (faithful port), D3 (central composition), and D4 are
+the outstanding pieces. The skeleton below isolates the single deferred
+step. -/
 private theorem trace_coupling_at_matching_state_faithful
     {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
     {R : State_C → PMF State_A → Prop}
@@ -5370,276 +5904,98 @@ private theorem trace_coupling_at_matching_state_faithful
     MatchingState.LabelledSystem.traceProbPMF sys_A
       ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
         history_A h_term_A) τ := by
-  cases τ with
-  | nil =>
-    rw [sys_C.traceProb_nil_eq_one]
-    rw [MatchingState.LabelledSystem.traceProbPMF_nil_eq_one]
-  | cons l₀ τ' =>
-    -- Apply first_step on both sides to unfold cons into a tsum
-    -- over (s₀, l₀, s₁) of init × kernel × continuation traceProb.
-    rw [sys_C.traceProb_first_step (pe_C.continuationFrom m.e_C m.h_term_C) l₀ τ']
-    rw [MatchingState.LabelledSystem.traceProbPMF_first_step sys_A
-      ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
-        history_A h_term_A) l₀ τ']
-    -- Collapse the s₀-Dirac sums on both sides (init is Dirac on endState).
-    conv_lhs =>
-      rw [tsum_eq_single (m.e_C.endState m.h_term_C) (fun s₀ h_ne => by
-        apply ENNReal.tsum_eq_zero.mpr; intro l₀_1
-        apply ENNReal.tsum_eq_zero.mpr; intro s₁
-        rw [(pe_C.continuationFrom m.e_C m.h_term_C).init_apply_of_ne h_ne]
-        ring)]
-    conv_rhs =>
-      rw [tsum_eq_single (history_A.endState h_term_A) (fun s₀ h_ne => by
-        apply ENNReal.tsum_eq_zero.mpr; intro l₀_1
-        apply ENNReal.tsum_eq_zero.mpr; intro s₁
-        rw [MatchingState.PMFProbabilisticExecution.init_apply_of_ne
-          ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
-            history_A h_term_A) h_ne]
-        ring)]
-    -- Clean up the Dirac mass `init endState = 1` on both sides.
-    have h_init_C :
-        (pe_C.continuationFrom m.e_C m.h_term_C).init (m.e_C.endState m.h_term_C) = 1 :=
-      (pe_C.continuationFrom m.e_C m.h_term_C).init_apply_self
-    have h_init_A :
+  -- Architecture D: do NOT case on τ + first_step. Instead unfold both
+  -- sides as tsums over tight finite executions and reindex via the
+  -- block bijection.
+  classical
+  -- Step 1: unfold the RHS as a tsum over tight finite executions, and
+  -- apply D1-PMF to each summand to express pe_A_faithful^cont.probOf as
+  -- the matching-state-aware product.
+  have h_RHS :
+      MatchingState.LabelledSystem.traceProbPMF sys_A
         ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
-          history_A h_term_A).init (history_A.endState h_term_A) = 1 :=
-      MatchingState.PMFProbabilisticExecution.init_apply_self _
-    simp_rw [h_init_C, one_mul]
-    simp_rw [h_init_A, one_mul]
-    -- Apply kernel_continuationFrom on both sides to reduce kernels.
-    simp_rw [pe_C.kernel_continuationFrom m.e_C m.h_term_C Seq.nil]
-    simp_rw [MatchingState.PMFProbabilisticExecution.kernel_continuationFrom
-      (pe_A_faithful sim pe_C init_match h_match_R s_A_init) history_A h_term_A Seq.nil]
-    simp_rw [Stream'.Seq.append_nil]
-    -- Case-split on pe_C.scheduler.next m.e_C (Case 2(a) / 2(b)).
-    classical
-    by_cases h_next_C : pe_C.scheduler.next m.e_C = none
-    · -- ===========================================================
-      -- Case 2(a): pe_C halts at m.e_C. Both kernels vanish.
-      -- ===========================================================
-      -- LHS: pe_C.kernel ⟨m.e_C.init, m.e_C.trans⟩ = 0 by kernel definition + h_next_C.
-      have h_kernel_C_zero : ∀ (l : Label) (s : State_C),
-          pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) (l, s) = 0 := by
-        intro l s
-        change (pe_C.scheduler.next
-            (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)).elim 0 _ = 0
-        rw [show pe_C.scheduler.next
-              (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) =
-              pe_C.scheduler.next m.e_C from rfl]
-        rw [h_next_C]; rfl
-      -- RHS: by the StrongInv from `_h_matched`, m.weak_sched = none, so
-      -- computeNext_PMF m = PMF.pure none, so kernel = 0.
-      have h_strong : m.StrongInv :=
-        fromAbstractPrefix_strongInv sim pe_C init_match h_match_R history_A _h_matched
-      have h_ws_none : m.weak_sched = none := h_strong.1.mpr h_next_C
-      have h_kernel_A_zero : ∀ (l : Label) (s : State_A),
-          (pe_A_faithful sim pe_C init_match h_match_R s_A_init).kernel
-              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) = 0 := by
-        intro l s
-        unfold MatchingState.PMFProbabilisticExecution.kernel
-        -- Goal: ∑' μ, pe_A_faithful.scheduler.next ⟨...⟩ (some (l, μ)) * μ s = 0.
-        -- pe_A_faithful.scheduler.next ⟨history_A.init, history_A.trans⟩ =
-        --   (fromAbstractPrefix history_A).elim (PMF.pure none) computeNext_PMF
-        --   = computeNext_PMF m (since _h_matched).
-        -- m.weak_sched = none → computeNext_PMF m = PMF.pure none.
-        -- PMF.pure none at (some _) = 0.
-        have h_sched : (pe_A_faithful sim pe_C init_match h_match_R s_A_init).scheduler.next
-            (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) = PMF.pure none := by
-          change (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
-              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)).elim
-            (PMF.pure none) MatchingState.computeNext_PMF = PMF.pure none
-          rw [show (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) =
-                history_A from rfl]
-          rw [_h_matched]
-          simp only [Option.elim_some]
-          unfold MatchingState.computeNext_PMF
-          rw [h_ws_none]
-        rw [h_sched]
-        apply ENNReal.tsum_eq_zero.mpr
-        intro μ
-        rw [PMF.pure_apply_of_ne _ _ (by simp)]
-        ring
-      -- Both sides reduce to 0.
-      rw [show (∑' (l_first : Label) (s_first : State_C),
-            pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)
-              (l_first, s_first) * _) = 0 from by
-        apply ENNReal.tsum_eq_zero.mpr; intro l_first
-        apply ENNReal.tsum_eq_zero.mpr; intro s_first
-        rw [h_kernel_C_zero l_first s_first]; ring]
-      rw [show (∑' (l_first : Label) (s_first : State_A),
-            (pe_A_faithful sim pe_C init_match h_match_R s_A_init).kernel
-              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)
-              (l_first, s_first) * _) = 0 from by
-        apply ENNReal.tsum_eq_zero.mpr; intro l_first
-        apply ENNReal.tsum_eq_zero.mpr; intro s_first
-        rw [h_kernel_A_zero l_first s_first]; ring]
-    · -- ===========================================================
-      -- Case 2(b): pe_C.scheduler.next m.e_C = some d. The productive case.
-      -- Uses PMFRel γ + per-step mass equations + recursive call.
-      -- ===========================================================
-      -- Step (b.0): extract d : PMF (Label × PMF State_C) from h_next_C.
-      obtain ⟨d, h_d⟩ := Option.ne_none_iff_exists'.mp h_next_C
-      -- Step (b.1): from StrongInv, m.weak_sched ≠ none ⇒ m.weak_sched = some σ.
-      have h_strong : m.StrongInv :=
-        fromAbstractPrefix_strongInv sim pe_C init_match h_match_R history_A _h_matched
-      have h_ws_ne : m.weak_sched ≠ none := by
-        intro h_ws_none
-        exact h_next_C (h_strong.1.mp h_ws_none)
-      obtain ⟨σ, h_ws⟩ := Option.ne_none_iff_exists'.mp h_ws_ne
-      -- Step (b.2): simplify pe_C's kernel using h_d.
-      have h_kernel_C : ∀ (l : Label) (s : State_C),
-          pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) (l, s) =
-          (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) (l, s) := by
-        intro l s
-        change (pe_C.scheduler.next
-            (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)).elim 0 _ = _
-        rw [show pe_C.scheduler.next
-              (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) =
-              pe_C.scheduler.next m.e_C from rfl]
-        rw [h_d]
-        rfl
-      -- Step (b.3): simplify pe_A_faithful's kernel using `_h_matched`.
-      have h_sched_A : (pe_A_faithful sim pe_C init_match h_match_R s_A_init).scheduler.next
-          (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) =
-            MatchingState.computeNext_PMF m := by
-        change (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
-            (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)).elim
-              (PMF.pure none) MatchingState.computeNext_PMF = _
-        rw [show (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) =
-              history_A from rfl]
-        rw [_h_matched]
-        rfl
-      have h_kernel_A : ∀ (l : Label) (s : State_A),
-          (pe_A_faithful sim pe_C init_match h_match_R s_A_init).kernel
-              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) =
-          ∑' μ, MatchingState.computeNext_PMF m (some (l, μ)) * μ s := by
-        intro l s
-        unfold MatchingState.PMFProbabilisticExecution.kernel
-        rw [h_sched_A]
-      -- Step (b.4): rewrite both kernels in the goal.
-      simp_rw [h_kernel_C, h_kernel_A]
-      -- Step (b.5): decompose by stage: externalEmit (hyper_witness-based)
-      -- vs mid-tau (tauInternal/preExternal/postExternal, σ.next directly).
-      cases h_st : m.stage with
-      | externalEmit =>
-        -- ===========================================================
-        -- Case 2(b.i): externalEmit. computeNext_PMF uses hyper_witness.
-        -- The kernel emits (l, μ) where l is the external label and μ
-        -- is sampled from `w.kernel m.current_abstract_state` (the
-        -- hyper-step kernel from m.current_abstract_state).
-        -- ===========================================================
-        -- Extract w : HyperWitness from HyperWitnessInv (always ≠ none at
-        -- externalEmit per fromAbstractPrefix_hyperWitnessInv).
-        have h_hyp_inv : m.HyperWitnessInv :=
-          fromAbstractPrefix_hyperWitnessInv sim pe_C init_match h_match_R history_A _h_matched
-        have h_hyp_ne : m.hyper_witness ≠ none :=
-          h_hyp_inv (Or.inl h_st)
-        obtain ⟨w, h_w⟩ := Option.ne_none_iff_exists'.mp h_hyp_ne
-        -- Simplify computeNext_PMF m using stage = externalEmit + h_w.
-        have h_compute : MatchingState.computeNext_PMF m =
-            (letI : Decidable (m.current_abstract_state ∈ w.μ_pre.support) :=
-              Classical.propDecidable _
-            if m.current_abstract_state ∈ w.μ_pre.support then
-              (w.kernel m.current_abstract_state).map (fun μ => some (w.l, μ))
-            else
-              PMF.pure none) := by
-          unfold MatchingState.computeNext_PMF
-          rw [h_ws, h_st, h_w]
-        -- Substitute computeNext_PMF's externalEmit reduction.
-        simp_rw [h_compute]
-        -- Case-split on support condition.
-        by_cases h_supp : m.current_abstract_state ∈ w.μ_pre.support
-        · -- Productive sub-case: RHS kernel becomes a map of w.kernel.
-          simp_rw [if_pos h_supp]
-          -- Simplify `PMF.map (fun μ ↦ some (w.l, μ)) (w.kernel cas) (some (l_first, μ))`
-          -- to `if l_first = w.l then (w.kernel cas) μ else 0`.
-          have h_map_apply : ∀ (l_first : Label) (μ : PMF State_A),
-              PMF.map (fun μ' => some (w.l, μ')) (w.kernel m.current_abstract_state)
-                  (some (l_first, μ)) =
-              (if l_first = w.l then (w.kernel m.current_abstract_state) μ else 0) := by
-            intro l_first μ
-            rw [PMF.map_apply]
-            by_cases h_l : l_first = w.l
-            · subst h_l
-              rw [if_pos rfl]
-              rw [tsum_eq_single μ]
-              · rw [if_pos rfl]
-              · intro μ' h_ne_μ
-                rw [if_neg]
-                intro h_eq
-                exact h_ne_μ (Prod.mk.inj (Option.some.inj h_eq)).2.symm
-            · rw [if_neg h_l]
-              apply ENNReal.tsum_eq_zero.mpr
-              intro μ'
-              rw [if_neg]
-              intro h_eq
-              exact h_l (Prod.mk.inj (Option.some.inj h_eq)).1
-          simp_rw [h_map_apply]
-          -- Productive sub-case fully reduces the RHS:
-          --   RHS = ∑' s_first, ((w.kernel cas).bind id) s_first *
-          --           (consumeLabel w.l (cons l₀ τ')).elim 0 (...)
-          -- but matching to the LHS (pe_C's d-driven kernel) still requires the
-          -- PMFRel γ coupling + a recursive call on the continuation traceProb.
-          sorry
-        · -- Non-support sub-case: computeNext = PMF.pure none, RHS kernel = 0.
-          -- The RHS reduces to 0 trivially (PMF.pure none at some _ is 0).
-          -- For equality we need LHS = 0 too. This case must be ruled out
-          -- by an invariant guaranteeing `cas ∈ μ_pre.support` at the
-          -- externalEmit stage — currently not established. The lemma
-          -- `MatchingState.computeNext_externalEmit` at line 4242 already
-          -- requires this support condition as an explicit hypothesis.
-          simp_rw [if_neg h_supp]
-          -- Reduce RHS to 0.
-          rw [show (∑' (l_first : Label) (s_first : State_A),
-                (∑' (μ : PMF State_A), (PMF.pure none : PMF (Option (Label × PMF State_A)))
-                    (some (l_first, μ)) * μ s_first) *
-                (sys_A.consumeLabel l_first (Seq.cons l₀ τ')).elim 0
-                  (fun τ_rest => MatchingState.LabelledSystem.traceProbPMF sys_A
-                    (((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
-                          history_A h_term_A).continuationFrom
-                      ⟨history_A.endState h_term_A, Seq.cons (l_first, s_first) Seq.nil⟩
-                      ⟨1, by
-                        change (Seq.cons (l_first, s_first) Seq.nil).get? 1 = none
-                        rw [Stream'.Seq.get?_cons_succ]
-                        exact Stream'.Seq.terminatedAt_nil⟩) τ_rest)) = 0 from by
-            apply ENNReal.tsum_eq_zero.mpr; intro l_first
-            apply ENNReal.tsum_eq_zero.mpr; intro s_first
-            rw [show (∑' (μ : PMF State_A), (PMF.pure none : PMF (Option (Label × PMF State_A)))
-                  (some (l_first, μ)) * μ s_first) = 0 from by
-              apply ENNReal.tsum_eq_zero.mpr; intro μ
-              rw [PMF.pure_apply_of_ne _ _ (by simp)]; ring]
-            ring]
-          -- Goal: LHS = 0. Requires the CasInSupportInv invariant.
-          sorry
-      | tauInternal _ =>
-        -- ===========================================================
-        -- Case 2(b.ii): mid-tau (tauInternal k). computeNext_PMF m =
-        -- σ.next m.σ_query_prefix. Uses PMFRel γ + recursive call.
-        -- ===========================================================
-        -- Simplify computeNext_PMF in this mid-tau case to σ.next.
-        have h_compute_mid : MatchingState.computeNext_PMF m = σ.next m.σ_query_prefix := by
-          unfold MatchingState.computeNext_PMF
-          rw [h_ws, h_st]
-        simp_rw [h_compute_mid]
-        sorry
-      | preExternal _ =>
-        -- ===========================================================
-        -- Case 2(b.iii): mid-tau (preExternal k). Same as (b.ii).
-        -- ===========================================================
-        have h_compute_mid : MatchingState.computeNext_PMF m = σ.next m.σ_query_prefix := by
-          unfold MatchingState.computeNext_PMF
-          rw [h_ws, h_st]
-        simp_rw [h_compute_mid]
-        sorry
-      | postExternal _ =>
-        -- ===========================================================
-        -- Case 2(b.iv): mid-tau (postExternal k). Same as (b.ii).
-        -- ===========================================================
-        have h_compute_mid : MatchingState.computeNext_PMF m = σ.next m.σ_query_prefix := by
-          unfold MatchingState.computeNext_PMF
-          rw [h_ws, h_st]
-        simp_rw [h_compute_mid]
-        sorry
+          history_A h_term_A) τ =
+      ∑' e_A : {e : AlterSeq State_A Label //
+          e.trans.Terminates ∧ sys_A.trace e = τ ∧ sys_A.IsTight e},
+        ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+          history_A h_term_A).init e_A.1.init *
+        probOfRemaining_aux_PMF m (e_A.1.trans.toList e_A.2.1) := by
+    unfold MatchingState.LabelledSystem.traceProbPMF
+    apply tsum_congr
+    rintro ⟨e_A, h_term, h_trace, h_tight⟩
+    exact pe_A_faithful_continuationFrom_probOf_eq_init_times_aux sim pe_C init_match
+      h_match_R (pe_A_faithful sim pe_C init_match h_match_R s_A_init) rfl
+      history_A h_term_A _h_matched e_A h_term
+  rw [h_RHS]
+  -- Step 2: collapse the init Dirac on RHS (e_A.init ≠ history_A.endState ⇒ init = 0).
+  rw [show
+      (∑' e_A : {e : AlterSeq State_A Label //
+          e.trans.Terminates ∧ sys_A.trace e = τ ∧ sys_A.IsTight e},
+        ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+          history_A h_term_A).init e_A.1.init *
+        probOfRemaining_aux_PMF m (e_A.1.trans.toList e_A.2.1))
+      = ∑' e_A : {e : AlterSeq State_A Label //
+          e.trans.Terminates ∧ sys_A.trace e = τ ∧ sys_A.IsTight e ∧
+          e.init = history_A.endState h_term_A},
+        probOfRemaining_aux_PMF m (e_A.1.trans.toList e_A.2.1) from by
+    set A := {e : AlterSeq State_A Label //
+        e.trans.Terminates ∧ sys_A.trace e = τ ∧ sys_A.IsTight e} with hA_def
+    set p : A → Prop := fun a => a.1.init = history_A.endState h_term_A with hp_def
+    rw [show
+        (∑' a : A,
+          ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+            history_A h_term_A).init a.1.init *
+          probOfRemaining_aux_PMF m (a.1.trans.toList a.2.1)) =
+        ∑' x : {a : A // p a} ⊕ {a : A // ¬ p a},
+          ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+            history_A h_term_A).init ((Equiv.sumCompl p) x).1.init *
+          probOfRemaining_aux_PMF m
+            (((Equiv.sumCompl p) x).1.trans.toList ((Equiv.sumCompl p) x).2.1) from
+      ((Equiv.sumCompl p).tsum_eq _).symm]
+    rw [tsum_sum_type]
+    have h_zero : (∑' a : {a : A // ¬ p a},
+        ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+          history_A h_term_A).init ((Equiv.sumCompl p) (Sum.inr a)).1.init *
+        probOfRemaining_aux_PMF m
+          (((Equiv.sumCompl p) (Sum.inr a)).1.trans.toList
+            ((Equiv.sumCompl p) (Sum.inr a)).2.1)) = 0 := by
+      apply ENNReal.tsum_eq_zero.mpr
+      rintro ⟨⟨e, h_term', h_trace', h_tight'⟩, h_ne⟩
+      rw [MatchingState.PMFProbabilisticExecution.init_apply_of_ne _ h_ne, zero_mul]
+    rw [h_zero, add_zero]
+    let e_B' : {a : A // p a} ≃ {e : AlterSeq State_A Label //
+        e.trans.Terminates ∧ sys_A.trace e = τ ∧ sys_A.IsTight e ∧
+        e.init = history_A.endState h_term_A} :=
+      { toFun := fun ⟨⟨e, h_term', h_trace', h_tight'⟩, h_init'⟩ =>
+          ⟨e, h_term', h_trace', h_tight', h_init'⟩
+        invFun := fun ⟨e, h_term', h_trace', h_tight', h_init'⟩ =>
+          ⟨⟨e, h_term', h_trace', h_tight'⟩, h_init'⟩
+        left_inv := fun ⟨⟨_, _, _, _⟩, _⟩ => rfl
+        right_inv := fun ⟨_, _, _, _, _⟩ => rfl }
+    refine (tsum_congr (fun a => ?_)).trans
+      (e_B'.tsum_eq (fun e =>
+        probOfRemaining_aux_PMF m (e.1.trans.toList e.2.1)))
+    rcases a with ⟨⟨e, _, _, _⟩, h_init'⟩
+    have h_init_one :
+        ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+          history_A h_term_A).init e.init = 1 := by
+      rw [h_init']
+      exact MatchingState.PMFProbabilisticExecution.init_apply_self _
+    change ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+        history_A h_term_A).init e.init *
+        probOfRemaining_aux_PMF m (e.trans.toList _) = _
+    rw [h_init_one, one_mul]
+    rfl]
+  -- The RHS is now reduced to a clean tsum over tight `e_A` with
+  -- `e_A.init = history_A.endState h_term_A` and trace τ, of the matching
+  -- state-aware product `probOfRemaining_aux_PMF m (e_A.trans.toList)`.
+  --
+  -- Step 3 (D2 + D3 + D4): reindex this tsum via the block decomposition
+  -- of `e_A.trans` against pe_C's d.support, factor out the σ-draw masses
+  -- (which sum to 1 via PMFRel γ + σ.run mass conservation +
+  -- hyperStep kernel mass), and conclude equality with
+  -- `sys_C.traceProb (pe_C.continuationFrom m.e_C m.h_term_C) τ`.
+  sorry
 
 /-- (Original `trace_coupling_at_matching_state` — superseded by the
 faithful version above. Retained for reference; its 8 Case 2(b)

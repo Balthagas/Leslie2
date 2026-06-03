@@ -1,0 +1,86 @@
+================================================================================
+        REVIEW OF TRACE_INCLUSION_PLAN.txt v4 (post-B.1 fix)
+================================================================================
+
+B.1 from the prior review is correctly fixed:
+
+  §3.2 fromAbstractPrefix base case now includes the μ_A_init(s_A_init)
+  factor (line 269), and the total-mass calculation correctly yields
+  μ_A_init(s_A_init) = pe_A.init(s_A_init) = pe_A.probOf(⟨s_A_init, []⟩)
+  (line 277-282).
+
+  A new WATCH OUT (line 284-288) explicitly notes the codebase's probOf
+  convention and why the μ_A_init factor is needed.
+
+  §9.3's m_dist_posterior_predictive base case (line 810-825) now
+  propagates the μ_A_init factor correctly: the outer μ_A_init(s_A_init)
+  accounts for pe_A.init, and the inner concrete-sum gives pe_A.kernel
+  at the first step, together yielding pe_A.probOf(history_A_1).
+
+  §9.5's base case (which was already correct) remains consistent.
+
+================================================================================
+PLAN STATUS
+================================================================================
+
+After successive revisions v1 → v2 → v3 → v4 (with B.1 fix), the plan
+now meets all review criteria:
+
+  Architecture:
+    ✓ pe_A operates over sys_A^w (weak-step closure); flatten deferred.
+    ✓ pe_A.trans mirrors pe_C.trans step-by-step; no lookahead needed.
+    ✓ Matching state is a trajectory-relative 4-field record.
+    ✓ fromAbstractPrefix is an unnormalised ENNReal-valued kernel.
+    ✓ Mass-conservation invariant is precisely stated, with
+      μ_A_init(s_A_init) factored correctly into the base case.
+    ✓ pe_A is a PMFProbabilisticExecution with PMF (Option ...) shape.
+
+  Proof structure:
+    ✓ joint-space tsum bijection, no induction on τ.
+    ✓ Variable-length TightExecsA(τ) lemma stated precisely.
+    ✓ m_dist_posterior_predictive identified as the central work item,
+      with explicit unnormalised statement and proof sketch.
+    ✓ Mass conservation and m_dist_posterior_predictive are noted as
+      simultaneous inductions — the interleaving is acknowledged.
+    ✓ joint_marginalises_to_pe_C and joint_marginalises_to_pe_A both
+      have explicit induction-on-n proofs.
+
+  Notation and definitions:
+    ✓ joint_kernel parameterised by matching state m (trajectory-aware).
+    ✓ per_state_kernel marginalises γ over s_C' (V.1 fix preserved).
+    ✓ Indicator notation [ϕ] explicitly defined as ENNReal indicator.
+    ✓ step_weight integral semantics clarified.
+    ✓ h_R derivation from γ's R-on-support documented.
+
+  Estimate of effort: 3-4 weeks, with the concentrated work in:
+    - MatchingStateKernel + mass conservation:        ~1.5-2 days
+    - m_dist_posterior_predictive (§9.3):             ~2-3 days
+    - joint_marginalises_to_pe_A (§9.5):              ~2-3 days
+
+================================================================================
+READY FOR LEAN IMPLEMENTATION
+================================================================================
+
+I have no further plan-level concerns. The mathematical structure is
+sound and the lemma statements are precise enough that the Lean proofs
+can proceed directly from the checklist in §10.
+
+Suggested first-week order (matching §11's structure):
+  Day 1:      Remove dead code (σ-step machinery, old pe_A_faithful).
+  Day 2:      sys_A^w + step relation + MatchingState 4-field record +
+              advance_pe_C_step.
+  Days 3-4:   MatchingStateKernel + fromAbstractPrefix definition +
+              mass conservation invariant (probably interleaved with the
+              m_dist_posterior_predictive proof — they are simultaneous
+              inductions).
+  Day 5:      blockEmission_general + pe_A_emission_distribution +
+              pe_A as PMFProbabilisticExecution sys_A^w.
+
+  Week 2 focuses on the joint-space machinery and the two
+  joint_marginalises lemmas.
+  Week 3 closes traceInclusion and addresses any unexpected Lean-level
+  obstacles.
+
+================================================================================
+                                  END OF REVIEW
+================================================================================
