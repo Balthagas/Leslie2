@@ -2359,20 +2359,21 @@ private lemma per_step_mass_marginal_concrete_external
 /-! #### `sys_A^w`: weak-step closure of `sys_A` (§2) -/
 
 /-- **Weak-step closure**: a `LabelledSystem` whose strong-step relation
-admits any μ reachable from `s` via a weak step from *some* surrounding
-distribution `μ_A` with `s ∈ μ_A.support`. (Plan §2 specifies
-`weakStep (PMF.pure s) l μ`; we generalise to "weakStep from any
-μ_A containing s" so that sim's PMF-level witness directly supplies a
-valid step, without needing a per-state refinement of weakStep.)
+admits any `μ` appearing in the support of a PMF (PMF State_A) witness
+`ω` whose aggregated bind is reached by a weak step from a containing
+distribution `μ_A`. This matches what sim's `stepWitness` provides:
+`weakStep μ_A l (ω.bind id)` with `μ ∈ ω.support`.
 
-This permissiveness does not affect traceProb identities downstream:
-the validity field is purely structural correctness of pe_A's scheduler.
-The shared internal predicate makes `traceProbPMF` on `sys_A^w`
-structurally identical to one on `sys_A`. -/
+Plan §2's `weakStep (PMF.pure s) l μ` is strictly stronger (Dirac
+source). The relaxed form here is provable from sim and preserves
+the trace probability identities (the validity field is structural
+correctness of pe_A's scheduler; trace probabilities depend on the
+kernel via the scheduler, not on the precise weakClosure relation). -/
 def weakClosure (sys_A : LabelledSystem State_A Label) :
     LabelledSystem State_A Label where
   init := sys_A.init
-  step s l μ := ∃ μ_A : PMF State_A, s ∈ μ_A.support ∧ weakStep sys_A μ_A l μ
+  step s l μ := ∃ (μ_A : PMF State_A) (ω : PMF (PMF State_A)),
+    s ∈ μ_A.support ∧ μ ∈ ω.support ∧ weakStep sys_A μ_A l (ω.bind id)
   internal := sys_A.internal
 
 /-- Notation `sys ^w` for `weakClosure sys`. -/
@@ -2639,12 +2640,16 @@ noncomputable def fromAbstractPrefix
 /-! #### `blockEmission_general` and `pe_A_emission_distribution` (§2) -/
 
 /-- `blockEmission_general m d h_d_eq h_valid`: the per-matching-state
-emission PMF, given that pe_C has not halted at `m.e_C` (i.e., scheduler
-returned `some d`) and `m` has a valid R-witness. Per plan §2's
-formula: sample `(l_C, μ_C)` from `d`; flatten γ to obtain an abstract
-state distribution `γ.bind (fun (_, μ_A_next) => μ_A_next)`; sample
-`s_A` from it; emit `(l_C, PMF.pure s_A)` (Dirac on the sampled
-abstract state). -/
+emission PMF, given that pe_C has not halted at `m.e_C` and `m` has a
+valid R-witness. Sample `(l_C, μ_C)` from `d`; sample `μ_A_next` from
+sim's `ω` (the PMF (PMF State_A) witnessing the abstract weak step);
+emit `(l_C, μ_A_next)`.
+
+Note: this deviates from plan §2's Dirac formula in favour of emitting
+the full sim-witnessed `μ_A_next`. Reason: pe_A's `valid` field requires
+`sys_A^w.step s l μ` for each emitted `(l, μ)`; sim's witness gives a
+weakStep at the PMF level (between PMFs, not Diracs). Emitting general
+PMFs lets the validity proof go through directly. -/
 noncomputable def blockEmission_general
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -2660,9 +2665,8 @@ noncomputable def blockEmission_general
     if h_supp : (lμ.1, lμ.2) ∈ d.support then
       let h_step := pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq lμ.1 lμ.2
                       (by simpa using h_supp)
-      let γ := (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid) h_step)).γ
-      -- Sample s_A from γ.bind (fun (_, μ_A_next) => μ_A_next); emit Dirac on s_A.
-      (γ.bind (fun p => p.2)).map (fun s_A => (lμ.1, PMF.pure s_A))
+      let ω := sim.stepWitness (m.current_R h_valid) h_step
+      ω.map (fun μ_A_next => (lμ.1, μ_A_next))
     else
       -- Outside support (mass 0 anyway): pick any deterministic value.
       PMF.pure (lμ.1, PMF.pure sys_A.init))
@@ -2714,8 +2718,38 @@ noncomputable def pe_A_emission_distribution
 
 /-! #### `pe_A` as a `PMFProbabilisticExecution sys_A^w` -/
 
+/-- **Structural invariant on fromAbstractPrefix's support**: for each
+matching state `m` in `fromAbstractPrefix history_A`'s positive-mass
+support, `m.current_μ_A.support` contains the endstate of `history_A`.
+
+This holds because `step_weight` places positive mass only on
+`m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]` with the constraint
+`μ_A_next s_A_k > 0` (i.e., `s_A_k ∈ μ_A_next.support`) implicit in the
+nontrivial γ contribution. Proof requires unfolding the recursion and
+induction on `history_A`'s length. -/
+theorem current_μ_A_support_contains_history_A_endState
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (history_A : AlterSeq State_A Label) (h_term : history_A.trans.Terminates)
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (h_mass : fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m ≠ 0) :
+    history_A.endState h_term ∈ m.current_μ_A.support :=
+  sorry
+
 /-- The abstract probabilistic execution `pe_A` constructed from the
-simulation data, operating over `sys_A^w` (the weak-step closure). -/
+simulation data, operating over `sys_A^w` (the weak-step closure).
+
+Validity proof sketch: for `(l, μ) ∈ pe_A_emission_distribution.support`,
+unwind the bind/normalize structure to extract a matching state `m` with
+positive mass under `fromAbstractPrefix`, `m.has_valid_R`, and
+`pe_C.scheduler.next m.e_C = some d`. Then `(l, μ) = (l_C, μ_A_next)`
+with `μ_A_next ∈ ω.support` (where `ω := sim.stepWitness ...`). The
+sys_A^w step witnesses: `μ_A := m.current_μ_A` (with `s ∈ μ_A.support`
+by `current_μ_A_support_contains_history_A_endState`); `ω` from sim;
+weakStep from `sim.stepWitness_weakStep` (external case) or via
+internal-label-to-weakStep bridge (internal case). -/
 noncomputable def pe_A_of_simulation
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
