@@ -2420,12 +2420,20 @@ external). -/
 noncomputable def advance_pe_C_step
     (m : MatchingState sim pe_C μ_A_init h_init_R)
     (l_C : Label) (s_C' : State_C) (μ_A_next : PMF State_A)
-    (_h_R_next : R s_C' μ_A_next) :
+    (h_R_next : R s_C' μ_A_next) :
     MatchingState sim pe_C μ_A_init h_init_R where
   e_C := ⟨m.e_C.init, m.e_C.trans.append (Seq.cons (l_C, s_C') Seq.nil)⟩
-  e_C_term := by sorry
+  e_C_term := ⟨Nat.find m.e_C_term + 1,
+    Stream'.Seq.terminatedAt_append_find m.e_C_term
+      (show (Seq.cons (l_C, s_C') Seq.nil).TerminatedAt 1 from rfl)⟩
   μ_A_chain := m.μ_A_chain ++ [μ_A_next]
-  h_R := by intro _; sorry
+  h_R := by
+    intro _h_ne
+    -- `endState` of `e_C.append (cons (l_C, s_C') nil)` equals `s_C'`,
+    -- by `AlterSeq.endState_append_singleton`.
+    rw [AlterSeq.endState_append_singleton m.e_C m.e_C_term l_C s_C',
+        List.getLast_append_singleton]
+    exact h_R_next
 
 end MatchingState
 
