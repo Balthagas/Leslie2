@@ -3658,7 +3658,7 @@ private theorem pe_A_kernel_via_m_kernel
   set Z := ∑' m, m_kernel m with hZ_def
   -- Unfold pe_A.kernel and project scheduler.next; goal is now in terms of
   -- pe_A_emission_distribution directly.
-  show (∑' μ : PMF State_A,
+  change (∑' μ : PMF State_A,
       pe_A_emission_distribution sim pe_C μ_A_init h_init_R history_A_k (some (l, μ)) * μ s_A) *
       Z = _
   -- Unfold pe_A_emission_distribution and apply dif_pos's.
@@ -3734,8 +3734,40 @@ theorem m_dist_posterior_predictive
       ⟨history_A_k.init, history_A_k.trans.append (Seq.cons (l, s_A) Seq.nil)⟩
       ⟨Nat.find h_term_k + 1,
         Stream'.Seq.terminatedAt_append_find h_term_k
-          (show (Seq.cons (l, s_A) Seq.nil).TerminatedAt 1 from rfl)⟩ :=
-  sorry
+          (show (Seq.cons (l, s_A) Seq.nil).TerminatedAt 1 from rfl)⟩ := by
+  classical
+  set pe_A := pe_A_of_simulation sim pe_C μ_A_init h_init_R with hpe_A_def
+  set m_kernel : MatchingState sim pe_C μ_A_init h_init_R → ENNReal :=
+    fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k with hmk_def
+  set Z := ∑' m, m_kernel m with hZ_def
+  -- Sub-lemma C: end-step probOf factorisation.
+  rw [PMFProbabilisticExecution.probOf_append_singleton pe_A history_A_k.init history_A_k.trans
+        h_term_k (l, s_A)]
+  -- Mass conservation at step k.
+  have h_mass : Z = pe_A.probOf history_A_k h_term_k :=
+    fromAbstractPrefix_mass_conservation sim pe_C μ_A_init h_init_R history_A_k h_term_k
+  -- Case split on Z = 0.
+  by_cases h_Z_eq_zero : Z = 0
+  · -- Z = 0: both sides are 0.
+    rw [← h_mass, h_Z_eq_zero, zero_mul]
+    apply ENNReal.tsum_eq_zero.mpr; intro m
+    have h_each : m_kernel m = 0 := ENNReal.tsum_eq_zero.mp h_Z_eq_zero m
+    rw [h_each, zero_mul]
+  · -- Z ≠ 0: derive Z ≠ ⊤ from probOf_le_init and PMF.coe_le_one.
+    have h_Z_ne_top : Z ≠ ⊤ := by
+      rw [h_mass]
+      refine ne_of_lt
+        (lt_of_le_of_lt (PMFProbabilisticExecution.probOf_le_init pe_A history_A_k h_term_k) ?_)
+      exact lt_of_le_of_lt (PMF.coe_le_one _ _) ENNReal.one_lt_top
+    -- Apply sub-lemma B (multiplicative form).
+    have h_sub_B :
+        pe_A.kernel history_A_k (l, s_A) * Z =
+        ∑' m, m_kernel m * per_state_kernel m l s_A :=
+      pe_A_kernel_via_m_kernel sim pe_C μ_A_init h_init_R history_A_k h_term_k l s_A
+        h_Z_eq_zero h_Z_ne_top
+    -- Combine: ∑' m, ... = pe_A.kernel * Z = pe_A.kernel * pe_A.probOf history_A_k
+    --                    = pe_A.probOf history_A_k * pe_A.kernel
+    rw [← h_sub_B, ← h_mass, mul_comm]
 
 /-! #### Joint-space marginals (§9.4, §9.5)
 
