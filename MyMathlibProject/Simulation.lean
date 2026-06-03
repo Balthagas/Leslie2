@@ -2699,15 +2699,68 @@ Once `joint_kernel` and `joint_mass` are defined, the two marginal
 identities bridge `pe_C.probOf` and `pe_A.probOf` to a shared joint mass
 quantity, giving the trace coupling by tsum bijection. -/
 
-/-- **§9.4**: marginalising the joint over `e_A` recovers `pe_C.probOf e_C`.
-Proven by composing per-step `joint_kernel_marginal_s_A` across the
-trajectory. -/
-theorem joint_marginalises_to_pe_C : True := trivial -- TODO: state precisely
+/-- **Joint mass**: `joint_mass e_C e_A` is the total probability of a
+joint (concrete, abstract) trajectory whose concrete part is `e_C` and
+abstract part is `e_A`, integrated over the γ-sampled abstract
+distributions along the path. Defined as
+  `pe_C.init e_C.init * μ_A_init e_A.init * ∏_k joint_kernel(m_k, l_k, s_C_k, s_A_k)`
+where `m_k` is the matching state at step k (a γ-positive integration
+over prior `μ_A_chain` choices implicit in `joint_kernel`'s inner sum).
 
-/-- **§9.5**: marginalising the joint over `e_C` recovers `pe_A.probOf e_A`.
-Proven by induction on `e_A.trans` length, using
-`m_dist_posterior_predictive` at each step. -/
-theorem joint_marginalises_to_pe_A : True := trivial -- TODO: state precisely
+The concrete construction recurses on the joint trajectory's transitions
+list, accumulating `joint_kernel` factors and threading matching-state
+advances. -/
+noncomputable def joint_mass
+    (_sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (_pe_C : ProbabilisticExecution sys_C.toSystem)
+    (_μ_A_init : PMF State_A)
+    (_h_init_R : ∀ s_C ∈ _pe_C.init.support, R s_C _μ_A_init)
+    (_e_C : AlterSeq State_C Label) (_e_C_term : _e_C.trans.Terminates)
+    (_e_A : AlterSeq State_A Label) (_e_A_term : _e_A.trans.Terminates) : ENNReal :=
+  sorry
+
+/-- **§9.4**: marginalising the joint over `e_A`'s state samples
+recovers `pe_C.probOf e_C`. Proven by composing per-step
+`joint_kernel_marginal_s_A` across the trajectory. -/
+theorem joint_marginalises_to_pe_C
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (e_C : AlterSeq State_C Label) (e_C_term : e_C.trans.Terminates)
+    (init_A : State_A) :
+    -- Summing joint_mass over (e_A : AlterSeq) with |e_A.trans| = |e_C.trans|
+    -- and labels matching step-by-step yields pe_C.probOf e_C.
+    -- The summation domain: matching e_A's with init_A and proper labels.
+    (∑' (e_A : {e_A : AlterSeq State_A Label //
+                ∃ h_term : e_A.trans.Terminates,
+                  e_A.init = init_A ∧
+                  (e_A.trans.toList h_term).length = (e_C.trans.toList e_C_term).length ∧
+                  ∀ k h₁ h₂, ((e_A.trans.toList h_term).get ⟨k, h₁⟩).1 =
+                             ((e_C.trans.toList e_C_term).get ⟨k, h₂⟩).1}),
+        joint_mass sim pe_C μ_A_init h_init_R e_C e_C_term e_A.1 e_A.2.choose) =
+      pe_C.probOf e_C e_C_term :=
+  sorry
+
+/-- **§9.5**: marginalising the joint over `e_C`'s state samples
+recovers `pe_A.probOf e_A`. Proven by induction on `e_A.trans` length,
+using `m_dist_posterior_predictive` at each step. -/
+theorem joint_marginalises_to_pe_A
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (e_A : AlterSeq State_A Label) (e_A_term : e_A.trans.Terminates)
+    (s_A_init : State_A) :
+    (∑' (e_C : {e_C : AlterSeq State_C Label //
+                ∃ h_term : e_C.trans.Terminates,
+                  e_C.init ∈ pe_C.init.support ∧
+                  (e_C.trans.toList h_term).length = (e_A.trans.toList e_A_term).length ∧
+                  ∀ k h₁ h₂, ((e_C.trans.toList h_term).get ⟨k, h₁⟩).1 =
+                             ((e_A.trans.toList e_A_term).get ⟨k, h₂⟩).1}),
+        joint_mass sim pe_C μ_A_init h_init_R e_C.1 e_C.2.choose e_A e_A_term) =
+      (pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init).probOf e_A e_A_term :=
+  sorry
 
 /-! #### Top-level trace inclusion theorem (§1) -/
 
