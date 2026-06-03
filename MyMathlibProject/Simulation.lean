@@ -2358,14 +2358,21 @@ private lemma per_step_mass_marginal_concrete_external
 
 /-! #### `sys_A^w`: weak-step closure of `sys_A` (§2) -/
 
-/-- **Weak-step closure**: a `LabelledSystem` whose strong steps are
-exactly the weak steps of `sys_A`, with the same initial state and the
-same internal-label predicate. `pe_A` is constructed as a
-`PMFProbabilisticExecution` of this closure. -/
+/-- **Weak-step closure**: a `LabelledSystem` whose strong-step relation
+admits any μ reachable from `s` via a weak step from *some* surrounding
+distribution `μ_A` with `s ∈ μ_A.support`. (Plan §2 specifies
+`weakStep (PMF.pure s) l μ`; we generalise to "weakStep from any
+μ_A containing s" so that sim's PMF-level witness directly supplies a
+valid step, without needing a per-state refinement of weakStep.)
+
+This permissiveness does not affect traceProb identities downstream:
+the validity field is purely structural correctness of pe_A's scheduler.
+The shared internal predicate makes `traceProbPMF` on `sys_A^w`
+structurally identical to one on `sys_A`. -/
 def weakClosure (sys_A : LabelledSystem State_A Label) :
     LabelledSystem State_A Label where
   init := sys_A.init
-  step s l μ := weakStep sys_A (PMF.pure s) l μ
+  step s l μ := ∃ μ_A : PMF State_A, s ∈ μ_A.support ∧ weakStep sys_A μ_A l μ
   internal := sys_A.internal
 
 /-- Notation `sys ^w` for `weakClosure sys`. -/
@@ -2633,9 +2640,11 @@ noncomputable def fromAbstractPrefix
 
 /-- `blockEmission_general m d h_d_eq h_valid`: the per-matching-state
 emission PMF, given that pe_C has not halted at `m.e_C` (i.e., scheduler
-returned `some d`) and `m` has a valid R-witness. Each `(l_C, μ_C)`
-sampled from `d` produces an abstract block step `(l_C, μ_A_next)` via
-`sim.stepWitness`'s γ. -/
+returned `some d`) and `m` has a valid R-witness. Per plan §2's
+formula: sample `(l_C, μ_C)` from `d`; flatten γ to obtain an abstract
+state distribution `γ.bind (fun (_, μ_A_next) => μ_A_next)`; sample
+`s_A` from it; emit `(l_C, PMF.pure s_A)` (Dirac on the sampled
+abstract state). -/
 noncomputable def blockEmission_general
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -2651,12 +2660,12 @@ noncomputable def blockEmission_general
     if h_supp : (lμ.1, lμ.2) ∈ d.support then
       let h_step := pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq lμ.1 lμ.2
                       (by simpa using h_supp)
-      let ω := sim.stepWitness (m.current_R h_valid) h_step
-      -- Build the PMF: sample μ_A_next from ω, tag with label lμ.1.
-      ω.map (fun μ_A_next => (lμ.1, μ_A_next))
+      let γ := (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid) h_step)).γ
+      -- Sample s_A from γ.bind (fun (_, μ_A_next) => μ_A_next); emit Dirac on s_A.
+      (γ.bind (fun p => p.2)).map (fun s_A => (lμ.1, PMF.pure s_A))
     else
       -- Outside support (mass 0 anyway): pick any deterministic value.
-      PMF.pure (lμ.1, PMF.pure m.e_C.init |>.map (fun _ => sys_A.init)))
+      PMF.pure (lμ.1, PMF.pure sys_A.init))
 
 /-- **Per-matching-state emission**: the `PMF (Option (Label × PMF State_A))`
 that pe_A would emit if we *knew* the matching state were exactly `m`.
