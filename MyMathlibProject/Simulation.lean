@@ -2844,17 +2844,7 @@ private theorem pe_A_emit_at_state_extract
 
 /-- Step 3 of validity: from `(l, μ) ∈ blockEmission_general m d h_d_eq h_valid`'s
 support, extract `(l, μ) = (l_C, μ_A_next)` for some `(l_C, μ_C) ∈ d.support`
-and `μ_A_next ∈ ω.support` (where `ω := sim.stepWitness ...`).
-
-Proof sketch: unfold `blockEmission_general`'s `d.bind`; the support
-membership decomposes as ∃ (l_C, μ_C) ∈ d.support, (l, μ) is in the
-inner `if-then-else`'s support. In the supported branch, the value is
-`ω.map (fun μ_A_next => (l_C, μ_A_next))`, whose support has form
-`{(l_C, μ_A_next) : μ_A_next ∈ ω.support}`. Pattern-match equality to
-get `l = l_C` and `μ = μ_A_next ∈ ω.support`. Currently sorry: the
-`push_neg` from the by_contra produces a type that differs from
-`ENNReal.tsum_eq_zero.mpr`'s expected argument (let-unfolding vs.
-have-unfolding mismatch). -/
+and `μ_A_next ∈ ω.support` (where `ω := sim.stepWitness ...`). -/
 private theorem blockEmission_general_extract
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -2869,8 +2859,23 @@ private theorem blockEmission_general_extract
     ∃ (μ_C : PMF State_C) (h_μ_C_supp : (l, μ_C) ∈ d.support),
       μ ∈ (sim.stepWitness (m.current_R h_valid)
         (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C
-          h_μ_C_supp)).support :=
-  sorry
+          h_μ_C_supp)).support := by
+  classical
+  unfold blockEmission_general at h_supp
+  rw [PMF.mem_support_bind_iff] at h_supp
+  obtain ⟨⟨l_C, μ_C⟩, h_d_supp, h_inner⟩ := h_supp
+  -- h_inner : (l, μ) ∈ ((if h_supp_lμ : (l_C, μ_C) ∈ d.support then
+  --                        ω.map (fun μ_A_next => (l_C, μ_A_next))
+  --                      else PMF.pure ...).support)
+  -- Since h_d_supp : (l_C, μ_C) ∈ d.support, the if is true.
+  rw [dif_pos h_d_supp] at h_inner
+  rw [PMF.mem_support_map_iff] at h_inner
+  obtain ⟨μ_A_next, h_ω_supp, h_eq⟩ := h_inner
+  -- h_eq : (l_C, μ_A_next) = (l, μ)
+  have h_l : l_C = l := (Prod.mk.inj h_eq).1
+  have h_μ : μ_A_next = μ := (Prod.mk.inj h_eq).2
+  subst h_l; subst h_μ
+  exact ⟨μ_C, h_d_supp, h_ω_supp⟩
 
 /-- Step 4 of validity: connect history_A's endstate (at any TerminatedAt
 position) to the canonical `Nat.find h_term` endstate. -/
