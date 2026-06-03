@@ -2002,6 +2002,145 @@ noncomputable def continuationFrom (pe : PMFProbabilisticExecution sys)
             rw [hk'] at h_state_e'
             exact h_state_e' }
 
+/-- `init` at `initState` is `1`. -/
+@[simp] theorem init_apply_self (pe : PMFProbabilisticExecution sys) :
+    pe.init pe.initState = 1 := by
+  unfold init; exact PMF.pure_apply_self _
+
+/-- `init` at a non-`initState` state is `0`. -/
+theorem init_apply_of_ne (pe : PMFProbabilisticExecution sys) {s : State}
+    (h : s ≠ pe.initState) : pe.init s = 0 := by
+  unfold init; exact PMF.pure_apply_of_ne _ _ h
+
+/-- The `continuationFrom`'s kernel at a local prefix starting at
+`history.endState` equals `pe`'s kernel at the history-extended prefix. -/
+theorem kernel_continuationFrom (pe : PMFProbabilisticExecution sys)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates)
+    (extra_trans : Seq (Label × State)) (step : Label × State) :
+    (pe.continuationFrom history h_term).kernel
+        ⟨history.endState h_term, extra_trans⟩ step =
+      pe.kernel ⟨history.init, history.trans.append extra_trans⟩ step := by
+  classical
+  unfold kernel
+  change ∑' μ, (if (⟨history.endState h_term, extra_trans⟩ :
+        AlterSeq State Label).init = history.endState h_term then
+        pe.scheduler.next ⟨history.init, history.trans.append extra_trans⟩
+      else PMF.pure none) (some (step.1, μ)) * μ step.2
+      = ∑' μ, pe.scheduler.next ⟨history.init, history.trans.append extra_trans⟩
+          (some (step.1, μ)) * μ step.2
+  rw [if_pos rfl]
+
+/-- The `continuationFrom`'s `probOfRemaining`, on a local prefix starting at
+`history.endState`, equals `pe`'s `probOfRemaining` from the history-extended
+prefix. -/
+theorem probOfRemaining_continuationFrom (pe : PMFProbabilisticExecution sys)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates)
+    (xs : List (Label × State)) :
+    (pe.continuationFrom history h_term).probOfRemaining
+        ⟨history.endState h_term, Seq.nil⟩ xs =
+      pe.probOfRemaining ⟨history.init, history.trans⟩ xs := by
+  have h_aux : ∀ (xs : List (Label × State)) (c : ENNReal)
+      (extra : Seq (Label × State)),
+      (xs.foldl (fun acc hd =>
+        (acc.1 * (pe.continuationFrom history h_term).kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩))
+        (c, ⟨history.endState h_term, extra⟩)).1 =
+      (xs.foldl (fun acc hd =>
+        (acc.1 * pe.kernel acc.2 hd,
+         ⟨acc.2.init, acc.2.trans.append (Seq.cons hd Seq.nil)⟩))
+        (c, ⟨history.init, history.trans.append extra⟩)).1 := by
+    intro xs
+    induction xs with
+    | nil => intros; rfl
+    | cons hd rest ih =>
+      intro c extra
+      simp only [List.foldl]
+      rw [kernel_continuationFrom pe history h_term extra hd]
+      have h_assoc : history.trans.append (extra.append (Seq.cons hd Seq.nil)) =
+          (history.trans.append extra).append (Seq.cons hd Seq.nil) :=
+        (Stream'.Seq.append_assoc _ _ _).symm
+      rw [← h_assoc]
+      exact ih _ _
+  unfold probOfRemaining
+  exact h_aux xs 1 Seq.nil |>.trans (by rw [Stream'.Seq.append_nil])
+
+/-- The `continuationFrom`'s `probOf`, at a local prefix starting at
+`history.endState`, equals `pe`'s `probOfRemaining` from `history`'s trans
+on the local prefix's transition list. -/
+theorem probOf_continuationFrom (pe : PMFProbabilisticExecution sys)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates)
+    (e_local : AlterSeq State Label) (h_e_local : e_local.trans.Terminates)
+    (h_init : e_local.init = history.endState h_term) :
+    (pe.continuationFrom history h_term).probOf e_local h_e_local =
+      pe.probOfRemaining ⟨history.init, history.trans⟩ (e_local.trans.toList h_e_local) := by
+  unfold probOf
+  have h_pmf : (pe.continuationFrom history h_term).init e_local.init = 1 := by
+    change (PMF.pure (history.endState h_term)) e_local.init = 1
+    rw [h_init, PMF.pure_apply]
+    simp
+  rw [h_pmf, one_mul, h_init]
+  exact probOfRemaining_continuationFrom pe history h_term _
+
+/-- `continuationFrom`'s `probOf` is zero when the local prefix's init
+doesn't match `history.endState`: the `init` factor is `0`. -/
+theorem probOf_continuationFrom_zero_of_init_ne
+    (pe : PMFProbabilisticExecution sys) (history : AlterSeq State Label)
+    (h_term : history.trans.Terminates) (e_local : AlterSeq State Label)
+    (h_e_local : e_local.trans.Terminates)
+    (h_init_ne : e_local.init ≠ history.endState h_term) :
+    (pe.continuationFrom history h_term).probOf e_local h_e_local = 0 := by
+  unfold probOf
+  have h_pmf : (pe.continuationFrom history h_term).init e_local.init = 0 := by
+    change (PMF.pure (history.endState h_term)) e_local.init = 0
+    rw [PMF.pure_apply]
+    simp [h_init_ne.symm, Ne.symm]
+  rw [h_pmf]
+  ring
+
+/-- **Factorization of `probOf` over the first transition** for the
+PMF execution. -/
+theorem probOf_cons (pe : PMFProbabilisticExecution sys)
+    (s₀ : State) (l₀ : Label) (s₁ : State) (e_rest_trans : Seq (Label × State))
+    (h_term_full : (Seq.cons (l₀, s₁) e_rest_trans).Terminates) :
+    pe.probOf ⟨s₀, Seq.cons (l₀, s₁) e_rest_trans⟩ h_term_full =
+      pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+      (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+            : (Seq.cons (l₀, s₁) Seq.nil).Terminates)).probOf
+        ⟨s₁, e_rest_trans⟩ (Stream'.Seq.terminates_tail_of_cons h_term_full) := by
+  have h_hist_term : (Seq.cons (l₀, s₁) Seq.nil : Seq (Label × State)).Terminates :=
+    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  have h_e_rest_term : e_rest_trans.Terminates :=
+    Stream'.Seq.terminates_tail_of_cons h_term_full
+  have h_find : Nat.find h_hist_term = 1 := by
+    apply le_antisymm
+    · exact Nat.find_le (show (Seq.cons (l₀, s₁) Seq.nil).TerminatedAt 1 from rfl)
+    · rw [Nat.one_le_iff_ne_zero]
+      intro h_zero
+      exact Stream'.Seq.cons_not_terminatedAt_zero
+        (h_zero ▸ Nat.find_spec h_hist_term)
+  have h_endState :
+      ({ init := s₀, trans := Seq.cons (l₀, s₁) Seq.nil
+        : AlterSeq State Label }).endState h_hist_term = s₁ := by
+    have h_eq := AlterSeq.stateAt_find_eq_endState
+      ({ init := s₀, trans := Seq.cons (l₀, s₁) Seq.nil
+        : AlterSeq State Label }) h_hist_term
+    rw [h_find] at h_eq
+    exact (Option.some.inj h_eq).symm
+  have h_lhs : pe.probOf ⟨s₀, Seq.cons (l₀, s₁) e_rest_trans⟩ h_term_full =
+      pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+      pe.probOfRemaining ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+        (e_rest_trans.toList h_e_rest_term) := by
+    unfold probOf
+    rw [Stream'.Seq.toList_cons, probOfRemaining_cons]
+    rw [show (⟨s₀, Seq.nil⟩ : AlterSeq State Label).trans.append
+      (Seq.cons (l₀, s₁) Seq.nil) = Seq.cons (l₀, s₁) Seq.nil from
+      Stream'.Seq.nil_append _]
+    ring
+  rw [h_lhs]
+  rw [probOf_continuationFrom pe ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ h_hist_term
+    ⟨s₁, e_rest_trans⟩ h_e_rest_term h_endState.symm]
+
 end PMFProbabilisticExecution
 
 /-- Trace probability for `PMFProbabilisticExecution`: sum of `probOf` over
@@ -2012,6 +2151,281 @@ noncomputable def LabelledSystem.traceProbPMF
   ∑' e : {e : AlterSeq State Label //
       e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e},
     pe.probOf e.1 e.2.1
+
+/-- The `traceProbPMF` of a `continuationFrom`-execution restricts to the
+sub-subtype where `e.init = history.endState`, mirroring
+`traceProb_continuationFrom_init_restrict`. -/
+theorem LabelledSystem.traceProbPMF_continuationFrom_init_restrict
+    {State Label : Type} (ls : LabelledSystem State Label)
+    (pe : PMFProbabilisticExecution ls.toSystem)
+    (history : AlterSeq State Label) (h_term : history.trans.Terminates)
+    (τ : Seq Label) :
+    LabelledSystem.traceProbPMF ls (pe.continuationFrom history h_term) τ =
+      ∑' (e : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e ∧
+          e.init = history.endState h_term}),
+        (pe.continuationFrom history h_term).probOf e.1 e.2.1 := by
+  classical
+  unfold LabelledSystem.traceProbPMF
+  set A := {e : AlterSeq State Label //
+    e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e} with hA_def
+  set p : A → Prop := fun a => a.1.init = history.endState h_term with hp_def
+  rw [show
+      (∑' (a : A), (pe.continuationFrom history h_term).probOf a.1 a.2.1) =
+      ∑' (x : {a : A // p a} ⊕ {a : A // ¬ p a}),
+        (pe.continuationFrom history h_term).probOf
+          ((Equiv.sumCompl p) x).1 ((Equiv.sumCompl p) x).2.1 from
+    ((Equiv.sumCompl p).tsum_eq _).symm]
+  rw [tsum_sum_type]
+  have h_zero : (∑' (a : {a : A // ¬ p a}),
+      (pe.continuationFrom history h_term).probOf
+        ((Equiv.sumCompl p) (Sum.inr a)).1
+        ((Equiv.sumCompl p) (Sum.inr a)).2.1) = 0 := by
+    apply ENNReal.tsum_eq_zero.mpr
+    rintro ⟨⟨e, h_term', h_trace', h_tight'⟩, h_ne⟩
+    exact PMFProbabilisticExecution.probOf_continuationFrom_zero_of_init_ne
+      pe history h_term e h_term' h_ne
+  rw [h_zero, add_zero]
+  let e_B' : {a : A // p a} ≃ {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e ∧
+      e.init = history.endState h_term} :=
+    { toFun := fun ⟨⟨e, h_term', h_trace', h_tight'⟩, h_init'⟩ =>
+        ⟨e, h_term', h_trace', h_tight', h_init'⟩
+      invFun := fun ⟨e, h_term', h_trace', h_tight', h_init'⟩ =>
+        ⟨⟨e, h_term', h_trace', h_tight'⟩, h_init'⟩
+      left_inv := fun ⟨⟨_, _, _, _⟩, _⟩ => rfl
+      right_inv := fun ⟨_, _, _, _, _⟩ => rfl }
+  refine (tsum_congr (fun a => ?_)).trans
+    (e_B'.tsum_eq (fun e => (pe.continuationFrom history h_term).probOf e.1 e.2.1))
+  rcases a with ⟨⟨e, _, _, _⟩, _⟩
+  rfl
+
+/-- **First-step decomposition for `traceProbPMF`** — the parallel of
+`traceProb_first_step`. Decomposes a cons-trace probability as a sum
+over `(s₀, l₀, s₁)` of init mass × kernel × continuation traceProbPMF. -/
+theorem LabelledSystem.traceProbPMF_first_step
+    {State Label : Type} (ls : LabelledSystem State Label)
+    (pe : PMFProbabilisticExecution ls.toSystem)
+    (l : Label) (τ : Seq Label) :
+    LabelledSystem.traceProbPMF ls pe (Seq.cons l τ) =
+      ∑' (s₀ : State) (l₀ : Label) (s₁ : State),
+        pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+        (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+          (fun τ' => LabelledSystem.traceProbPMF ls
+            (pe.continuationFrom
+              ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+              ⟨1, by
+                change (Seq.cons (l₀, s₁) Seq.nil).get? 1 = none
+                rw [Stream'.Seq.get?_cons_succ]
+                exact Stream'.Seq.terminatedAt_nil⟩)
+            τ') := by
+  classical
+  -- Step 1: reindex via TraceDecomp.equiv.
+  change (∑' (e : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.cons l τ ∧ ls.IsTight e}),
+        pe.probOf e.1 e.2.1) = _
+  rw [show
+      (∑' (e : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.cons l τ ∧ ls.IsTight e}),
+        pe.probOf e.1 e.2.1)
+      = ∑' (d : ls.TraceDecomp l τ),
+          pe.probOf (LabelledSystem.TraceDecomp.toTight ls l τ d).1
+            (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1 from
+    ((LabelledSystem.TraceDecomp.equiv ls l τ).symm.tsum_eq
+      (fun e => pe.probOf e.1 e.2.1)).symm]
+  -- Step 2: factor each summand via probOf_cons.
+  rw [tsum_congr (fun d : ls.TraceDecomp l τ =>
+    show pe.probOf (LabelledSystem.TraceDecomp.toTight ls l τ d).1
+        (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1 =
+      pe.init d.1 * pe.kernel ⟨d.1, Seq.nil⟩ (d.2.1, d.2.2.1) *
+        (pe.continuationFrom ⟨d.1, Seq.cons (d.2.1, d.2.2.1) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+        ⟨d.2.2.1, d.2.2.2.1.trans⟩
+        (Stream'.Seq.terminates_tail_of_cons
+          (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1)
+    from PMFProbabilisticExecution.probOf_cons pe d.1 d.2.1 d.2.2.1 d.2.2.2.1.trans _)]
+  -- Step 3: apply traceProbPMF_continuationFrom_init_restrict inside consumeLabel.elim.
+  have h_inner_restrict : ∀ (s₀ : State) (l₀ : Label) (s₁ : State),
+      (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+        (fun τ' => LabelledSystem.traceProbPMF ls
+          (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)) τ') =
+      (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+        (fun τ' => ∑' (e_rest : {e_rest : AlterSeq State Label //
+            e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+            e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)}),
+          (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+            e_rest.1 e_rest.2.1) := by
+    intros s₀ l₀ s₁
+    rcases Option.eq_none_or_eq_some (ls.consumeLabel l₀ (Seq.cons l τ))
+      with h | ⟨τ', h⟩
+    · rw [h]; rfl
+    · rw [h, Option.elim_some, Option.elim_some]
+      exact LabelledSystem.traceProbPMF_continuationFrom_init_restrict ls pe _ _ τ'
+  rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ => by
+    rw [h_inner_restrict s₀ l₀ s₁])))]
+  -- Step 4a: push init * kernel inside Option.elim and the inner tsum.
+  have h_distrib : ∀ (s₀ : State) (l₀ : Label) (s₁ : State),
+      pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+        (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+          (fun τ' => ∑' (e_rest : {e_rest : AlterSeq State Label //
+              e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+              e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+                (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)}),
+            (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+              e_rest.1 e_rest.2.1) =
+      (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+        (fun τ' => ∑' (e_rest : {e_rest : AlterSeq State Label //
+            e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+            e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)}),
+          pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+          (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+            e_rest.1 e_rest.2.1) := by
+    intros s₀ l₀ s₁
+    rcases Option.eq_none_or_eq_some (ls.consumeLabel l₀ (Seq.cons l τ))
+      with h | ⟨τ', h⟩
+    · rw [h]; simp
+    · rw [h]; simp only [Option.elim_some]
+      rw [ENNReal.tsum_mul_left]
+  rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ =>
+    h_distrib s₀ l₀ s₁)))]
+  -- Step 4b: combine Option.elim + inner sum into a single inner sum with the
+  -- constraint consumeLabel = some (trace e_rest).
+  have h_combine : ∀ (s₀ : State) (l₀ : Label) (s₁ : State),
+      (ls.consumeLabel l₀ (Seq.cons l τ)).elim 0
+        (fun τ' => ∑' (e_rest : {e_rest : AlterSeq State Label //
+            e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+            e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)}),
+          pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+          (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+            e_rest.1 e_rest.2.1) =
+      ∑' (e_rest : {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+          ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)}),
+        pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+        (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+          e_rest.1 e_rest.2.1 := by
+    intros s₀ l₀ s₁
+    rcases Option.eq_none_or_eq_some (ls.consumeLabel l₀ (Seq.cons l τ))
+      with h_none | ⟨τ', h_some⟩
+    · conv_lhs => rw [h_none, Option.elim_none]
+      symm
+      apply ENNReal.tsum_eq_zero.mpr
+      rintro ⟨_, _, _, _, h_consume⟩
+      rw [h_none] at h_consume
+      exact absurd h_consume (by simp)
+    · conv_lhs => rw [h_some]; rw [Option.elim_some]
+      let e_inner : {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)} ≃
+          {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+          ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)} :=
+        { toFun := fun ⟨e, h_term', h_trace', h_tight', h_init'⟩ =>
+            ⟨e, h_term', h_tight', h_init', h_trace' ▸ h_some⟩
+          invFun := fun ⟨e, h_term', h_tight', h_init', h_consume'⟩ =>
+            ⟨e, h_term', by
+              have : some τ' = some (ls.trace e) := h_some ▸ h_consume'
+              exact (Option.some.inj this).symm,
+             h_tight', h_init'⟩
+          left_inv := fun ⟨_, _, _, _, _⟩ => rfl
+          right_inv := fun ⟨_, _, _, _, _⟩ => rfl }
+      let F : {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+          ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)} → ENNReal :=
+        fun e_rest => pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+          (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+            e_rest.1 e_rest.2.1
+      calc (∑' (c : {e_rest // e_rest.trans.Terminates ∧ ls.trace e_rest = τ' ∧
+              ls.IsTight e_rest ∧ e_rest.init = _}),
+            pe.init s₀ * pe.kernel ⟨s₀, Seq.nil⟩ (l₀, s₁) *
+            (pe.continuationFrom ⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ _).probOf c.1 c.2.1)
+          = ∑' c, F (e_inner c) := by
+            apply tsum_congr
+            rintro ⟨_, _, _, _, _⟩
+            rfl
+        _ = ∑' b, F b := e_inner.tsum_eq F
+  rw [tsum_congr (fun s₀ => tsum_congr (fun l₀ => tsum_congr (fun s₁ =>
+    h_combine s₀ l₀ s₁)))]
+  -- Step 4c.1: substitute ⟨d.2.2.1, d.2.2.2.1.trans⟩ with d.2.2.2.1 (= e_rest).
+  have h_summand_eq : ∀ d : ls.TraceDecomp l τ,
+      pe.init d.1 * pe.kernel ⟨d.1, Seq.nil⟩ (d.2.1, d.2.2.1) *
+        (pe.continuationFrom ⟨d.1, Seq.cons (d.2.1, d.2.2.1) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+          ⟨d.2.2.1, d.2.2.2.1.trans⟩
+          (Stream'.Seq.terminates_tail_of_cons
+            (LabelledSystem.TraceDecomp.toTight ls l τ d).2.1) =
+      pe.init d.1 * pe.kernel ⟨d.1, Seq.nil⟩ (d.2.1, d.2.2.1) *
+        (pe.continuationFrom ⟨d.1, Seq.cons (d.2.1, d.2.2.1) Seq.nil⟩
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+          d.2.2.2.1
+          d.2.2.2.2.2.1 := by
+    rintro ⟨s₀, l₀, s₁, ⟨e_rest, h_init, h_term, h_tight, h_consume⟩⟩
+    rcases e_rest with ⟨init, trans⟩
+    simp only at h_init
+    subst h_init
+    rfl
+  rw [tsum_congr h_summand_eq]
+  -- Step 4c.2: master Equiv between TraceDecomp l τ and the Σ-form.
+  let e_master : ls.TraceDecomp l τ ≃
+      Σ s₀ : State, Σ l₀ : Label, Σ s₁ : State,
+        {e_rest : AlterSeq State Label //
+          e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+          e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+          ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)} :=
+    { toFun := fun ⟨s₀, l₀, s₁, e_rest, h_init, h_term, h_tight, h_consume⟩ =>
+        ⟨s₀, l₀, s₁, ⟨e_rest, h_term, h_tight,
+          h_init.trans (AlterSeq.endState_singleton_cons s₀ l₀ s₁).symm,
+          h_consume⟩⟩
+      invFun := fun ⟨s₀, l₀, s₁, e_rest, h_term, h_tight, h_init_endState, h_consume⟩ =>
+        ⟨s₀, l₀, s₁, ⟨e_rest,
+          h_init_endState.trans (AlterSeq.endState_singleton_cons s₀ l₀ s₁),
+          h_term, h_tight, h_consume⟩⟩
+      left_inv := fun ⟨_, _, _, ⟨_, _, _, _, _⟩⟩ => rfl
+      right_inv := fun ⟨_, _, _, ⟨_, _, _, _, _⟩⟩ => rfl }
+  let G : (Σ s₀ : State, Σ l₀ : Label, Σ s₁ : State,
+      {e_rest : AlterSeq State Label //
+        e_rest.trans.Terminates ∧ ls.IsTight e_rest ∧
+        e_rest.init = (⟨s₀, Seq.cons (l₀, s₁) Seq.nil⟩ : AlterSeq State Label).endState
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) ∧
+        ls.consumeLabel l₀ (Seq.cons l τ) = some (ls.trace e_rest)}) → ENNReal :=
+    fun b => pe.init b.1 * pe.kernel ⟨b.1, Seq.nil⟩ (b.2.1, b.2.2.1) *
+      (pe.continuationFrom ⟨b.1, Seq.cons (b.2.1, b.2.2.1) Seq.nil⟩
+        (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+        b.2.2.2.1 b.2.2.2.2.1
+  calc (∑' d : ls.TraceDecomp l τ,
+          pe.init d.1 * pe.kernel ⟨d.1, Seq.nil⟩ (d.2.1, d.2.2.1) *
+            (pe.continuationFrom ⟨d.1, Seq.cons (d.2.1, d.2.2.1) Seq.nil⟩
+              (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil)).probOf
+              d.2.2.2.1 d.2.2.2.2.2.1)
+      = ∑' d, G (e_master d) := by
+        apply tsum_congr
+        rintro ⟨_, _, _, ⟨_, _, _, _, _⟩⟩
+        rfl
+    _ = ∑' b, G b := e_master.tsum_eq G
+    _ = _ := by
+        rw [ENNReal.tsum_sigma']
+        apply tsum_congr; intro s₀
+        rw [ENNReal.tsum_sigma']
+        apply tsum_congr; intro l₀
+        rw [ENNReal.tsum_sigma']
 
 /-- **`traceProbPMF` at nil equals 1**, mirroring `traceProb_nil_eq_one`.
 The tight finite executions with empty trace bijection with initial states
@@ -4961,12 +5375,109 @@ private theorem trace_coupling_at_matching_state_faithful
     rw [sys_C.traceProb_nil_eq_one]
     rw [MatchingState.LabelledSystem.traceProbPMF_nil_eq_one]
   | cons l₀ τ' =>
-    -- Inductive case (deferred to subsequent Phase 4 work):
-    -- Apply traceProb_first_step on the C-side and an analogous lemma
-    -- on the A-side (traceProbPMF_first_step, to be developed).
-    -- Use per_step_mass_marginal_concrete / _abstract (fd5810d) to
-    -- bridge the per-step kernels via PMFRel γ.
-    sorry
+    -- Apply first_step on both sides to unfold cons into a tsum
+    -- over (s₀, l₀, s₁) of init × kernel × continuation traceProb.
+    rw [sys_C.traceProb_first_step (pe_C.continuationFrom m.e_C m.h_term_C) l₀ τ']
+    rw [MatchingState.LabelledSystem.traceProbPMF_first_step sys_A
+      ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+        history_A h_term_A) l₀ τ']
+    -- Collapse the s₀-Dirac sums on both sides (init is Dirac on endState).
+    conv_lhs =>
+      rw [tsum_eq_single (m.e_C.endState m.h_term_C) (fun s₀ h_ne => by
+        apply ENNReal.tsum_eq_zero.mpr; intro l₀_1
+        apply ENNReal.tsum_eq_zero.mpr; intro s₁
+        rw [(pe_C.continuationFrom m.e_C m.h_term_C).init_apply_of_ne h_ne]
+        ring)]
+    conv_rhs =>
+      rw [tsum_eq_single (history_A.endState h_term_A) (fun s₀ h_ne => by
+        apply ENNReal.tsum_eq_zero.mpr; intro l₀_1
+        apply ENNReal.tsum_eq_zero.mpr; intro s₁
+        rw [MatchingState.PMFProbabilisticExecution.init_apply_of_ne
+          ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+            history_A h_term_A) h_ne]
+        ring)]
+    -- Clean up the Dirac mass `init endState = 1` on both sides.
+    have h_init_C :
+        (pe_C.continuationFrom m.e_C m.h_term_C).init (m.e_C.endState m.h_term_C) = 1 :=
+      (pe_C.continuationFrom m.e_C m.h_term_C).init_apply_self
+    have h_init_A :
+        ((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+          history_A h_term_A).init (history_A.endState h_term_A) = 1 :=
+      MatchingState.PMFProbabilisticExecution.init_apply_self _
+    simp_rw [h_init_C, one_mul]
+    simp_rw [h_init_A, one_mul]
+    -- Apply kernel_continuationFrom on both sides to reduce kernels.
+    simp_rw [pe_C.kernel_continuationFrom m.e_C m.h_term_C Seq.nil]
+    simp_rw [MatchingState.PMFProbabilisticExecution.kernel_continuationFrom
+      (pe_A_faithful sim pe_C init_match h_match_R s_A_init) history_A h_term_A Seq.nil]
+    simp_rw [Stream'.Seq.append_nil]
+    -- Case-split on pe_C.scheduler.next m.e_C (Case 2(a) / 2(b)).
+    classical
+    by_cases h_next_C : pe_C.scheduler.next m.e_C = none
+    · -- ===========================================================
+      -- Case 2(a): pe_C halts at m.e_C. Both kernels vanish.
+      -- ===========================================================
+      -- LHS: pe_C.kernel ⟨m.e_C.init, m.e_C.trans⟩ = 0 by kernel definition + h_next_C.
+      have h_kernel_C_zero : ∀ (l : Label) (s : State_C),
+          pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) (l, s) = 0 := by
+        intro l s
+        change (pe_C.scheduler.next
+            (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)).elim 0 _ = 0
+        rw [show pe_C.scheduler.next
+              (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) =
+              pe_C.scheduler.next m.e_C from rfl]
+        rw [h_next_C]; rfl
+      -- RHS: by the StrongInv from `_h_matched`, m.weak_sched = none, so
+      -- computeNext_PMF m = PMF.pure none, so kernel = 0.
+      have h_strong : m.StrongInv :=
+        fromAbstractPrefix_strongInv sim pe_C init_match h_match_R history_A _h_matched
+      have h_ws_none : m.weak_sched = none := h_strong.1.mpr h_next_C
+      have h_kernel_A_zero : ∀ (l : Label) (s : State_A),
+          (pe_A_faithful sim pe_C init_match h_match_R s_A_init).kernel
+              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) = 0 := by
+        intro l s
+        unfold MatchingState.PMFProbabilisticExecution.kernel
+        -- Goal: ∑' μ, pe_A_faithful.scheduler.next ⟨...⟩ (some (l, μ)) * μ s = 0.
+        -- pe_A_faithful.scheduler.next ⟨history_A.init, history_A.trans⟩ =
+        --   (fromAbstractPrefix history_A).elim (PMF.pure none) computeNext_PMF
+        --   = computeNext_PMF m (since _h_matched).
+        -- m.weak_sched = none → computeNext_PMF m = PMF.pure none.
+        -- PMF.pure none at (some _) = 0.
+        have h_sched : (pe_A_faithful sim pe_C init_match h_match_R s_A_init).scheduler.next
+            (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) = PMF.pure none := by
+          change (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)).elim
+            (PMF.pure none) MatchingState.computeNext_PMF = PMF.pure none
+          rw [show (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) =
+                history_A from rfl]
+          rw [_h_matched]
+          simp only [Option.elim_some]
+          unfold MatchingState.computeNext_PMF
+          rw [h_ws_none]
+        rw [h_sched]
+        apply ENNReal.tsum_eq_zero.mpr
+        intro μ
+        rw [PMF.pure_apply_of_ne _ _ (by simp)]
+        ring
+      -- Both sides reduce to 0.
+      rw [show (∑' (l_first : Label) (s_first : State_C),
+            pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)
+              (l_first, s_first) * _) = 0 from by
+        apply ENNReal.tsum_eq_zero.mpr; intro l_first
+        apply ENNReal.tsum_eq_zero.mpr; intro s_first
+        rw [h_kernel_C_zero l_first s_first]; ring]
+      rw [show (∑' (l_first : Label) (s_first : State_A),
+            (pe_A_faithful sim pe_C init_match h_match_R s_A_init).kernel
+              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)
+              (l_first, s_first) * _) = 0 from by
+        apply ENNReal.tsum_eq_zero.mpr; intro l_first
+        apply ENNReal.tsum_eq_zero.mpr; intro s_first
+        rw [h_kernel_A_zero l_first s_first]; ring]
+    · -- ===========================================================
+      -- Case 2(b): pe_C.scheduler.next m.e_C = some d. The productive case.
+      -- Uses PMFRel γ + per-step mass equations + recursive call.
+      -- ===========================================================
+      sorry
 
 /-- (Original `trace_coupling_at_matching_state` — superseded by the
 faithful version above. Retained for reference; its 8 Case 2(b)
