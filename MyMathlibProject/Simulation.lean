@@ -2750,16 +2750,24 @@ noncomputable def joint_kernel
   else 0
 
 /-- **Per-step joint marginal over `s_A` (§5)**: summing `joint_kernel`
-over the abstract end-state recovers `pe_C`'s per-step kernel. -/
+over the abstract end-state recovers `pe_C`'s per-step kernel. Requires
+`m.has_valid_R` so the R-witness for sim's stepWitness exists. -/
 theorem joint_kernel_marginal_s_A
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
     (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (h_valid : m.has_valid_R)
     (l : Label) (s_C : State_C) :
     (∑' s_A, joint_kernel m l s_C s_A) =
       pe_C.kernel m.e_C (l, s_C) :=
+  -- Proof outline (~50-80 lines): under h_valid, unfold both sides;
+  -- when pe_C.scheduler.next m.e_C = none, both are 0; otherwise
+  -- swap ∑' s_A and ∑' μ_C, apply per_step_mass_marginal_concrete
+  -- to compute ∑' (s_A) (μ_A_next), γ(s_C, μ_A_next) * μ_A_next s_A
+  -- = μ_C s_C; then identify the result with pe_C.kernel via
+  -- the bind/map expansion.
   sorry
 
 /-- **`per_state_kernel m l s_A`**: the matching-state-conditional pe_A
