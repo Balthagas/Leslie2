@@ -3639,7 +3639,8 @@ private theorem step_weight_marginal_eq_per_state_kernel
           rw [tsum_zero]
       have h_RHS : per_state_kernel_at_d m_prev d h_d_eq h_valid l s_A = common := by
         unfold per_state_kernel_at_d joint_kernel_at_d
-        -- RHS: ∑' s_C, ∑' μ_C, d * (if h_supp then ∑' μ_A_next, γ(s_C, μ_A_next) * μ_A_next.s_A else 0)
+        -- RHS: ∑' s_C, ∑' μ_C, d * (if h_supp then ∑' μ_A_next, γ(s_C, μ_A_next)
+        --                        * μ_A_next.s_A else 0)
         rw [ENNReal.tsum_comm]
         rw [hcommon_def]
         refine tsum_congr (fun μ_C => ?_)
@@ -3964,18 +3965,59 @@ private theorem pe_A_kernel_via_m_kernel
   -- LHS: (Z⁻¹ * ∑' m, m_kernel m * per_state_kernel m l s_A) * Z = ∑' m, ...
   rw [mul_comm Z⁻¹ _, mul_assoc, ENNReal.inv_mul_cancel h_Z_ne_zero h_Z_ne_top, mul_one]
 
-/-- **`m_dist_posterior_predictive` (§9.3, unnormalised form)**: the
-matching-state-aggregated `per_state_kernel` value at step k equals
-`pe_A.probOf` at the extended history.
+/-- **Auxiliary form** of `m_dist_posterior_predictive` that takes mass
+conservation at step k as an explicit hypothesis. This is the variant used
+by `fromAbstractPrefix_mass_conservation`'s step case, which supplies the
+IH-derived `h_mass`; the global `m_dist_posterior_predictive` (below) is a
+corollary that supplies `h_mass` via `fromAbstractPrefix_mass_conservation`.
 
 Proof strategy: by `pe_A.probOf`'s cons factorisation,
   `pe_A.probOf history_A_{k+1} = pe_A.probOf history_A_k * pe_A.kernel history_A_k (l, s_A)`.
 Then `pe_A.kernel` unfolds via the normalised m_kernel bind to give
   `pe_A.kernel = (1/Z) * ∑' m, m_kernel m * (emission marginal at m)`,
-where `Z = ∑' m, m_kernel m`. Mass conservation gives `Z = pe_A.probOf history_A_k`,
-so the product simplifies to `∑' m, m_kernel m * (emission marginal at m)`,
-which equals `∑' m, m_kernel m * per_state_kernel m l s_A` by
-`blockEmission_general_emission_marginal`. -/
+where `Z = ∑' m, m_kernel m`. The hypothesis `h_mass` gives
+`Z = pe_A.probOf history_A_k`, so the product simplifies to
+`∑' m, m_kernel m * per_state_kernel m l s_A` by sub-lemma B. -/
+theorem m_dist_posterior_predictive_with_mass
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (history_A_k : AlterSeq State_A Label) (h_term_k : history_A_k.trans.Terminates)
+    (l : Label) (s_A : State_A)
+    (h_mass : (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m) =
+      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf history_A_k h_term_k) :
+    (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m *
+      per_state_kernel m l s_A) =
+    (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf
+      ⟨history_A_k.init, history_A_k.trans.append (Seq.cons (l, s_A) Seq.nil)⟩
+      ⟨Nat.find h_term_k + 1,
+        Stream'.Seq.terminatedAt_append_find h_term_k
+          (show (Seq.cons (l, s_A) Seq.nil).TerminatedAt 1 from rfl)⟩ := by
+  classical
+  set pe_A := pe_A_of_simulation sim pe_C μ_A_init h_init_R with hpe_A_def
+  set m_kernel : MatchingState sim pe_C μ_A_init h_init_R → ENNReal :=
+    fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k with hmk_def
+  set Z := ∑' m, m_kernel m with hZ_def
+  rw [PMFProbabilisticExecution.probOf_append_singleton pe_A history_A_k.init history_A_k.trans
+        h_term_k (l, s_A)]
+  by_cases h_Z_eq_zero : Z = 0
+  · rw [← h_mass, h_Z_eq_zero, zero_mul]
+    apply ENNReal.tsum_eq_zero.mpr; intro m
+    have h_each : m_kernel m = 0 := ENNReal.tsum_eq_zero.mp h_Z_eq_zero m
+    rw [h_each, zero_mul]
+  · have h_Z_ne_top : Z ≠ ⊤ := by
+      rw [h_mass]
+      refine ne_of_lt
+        (lt_of_le_of_lt (PMFProbabilisticExecution.probOf_le_init pe_A history_A_k h_term_k) ?_)
+      exact lt_of_le_of_lt (PMF.coe_le_one _ _) ENNReal.one_lt_top
+    have h_sub_B :
+        pe_A.kernel history_A_k (l, s_A) * Z =
+        ∑' m, m_kernel m * per_state_kernel m l s_A :=
+      pe_A_kernel_via_m_kernel sim pe_C μ_A_init h_init_R history_A_k h_term_k l s_A
+        h_Z_eq_zero h_Z_ne_top
+    rw [← h_sub_B, ← h_mass, mul_comm]
+
 theorem m_dist_posterior_predictive
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -3989,40 +4031,9 @@ theorem m_dist_posterior_predictive
       ⟨history_A_k.init, history_A_k.trans.append (Seq.cons (l, s_A) Seq.nil)⟩
       ⟨Nat.find h_term_k + 1,
         Stream'.Seq.terminatedAt_append_find h_term_k
-          (show (Seq.cons (l, s_A) Seq.nil).TerminatedAt 1 from rfl)⟩ := by
-  classical
-  set pe_A := pe_A_of_simulation sim pe_C μ_A_init h_init_R with hpe_A_def
-  set m_kernel : MatchingState sim pe_C μ_A_init h_init_R → ENNReal :=
-    fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k with hmk_def
-  set Z := ∑' m, m_kernel m with hZ_def
-  -- Sub-lemma C: end-step probOf factorisation.
-  rw [PMFProbabilisticExecution.probOf_append_singleton pe_A history_A_k.init history_A_k.trans
-        h_term_k (l, s_A)]
-  -- Mass conservation at step k.
-  have h_mass : Z = pe_A.probOf history_A_k h_term_k :=
-    fromAbstractPrefix_mass_conservation sim pe_C μ_A_init h_init_R history_A_k h_term_k
-  -- Case split on Z = 0.
-  by_cases h_Z_eq_zero : Z = 0
-  · -- Z = 0: both sides are 0.
-    rw [← h_mass, h_Z_eq_zero, zero_mul]
-    apply ENNReal.tsum_eq_zero.mpr; intro m
-    have h_each : m_kernel m = 0 := ENNReal.tsum_eq_zero.mp h_Z_eq_zero m
-    rw [h_each, zero_mul]
-  · -- Z ≠ 0: derive Z ≠ ⊤ from probOf_le_init and PMF.coe_le_one.
-    have h_Z_ne_top : Z ≠ ⊤ := by
-      rw [h_mass]
-      refine ne_of_lt
-        (lt_of_le_of_lt (PMFProbabilisticExecution.probOf_le_init pe_A history_A_k h_term_k) ?_)
-      exact lt_of_le_of_lt (PMF.coe_le_one _ _) ENNReal.one_lt_top
-    -- Apply sub-lemma B (multiplicative form).
-    have h_sub_B :
-        pe_A.kernel history_A_k (l, s_A) * Z =
-        ∑' m, m_kernel m * per_state_kernel m l s_A :=
-      pe_A_kernel_via_m_kernel sim pe_C μ_A_init h_init_R history_A_k h_term_k l s_A
-        h_Z_eq_zero h_Z_ne_top
-    -- Combine: ∑' m, ... = pe_A.kernel * Z = pe_A.kernel * pe_A.probOf history_A_k
-    --                    = pe_A.probOf history_A_k * pe_A.kernel
-    rw [← h_sub_B, ← h_mass, mul_comm]
+          (show (Seq.cons (l, s_A) Seq.nil).TerminatedAt 1 from rfl)⟩ :=
+  m_dist_posterior_predictive_with_mass sim pe_C μ_A_init h_init_R history_A_k h_term_k l s_A
+    (fromAbstractPrefix_mass_conservation sim pe_C μ_A_init h_init_R history_A_k h_term_k)
 
 /-! #### Joint-space marginals (§9.4, §9.5)
 
