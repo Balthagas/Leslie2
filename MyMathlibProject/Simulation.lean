@@ -3074,13 +3074,16 @@ private theorem joint_kernel_eq_at_d
     (h_valid : m.has_valid_R)
     (l : Label) (s_C : State_C) (s_A : State_A) :
     joint_kernel m l s_C s_A = joint_kernel_at_d m d h_d_eq h_valid l s_C s_A :=
-  -- The dependent typing of `(pe_C.scheduler.next m.e_C).get h_some` in
-  -- `joint_kernel`'s body resists `rcases`, `generalize`, `subst`, `conv_lhs +
-  -- rw`, and direct `rw [dif_pos h_some]`. Workable via HEq + manual
-  -- congr_arg machinery, or by redefining joint_kernel using a dependent
-  -- `Option.casesOn` with motive `fun o => pe_C.scheduler.next m.e_C = o →
-  -- ENNReal`. Deferred to a follow-up; downstream proofs use
-  -- joint_kernel_at_d directly without this bridge where possible.
+  -- Dependent typing of (Option).get h_some + the RHS depending on
+  -- h_d_eq (whose type mentions pe_C.scheduler.next m.e_C) defeats:
+  --   * rcases h_eq : pe_C.scheduler.next m.e_C  (generalize fails)
+  --   * conv_lhs => rw [h_d_eq]  (motive issue under dite)
+  --   * revert h_d_eq + generalize + subst  (generalize fails)
+  -- Workable via HEq + manual machinery, or by redefining joint_kernel
+  -- using a dependent Option.casesOn with motive
+  --   `fun o => pe_C.scheduler.next m.e_C = o → ENNReal`.
+  -- Deferred to a follow-up; downstream proofs use joint_kernel_at_d
+  -- and per_state_kernel_at_d directly to avoid needing this bridge.
   sorry
 
 -- per_state_kernel_at_d and per_state_kernel_eq_at_d are placed
