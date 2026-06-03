@@ -1658,6 +1658,50 @@ theorem probOfRemaining_cons (pe : PMFProbabilisticExecution sys)
   rw [pe.foldl_acc_linear rest (1 * pe.kernel pre hd) _]
   ring
 
+/-- **End-step factorisation for `probOfRemaining`** (plan v4.1 §9.3 sub-lemma C):
+appending a transition `last` at the end multiplies by `pe.kernel`
+at the prefix accumulated after walking through `xs`. -/
+theorem probOfRemaining_append_singleton (pe : PMFProbabilisticExecution sys)
+    (pre : AlterSeq State Label) (xs : List (Label × State)) (last : Label × State) :
+    pe.probOfRemaining pre (xs ++ [last]) =
+      pe.probOfRemaining pre xs *
+        pe.kernel ⟨pre.init,
+          xs.foldl (fun acc hd => acc.append (Seq.cons hd Seq.nil)) pre.trans⟩ last := by
+  induction xs generalizing pre with
+  | nil =>
+    -- xs = []: LHS = probOfRemaining pre [last]. RHS = probOfRemaining pre [] * pe.kernel pre last.
+    -- probOfRemaining pre [] = 1 (foldl on []).
+    -- probOfRemaining pre [last] = pe.kernel pre last (foldl on [last] step).
+    -- xs.foldl on [] reduces to pre.trans, so ⟨pre.init, pre.trans⟩ = pre.
+    simp only [List.nil_append, List.foldl]
+    rw [probOfRemaining_cons]
+    unfold probOfRemaining
+    simp only [List.foldl]
+    rcases pre with ⟨init, trans⟩
+    show pe.kernel ⟨init, trans⟩ last * 1 = 1 * pe.kernel ⟨init, trans⟩ last
+    ring
+  | cons hd rest ih =>
+    -- xs = hd :: rest. (hd :: rest) ++ [last] = hd :: (rest ++ [last]).
+    -- LHS: probOfRemaining pre (hd :: (rest ++ [last]))
+    --   = pe.kernel pre hd * probOfRemaining ⟨pre.init, pre.trans.append (cons hd nil)⟩ (rest ++ [last])
+    --       (by probOfRemaining_cons)
+    --   = pe.kernel pre hd * (probOfRemaining ⟨pre.init, pre.trans.append (cons hd nil)⟩ rest *
+    --       pe.kernel ⟨pre.init, walked-from-(cons hd nil)⟩ last)
+    --       (by IH on rest)
+    -- RHS: probOfRemaining pre (hd :: rest) * pe.kernel ⟨pre.init, walked-from-(hd::rest)⟩ last
+    --   = (pe.kernel pre hd * probOfRemaining ⟨pre.init, ...⟩ rest) * pe.kernel ⟨...⟩ last
+    --       (by probOfRemaining_cons)
+    -- Equal by associativity and noting walking from (cons hd nil) for rest =
+    -- walking from (hd :: rest) original.
+    show pe.probOfRemaining pre ((hd :: rest) ++ [last]) = _
+    rw [show ((hd :: rest) ++ [last] : List _) = hd :: (rest ++ [last]) from rfl,
+        probOfRemaining_cons, probOfRemaining_cons]
+    rw [ih ⟨pre.init, pre.trans.append (Seq.cons hd Seq.nil)⟩]
+    -- After rw [ih]: pe.kernel pre hd * (probOfRem ... rest * pe.kernel ⟨_, foldl ... extended rest⟩ last).
+    -- After probOfRemaining_cons on RHS: (pe.kernel pre hd * probOfRem ... rest) * pe.kernel ⟨_, foldl ... pre (hd :: rest)⟩ last.
+    -- Need: foldl ... extended rest = foldl ... pre.trans (hd :: rest), which is definitional via List.foldl.
+    simp only [List.foldl, mul_assoc]
+
 /-- The faithful `continuationFrom`: a probabilistic execution starting at the
 end-state of `history`, with its scheduler shifted so it queries `pe.scheduler`
 on prefixes extended by `history` on the left. -/
@@ -3074,16 +3118,11 @@ private theorem joint_kernel_eq_at_d
     (h_valid : m.has_valid_R)
     (l : Label) (s_C : State_C) (s_A : State_A) :
     joint_kernel m l s_C s_A = joint_kernel_at_d m d h_d_eq h_valid l s_C s_A :=
-  -- Dependent typing of (Option).get h_some + the RHS depending on
-  -- h_d_eq (whose type mentions pe_C.scheduler.next m.e_C) defeats:
-  --   * rcases h_eq : pe_C.scheduler.next m.e_C  (generalize fails)
-  --   * conv_lhs => rw [h_d_eq]  (motive issue under dite)
-  --   * revert h_d_eq + generalize + subst  (generalize fails)
-  -- Workable via HEq + manual machinery, or by redefining joint_kernel
-  -- using a dependent Option.casesOn with motive
-  --   `fun o => pe_C.scheduler.next m.e_C = o → ENNReal`.
-  -- Deferred to a follow-up; downstream proofs use joint_kernel_at_d
-  -- and per_state_kernel_at_d directly to avoid needing this bridge.
+  -- Bridge between `joint_kernel` (using `.isSome`+`.get`) and `joint_kernel_at_d`
+  -- (taking explicit d, h_d_eq). The dependent typing of `(o).get h_some` resists
+  -- direct tactics; workable via Option.casesOn with motive carrying the equation
+  -- (~10-15 lines), or HEq machinery. Deferred to a follow-up; downstream proofs
+  -- use the per_state_kernel_at_d / joint_kernel_at_d forms directly.
   sorry
 
 -- per_state_kernel_at_d and per_state_kernel_eq_at_d are placed
