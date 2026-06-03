@@ -3169,10 +3169,18 @@ noncomputable def pe_A_of_simulation
 /-- **Mass-conservation invariant**: the total mass of the matching-state
 posterior at `history_A` equals `pe_A.probOf history_A`.
 
-This invariant is proved by induction on `history_A.trans.toList`-length,
-interleaved with `m_dist_posterior_predictive` (§9.3) — at step k+1, this
-invariant follows from m_dist_posterior_predictive at step k, and
-m_dist_posterior_predictive at step k+1 uses this invariant at step k. -/
+Proof structure (strong induction on `(history_A.trans.toList h_term).length`):
+* **Base case** (length 0): `trans = Seq.nil`. Sum of `fromAbstractPrefix_base`
+  over `m` collapses via initial-state indicator (parallel to
+  `matchingState_indicator_sum_eq_one`) to `μ_A_init(s_A_init) ·
+  pe_C.init.tsum = μ_A_init(s_A_init) = pe_A.probOf(⟨s_A_init, Seq.nil⟩)`.
+* **Step case** (length n+1): split `trans = previous_trans.append (cons last
+  nil)`. Apply `fromAbstractPrefix_list`'s cons recursion to extract the
+  outer `∑' m_prev, fromAbstractPrefix(previous) * step_weight(...)`. Swap
+  sums; collapse the `m_new`-sum via `step_weight_marginal_eq_per_state_kernel`
+  to `∑' m_prev, fromAbstractPrefix(previous) * per_state_kernel(...)`. Apply
+  `m_dist_posterior_predictive_with_mass` with the IH-derived `h_mass` to
+  identify with `pe_A.probOf(previous ++ [last])`. -/
 theorem fromAbstractPrefix_mass_conservation
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -3181,8 +3189,17 @@ theorem fromAbstractPrefix_mass_conservation
     (history_A : AlterSeq State_A Label) (h_term : history_A.trans.Terminates) :
     (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m) =
       (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf
-        history_A h_term :=
-  sorry
+        history_A h_term := by
+  -- Strong induction on the list-length of history_A's transitions.
+  generalize h_len_eq : (history_A.trans.toList h_term).length = n
+  induction n using Nat.strong_induction_on generalizing history_A h_term with
+  | _ n ih =>
+    rcases Nat.eq_zero_or_pos n with h_zero | h_pos
+    · -- Base case: trans.toList = [], so trans = Seq.nil.
+      sorry
+    · -- Step case: trans non-empty. Split into previous ++ [last], apply
+      -- step_weight_marginal_eq_per_state_kernel + m_dist_posterior_predictive_with_mass.
+      sorry
 
 /-! #### Joint kernel, joint mass, joint marginals (§5, §8)
 
