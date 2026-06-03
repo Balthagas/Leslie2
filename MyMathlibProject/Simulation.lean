@@ -285,6 +285,40 @@ theorem toList_append {α : Type*} (s s' : Seq α) (h_s : s.Terminates)
       rw [ih t h_t_term h_t_len h_tail_combined]
       rfl
 
+/-- **Seq-splitting helper**: any terminating `Seq` whose `toList` is
+non-empty can be expressed as `previous.append (cons last nil)` for some
+terminating `previous` and last element `last`. Used for induction on
+`AlterSeq` length: lets us peel off the most recent transition.
+
+The construction takes `previous := ofList (toList.dropLast)` and `last :=
+toList.getLast h_nonempty`; correctness follows from `dropLast ++ [getLast]
+= toList`, `ofList_append`, and `ofList_toList`. -/
+theorem exists_split_last
+    {α : Type} (s : Seq α) (h_term : s.Terminates)
+    (h_nonempty : s.toList h_term ≠ []) :
+    ∃ (previous : Seq α) (last : α) (h_prev : previous.Terminates),
+      s = previous.append (Seq.cons last Seq.nil) ∧
+      previous.toList h_prev = (s.toList h_term).dropLast ∧
+      last = (s.toList h_term).getLast h_nonempty := by
+  let toL := s.toList h_term
+  let lst := toL.getLast h_nonempty
+  let prevList := toL.dropLast
+  let previous : Seq α := Stream'.Seq.ofList prevList
+  have h_prev : previous.Terminates := Stream'.Seq.terminates_ofList prevList
+  have h_split : toL = prevList ++ [lst] :=
+    (List.dropLast_append_getLast h_nonempty).symm
+  refine ⟨previous, lst, h_prev, ?_, ?_, rfl⟩
+  · -- s = previous.append (cons lst nil)
+    -- s = ofList (toList s h_term) = ofList (prevList ++ [lst])
+    --   = (ofList prevList).append (ofList [lst])
+    --   = previous.append (cons lst (ofList []))
+    --   = previous.append (cons lst nil)
+    have h_s_eq : s = Stream'.Seq.ofList toL := (Stream'.Seq.ofList_toList s h_term).symm
+    rw [h_s_eq, h_split, Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons,
+        Stream'.Seq.ofList_nil]
+  · -- previous.toList h_prev = prevList = dropLast (toL).
+    exact Stream'.Seq.toList_ofList prevList
+
 end Stream'.Seq
 
 namespace PLTS
