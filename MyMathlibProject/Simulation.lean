@@ -2504,20 +2504,19 @@ noncomputable def step_weight
 /-- The base value of `fromAbstractPrefix` at the empty-trans prefix:
 `μ_A_init(s_A_init) · pe_C.init(m.e_C.init)`, gated by indicators that
 `m.e_C.trans = Seq.nil`, `m.μ_A_chain = []`, and `m.e_C.init ∈ pe_C.init.support`.
-The `μ_A_init` factor matches the codebase's `probOf` convention (multiplied
-by the initial mass at the start). -/
+The `μ_A_init` factor matches the codebase's `probOf` convention
+(multiplied by the initial mass at the start of pe_A.probOf). -/
 noncomputable def fromAbstractPrefix_base
-    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (_sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
-    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (_h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
     (s_A_init : State_A)
-    (_m : MatchingState sim pe_C μ_A_init h_init_R) : ENNReal :=
-  -- Mathematically: μ_A_init s_A_init * pe_C.init m.e_C.init *
-  --   indicator(m.e_C.trans = Seq.nil) *
-  --   indicator(m.μ_A_chain = []) *
-  --   indicator(m.e_C.init ∈ pe_C.init.support)
-  sorry
+    (m : MatchingState _sim pe_C μ_A_init _h_init_R) : ENNReal :=
+  open Classical in
+  if m.e_C.trans = Seq.nil ∧ m.μ_A_chain = [] ∧ m.e_C.init ∈ pe_C.init.support
+  then μ_A_init s_A_init * pe_C.init m.e_C.init
+  else 0
 
 /-- The unnormalised posterior `fromAbstractPrefix history_A h_term m` —
 defined inductively on `history_A.trans.toList h_term`. Base case yields
