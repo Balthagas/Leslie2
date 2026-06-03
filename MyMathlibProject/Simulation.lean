@@ -6488,11 +6488,186 @@ theorem joint_marginalises_to_pe_A
 
 /-! #### Top-level trace inclusion theorem (§1) -/
 
+/-- **Trace agreement under matching labels (list-level aux)**: if two
+`AlterSeq`s have toLists of equal length with equal labels position-by-
+position, and the two systems' `internal` predicates agree pointwise,
+then their traces coincide. The proof is a straightforward induction on
+the two label lists. -/
+private lemma trace_eq_of_labels_match_aux
+    (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
+    (h_internal : ∀ l, sys_C.internal l ↔ sys_A.internal l) :
+    ∀ (toList_C : List (Label × State_C)) (toList_A : List (Label × State_A))
+      (init_C : State_C) (init_A : State_A),
+      toList_C.length = toList_A.length →
+      (∀ k (h₁ : k < toList_C.length) (h₂ : k < toList_A.length),
+        (toList_C.get ⟨k, h₁⟩).1 = (toList_A.get ⟨k, h₂⟩).1) →
+      sys_C.trace ⟨init_C, Stream'.Seq.ofList toList_C⟩ =
+        sys_A.trace ⟨init_A, Stream'.Seq.ofList toList_A⟩ := by
+  intro toList_C
+  induction toList_C with
+  | nil =>
+    intro toList_A init_C init_A h_len _h_lab
+    have h_A_nil : toList_A = [] := List.length_eq_zero_iff.mp h_len.symm
+    subst h_A_nil
+    have h_C_nil : (Stream'.Seq.ofList ([] : List (Label × State_C))) = Seq.nil :=
+      Stream'.Seq.ofList_nil
+    have h_A_nil_seq : (Stream'.Seq.ofList ([] : List (Label × State_A))) = Seq.nil :=
+      Stream'.Seq.ofList_nil
+    rw [h_C_nil, h_A_nil_seq, sys_C.trace_init, sys_A.trace_init]
+  | cons hd_C rest_C ih =>
+    intro toList_A init_C init_A h_len h_lab
+    cases toList_A with
+    | nil => simp at h_len
+    | cons hd_A rest_A =>
+      have h_len' : rest_C.length = rest_A.length := by simpa using h_len
+      have h_lab_0 : hd_C.1 = hd_A.1 := by
+        have := h_lab 0 (by simp) (by simp)
+        simpa using this
+      have h_lab' : ∀ k h₁ h₂,
+          (rest_C.get ⟨k, h₁⟩).1 = (rest_A.get ⟨k, h₂⟩).1 := by
+        intro k h₁ h₂
+        have := h_lab (k + 1) (by simpa using h₁) (by simpa using h₂)
+        simpa using this
+      rw [Stream'.Seq.ofList_cons, Stream'.Seq.ofList_cons]
+      by_cases h_int : sys_C.internal hd_C.1
+      · have h_int_A : sys_A.internal hd_A.1 := by
+          rw [← h_lab_0]; exact (h_internal _).mp h_int
+        rw [sys_C.trace_cons_internal init_C hd_C.1 hd_C.2 _ h_int,
+            sys_A.trace_cons_internal init_A hd_A.1 hd_A.2 _ h_int_A]
+        exact ih rest_A hd_C.2 hd_A.2 h_len' h_lab'
+      · have h_ext_A : ¬ sys_A.internal hd_A.1 := by
+          rw [← h_lab_0]; exact fun h => h_int ((h_internal _).mpr h)
+        rw [sys_C.trace_cons_external init_C hd_C.1 hd_C.2 _ h_int,
+            sys_A.trace_cons_external init_A hd_A.1 hd_A.2 _ h_ext_A]
+        rw [h_lab_0]
+        congr 1
+        exact ih rest_A hd_C.2 hd_A.2 h_len' h_lab'
+
+/-- **Trace agreement under matching labels**: lifted to `AlterSeq`s
+directly, using `Seq.ofList_toList`. -/
+private lemma trace_eq_of_labels_match
+    (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
+    (h_internal : ∀ l, sys_C.internal l ↔ sys_A.internal l)
+    (e_C : AlterSeq State_C Label) (h_C_term : e_C.trans.Terminates)
+    (e_A : AlterSeq State_A Label) (h_A_term : e_A.trans.Terminates)
+    (h_len : (e_C.trans.toList h_C_term).length = (e_A.trans.toList h_A_term).length)
+    (h_lab : ∀ k h₁ h₂,
+      ((e_C.trans.toList h_C_term).get ⟨k, h₁⟩).1 =
+        ((e_A.trans.toList h_A_term).get ⟨k, h₂⟩).1) :
+    sys_C.trace e_C = sys_A.trace e_A := by
+  have h_C_eq : e_C = ⟨e_C.init, Stream'.Seq.ofList (e_C.trans.toList h_C_term)⟩ := by
+    rcases e_C with ⟨init, trans⟩
+    congr
+    exact (Stream'.Seq.ofList_toList trans h_C_term).symm
+  have h_A_eq : e_A = ⟨e_A.init, Stream'.Seq.ofList (e_A.trans.toList h_A_term)⟩ := by
+    rcases e_A with ⟨init, trans⟩
+    congr
+    exact (Stream'.Seq.ofList_toList trans h_A_term).symm
+  conv_lhs => rw [h_C_eq]
+  conv_rhs => rw [h_A_eq]
+  exact trace_eq_of_labels_match_aux sys_C sys_A h_internal _ _ _ _ h_len h_lab
+
+/-- **Tightness agreement under matching labels**: under the same
+hypotheses as `trace_eq_of_labels_match`, the tightness predicates agree.
+The proof rewrites `e.trans.get?` and `e.trans.TerminatedAt` in terms of
+`toList` (using `Seq.ofList_toList`), reducing to a list-level
+characterisation. -/
+private lemma isTight_iff_of_labels_match
+    (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
+    (h_internal : ∀ l, sys_C.internal l ↔ sys_A.internal l)
+    (e_C : AlterSeq State_C Label) (h_C_term : e_C.trans.Terminates)
+    (e_A : AlterSeq State_A Label) (h_A_term : e_A.trans.Terminates)
+    (h_len : (e_C.trans.toList h_C_term).length = (e_A.trans.toList h_A_term).length)
+    (h_lab : ∀ k h₁ h₂,
+      ((e_C.trans.toList h_C_term).get ⟨k, h₁⟩).1 =
+        ((e_A.trans.toList h_A_term).get ⟨k, h₂⟩).1) :
+    sys_C.IsTight e_C ↔ sys_A.IsTight e_A := by
+  set L_C := e_C.trans.toList h_C_term with hL_C
+  set L_A := e_A.trans.toList h_A_term with hL_A
+  have h_get_C : ∀ n, e_C.trans.get? n = L_C[n]? := by
+    intro n
+    rw [hL_C]
+    conv_lhs => rw [show e_C.trans = Stream'.Seq.ofList (e_C.trans.toList h_C_term) from
+      (Stream'.Seq.ofList_toList _ h_C_term).symm]
+    rfl
+  have h_get_A : ∀ n, e_A.trans.get? n = L_A[n]? := by
+    intro n
+    rw [hL_A]
+    conv_lhs => rw [show e_A.trans = Stream'.Seq.ofList (e_A.trans.toList h_A_term) from
+      (Stream'.Seq.ofList_toList _ h_A_term).symm]
+    rfl
+  have h_term_iff : ∀ n, e_C.trans.TerminatedAt n ↔ e_A.trans.TerminatedAt n := by
+    intro n
+    change e_C.trans.get? n = none ↔ e_A.trans.get? n = none
+    rw [h_get_C, h_get_A]
+    constructor
+    · intro h_none
+      have h_C_le : L_C.length ≤ n := by
+        by_contra h_lt
+        push Not at h_lt
+        rw [List.getElem?_eq_getElem h_lt] at h_none
+        exact absurd h_none (Option.some_ne_none _)
+      exact List.getElem?_eq_none (h_len ▸ h_C_le)
+    · intro h_none
+      have h_A_le : L_A.length ≤ n := by
+        by_contra h_lt
+        push Not at h_lt
+        rw [List.getElem?_eq_getElem h_lt] at h_none
+        exact absurd h_none (Option.some_ne_none _)
+      exact List.getElem?_eq_none (h_len.symm ▸ h_A_le)
+  constructor
+  · rintro (h_term0 | ⟨n, l, s, h_get, h_term_succ, h_ext⟩)
+    · left; exact (h_term_iff 0).mp h_term0
+    · have h_n_lt : n < L_C.length := by
+        rw [h_get_C] at h_get
+        by_contra h_le
+        push Not at h_le
+        rw [List.getElem?_eq_none h_le] at h_get
+        exact absurd h_get.symm (Option.some_ne_none _)
+      have h_n_lt_A : n < L_A.length := h_len ▸ h_n_lt
+      have h_lab_C_n : L_C[n] = (l, s) := by
+        rw [h_get_C, List.getElem?_eq_getElem h_n_lt] at h_get
+        exact Option.some_inj.mp h_get
+      have h_lab_eq : L_A[n].1 = l := by
+        have := h_lab n h_n_lt h_n_lt_A
+        simp only [List.get_eq_getElem] at this
+        rw [← this, h_lab_C_n]
+      refine Or.inr ⟨n, L_A[n].1, L_A[n].2, ?_, ?_, ?_⟩
+      · rw [h_get_A, List.getElem?_eq_getElem h_n_lt_A]
+      · exact (h_term_iff (n+1)).mp h_term_succ
+      · rw [h_lab_eq]; exact fun h => h_ext ((h_internal l).mpr h)
+  · rintro (h_term0 | ⟨n, l, s, h_get, h_term_succ, h_ext⟩)
+    · left; exact (h_term_iff 0).mpr h_term0
+    · have h_n_lt_A : n < L_A.length := by
+        rw [h_get_A] at h_get
+        by_contra h_le
+        push Not at h_le
+        rw [List.getElem?_eq_none h_le] at h_get
+        exact absurd h_get.symm (Option.some_ne_none _)
+      have h_n_lt : n < L_C.length := h_len.symm ▸ h_n_lt_A
+      have h_lab_A_n : L_A[n] = (l, s) := by
+        rw [h_get_A, List.getElem?_eq_getElem h_n_lt_A] at h_get
+        exact Option.some_inj.mp h_get
+      have h_lab_eq : L_C[n].1 = l := by
+        have := h_lab n h_n_lt h_n_lt_A
+        simp only [List.get_eq_getElem] at this
+        rw [this, h_lab_A_n]
+      refine Or.inr ⟨n, L_C[n].1, L_C[n].2, ?_, ?_, ?_⟩
+      · rw [h_get_C, List.getElem?_eq_getElem h_n_lt]
+      · exact (h_term_iff (n+1)).mpr h_term_succ
+      · rw [h_lab_eq]; exact fun h => h_ext ((h_internal l).mp h)
+
 /-- **Trace inclusion (v4)**: for every probabilistic execution `pe_C` of
 `sys_C` and every initial abstract distribution `μ_A_init` `R`-related
 pointwise to `pe_C`'s initial states, there is an abstract probabilistic
 execution `pe_A` of `sys_A^w` matching `pe_C`'s trace probability at
 every trace τ.
+
+**Structural hypothesis**: the concrete and abstract systems must agree
+on the internal/external classification of labels. This is the natural
+minimal assumption needed for the trace equality, since `pe_A`'s emission
+preserves labels position-by-position but `sys_C` and `sys_A` carry
+independent `internal` predicates.
 
 **Proof structure (per §8)**:
 1. Unfold both sides as tsums over tight finite executions.
@@ -6504,11 +6679,163 @@ theorem traceInclusion
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
-    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init) :
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (h_internal : ∀ l, sys_C.internal l ↔ sys_A.internal l) :
     ∃ pe_A : PMFProbabilisticExecution (sys_A^w).toSystem,
       ∀ τ : Seq Label,
         sys_C.traceProb pe_C τ = (sys_A^w).traceProbPMF pe_A τ :=
-  ⟨pe_A_of_simulation sim pe_C μ_A_init h_init_R, by sorry⟩
+  ⟨pe_A_of_simulation sim pe_C μ_A_init h_init_R, by
+    classical
+    intro τ
+    set pe_A := pe_A_of_simulation sim pe_C μ_A_init h_init_R with hpe_A_def
+    -- Subtypes used in the marginalisation lemmas.
+    let TightC : Type :=
+      {e_C : AlterSeq State_C Label //
+        e_C.trans.Terminates ∧ sys_C.trace e_C = τ ∧ sys_C.IsTight e_C}
+    let TightA : Type :=
+      {e_A : AlterSeq State_A Label //
+        e_A.trans.Terminates ∧ sys_A.trace e_A = τ ∧ sys_A.IsTight e_A}
+    -- Matching subtypes (parametrised by the other side).
+    let MatchA : ∀ (e_C : TightC), Type := fun e_C =>
+      {e_A : AlterSeq State_A Label //
+        ∃ h_term : e_A.trans.Terminates,
+          (e_A.trans.toList h_term).length = (e_C.1.trans.toList e_C.2.1).length ∧
+          ∀ k h₁ h₂, ((e_A.trans.toList h_term).get ⟨k, h₁⟩).1 =
+                     ((e_C.1.trans.toList e_C.2.1).get ⟨k, h₂⟩).1}
+    let MatchC : ∀ (e_A : TightA), Type := fun e_A =>
+      {e_C : AlterSeq State_C Label //
+        ∃ h_term : e_C.trans.Terminates,
+          e_C.init ∈ pe_C.init.support ∧
+          (e_C.trans.toList h_term).length = (e_A.1.trans.toList e_A.2.1).length ∧
+          ∀ k h₁ h₂, ((e_C.trans.toList h_term).get ⟨k, h₁⟩).1 =
+                     ((e_A.1.trans.toList e_A.2.1).get ⟨k, h₂⟩).1}
+    -- joint_mass is zero whenever pe_C.init e_C.init is zero (not in supp).
+    have h_jm_zero_of_nosupp : ∀ (e_C : AlterSeq State_C Label)
+        (h_C_term : e_C.trans.Terminates) (e_A : AlterSeq State_A Label)
+        (h_A_term : e_A.trans.Terminates),
+        e_C.init ∉ pe_C.init.support →
+        joint_mass sim pe_C μ_A_init h_init_R e_C h_C_term e_A h_A_term = 0 := by
+      intro e_C h_C_term e_A h_A_term h_ne_supp
+      rw [PMF.mem_support_iff] at h_ne_supp
+      push Not at h_ne_supp
+      unfold joint_mass
+      rw [h_ne_supp, zero_mul, zero_mul]
+    -- Step 1: rewrite LHS as ∑' over Σ (e_C : TightC), MatchA e_C.
+    have h_LHS_sigma :
+        sys_C.traceProb pe_C τ =
+          ∑' (p : Σ e_C : TightC, MatchA e_C),
+            joint_mass sim pe_C μ_A_init h_init_R
+              p.1.1 p.1.2.1 p.2.val p.2.2.choose := by
+      rw [ENNReal.tsum_sigma'
+        (β := MatchA)
+        (f := fun p => joint_mass sim pe_C μ_A_init h_init_R
+                          p.1.1 p.1.2.1 p.2.val p.2.2.choose)]
+      unfold LabelledSystem.traceProb
+      refine tsum_congr (fun e_C => ?_)
+      change pe_C.probOf e_C.1 e_C.2.1 = _
+      rw [← joint_marginalises_to_pe_C sim pe_C μ_A_init h_init_R e_C.1 e_C.2.1]
+    -- Step 2: rewrite RHS as ∑' over Σ (e_A : TightA), MatchC e_A.
+    have h_RHS_sigma :
+        (sys_A^w).traceProbPMF pe_A τ =
+          ∑' (p : Σ e_A : TightA, MatchC e_A),
+            joint_mass sim pe_C μ_A_init h_init_R
+              p.2.val p.2.2.choose p.1.1 p.1.2.1 := by
+      rw [ENNReal.tsum_sigma'
+        (β := MatchC)
+        (f := fun p => joint_mass sim pe_C μ_A_init h_init_R
+                          p.2.val p.2.2.choose p.1.1 p.1.2.1)]
+      unfold LabelledSystem.traceProbPMF
+      refine tsum_congr (fun e_A => ?_)
+      change pe_A.probOf e_A.1 e_A.2.1 = _
+      rw [← joint_marginalises_to_pe_A sim pe_C μ_A_init h_init_R e_A.1 e_A.2.1]
+    rw [h_LHS_sigma, h_RHS_sigma]
+    -- Now: ∑' (p : Σ e_C : TightC, MatchA e_C), joint_mass(...)
+    --      = ∑' (p : Σ e_A : TightA, MatchC e_A), joint_mass(...)
+    -- Build the bijection.
+    -- Forward map (after restriction to nonzero, since the LHS sigma doesn't
+    -- constrain e_C.init ∈ supp): the joint_mass is zero anyway for those.
+    -- Bijection: from "RHS-nonzero" (A-side sigma) to LHS-sigma (C-side sigma).
+    -- Direction: (e_A, e_C) ↦ (e_C, e_A).
+    apply tsum_eq_tsum_of_ne_zero_bij
+      (i := fun (q : {q : Σ e_A : TightA, MatchC e_A //
+          joint_mass sim pe_C μ_A_init h_init_R
+            q.2.val q.2.2.choose q.1.val q.1.2.1 ≠ 0}) =>
+        let e_A : AlterSeq State_A Label := q.1.1.val
+        let h_A_term : e_A.trans.Terminates := q.1.1.2.1
+        let h_A_trace : sys_A.trace e_A = τ := q.1.1.2.2.1
+        let h_A_tight : sys_A.IsTight e_A := q.1.1.2.2.2
+        let e_C : AlterSeq State_C Label := q.1.2.val
+        let h_C_match := q.1.2.2
+        let h_C_term : e_C.trans.Terminates := h_C_match.choose
+        let h_match := h_C_match.choose_spec
+        let h_init_supp : e_C.init ∈ pe_C.init.support := h_match.1
+        let h_len : (e_C.trans.toList h_C_term).length =
+                    (e_A.trans.toList h_A_term).length := h_match.2.1
+        let h_lab : ∀ k h₁ h₂, ((e_C.trans.toList h_C_term).get ⟨k, h₁⟩).1 =
+            ((e_A.trans.toList h_A_term).get ⟨k, h₂⟩).1 := h_match.2.2
+        let h_C_trace : sys_C.trace e_C = τ := by
+          rw [trace_eq_of_labels_match sys_C sys_A h_internal
+            e_C h_C_term e_A h_A_term h_len h_lab]
+          exact h_A_trace
+        let h_C_tight : sys_C.IsTight e_C :=
+          (isTight_iff_of_labels_match sys_C sys_A h_internal
+            e_C h_C_term e_A h_A_term h_len h_lab).mpr h_A_tight
+        let p1 : TightC := ⟨e_C, h_C_term, h_C_trace, h_C_tight⟩
+        let p2 : MatchA p1 :=
+          ⟨e_A, h_A_term, h_len.symm, fun k h₁ h₂ => (h_lab k h₂ h₁).symm⟩
+        (⟨p1, p2⟩ : Σ e_C : TightC, MatchA e_C))
+      ?_ ?_ ?_
+    · -- injectivity: (e_A, e_C) ↦ (e_C, e_A) is injective.
+      rintro ⟨⟨⟨e_A, h_A_term, h_A_trace, h_A_tight⟩, ⟨e_C, h_C_match⟩⟩, h_ne⟩
+             ⟨⟨⟨e_A', h_A_term', h_A_trace', h_A_tight'⟩, ⟨e_C', h_C_match'⟩⟩, h_ne'⟩ h_eq
+      -- Extract e_C = e_C' from image fst.
+      have h_e_C : e_C = e_C' := by
+        have := congrArg (fun (s : Σ x : TightC, MatchA x) => s.fst.val) h_eq
+        exact this
+      -- Extract e_A = e_A' from image snd value.
+      have h_e_A : e_A = e_A' := by
+        have := congrArg
+          (fun (s : Σ x : TightC, MatchA x) => (s.snd.val : AlterSeq State_A Label)) h_eq
+        exact this
+      subst h_e_A
+      subst h_e_C
+      rfl
+    · -- LHS-support ⊆ range of bijection.
+      rintro ⟨⟨e_C, h_C_term, h_C_trace, h_C_tight⟩, ⟨e_A, h_A_match⟩⟩ h_ne_LHS
+      -- h_ne_LHS : joint_mass ... ≠ 0 (LHS side). Construct preimage on A-side.
+      have h_A_term : e_A.trans.Terminates := h_A_match.choose
+      have h_match := h_A_match.choose_spec
+      have h_len_AC : (e_A.trans.toList h_A_term).length =
+          (e_C.trans.toList h_C_term).length := h_match.1
+      have h_lab_AC : ∀ k h₁ h₂,
+          ((e_A.trans.toList h_A_term).get ⟨k, h₁⟩).1 =
+            ((e_C.trans.toList h_C_term).get ⟨k, h₂⟩).1 := h_match.2
+      have h_A_trace : sys_A.trace e_A = τ := by
+        rw [← h_C_trace]
+        exact (trace_eq_of_labels_match sys_C sys_A h_internal
+          e_C h_C_term e_A h_A_term h_len_AC.symm
+          (fun k h₁ h₂ => (h_lab_AC k h₂ h₁).symm)).symm
+      have h_A_tight : sys_A.IsTight e_A :=
+        (isTight_iff_of_labels_match sys_C sys_A h_internal
+          e_C h_C_term e_A h_A_term h_len_AC.symm
+          (fun k h₁ h₂ => (h_lab_AC k h₂ h₁).symm)).mp h_C_tight
+      have h_C_init_supp : e_C.init ∈ pe_C.init.support := by
+        by_contra h_ne_supp
+        exact h_ne_LHS (h_jm_zero_of_nosupp e_C h_C_term e_A h_A_term h_ne_supp)
+      let p1' : TightA := ⟨e_A, h_A_term, h_A_trace, h_A_tight⟩
+      let p2' : MatchC p1' :=
+        ⟨e_C, h_C_term, h_C_init_supp, h_len_AC.symm,
+          fun k h₁ h₂ => (h_lab_AC k h₂ h₁).symm⟩
+      refine ⟨⟨⟨p1', p2'⟩, ?_⟩, ?_⟩
+      · -- The image's joint_mass is nonzero on the LHS sigma.
+        intro h_zero
+        apply h_ne_LHS
+        rw [← h_zero]
+      · -- Equality of images.
+        rfl
+    · -- Value equality on the bijection.
+      rintro ⟨⟨⟨e_A, h_A_term, h_A_trace, h_A_tight⟩, ⟨e_C, h_C_match⟩⟩, h_ne⟩
+      rfl⟩
 
 end ProbabilisticForwardSimulation
 
