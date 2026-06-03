@@ -3167,9 +3167,53 @@ The heart of the proof. Links pe_A's `m_kernel`-aggregated kernel at
 yielding `pe_A.probOf history_A_{k+1}`. Proved by induction on
 `history_A.trans` length, interleaved with mass conservation. -/
 
+/-- **Intermediate lemma**: `blockEmission_general`'s emission marginal
+at `(l, s_A)` equals `per_state_kernel m l s_A`. Specifically,
+  `∑' μ : PMF State_A, blockEmission_general m d h_d_eq h_valid (l, μ) * μ s_A
+     = per_state_kernel m l s_A`.
+
+Both sides reduce algebraically to
+  `∑' μ_C, d (l, μ_C) * (ω_{m,l,μ_C}.bind id) s_A`,
+where `ω` is sim's `stepWitness`. The LHS reduction unfolds
+`d.bind`'s `PMF.bind_apply`, then `PMF.map_apply` to extract `ω μ` from
+`ω.map (l, ·) (l, μ)`. The RHS reduction unfolds `per_state_kernel`'s
+`∑' s_C` of `joint_kernel`, swaps to `∑' μ_C`, then applies γ's second
+marginal (`snd_apply_eq_tsum`) to collapse `∑' s_C, γ(s_C, μ_A_next) =
+ω(μ_A_next)`, finally yielding `(ω.bind id) s_A` via `PMF.bind_apply`.
+
+Bridging the two requires identifying `(pe_C.scheduler.next m.e_C).get h_some`
+with the external `d`, which runs into Lean's dependent-rewrite issue
+(motive-not-type-correct when rewriting under `.get`). The cleanest
+mitigation is to refactor `joint_kernel` to take `d` and `h_d_eq` as
+explicit parameters (mirroring `blockEmission_general`), allowing the
+two expressions to share a common form syntactically. Deferred. -/
+private theorem blockEmission_general_emission_marginal
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m.e_C = some d)
+    (h_valid : m.has_valid_R)
+    (l : Label) (s_A : State_A) :
+    (∑' μ : PMF State_A,
+      blockEmission_general m d h_d_eq h_valid (l, μ) * μ s_A) =
+    per_state_kernel m l s_A :=
+  sorry
+
 /-- **`m_dist_posterior_predictive` (§9.3, unnormalised form)**: the
 matching-state-aggregated `per_state_kernel` value at step k equals
-`pe_A.probOf` at the extended history. -/
+`pe_A.probOf` at the extended history.
+
+Proof strategy: by `pe_A.probOf`'s cons factorisation,
+  `pe_A.probOf history_A_{k+1} = pe_A.probOf history_A_k * pe_A.kernel history_A_k (l, s_A)`.
+Then `pe_A.kernel` unfolds via the normalised m_kernel bind to give
+  `pe_A.kernel = (1/Z) * ∑' m, m_kernel m * (emission marginal at m)`,
+where `Z = ∑' m, m_kernel m`. Mass conservation gives `Z = pe_A.probOf history_A_k`,
+so the product simplifies to `∑' m, m_kernel m * (emission marginal at m)`,
+which equals `∑' m, m_kernel m * per_state_kernel m l s_A` by
+`blockEmission_general_emission_marginal`. -/
 theorem m_dist_posterior_predictive
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
