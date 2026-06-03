@@ -3563,6 +3563,152 @@ private theorem blockEmission_general_emission_marginal
   rw [per_state_kernel_eq_at_d m d h_d_eq h_valid l s_A]
   exact blockEmission_general_emission_marginal_at_d m d h_d_eq h_valid l s_A
 
+/-- **Uniform per-matching-state emission marginal**: for any matching
+state `m` (valid or not), the emission marginal of `pe_A_emit_at_state m`
+at `(l, ·) * · s_A` equals `per_state_kernel m l s_A`. In the valid
+case, this follows from `blockEmission_general_emission_marginal`; in
+the invalid case, both sides are 0. -/
+private theorem pe_A_emit_at_state_emission_marginal
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (s_A : State_A) :
+    (∑' μ : PMF State_A, pe_A_emit_at_state m (some (l, μ)) * μ s_A) =
+    per_state_kernel m l s_A := by
+  classical
+  unfold pe_A_emit_at_state
+  by_cases h_valid : m.has_valid_R
+  · simp only [dif_pos h_valid]
+    by_cases h_some : (pe_C.scheduler.next m.e_C).isSome = true
+    · simp only [dif_pos h_some]
+      -- pe_A_emit_at_state branch: (blockEmission_general ...).map some
+      -- ((bem).map some) (some (l, μ)) = bem (l, μ) (by PMF.map_apply + tsum_eq_single)
+      have h_map_apply : ∀ μ : PMF State_A,
+          ((blockEmission_general m ((pe_C.scheduler.next m.e_C).get h_some)
+            (Option.eq_some_of_isSome h_some) h_valid).map some) (some (l, μ)) =
+          blockEmission_general m ((pe_C.scheduler.next m.e_C).get h_some)
+            (Option.eq_some_of_isSome h_some) h_valid (l, μ) := by
+        intro μ
+        rw [PMF.map_apply]
+        rw [tsum_eq_single (l, μ) (fun x h_ne => by
+          have h_some_ne : some (l, μ) ≠ some x := fun h_eq => h_ne (Option.some.inj h_eq).symm
+          simp [h_some_ne])]
+        simp
+      simp_rw [h_map_apply]
+      -- Now: ∑' μ, blockEmission_general ... (l, μ) * μ s_A = per_state_kernel m l s_A
+      exact blockEmission_general_emission_marginal m
+        ((pe_C.scheduler.next m.e_C).get h_some)
+        (Option.eq_some_of_isSome h_some) h_valid l s_A
+    · -- ¬h_some: pe_A_emit_at_state = PMF.pure none.
+      simp only [dif_neg h_some]
+      -- ∑' μ, (PMF.pure none) (some (l, μ)) * μ s_A = 0
+      have h_zero : ∀ μ : PMF State_A,
+          (PMF.pure (none : Option (Label × PMF State_A))) (some (l, μ)) * μ s_A = 0 := by
+        intro μ; rw [PMF.pure_apply_of_ne _ _ (by simp)]; ring
+      simp_rw [h_zero]
+      rw [tsum_zero]
+      -- per_state_kernel m l s_A = 0 (joint_kernel = 0 when ¬h_some)
+      unfold per_state_kernel joint_kernel
+      symm
+      apply ENNReal.tsum_eq_zero.mpr
+      intro s_C
+      simp [dif_pos h_valid, dif_neg h_some]
+  · -- ¬h_valid: pe_A_emit_at_state = PMF.pure none.
+    simp only [dif_neg h_valid]
+    have h_zero : ∀ μ : PMF State_A,
+        (PMF.pure (none : Option (Label × PMF State_A))) (some (l, μ)) * μ s_A = 0 := by
+      intro μ; rw [PMF.pure_apply_of_ne _ _ (by simp)]; ring
+    simp_rw [h_zero]
+    rw [tsum_zero]
+    -- per_state_kernel m l s_A = 0 (joint_kernel = 0 when ¬h_valid)
+    unfold per_state_kernel joint_kernel
+    symm
+    apply ENNReal.tsum_eq_zero.mpr
+    intro s_C
+    simp [dif_neg h_valid]
+
+/-- **§9.3 sub-lemma B** (`pe_A_kernel_via_m_kernel`, multiplicative form):
+pe_A's per-step kernel at `history_A_k` multiplied by `Z` (the total
+m_kernel mass) equals the m_kernel-aggregated `per_state_kernel`. No
+division. Requires `Z ≠ 0` and `Z ≠ ⊤` (the latter implicit by mass
+conservation, but needed as an explicit hypothesis here).
+
+Plan v4.1 §9.3 sub-lemma B. -/
+private theorem pe_A_kernel_via_m_kernel
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (history_A_k : AlterSeq State_A Label) (h_term_k : history_A_k.trans.Terminates)
+    (l : Label) (s_A : State_A)
+    (h_Z_ne_zero :
+      (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m) ≠ 0)
+    (h_Z_ne_top :
+      (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m) ≠ ⊤) :
+    (pe_A_of_simulation sim pe_C μ_A_init h_init_R).kernel history_A_k (l, s_A) *
+      (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m) =
+    ∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m *
+      per_state_kernel m l s_A := by
+  classical
+  -- Set abbreviations for readability.
+  set m_kernel : MatchingState sim pe_C μ_A_init h_init_R → ENNReal :=
+    fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k with h_mk_def
+  set Z := ∑' m, m_kernel m with hZ_def
+  -- Unfold pe_A.kernel and project scheduler.next; goal is now in terms of
+  -- pe_A_emission_distribution directly.
+  show (∑' μ : PMF State_A,
+      pe_A_emission_distribution sim pe_C μ_A_init h_init_R history_A_k (some (l, μ)) * μ s_A) *
+      Z = _
+  -- Unfold pe_A_emission_distribution and apply dif_pos's.
+  unfold pe_A_emission_distribution
+  rw [dif_pos h_term_k, dif_pos h_Z_ne_zero, dif_pos h_Z_ne_top]
+  -- LHS: (∑' μ, ((PMF.normalize m_kernel _ _).bind pe_A_emit_at_state) (some (l, μ)) * μ s_A) * Z
+  -- Rewrite the inner ∑' μ as a double sum over m and μ, swap, collapse.
+  have h_inner :
+      (∑' μ : PMF State_A,
+        ((PMF.normalize m_kernel h_Z_ne_zero h_Z_ne_top).bind pe_A_emit_at_state)
+          (some (l, μ)) * μ s_A) =
+      Z⁻¹ * ∑' m : MatchingState sim pe_C μ_A_init h_init_R,
+        m_kernel m * per_state_kernel m l s_A := by
+    -- Expand the bind and normalize.
+    have h_expand : ∀ μ : PMF State_A,
+        ((PMF.normalize m_kernel h_Z_ne_zero h_Z_ne_top).bind pe_A_emit_at_state)
+          (some (l, μ)) * μ s_A =
+        ∑' m : MatchingState sim pe_C μ_A_init h_init_R,
+          m_kernel m * Z⁻¹ * pe_A_emit_at_state m (some (l, μ)) * μ s_A := by
+      intro μ
+      have h_step :
+          ((PMF.normalize m_kernel h_Z_ne_zero h_Z_ne_top).bind pe_A_emit_at_state)
+            (some (l, μ)) =
+          ∑' m : MatchingState sim pe_C μ_A_init h_init_R,
+            m_kernel m * Z⁻¹ * pe_A_emit_at_state m (some (l, μ)) := by
+        rw [PMF.bind_apply]
+        refine tsum_congr (fun m => ?_)
+        rw [PMF.normalize_apply, ← hZ_def]
+      rw [h_step, ENNReal.tsum_mul_right]
+    simp_rw [h_expand]
+    -- Swap, factor (m_kernel m * Z⁻¹) out, apply helper.
+    rw [ENNReal.tsum_comm]
+    have h_per_m : ∀ m : MatchingState sim pe_C μ_A_init h_init_R,
+        (∑' μ : PMF State_A,
+          m_kernel m * Z⁻¹ * pe_A_emit_at_state m (some (l, μ)) * μ s_A) =
+        Z⁻¹ * (m_kernel m * per_state_kernel m l s_A) := by
+      intro m
+      have hM : (∑' μ : PMF State_A,
+          m_kernel m * Z⁻¹ * pe_A_emit_at_state m (some (l, μ)) * μ s_A) =
+          m_kernel m * Z⁻¹ *
+            (∑' μ : PMF State_A, pe_A_emit_at_state m (some (l, μ)) * μ s_A) := by
+        rw [← ENNReal.tsum_mul_left]
+        refine tsum_congr (fun μ => ?_); ring
+      rw [hM, pe_A_emit_at_state_emission_marginal]; ring
+    rw [tsum_congr h_per_m]
+    rw [ENNReal.tsum_mul_left]
+  rw [h_inner]
+  -- LHS: (Z⁻¹ * ∑' m, m_kernel m * per_state_kernel m l s_A) * Z = ∑' m, ...
+  rw [mul_comm Z⁻¹ _, mul_assoc, ENNReal.inv_mul_cancel h_Z_ne_zero h_Z_ne_top, mul_one]
+
 /-- **`m_dist_posterior_predictive` (§9.3, unnormalised form)**: the
 matching-state-aggregated `per_state_kernel` value at step k equals
 `pe_A.probOf` at the extended history.
