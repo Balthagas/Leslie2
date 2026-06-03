@@ -3192,25 +3192,74 @@ Once `joint_kernel` and `joint_mass` are defined, the two marginal
 identities bridge `pe_C.probOf` and `pe_A.probOf` to a shared joint mass
 quantity, giving the trace coupling by tsum bijection. -/
 
+/-- **Path-value helper for joint_mass**: given the previous matching state
+`m_prev` and the remaining (concrete, abstract) transitions, compute the
+product of `joint_kernel` factors, summing over matching-state extensions
+at each step. -/
+noncomputable def joint_mass_path
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m_prev : MatchingState sim pe_C μ_A_init h_init_R) :
+    List (Label × State_C) → List (Label × State_A) → ENNReal
+  | List.nil, List.nil => 1
+  | List.cons hC restC, List.cons hA restA =>
+      open Classical in
+      if hC.1 = hA.1 then
+        -- Sum over the next matching state m_next, weighted by the
+        -- joint_kernel value at the current step and constrained to be
+        -- a one-step extension of m_prev.
+        ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+          joint_kernel m_prev hA.1 hC.2 hA.2 *
+          (if m_next.e_C.init = m_prev.e_C.init ∧
+              m_next.e_C.trans = m_prev.e_C.trans.append (Seq.cons (hC.1, hC.2) Seq.nil) ∧
+              m_next.μ_A_chain.length = m_prev.μ_A_chain.length + 1 then 1 else 0) *
+          joint_mass_path m_next restC restA
+      else 0
+  | List.nil, List.cons _ _ => 0
+  | List.cons _ _, List.nil => 0
+
+/-- **Initial matching state** at a concrete initial state `s_C_init`
+(in `pe_C.init.support`) with empty trans and empty `μ_A_chain`. Used as
+the starting point for `joint_mass`. -/
+noncomputable def initial_matching_state
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (s_C_init : State_C) :
+    MatchingState sim pe_C μ_A_init h_init_R where
+  e_C := ⟨s_C_init, Seq.nil⟩
+  e_C_term := Stream'.Seq.terminates_nil
+  μ_A_chain := []
+  h_R := fun h_ne => absurd rfl h_ne
+
 /-- **Joint mass**: `joint_mass e_C e_A` is the total probability of a
 joint (concrete, abstract) trajectory whose concrete part is `e_C` and
-abstract part is `e_A`, integrated over the γ-sampled abstract
-distributions along the path. Defined as
-  `pe_C.init e_C.init * μ_A_init e_A.init * ∏_k joint_kernel(m_k, l_k, s_C_k, s_A_k)`
-where `m_k` is the matching state at step k (a γ-positive integration
-over prior `μ_A_chain` choices implicit in `joint_kernel`'s inner sum).
+abstract part is `e_A`. Defined as
+  `pe_C.init e_C.init * μ_A_init e_A.init * joint_mass_path(m_0, trans_C, trans_A)`
+where `m_0` is the `initial_matching_state` at `e_C.init`, and
+`joint_mass_path` accumulates `joint_kernel` factors along the
+trajectory while integrating over matching-state extensions.
 
-The concrete construction recurses on the joint trajectory's transitions
-list, accumulating `joint_kernel` factors and threading matching-state
-advances. -/
+Plan §4 says
+  `joint_mass(e_C, e_A) := pe_C.init(e_C.init) · μ_A_init(e_A.init) ·
+                          ∏_{k} joint_kernel(m_k, l_k, s_C_k, s_A_k)`
+with `m_k` determined by the trajectory. Our definition implements this
+via `joint_mass_path`'s recursion: at each step, sum over m_next
+satisfying the structural extension constraint, multiplied by
+`joint_kernel m_prev` and the rest of the path. -/
 noncomputable def joint_mass
-    (_sim : ProbabilisticForwardSimulation sys_C sys_A R)
-    (_pe_C : ProbabilisticExecution sys_C.toSystem)
-    (_μ_A_init : PMF State_A)
-    (_h_init_R : ∀ s_C ∈ _pe_C.init.support, R s_C _μ_A_init)
-    (_e_C : AlterSeq State_C Label) (_e_C_term : _e_C.trans.Terminates)
-    (_e_A : AlterSeq State_A Label) (_e_A_term : _e_A.trans.Terminates) : ENNReal :=
-  sorry
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (e_C : AlterSeq State_C Label) (e_C_term : e_C.trans.Terminates)
+    (e_A : AlterSeq State_A Label) (e_A_term : e_A.trans.Terminates) : ENNReal :=
+  pe_C.init e_C.init * μ_A_init e_A.init *
+  joint_mass_path (initial_matching_state sim pe_C μ_A_init h_init_R e_C.init)
+    (e_C.trans.toList e_C_term) (e_A.trans.toList e_A_term)
 
 /-- **§9.4**: marginalising the joint over `e_A`'s state samples
 recovers `pe_C.probOf e_C`. Proven by composing per-step
