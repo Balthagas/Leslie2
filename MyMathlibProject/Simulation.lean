@@ -1658,6 +1658,22 @@ theorem probOfRemaining_cons (pe : PMFProbabilisticExecution sys)
   rw [pe.foldl_acc_linear rest (1 * pe.kernel pre hd) _]
   ring
 
+/-- Auxiliary: `foldl (cons-extend)` over `xs` from an initial Seq `init`
+gives `init.append (Seq.ofList xs)`. Used by `probOf_append_singleton`. -/
+private theorem foldl_seq_append_eq_ofList (xs : List (Label × State)) (init : Seq (Label × State)) :
+    xs.foldl (fun acc hd => acc.append (Seq.cons hd Seq.nil)) init =
+    init.append (Stream'.Seq.ofList xs) := by
+  induction xs generalizing init with
+  | nil =>
+    simp [Stream'.Seq.ofList_nil, Stream'.Seq.append_nil]
+  | cons hd rest ih =>
+    show List.foldl _ (init.append (Seq.cons hd Seq.nil)) rest = _
+    rw [ih, Stream'.Seq.ofList_cons, Stream'.Seq.append_assoc]
+    congr 1
+    show (Seq.cons hd Seq.nil).append (Stream'.Seq.ofList rest) =
+      Seq.cons hd (Stream'.Seq.ofList rest)
+    rw [Stream'.Seq.cons_append, Stream'.Seq.nil_append]
+
 /-- **End-step factorisation for `probOfRemaining`** (plan v4.1 §9.3 sub-lemma C):
 appending a transition `last` at the end multiplies by `pe.kernel`
 at the prefix accumulated after walking through `xs`. -/
@@ -1701,6 +1717,41 @@ theorem probOfRemaining_append_singleton (pe : PMFProbabilisticExecution sys)
     -- After probOfRemaining_cons on RHS: (pe.kernel pre hd * probOfRem ... rest) * pe.kernel ⟨_, foldl ... pre (hd :: rest)⟩ last.
     -- Need: foldl ... extended rest = foldl ... pre.trans (hd :: rest), which is definitional via List.foldl.
     simp only [List.foldl, mul_assoc]
+
+/-- **End-step factorisation for `pe.probOf`** (plan v4.1 §9.3 sub-lemma C):
+appending a transition `last` at the end of `history` multiplies `pe.probOf`
+by `pe.kernel history last`. -/
+theorem probOf_append_singleton (pe : PMFProbabilisticExecution sys)
+    (init : State) (trans : Seq (Label × State)) (h_term : trans.Terminates)
+    (last : Label × State) :
+    pe.probOf ⟨init, trans.append (Seq.cons last Seq.nil)⟩
+        ⟨Nat.find h_term + 1, Stream'.Seq.terminatedAt_append_find h_term
+          (show (Seq.cons last Seq.nil).TerminatedAt 1 from rfl)⟩ =
+      pe.probOf ⟨init, trans⟩ h_term *
+        pe.kernel ⟨init, trans⟩ last := by
+  unfold PMFProbabilisticExecution.probOf
+  -- (trans.append (cons last nil)).toList = trans.toList h_term ++ [last]
+  have h_toList : (trans.append (Seq.cons last Seq.nil)).toList
+      ⟨Nat.find h_term + 1, Stream'.Seq.terminatedAt_append_find h_term
+        (show (Seq.cons last Seq.nil).TerminatedAt 1 from rfl)⟩ =
+      trans.toList h_term ++ (Seq.cons last Seq.nil).toList
+        ⟨1, show (Seq.cons last Seq.nil).TerminatedAt 1 from rfl⟩ :=
+    Stream'.Seq.toList_append trans (Seq.cons last Seq.nil) h_term _ _
+  have h_singleton_toList : (Seq.cons last Seq.nil).toList
+      ⟨1, show (Seq.cons last Seq.nil).TerminatedAt 1 from rfl⟩ = [last] := by
+    rw [Stream'.Seq.toList_cons]
+    simp [Stream'.Seq.toList_nil]
+  rw [h_toList, h_singleton_toList]
+  rw [probOfRemaining_append_singleton]
+  -- Now: pe.init init * (probOfRemaining ⟨init, nil⟩ (trans.toList h_term) *
+  --        pe.kernel ⟨init, foldl ... Seq.nil (trans.toList h_term)⟩ last)
+  --    = pe.init init * probOfRemaining ⟨init, nil⟩ (trans.toList h_term) * pe.kernel ⟨init, trans⟩ last
+  -- The foldl form simplifies via foldl_seq_append_eq_ofList + ofList_toList:
+  -- foldl ... Seq.nil (trans.toList h_term) = Seq.nil.append (Seq.ofList (trans.toList h_term))
+  --   = Seq.ofList (trans.toList h_term)  [by nil_append]
+  --   = trans  [by ofList_toList]
+  rw [foldl_seq_append_eq_ofList, Stream'.Seq.nil_append, Stream'.Seq.ofList_toList]
+  ring
 
 /-- The faithful `continuationFrom`: a probabilistic execution starting at the
 end-state of `history`, with its scheduler shifted so it queries `pe.scheduler`
