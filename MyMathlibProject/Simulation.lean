@@ -2373,7 +2373,8 @@ def weakClosure (sys_A : LabelledSystem State_A Label) :
     LabelledSystem State_A Label where
   init := sys_A.init
   step s l μ := ∃ (μ_A : PMF State_A) (ω : PMF (PMF State_A)),
-    s ∈ μ_A.support ∧ μ ∈ ω.support ∧ weakStep sys_A μ_A l (ω.bind id)
+    s ∈ μ_A.support ∧ μ ∈ ω.support ∧
+    (weakTau sys_A μ_A (ω.bind id) ∨ weakStep sys_A μ_A l (ω.bind id))
   internal := sys_A.internal
 
 /-- Notation `sys ^w` for `weakClosure sys`. -/
@@ -2677,7 +2678,10 @@ that pe_A would emit if we *knew* the matching state were exactly `m`.
 * If `m` has valid R and `pe_C.scheduler.next m.e_C = some d`:
   emit `(blockEmission_general m d _ _).map some` — sample a block step.
 * Otherwise (m lacks valid R, or pe_C has halted at m.e_C):
-  emit `PMF.pure none` (halt). -/
+  emit `PMF.pure none` (halt).
+
+Implemented via `Option.isSome` + `Option.get` (avoids match-with-binder;
+makes the support extraction proof go through). -/
 noncomputable def pe_A_emit_at_state
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -2687,9 +2691,10 @@ noncomputable def pe_A_emit_at_state
     PMF (Option (Label × PMF State_A)) :=
   open Classical in
   if h_valid : m.has_valid_R then
-    match h_next : pe_C.scheduler.next m.e_C with
-    | none => PMF.pure none
-    | some d => (blockEmission_general m d h_next h_valid).map some
+    if h_some : (pe_C.scheduler.next m.e_C).isSome then
+      (blockEmission_general m ((pe_C.scheduler.next m.e_C).get h_some)
+        (Option.eq_some_of_isSome h_some) h_valid).map some
+    else PMF.pure none
   else PMF.pure none
 
 /-- The `PMF (Option (Label × PMF State_A))` emitted by pe_A's scheduler
@@ -2738,18 +2743,200 @@ theorem current_μ_A_support_contains_history_A_endState
     history_A.endState h_term ∈ m.current_μ_A.support :=
   sorry
 
+/-- Step 1 of validity: unwind `pe_A_emission_distribution`'s support
+membership to extract a matching state `m` with positive mass under
+`fromAbstractPrefix`, and `some (l, μ) ∈ (pe_A_emit_at_state m).support`. -/
+private theorem pe_A_emission_support_extract
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (e : AlterSeq State_A Label) (l : Label) (μ : PMF State_A)
+    (h_supp : some (l, μ) ∈
+      (pe_A_emission_distribution sim pe_C μ_A_init h_init_R e).support) :
+    ∃ (h_term : e.trans.Terminates) (m : MatchingState sim pe_C μ_A_init h_init_R),
+      fromAbstractPrefix sim pe_C μ_A_init h_init_R e h_term m ≠ 0 ∧
+      some (l, μ) ∈ (pe_A_emit_at_state m).support := by
+  classical
+  unfold pe_A_emission_distribution at h_supp
+  by_cases h_term : e.trans.Terminates
+  swap
+  · exfalso
+    rw [dif_neg h_term] at h_supp
+    rw [PMF.mem_support_iff, PMF.pure_apply_of_ne _ _ (by simp)] at h_supp
+    exact h_supp rfl
+  rw [dif_pos h_term] at h_supp
+  by_cases h0 : (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R e h_term m) ≠ 0
+  swap
+  · exfalso
+    rw [dif_neg h0] at h_supp
+    rw [PMF.mem_support_iff, PMF.pure_apply_of_ne _ _ (by simp)] at h_supp
+    exact h_supp rfl
+  rw [dif_pos h0] at h_supp
+  by_cases hFin : (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R e h_term m) ≠ ⊤
+  swap
+  · exfalso
+    rw [dif_neg hFin] at h_supp
+    rw [PMF.mem_support_iff, PMF.pure_apply_of_ne _ _ (by simp)] at h_supp
+    exact h_supp rfl
+  rw [dif_pos hFin] at h_supp
+  rw [PMF.mem_support_iff, PMF.bind_apply] at h_supp
+  -- h_supp : (∑' m, normalize ... m * pe_A_emit_at_state m (some (l, μ))) ≠ 0
+  have h_exists : ∃ m, (PMF.normalize _ h0 hFin) m *
+      (pe_A_emit_at_state m) (some (l, μ)) ≠ 0 := by
+    by_contra h_all
+    push_neg at h_all
+    exact h_supp (ENNReal.tsum_eq_zero.mpr h_all)
+  obtain ⟨m, h_m_ne⟩ := h_exists
+  rw [ne_eq, mul_eq_zero, not_or] at h_m_ne
+  obtain ⟨h_norm_ne, h_emit_ne⟩ := h_m_ne
+  refine ⟨h_term, m, ?_, ?_⟩
+  · rw [PMF.normalize_apply] at h_norm_ne
+    exact left_ne_zero_of_mul h_norm_ne
+  · rw [PMF.mem_support_iff]; exact h_emit_ne
+
+/-- Step 2 of validity: from `some (l, μ) ∈ (pe_A_emit_at_state m).support`,
+extract `m.has_valid_R`, `pe_C.scheduler.next m.e_C = some d`, and
+`(l, μ) ∈ (blockEmission_general m d _ _).support`. -/
+private theorem pe_A_emit_at_state_extract
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (μ : PMF State_A)
+    (h_emit_supp : some (l, μ) ∈ (pe_A_emit_at_state m).support) :
+    ∃ (h_valid : m.has_valid_R) (d : PMF (Label × PMF State_C))
+      (h_d_eq : pe_C.scheduler.next m.e_C = some d),
+      (l, μ) ∈ (blockEmission_general m d h_d_eq h_valid).support := by
+  classical
+  unfold pe_A_emit_at_state at h_emit_supp
+  rw [PMF.mem_support_iff] at h_emit_supp
+  by_cases h_valid : m.has_valid_R
+  swap
+  · exfalso
+    rw [dif_neg h_valid] at h_emit_supp
+    rw [PMF.pure_apply_of_ne _ _ (by simp)] at h_emit_supp
+    exact h_emit_supp rfl
+  rw [dif_pos h_valid] at h_emit_supp
+  -- Case on (pe_C.scheduler.next m.e_C).isSome.
+  by_cases h_some : (pe_C.scheduler.next m.e_C).isSome
+  swap
+  · exfalso
+    rw [dif_neg h_some] at h_emit_supp
+    rw [PMF.pure_apply_of_ne _ _ (by simp)] at h_emit_supp
+    exact h_emit_supp rfl
+  rw [dif_pos h_some] at h_emit_supp
+  -- Extract d := (pe_C.scheduler.next m.e_C).get h_some.
+  set d := (pe_C.scheduler.next m.e_C).get h_some with h_d_def
+  refine ⟨h_valid, d, Option.eq_some_of_isSome h_some, ?_⟩
+  rw [PMF.mem_support_iff]
+  intro h_block
+  apply h_emit_supp
+  rw [PMF.map_apply]
+  apply ENNReal.tsum_eq_zero.mpr
+  intro x
+  by_cases h_eq : some (l, μ) = some x
+  · rw [if_pos h_eq]
+    have hx : x = (l, μ) := (Option.some.inj h_eq).symm
+    rw [hx, h_block]
+  · rw [if_neg h_eq]
+
+/-- Step 3 of validity: from `(l, μ) ∈ blockEmission_general m d h_d_eq h_valid`'s
+support, extract `(l, μ) = (l_C, μ_A_next)` for some `(l_C, μ_C) ∈ d.support`
+and `μ_A_next ∈ ω.support` (where `ω := sim.stepWitness ...`).
+
+Proof sketch: unfold `blockEmission_general`'s `d.bind`; the support
+membership decomposes as ∃ (l_C, μ_C) ∈ d.support, (l, μ) is in the
+inner `if-then-else`'s support. In the supported branch, the value is
+`ω.map (fun μ_A_next => (l_C, μ_A_next))`, whose support has form
+`{(l_C, μ_A_next) : μ_A_next ∈ ω.support}`. Pattern-match equality to
+get `l = l_C` and `μ = μ_A_next ∈ ω.support`. Currently sorry: the
+`push_neg` from the by_contra produces a type that differs from
+`ENNReal.tsum_eq_zero.mpr`'s expected argument (let-unfolding vs.
+have-unfolding mismatch). -/
+private theorem blockEmission_general_extract
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m.e_C = some d)
+    (h_valid : m.has_valid_R)
+    (l : Label) (μ : PMF State_A)
+    (h_supp : (l, μ) ∈ (blockEmission_general m d h_d_eq h_valid).support) :
+    ∃ (μ_C : PMF State_C) (h_μ_C_supp : (l, μ_C) ∈ d.support),
+      μ ∈ (sim.stepWitness (m.current_R h_valid)
+        (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C
+          h_μ_C_supp)).support :=
+  sorry
+
+/-- Step 4 of validity: connect history_A's endstate (at any TerminatedAt
+position) to the canonical `Nat.find h_term` endstate. -/
+private theorem stateAt_eq_endState_at_terminator
+    (e : AlterSeq State_A Label) (h_term : e.trans.Terminates)
+    (n : ℕ) (s : State_A)
+    (h_term_n : e.trans.TerminatedAt n) (h_stateAt_n : e.stateAt n = some s) :
+    e.endState h_term = s := by
+  -- For any n with TerminatedAt n, n ≥ Nat.find h_term. We need to show
+  -- e.stateAt n = e.stateAt (Nat.find h_term) for n ≥ Nat.find h_term.
+  have h_endState_eq := AlterSeq.stateAt_find_eq_endState e h_term
+  -- For n ≥ Nat.find h_term, e.stateAt n = e.stateAt (Nat.find h_term).
+  -- This is because the trans is terminated at Nat.find h_term, so any later
+  -- get? returns none, and stateAt n = (trans.get? (n-1)).map snd or e.init.
+  have h_n_ge : n ≥ Nat.find h_term := Nat.find_le h_term_n
+  -- If n = 0, then Nat.find h_term = 0 too (since 0 ≤ Nat.find ≤ 0).
+  rcases Nat.eq_zero_or_pos n with hn0 | hn_pos
+  · subst hn0
+    have h_find_zero : Nat.find h_term = 0 := Nat.eq_zero_of_le_zero h_n_ge
+    rw [h_find_zero] at h_endState_eq
+    have h_stateAt_def : e.stateAt 0 = some e.init := rfl
+    rw [h_stateAt_def] at h_stateAt_n h_endState_eq
+    have h_s_eq_init : s = e.init := (Option.some.inj h_stateAt_n).symm
+    have h_endState_init : e.endState h_term = e.init :=
+      (Option.some.inj h_endState_eq).symm
+    rw [h_endState_init, h_s_eq_init]
+  · -- n ≥ 1. e.stateAt n = (e.trans.get? (n-1)).map snd.
+    -- Case on Nat.find h_term.
+    rcases Nat.eq_zero_or_pos (Nat.find h_term) with hf0 | hf_pos
+    · -- Nat.find = 0 means trans = nil (TerminatedAt 0). So e.trans.get? (n-1) = none.
+      -- Then stateAt n = none, contradicting h_stateAt_n.
+      exfalso
+      have h_term_0 : e.trans.TerminatedAt 0 := hf0 ▸ Nat.find_spec h_term
+      have h_get_none : e.trans.get? (n - 1) = none :=
+        Stream'.Seq.terminated_stable e.trans (Nat.zero_le _) h_term_0
+      have h_stateAt_def : e.stateAt n = (e.trans.get? (n - 1)).map Prod.snd := by
+        obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hn_pos.ne'
+        rw [hj]; rfl
+      rw [h_get_none] at h_stateAt_def
+      simp at h_stateAt_def
+      rw [h_stateAt_def] at h_stateAt_n
+      simp at h_stateAt_n
+    · -- Nat.find h_term > 0 and n ≥ Nat.find h_term.
+      by_cases h_eq_find : n = Nat.find h_term
+      · rw [← h_eq_find] at h_endState_eq
+        rw [h_stateAt_n] at h_endState_eq
+        exact (Option.some.inj h_endState_eq).symm
+      · -- n > Nat.find h_term: e.trans.get? (n - 1) = none.
+        have h_gt : n > Nat.find h_term := lt_of_le_of_ne h_n_ge (Ne.symm h_eq_find)
+        have h_n1_ge : n - 1 ≥ Nat.find h_term := by omega
+        have h_get_none := Stream'.Seq.terminated_stable e.trans h_n1_ge (Nat.find_spec h_term)
+        have h_stateAt_def : e.stateAt n = (e.trans.get? (n - 1)).map Prod.snd := by
+          obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hn_pos.ne'
+          rw [hj]; rfl
+        rw [h_get_none] at h_stateAt_def
+        simp at h_stateAt_def
+        rw [h_stateAt_def] at h_stateAt_n
+        exact absurd h_stateAt_n (by simp)
+
 /-- The abstract probabilistic execution `pe_A` constructed from the
 simulation data, operating over `sys_A^w` (the weak-step closure).
 
-Validity proof sketch: for `(l, μ) ∈ pe_A_emission_distribution.support`,
-unwind the bind/normalize structure to extract a matching state `m` with
-positive mass under `fromAbstractPrefix`, `m.has_valid_R`, and
-`pe_C.scheduler.next m.e_C = some d`. Then `(l, μ) = (l_C, μ_A_next)`
-with `μ_A_next ∈ ω.support` (where `ω := sim.stepWitness ...`). The
-sys_A^w step witnesses: `μ_A := m.current_μ_A` (with `s ∈ μ_A.support`
-by `current_μ_A_support_contains_history_A_endState`); `ω` from sim;
-weakStep from `sim.stepWitness_weakStep` (external case) or via
-internal-label-to-weakStep bridge (internal case). -/
+The `valid` proof composes the four extraction theorems above with sim's
+`stepWitness_weakTau` (internal label case) or `stepWitness_weakStep`
+(external label case). The s ∈ m.current_μ_A.support requirement is
+discharged by `current_μ_A_support_contains_history_A_endState`. -/
 noncomputable def pe_A_of_simulation
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -2759,7 +2946,31 @@ noncomputable def pe_A_of_simulation
   init := μ_A_init
   scheduler :=
     { next := pe_A_emission_distribution sim pe_C μ_A_init h_init_R
-      valid := by sorry }
+      valid := by
+        intro e n s h_term_n h_stateAt_n l μ h_supp
+        -- Convert `some (l, μ) ∈ ... .support` form.
+        rw [show some (l, μ) ∈ _ ↔ _ from Iff.rfl] at h_supp
+        -- Step 1: extract h_term, m, h_mass, h_emit.
+        obtain ⟨h_term, m, h_mass, h_emit⟩ :=
+          pe_A_emission_support_extract sim pe_C μ_A_init h_init_R e l μ h_supp
+        -- Step 2: extract h_valid, d, h_d_eq, h_block.
+        obtain ⟨h_valid, d, h_d_eq, h_block⟩ :=
+          pe_A_emit_at_state_extract m l μ h_emit
+        -- Step 3: extract μ_C, h_μC_supp, h_ω_supp.
+        obtain ⟨μ_C, h_μC_supp, h_ω_supp⟩ :=
+          blockEmission_general_extract m d h_d_eq h_valid l μ h_block
+        -- Build the sys_A^w.step witness.
+        refine ⟨m.current_μ_A, sim.stepWitness (m.current_R h_valid) _, ?_, h_ω_supp, ?_⟩
+        · -- s ∈ m.current_μ_A.support.
+          have h_endState_s : e.endState h_term = s :=
+            stateAt_eq_endState_at_terminator e h_term n s h_term_n h_stateAt_n
+          rw [← h_endState_s]
+          exact current_μ_A_support_contains_history_A_endState sim pe_C μ_A_init h_init_R
+            e h_term m h_mass
+        · -- weakTau ∨ weakStep. Case-split on sys_C.internal l.
+          rcases Classical.em (sys_C.internal l) with h_int | h_ext
+          · exact Or.inl (sim.stepWitness_weakTau (m.current_R h_valid) _ h_int)
+          · exact Or.inr (sim.stepWitness_weakStep (m.current_R h_valid) _ h_ext) }
 
 /-! #### Mass-conservation invariant on `fromAbstractPrefix` (§3.2) -/
 
