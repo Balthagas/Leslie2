@@ -4629,6 +4629,67 @@ theorem tightExecsA_characterisation
   · left; exact Stream'.Seq.terminatedAt_zero_iff.mp h_t0
   · right; exact h_n
 
+/-- **Build the matching abstract trans-list**: given a concrete trans-list
+and a list of abstract states of matching length, zip the labels from the
+former with the states from the latter. Used to re-parameterise the
+s_A-marginal of joint_mass_path. -/
+private def buildToListA (toList_C : List (Label × State_C))
+    (s_A_list : List State_A) : List (Label × State_A) :=
+  List.zipWith (fun p s_A => (p.1, s_A)) toList_C s_A_list
+
+/-- **List-level s_A-marginal of joint_mass_path** (§9.4 auxiliary):
+summing `joint_mass_path m toList_C (buildToListA toList_C s_A_list)` over
+all `s_A_list` of length `toList_C.length` equals
+`pe_C.probOfRemaining m.e_C toList_C`. The proof is by induction on
+`toList_C`; the step case uses the s_A-marginal of `μ_A_next.s_A = 1`,
+the m_1 indicator collapse (via `MatchingState.ext_of_data`), the γ-
+first-marginal (`PMFRelDecomp.fst_apply_eq_tsum`), and
+`probOfRemaining_cons`. -/
+private lemma joint_mass_path_marginal_s_A_aux
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (toList_C : List (Label × State_C)) :
+    ∀ (m : MatchingState sim pe_C μ_A_init h_init_R),
+      (∑' (s_A_list : {l : List State_A // l.length = toList_C.length}),
+          joint_mass_path m toList_C (buildToListA toList_C s_A_list.1)) =
+      pe_C.probOfRemaining m.e_C toList_C := by
+  classical
+  induction toList_C with
+  | nil =>
+    intro m
+    -- The subtype `{l : List State_A // l.length = ([] : List _).length}` reduces to
+    -- `{l // l.length = 0}` which has the unique element `[]`.
+    show (∑' (s_A_list : {l : List State_A // l.length = ([] : List (Label × State_C)).length}),
+        joint_mass_path m [] (buildToListA [] s_A_list.1)) =
+        pe_C.probOfRemaining m.e_C []
+    simp only [List.length_nil]
+    rw [tsum_eq_single (⟨[], rfl⟩ : {l : List State_A // l.length = 0})]
+    · show joint_mass_path m [] (buildToListA [] []) = pe_C.probOfRemaining m.e_C []
+      unfold buildToListA
+      simp only [List.zipWith_nil_left]
+      rfl
+    · rintro ⟨l, hl⟩ h_ne
+      exfalso
+      apply h_ne
+      have : l = [] := List.length_eq_zero_iff.mp hl
+      exact Subtype.ext this
+  | cons hd rest ih =>
+    intro m
+    -- Step case: induct on rest. The key combinatorial moves:
+    --   1. Reindex the subtype sum to (s_A : State_A) × (rest_s_A_list : {l // l.length = rest.length}).
+    --   2. Unfold joint_mass_path's cons branch.
+    --   3. ∑' s_A μ_A_next.s_A = 1 (PMF total mass).
+    --   4. Collapse ∑' m_1 [indicator] to canonical via MatchingState.ext_of_data
+    --      (using γ-positive → R from PMFRelDecomp.h_R for the canonical's h_R proof).
+    --   5. Apply IH at canonical_m_1 (rest is smaller).
+    --   6. Pull pe_C.probOfRemaining (constant) out of γ-integration.
+    --   7. ∑' μ_A_next γ = μ_C(s_C) (PMFRelDecomp.fst_apply_eq_tsum).
+    --   8. ∑' μ_C d * μ_C.s_C = pe_C.kernel m.e_C hd.
+    --   9. probOfRemaining_cons: kernel * probOfRemaining(extension) = probOfRemaining at hd :: rest.
+    sorry
+
 /-- **§9.4**: marginalising the joint over `e_A`'s state samples
 recovers `pe_C.probOf e_C`. Proven by composing per-step
 `joint_kernel_marginal_s_A` across the trajectory. -/
