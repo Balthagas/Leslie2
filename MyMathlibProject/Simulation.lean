@@ -5240,6 +5240,859 @@ theorem joint_marginalises_to_pe_C
   unfold ProbabilisticExecution.probOf
   rfl
 
+/-! #### §9.5 auxiliary infrastructure: `buildToListC`, `joint_mass_path_aug`,
+`chain_weight` -/
+
+/-- Dual of `buildToListA`: from a list of abstract transitions and a list of
+concrete states, build a list of concrete transitions taking labels from the
+abstract side and states from the state list. -/
+private def buildToListC (toList_A : List (Label × State_A))
+    (s_C_list : List State_C) : List (Label × State_C) :=
+  List.zipWith (fun p s_C => (p.1, s_C)) toList_A s_C_list
+
+/-- **`joint_mass_path_aug`** — augmented form of `joint_mass_path` carrying
+an explicit boundary state `m_final`. The nil/nil base case is the indicator
+`[m_final = m_prev]`; cons/cons case mirrors `joint_mass_path`'s recursion but
+recurses on the augmented form instead of `joint_mass_path`.
+
+`joint_mass_path` is recovered as the m_final-marginal of `joint_mass_path_aug`
+(see `joint_mass_path_eq_tsum_aug`). -/
+noncomputable def joint_mass_path_aug
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m_prev : MatchingState sim pe_C μ_A_init h_init_R) :
+    List (Label × State_C) → List (Label × State_A) →
+    MatchingState sim pe_C μ_A_init h_init_R → ENNReal
+  | List.nil, List.nil, m_final =>
+      open Classical in if m_final = m_prev then 1 else 0
+  | List.cons hC restC, List.cons hA restA, m_final =>
+      open Classical in
+      if hC.1 = hA.1 then
+        if h_valid : m_prev.has_valid_R then
+          if h_some : (pe_C.scheduler.next m_prev.e_C).isSome then
+            ∑' (μ_C : PMF State_C),
+              ((pe_C.scheduler.next m_prev.e_C).get h_some) (hA.1, μ_C) * (
+                if h_supp : (hA.1, μ_C) ∈
+                    ((pe_C.scheduler.next m_prev.e_C).get h_some).support then
+                  ∑' (μ_A_next : PMF State_A),
+                    (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                        (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term _
+                          (Option.eq_some_of_isSome h_some) hA.1 μ_C h_supp))
+                    ).γ (hC.2, μ_A_next) * μ_A_next hA.2 *
+                    ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                      (if m_next.e_C = ⟨m_prev.e_C.init,
+                            m_prev.e_C.trans.append (Seq.cons (hC.1, hC.2) Seq.nil)⟩ ∧
+                          m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                        then 1 else 0) *
+                      joint_mass_path_aug m_next restC restA m_final
+                else 0)
+          else 0
+        else 0
+      else 0
+  | List.nil, List.cons _ _, _ => 0
+  | List.cons _ _, List.nil, _ => 0
+
+/-- **L1**: `joint_mass_path` is the m_final-marginal of `joint_mass_path_aug`.
+Proven by induction on the concrete trans list; the nil base reduces to
+`1 = ∑' m_final, [m_final = m_prev]` and the cons step swaps the m_final-sum
+inward via `ENNReal.tsum_comm` and applies the inductive hypothesis. -/
+private lemma joint_mass_path_eq_tsum_aug
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init} :
+    ∀ (toList_C : List (Label × State_C)) (toList_A : List (Label × State_A))
+      (m_prev : MatchingState sim pe_C μ_A_init h_init_R),
+      joint_mass_path m_prev toList_C toList_A =
+        ∑' m_final, joint_mass_path_aug m_prev toList_C toList_A m_final := by
+  classical
+  intro toList_C
+  induction toList_C with
+  | nil =>
+    intro toList_A m_prev
+    cases toList_A with
+    | nil =>
+      -- joint_mass_path m_prev [] [] = 1; aug = [m_final = m_prev]; ∑' = 1.
+      change (1 : ENNReal) =
+        ∑' m_final, (if m_final = m_prev then (1 : ENNReal) else 0)
+      rw [tsum_eq_single m_prev (fun m_final h_ne => if_neg h_ne)]
+      rw [if_pos rfl]
+    | cons hA restA =>
+      change (0 : ENNReal) = ∑' _, (0 : ENNReal)
+      rw [tsum_zero]
+  | cons hC restC ih =>
+    intro toList_A m_prev
+    cases toList_A with
+    | nil =>
+      change (0 : ENNReal) = ∑' _, (0 : ENNReal)
+      rw [tsum_zero]
+    | cons hA restA =>
+      -- Both sides unfold via cons-cons branch. The branches share the same
+      -- guards (label match, h_valid, h_some); under the guards, they differ
+      -- only in the innermost recursive call (joint_mass_path vs the m_final
+      -- sum of joint_mass_path_aug). We commute the m_final tsum inward.
+      by_cases h_lbl : hC.1 = hA.1
+      swap
+      · -- Labels mismatch: both sides are 0.
+        change (open Classical in
+          if hC.1 = hA.1 then _ else (0 : ENNReal)) =
+          ∑' m_final, (open Classical in
+            if hC.1 = hA.1 then _ else (0 : ENNReal))
+        rw [if_neg h_lbl]
+        simp [tsum_zero, if_neg h_lbl]
+      by_cases h_valid : m_prev.has_valid_R
+      swap
+      · change (open Classical in if hC.1 = hA.1 then
+            if h_valid : m_prev.has_valid_R then _ else (0 : ENNReal) else 0) =
+          ∑' m_final, (open Classical in if hC.1 = hA.1 then
+            if h_valid : m_prev.has_valid_R then _ else (0 : ENNReal) else 0)
+        rw [if_pos h_lbl, dif_neg h_valid]
+        simp [tsum_zero, dif_neg h_valid]
+      by_cases h_some : (pe_C.scheduler.next m_prev.e_C).isSome
+      swap
+      · change (open Classical in if hC.1 = hA.1 then
+            if h_valid : m_prev.has_valid_R then
+              if h_some : (pe_C.scheduler.next m_prev.e_C).isSome then _
+              else (0 : ENNReal) else 0 else 0) =
+          ∑' m_final, (open Classical in if hC.1 = hA.1 then
+            if h_valid : m_prev.has_valid_R then
+              if h_some : (pe_C.scheduler.next m_prev.e_C).isSome then _
+              else (0 : ENNReal) else 0 else 0)
+        rw [if_pos h_lbl, dif_pos h_valid, dif_neg h_some]
+        simp [tsum_zero, dif_pos h_valid, dif_neg h_some]
+      -- Main case: all guards positive.
+      -- LHS: joint_mass_path m_prev (hC :: restC) (hA :: restA) unfolds to
+      --   ∑' μ_C, d * (if h_supp then ∑' μ_A_next, γ * μ_A_next * ∑' m_next,
+      --                 [ind] * joint_mass_path m_next restC restA else 0).
+      -- Apply IH inside: joint_mass_path m_next restC restA
+      --   = ∑' m_final, joint_mass_path_aug m_next restC restA m_final.
+      -- Then push the m_final tsum out through all the intervening sums.
+      show joint_mass_path m_prev (hC :: restC) (hA :: restA) =
+        ∑' m_final, joint_mass_path_aug m_prev (hC :: restC) (hA :: restA) m_final
+      have h_lhs : joint_mass_path m_prev (hC :: restC) (hA :: restA) =
+          ∑' (μ_C : PMF State_C),
+            ((pe_C.scheduler.next m_prev.e_C).get h_some) (hA.1, μ_C) * (
+              if h_supp : (hA.1, μ_C) ∈
+                  ((pe_C.scheduler.next m_prev.e_C).get h_some).support then
+                ∑' (μ_A_next : PMF State_A),
+                  (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                      (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term _
+                        (Option.eq_some_of_isSome h_some) hA.1 μ_C h_supp))
+                  ).γ (hC.2, μ_A_next) * μ_A_next hA.2 *
+                  ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                    (if m_next.e_C = ⟨m_prev.e_C.init,
+                          m_prev.e_C.trans.append (Seq.cons (hC.1, hC.2) Seq.nil)⟩ ∧
+                        m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                      then 1 else 0) *
+                    joint_mass_path m_next restC restA
+              else 0) := by
+        change (open Classical in if hC.1 = hA.1 then _ else (0 : ENNReal)) = _
+        rw [if_pos h_lbl, dif_pos h_valid, dif_pos h_some]
+      have h_rhs : (∑' m_final,
+          joint_mass_path_aug m_prev (hC :: restC) (hA :: restA) m_final) =
+          ∑' m_final, ∑' (μ_C : PMF State_C),
+            ((pe_C.scheduler.next m_prev.e_C).get h_some) (hA.1, μ_C) * (
+              if h_supp : (hA.1, μ_C) ∈
+                  ((pe_C.scheduler.next m_prev.e_C).get h_some).support then
+                ∑' (μ_A_next : PMF State_A),
+                  (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                      (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term _
+                        (Option.eq_some_of_isSome h_some) hA.1 μ_C h_supp))
+                  ).γ (hC.2, μ_A_next) * μ_A_next hA.2 *
+                  ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                    (if m_next.e_C = ⟨m_prev.e_C.init,
+                          m_prev.e_C.trans.append (Seq.cons (hC.1, hC.2) Seq.nil)⟩ ∧
+                        m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                      then 1 else 0) *
+                    joint_mass_path_aug m_next restC restA m_final
+              else 0) := by
+        refine tsum_congr (fun m_final => ?_)
+        change (open Classical in if hC.1 = hA.1 then _ else (0 : ENNReal)) = _
+        rw [if_pos h_lbl, dif_pos h_valid, dif_pos h_some]
+      rw [h_lhs, h_rhs]
+      -- Goal: ∑' μ_C, d * F(μ_C) = ∑' m_final ∑' μ_C, d * F'(μ_C, m_final),
+      -- where F differs from F' only at the joint_mass_path_aug recursive
+      -- call (sum over m_final on the RHS). Swap RHS to ∑' μ_C ∑' m_final ...,
+      -- then for each μ_C distribute m_final inward.
+      rw [ENNReal.tsum_comm]
+      refine tsum_congr (fun μ_C => ?_)
+      -- For each μ_C, the d-factor is common; pull it out via tsum_mul_left
+      -- on the RHS.
+      rw [ENNReal.tsum_mul_left]
+      congr 1
+      by_cases h_supp : (hA.1, μ_C) ∈
+          ((pe_C.scheduler.next m_prev.e_C).get h_some).support
+      · simp only [dif_pos h_supp]
+        -- LHS inner: ∑' μ_A_next, γ * μ_A_next.s_A * ∑' m_next, [ind] * jmp.
+        -- RHS inner: ∑' m_final, ∑' μ_A_next, γ * μ_A_next.s_A *
+        --             ∑' m_next, [ind] * jmp_aug.
+        -- Apply IH (jmp m_next = ∑' m_final, jmp_aug m_next).
+        have h_step : ∀ (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+            joint_mass_path m_next restC restA =
+              ∑' m_final, joint_mass_path_aug m_next restC restA m_final :=
+          fun m_next => ih restA m_next
+        -- Goal: ∑' μ_A_next, γ * μ_A_next.s_A * ∑' m_next, [ind] * jmp m_next
+        --     = ∑' m_final ∑' μ_A_next, γ * μ_A_next.s_A * ∑' m_next, [ind] * jmp_aug.
+        -- Swap the RHS so m_final is innermost over the m_next-sum.
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun μ_A_next => ?_)
+        rw [ENNReal.tsum_mul_left]
+        refine congrArg _ ?_
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun m_next => ?_)
+        rw [ENNReal.tsum_mul_left]
+        congr 1
+        exact h_step m_next
+      · simp only [dif_neg h_supp]
+        rw [tsum_zero]
+
+/-- **`chain_weight`** — the m_final-marginal of `joint_mass_path_aug` over
+the `s_C_list` (concrete states in the trajectory). Defined directly by
+recursion on the abstract trans list to enable inductive matching with
+`fromAbstractPrefix_list`. -/
+noncomputable def chain_weight
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m_prev : MatchingState sim pe_C μ_A_init h_init_R) :
+    List (Label × State_A) →
+    MatchingState sim pe_C μ_A_init h_init_R → ENNReal
+  | List.nil =>
+      fun m_final => open Classical in if m_final = m_prev then 1 else 0
+  | List.cons hA restA =>
+      fun m_final =>
+        ∑' m_mid,
+          step_weight sim pe_C μ_A_init h_init_R m_prev m_mid hA.1 hA.2 *
+          chain_weight m_mid restA m_final
+
+/-- **L3 (s_C-marginal of joint_mass_path_aug = chain_weight)**:
+summing `joint_mass_path_aug m_prev (buildToListC toList_A s_C_list.1) toList_A m_final`
+over `s_C_list` of length `toList_A.length` equals `chain_weight m_prev toList_A m_final`.
+
+Proven by induction on `toList_A`. Mirror of `joint_mass_path_marginal_s_A_aux`. -/
+private lemma joint_mass_path_aug_marginal_s_C_aux
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (toList_A : List (Label × State_A)) :
+    ∀ (m_prev m_final : MatchingState sim pe_C μ_A_init h_init_R),
+      (∑' (s_C_list : {l : List State_C // l.length = toList_A.length}),
+          joint_mass_path_aug m_prev (buildToListC toList_A s_C_list.1) toList_A m_final) =
+      chain_weight m_prev toList_A m_final := by
+  classical
+  induction toList_A with
+  | nil =>
+    intro m_prev m_final
+    -- LHS: ∑' (s_C_list : {l // l.length = 0}), joint_mass_path_aug m_prev [] [] m_final
+    -- The only s_C_list is []; joint_mass_path_aug m_prev [] [] m_final = [m_final = m_prev].
+    show (∑' (s_C_list : {l : List State_C // l.length = ([] : List (Label × State_A)).length}),
+        joint_mass_path_aug m_prev (buildToListC [] s_C_list.1) [] m_final) =
+        chain_weight m_prev [] m_final
+    simp only [List.length_nil]
+    rw [tsum_eq_single (⟨[], rfl⟩ : {l : List State_C // l.length = 0})]
+    · change joint_mass_path_aug m_prev (buildToListC [] []) [] m_final =
+          chain_weight m_prev [] m_final
+      unfold buildToListC
+      simp only [List.zipWith_nil_right]
+      rfl
+    · rintro ⟨l, hl⟩ h_ne
+      exfalso
+      apply h_ne
+      have : l = [] := List.length_eq_zero_iff.mp hl
+      exact Subtype.ext this
+  | cons hA restA ih =>
+    intro m_prev m_final
+    classical
+    -- Re-index the s_C_list sum to State_C × {l // l.length = restA.length}.
+    rw [show (∑' (s_C_list : {l : List State_C // l.length = (hA :: restA).length}),
+              joint_mass_path_aug m_prev (buildToListC (hA :: restA) s_C_list.1)
+                (hA :: restA) m_final) =
+            ∑' (p : State_C × {l : List State_C // l.length = restA.length}),
+              joint_mass_path_aug m_prev
+                (buildToListC (hA :: restA) (consSubtypeEquiv restA.length p).1)
+                (hA :: restA) m_final from
+        (Equiv.tsum_eq (consSubtypeEquiv restA.length) _).symm]
+    simp only [consSubtypeEquiv, Equiv.ofBijective, Equiv.coe_fn_mk]
+    rw [ENNReal.tsum_prod']
+    simp only [buildToListC, List.zipWith_cons_cons]
+    -- Case split on m_prev's validity and scheduler.
+    -- Each yields chain_weight m_prev (hA :: restA) m_final = ∑' m_mid, sw * cw.
+    -- step_weight = 0 when ¬h_valid or scheduler.next = none.
+    by_cases h_valid : m_prev.has_valid_R
+    swap
+    · -- ¬h_valid: joint_mass_path_aug = 0; chain_weight side is 0 too (sw = 0).
+      have h_LHS_zero : ∀ (s_C : State_C)
+          (rest_s_C_list : { l : List State_C // l.length = restA.length }),
+          joint_mass_path_aug m_prev
+              ((hA.1, s_C) :: List.zipWith (fun p s_C => (p.1, s_C)) restA rest_s_C_list.1)
+              (hA :: restA) m_final = 0 := by
+        intro s_C rest_s_C_list
+        change (open Classical in
+          if (hA.1, s_C).1 = hA.1 then
+            if h_valid : m_prev.has_valid_R then _ else (0 : ENNReal)
+          else 0) = 0
+        rw [if_pos rfl, dif_neg h_valid]
+      simp_rw [h_LHS_zero]
+      rw [tsum_zero, tsum_zero]
+      -- chain_weight side.
+      change (0 : ENNReal) =
+        ∑' m_mid, step_weight sim pe_C μ_A_init h_init_R m_prev m_mid hA.1 hA.2 *
+          chain_weight m_mid restA m_final
+      symm
+      apply ENNReal.tsum_eq_zero.mpr
+      intro m_mid
+      have h_sw : step_weight sim pe_C μ_A_init h_init_R m_prev m_mid hA.1 hA.2 = 0 := by
+        unfold step_weight
+        rw [dif_neg h_valid]
+      rw [h_sw, zero_mul]
+    by_cases h_some : (pe_C.scheduler.next m_prev.e_C).isSome
+    swap
+    · have h_LHS_zero : ∀ (s_C : State_C)
+          (rest_s_C_list : { l : List State_C // l.length = restA.length }),
+          joint_mass_path_aug m_prev
+              ((hA.1, s_C) :: List.zipWith (fun p s_C => (p.1, s_C)) restA rest_s_C_list.1)
+              (hA :: restA) m_final = 0 := by
+        intro s_C rest_s_C_list
+        change (open Classical in
+          if (hA.1, s_C).1 = hA.1 then
+            if h_valid : m_prev.has_valid_R then
+              if h_some : (pe_C.scheduler.next m_prev.e_C).isSome then _
+              else (0 : ENNReal) else 0
+          else 0) = 0
+        rw [if_pos rfl, dif_pos h_valid, dif_neg h_some]
+      simp_rw [h_LHS_zero]
+      rw [tsum_zero, tsum_zero]
+      change (0 : ENNReal) =
+        ∑' m_mid, step_weight sim pe_C μ_A_init h_init_R m_prev m_mid hA.1 hA.2 *
+          chain_weight m_mid restA m_final
+      symm
+      apply ENNReal.tsum_eq_zero.mpr
+      intro m_mid
+      have h_sw : step_weight sim pe_C μ_A_init h_init_R m_prev m_mid hA.1 hA.2 = 0 := by
+        unfold step_weight
+        rw [dif_pos h_valid, dif_neg h_some]
+      rw [h_sw, zero_mul]
+    -- Main case: h_valid and h_some.
+    set d : PMF (Label × PMF State_C) := (pe_C.scheduler.next m_prev.e_C).get h_some with hd_def
+    have h_d_eq : pe_C.scheduler.next m_prev.e_C = some d := Option.eq_some_of_isSome h_some
+    -- Unfold joint_mass_path_aug's cons-cons under guards. Note label match
+    -- is (hA.1, s_C).1 = hA.1 (rfl).
+    have h_body : ∀ (s_C : State_C) (rest_s_C_list : List State_C),
+        joint_mass_path_aug m_prev
+          ((hA.1, s_C) :: List.zipWith (fun p s_C => (p.1, s_C)) restA rest_s_C_list)
+          (hA :: restA) m_final =
+        ∑' (μ_C : PMF State_C), d (hA.1, μ_C) * (
+          if h_supp : (hA.1, μ_C) ∈ d.support then
+            ∑' (μ_A_next : PMF State_A),
+              (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                  (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+              ).γ (s_C, μ_A_next) * μ_A_next hA.2 *
+              ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                (if m_next.e_C = ⟨m_prev.e_C.init,
+                      m_prev.e_C.trans.append (Seq.cons (hA.1, s_C) Seq.nil)⟩ ∧
+                    m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                  then 1 else 0) *
+                joint_mass_path_aug m_next
+                  (List.zipWith (fun p s_C => (p.1, s_C)) restA rest_s_C_list) restA m_final
+          else 0) := by
+      intro s_C rest_s_C_list
+      change (open Classical in
+        if (hA.1, s_C).1 = hA.1 then
+          if h_valid : m_prev.has_valid_R then
+            if h_some : (pe_C.scheduler.next m_prev.e_C).isSome then
+              ∑' (μ_C : PMF State_C),
+                ((pe_C.scheduler.next m_prev.e_C).get h_some) (hA.1, μ_C) *
+                (if h_supp : (hA.1, μ_C) ∈
+                    ((pe_C.scheduler.next m_prev.e_C).get h_some).support then
+                  ∑' (μ_A_next : PMF State_A),
+                    (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                        (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term _
+                          (Option.eq_some_of_isSome h_some) hA.1 μ_C h_supp))
+                    ).γ ((hA.1, s_C).2, μ_A_next) * μ_A_next hA.2 *
+                    ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                      (if m_next.e_C = ⟨m_prev.e_C.init,
+                            m_prev.e_C.trans.append (Seq.cons ((hA.1, s_C).1, (hA.1, s_C).2)
+                              Seq.nil)⟩ ∧
+                          m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                        then 1 else 0) *
+                      joint_mass_path_aug m_next
+                        (List.zipWith (fun p s_C => (p.1, s_C)) restA rest_s_C_list) restA m_final
+                  else 0)
+            else 0
+          else 0
+        else 0) = _
+      rw [if_pos rfl, dif_pos h_valid, dif_pos h_some]
+    simp_rw [h_body]
+    -- Now LHS: ∑' s_C, ∑' rest_s_C_list, ∑' μ_C, d * (if h_supp then ...).
+    -- Goal: equal to chain_weight m_prev (hA :: restA) m_final
+    --     = ∑' m_mid, step_weight m_prev m_mid hA.1 hA.2 * chain_weight m_mid restA m_final.
+    -- We'll commute sums to bring μ_C outermost on LHS, then for each μ_C
+    -- factor (s_C, rest_s_C_list, μ_A_next, m_next) and collapse.
+    -- Step 1: bring μ_C outermost (3 swaps: s_C↔rest, rest↔μ_C inside s_C, then s_C↔μ_C).
+    rw [ENNReal.tsum_comm,
+        tsum_congr (fun (_ : {l : List State_C // l.length = restA.length}) =>
+                     ENNReal.tsum_comm),
+        ENNReal.tsum_comm]
+    -- Now LHS: ∑' μ_C, ∑' rest_s_C_list, ∑' s_C, d * (if h_supp then ...).
+    -- chain_weight side: ∑' m_mid, sw * cw. Unfold step_weight to its at_d form.
+    -- chain_weight m_prev (hA :: restA) m_final = ∑' m_mid, sw * cw.
+    -- step_weight m_prev m_mid hA.1 hA.2 = step_weight_at_d ... when h_valid, h_some.
+    -- step_weight_at_d's structure: ∑' μ_C, d (hA.1, μ_C) * (if h_supp then
+    --   ∑' (s_C', μ_A_next), γ * μ_A_next.hA.2 * [ind(m_mid wrt μ_A_next, s_C')] else 0).
+    -- So:
+    -- chain_weight = ∑' m_mid, (∑' μ_C, d * ...) * cw
+    --              = ∑' μ_C, d * ((if h_supp then ...) * (∑' m_mid, [ind] * cw))
+    -- We want to reorganise LHS likewise.
+    -- For LHS, fix μ_C; the (s_C, rest_s_C_list)-marginalisation should yield
+    -- ∑' (s_C, μ_A_next, m_next), γ * μ_A_next.hA.2 * [ind] * cw(m_next),
+    -- using IH (jpath_aug m_next ...) = chain_weight m_next restA m_final, summed
+    -- over rest_s_C_list.
+    -- Inner identity:
+    have h_inner : ∀ μ_C : PMF State_C,
+        (∑' (rest_s_C_list : { l : List State_C // l.length = restA.length })
+            (s_C : State_C),
+          d (hA.1, μ_C) *
+            (if h_supp : (hA.1, μ_C) ∈ d.support then
+              ∑' (μ_A_next : PMF State_A),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                    (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+                ).γ (s_C, μ_A_next) * μ_A_next hA.2 *
+                ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                  (if m_next.e_C = ⟨m_prev.e_C.init,
+                        m_prev.e_C.trans.append (Seq.cons (hA.1, s_C) Seq.nil)⟩ ∧
+                      m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                    then 1 else 0) *
+                  joint_mass_path_aug m_next
+                    (List.zipWith (fun p s_C => (p.1, s_C)) restA rest_s_C_list.1)
+                    restA m_final
+            else 0)) =
+        d (hA.1, μ_C) * (if h_supp : (hA.1, μ_C) ∈ d.support then
+            ∑' (s_C : State_C) (μ_A_next : PMF State_A),
+              (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                  (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+              ).γ (s_C, μ_A_next) * μ_A_next hA.2 *
+              ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                (if m_next.e_C = ⟨m_prev.e_C.init,
+                      m_prev.e_C.trans.append (Seq.cons (hA.1, s_C) Seq.nil)⟩ ∧
+                    m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                  then 1 else 0) *
+                chain_weight m_next restA m_final
+          else 0) := by
+      intro μ_C
+      -- Pull d out via tsum_mul_left (twice).
+      rw [tsum_congr (fun (_ : { l : List State_C // l.length = restA.length }) =>
+            ENNReal.tsum_mul_left), ENNReal.tsum_mul_left]
+      congr 1
+      by_cases h_supp : (hA.1, μ_C) ∈ d.support
+      · simp only [dif_pos h_supp]
+        -- LHS now: ∑' rest_s_C_list, ∑' s_C, ∑' μ_A_next, γ * μ_A_next.hA.2 *
+        --              ∑' m_next, [ind] * jpath_aug
+        -- RHS: ∑' s_C, ∑' μ_A_next, γ * μ_A_next.hA.2 * ∑' m_next, [ind] * cw.
+        -- Commute rest_s_C_list outward through the m_next sum, using IH.
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun s_C => ?_)
+        -- Goal: ∑' rest_s_C_list, ∑' μ_A_next, γ * μ_A_next.hA.2 *
+        --         ∑' m_next, [ind] * jpath_aug
+        --     = ∑' μ_A_next, γ * μ_A_next.hA.2 * ∑' m_next, [ind] * cw.
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun μ_A_next => ?_)
+        -- Goal: ∑' rest_s_C_list, γ * μ_A_next.hA.2 * ∑' m_next, [ind] * jpath_aug
+        --     = γ * μ_A_next.hA.2 * ∑' m_next, [ind] * cw.
+        rw [ENNReal.tsum_mul_left]
+        congr 1
+        -- ∑' rest_s_C_list, ∑' m_next, [ind] * jpath_aug
+        --   = ∑' m_next, [ind] * cw (after pushing rest_s_C_list under m_next).
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun m_next => ?_)
+        rw [ENNReal.tsum_mul_left]
+        congr 1
+        -- ∑' rest_s_C_list, jpath_aug m_next (zipWith ... rest_s_C_list.1) restA m_final
+        --   = chain_weight m_next restA m_final.
+        -- Apply IH (after re-expressing).
+        rw [show (∑' (rest_s_C_list : { l : List State_C // l.length = restA.length }),
+              joint_mass_path_aug m_next
+                (List.zipWith (fun p s_C => (p.1, s_C)) restA rest_s_C_list.1) restA m_final) =
+            ∑' (rest_s_C_list : { l : List State_C // l.length = restA.length }),
+              joint_mass_path_aug m_next (buildToListC restA rest_s_C_list.1) restA m_final
+            from rfl]
+        rw [ih m_next m_final]
+      · simp only [dif_neg h_supp]
+        rw [tsum_zero, tsum_zero]
+    -- Apply h_inner to commute the (rest_s_C_list, s_C) sums into the if-block.
+    -- LHS now has form: ∑' μ_C, ∑' rest_s_C_list, ∑' s_C, F(μ_C, rest, s_C).
+    -- h_inner has form: ∑' rest, ∑' s_C, F(μ_C, rest, s_C) = G(μ_C). So we just
+    -- need to rewrite per-μ_C.
+    rw [tsum_congr h_inner]
+    -- Now LHS: ∑' μ_C, d * (if h_supp then ∑' s_C, ∑' μ_A_next, γ * μ_A_next.hA.2 *
+    --                       ∑' m_next, [ind] * cw m_next ... else 0).
+    -- Convert RHS (chain_weight) to step_weight_at_d form.
+    change ∑' (μ_C : PMF State_C),
+        d (hA.1, μ_C) * (if h_supp : (hA.1, μ_C) ∈ d.support then
+            ∑' (s_C : State_C) (μ_A_next : PMF State_A),
+              (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                  (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+              ).γ (s_C, μ_A_next) * μ_A_next hA.2 *
+              ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                (if m_next.e_C = ⟨m_prev.e_C.init,
+                      m_prev.e_C.trans.append (Seq.cons (hA.1, s_C) Seq.nil)⟩ ∧
+                    m_next.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+                  then 1 else 0) *
+                chain_weight m_next restA m_final
+          else 0) =
+        ∑' m_mid, step_weight sim pe_C μ_A_init h_init_R m_prev m_mid hA.1 hA.2 *
+          chain_weight m_mid restA m_final
+    -- Rewrite step_weight = step_weight_at_d using h_valid, h_some.
+    have h_sw_eq : ∀ m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+        step_weight sim pe_C μ_A_init h_init_R m_prev m_mid hA.1 hA.2 =
+        step_weight_at_d sim pe_C μ_A_init h_init_R m_prev m_mid d h_d_eq h_valid hA.1 hA.2 := by
+      intro m_mid
+      unfold step_weight
+      rw [dif_pos h_valid, dif_pos h_some]
+    simp_rw [h_sw_eq]
+    -- Current goal: LHS (∑' μ_C with inner cw m_next) = ∑' m_mid, step_weight_at_d * cw m_mid.
+    -- Unfold step_weight_at_d on RHS and rearrange to match LHS.
+    -- Use `symm`: prove RHS = LHS.
+    symm
+    -- ∑' m_mid, step_weight_at_d ... * cw m_mid.
+    -- step_weight_at_d = ∑' μ_C, d * (if h_supp then ∑' s_C', μ_A_next, γ * μ * [ind] else 0).
+    show ∑' m_mid,
+        step_weight_at_d sim pe_C μ_A_init h_init_R m_prev m_mid d h_d_eq h_valid hA.1 hA.2 *
+          chain_weight m_mid restA m_final = _
+    -- Rewrite ∑' m_mid, (∑' μ_C, F) * cw to ∑' μ_C, ∑' m_mid, F * cw (push cw inside, swap).
+    rw [show (∑' m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+        step_weight_at_d sim pe_C μ_A_init h_init_R m_prev m_mid d h_d_eq h_valid hA.1 hA.2 *
+          chain_weight m_mid restA m_final) =
+        ∑' m_mid, (∑' (μ_C : PMF State_C),
+          d (hA.1, μ_C) * (open Classical in
+            if h_supp : (hA.1, μ_C) ∈ d.support then
+              ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                    (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+                ).γ (s_C', μ_A_next) * μ_A_next hA.2 *
+                (if m_mid.e_C = ⟨m_prev.e_C.init,
+                    m_prev.e_C.trans.append (Seq.cons (hA.1, s_C') Seq.nil)⟩ ∧
+                  m_mid.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+            else 0)) * chain_weight m_mid restA m_final from rfl]
+    -- Push cw inside ∑' μ_C: ∑' m_mid, (∑' μ_C, F) * cw = ∑' m_mid, ∑' μ_C, F * cw.
+    rw [show (∑' m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+        (∑' (μ_C : PMF State_C),
+          d (hA.1, μ_C) * (open Classical in
+            if h_supp : (hA.1, μ_C) ∈ d.support then
+              ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                    (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+                ).γ (s_C', μ_A_next) * μ_A_next hA.2 *
+                (if m_mid.e_C = ⟨m_prev.e_C.init,
+                    m_prev.e_C.trans.append (Seq.cons (hA.1, s_C') Seq.nil)⟩ ∧
+                  m_mid.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+            else 0)) * chain_weight m_mid restA m_final) =
+        ∑' m_mid, ∑' (μ_C : PMF State_C),
+          d (hA.1, μ_C) * (open Classical in
+            if h_supp : (hA.1, μ_C) ∈ d.support then
+              ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                    (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+                ).γ (s_C', μ_A_next) * μ_A_next hA.2 *
+                (if m_mid.e_C = ⟨m_prev.e_C.init,
+                    m_prev.e_C.trans.append (Seq.cons (hA.1, s_C') Seq.nil)⟩ ∧
+                  m_mid.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+            else 0) * chain_weight m_mid restA m_final from
+      tsum_congr (fun _ => ENNReal.tsum_mul_right.symm)]
+    -- Swap m_mid with μ_C.
+    rw [ENNReal.tsum_comm]
+    -- ∑' μ_C, ∑' m_mid, (d * G(μ_C, m_mid)) * cw m_mid.
+    refine tsum_congr (fun μ_C => ?_)
+    -- Goal: ∑' m_mid, (d * G(μ_C, m_mid)) * cw m_mid =
+    --       d * (if h_supp then ∑' s_C, μ_A_next, γ * μ_A * ∑' m_next, [ind] * cw else 0).
+    -- Pull d out: rewrite (d * G) * cw = d * (G * cw) per term.
+    rw [show (∑' m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+        d (hA.1, μ_C) * (open Classical in
+          if h_supp : (hA.1, μ_C) ∈ d.support then
+            ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+              (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                  (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+              ).γ (s_C', μ_A_next) * μ_A_next hA.2 *
+              (if m_mid.e_C = ⟨m_prev.e_C.init,
+                  m_prev.e_C.trans.append (Seq.cons (hA.1, s_C') Seq.nil)⟩ ∧
+                m_mid.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+          else 0) * chain_weight m_mid restA m_final) =
+        ∑' m_mid, d (hA.1, μ_C) * ((open Classical in
+          if h_supp : (hA.1, μ_C) ∈ d.support then
+            ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+              (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                  (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+              ).γ (s_C', μ_A_next) * μ_A_next hA.2 *
+              (if m_mid.e_C = ⟨m_prev.e_C.init,
+                  m_prev.e_C.trans.append (Seq.cons (hA.1, s_C') Seq.nil)⟩ ∧
+                m_mid.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+          else 0) * chain_weight m_mid restA m_final) from
+      tsum_congr (fun _ => mul_assoc _ _ _)]
+    rw [ENNReal.tsum_mul_left]
+    congr 1
+    by_cases h_supp : (hA.1, μ_C) ∈ d.support
+    · simp only [dif_pos h_supp]
+      -- Goal: ∑' m_mid, (∑' s_C', μ_A_next, γ * μ_A * [ind]) * cw m_mid
+      --     = ∑' s_C, ∑' μ_A_next, γ * μ_A * ∑' m_next, [ind] * cw m_next.
+      -- Push cw inside ∑' s_C' ∑' μ_A_next.
+      rw [show (∑' m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+          (∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+            (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+            ).γ (s_C', μ_A_next) * μ_A_next hA.2 *
+            (if m_mid.e_C = ⟨m_prev.e_C.init,
+                m_prev.e_C.trans.append (Seq.cons (hA.1, s_C') Seq.nil)⟩ ∧
+              m_mid.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)) *
+            chain_weight m_mid restA m_final) =
+          ∑' m_mid, ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+            ((PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+            ).γ (s_C', μ_A_next) * μ_A_next hA.2 *
+            (if m_mid.e_C = ⟨m_prev.e_C.init,
+                m_prev.e_C.trans.append (Seq.cons (hA.1, s_C') Seq.nil)⟩ ∧
+              m_mid.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)) *
+            chain_weight m_mid restA m_final from by
+        refine tsum_congr (fun m_mid => ?_)
+        rw [ENNReal.tsum_mul_right.symm]
+        refine tsum_congr (fun _ => ?_)
+        rw [ENNReal.tsum_mul_right.symm]]
+      rw [ENNReal.tsum_comm]
+      refine tsum_congr (fun s_C => ?_)
+      rw [ENNReal.tsum_comm]
+      refine tsum_congr (fun μ_A_next => ?_)
+      -- ∑' a, (γ * μ_A * [ind a]) * cw a = γ * μ_A * ∑' a, [ind a] * cw a.
+      rw [show (∑' a : MatchingState sim pe_C μ_A_init h_init_R,
+          ((PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+              (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+          ).γ (s_C, μ_A_next) * μ_A_next hA.2 *
+          (if a.e_C = ⟨m_prev.e_C.init,
+              m_prev.e_C.trans.append (Seq.cons (hA.1, s_C) Seq.nil)⟩ ∧
+            a.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)) *
+            chain_weight a restA m_final) =
+          ∑' a, (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+              (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq hA.1 μ_C h_supp))
+          ).γ (s_C, μ_A_next) * μ_A_next hA.2 *
+          ((if a.e_C = ⟨m_prev.e_C.init,
+              m_prev.e_C.trans.append (Seq.cons (hA.1, s_C) Seq.nil)⟩ ∧
+            a.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then (1 : ENNReal) else 0) *
+            chain_weight a restA m_final) from
+        tsum_congr (fun _ => by ring)]
+      rw [ENNReal.tsum_mul_left]
+    · simp only [dif_neg h_supp]
+      symm
+      rw [show (∑' (m_mid : MatchingState sim pe_C μ_A_init h_init_R),
+        ((0 : ENNReal) * chain_weight m_mid restA m_final)) =
+        ∑' (_ : MatchingState sim pe_C μ_A_init h_init_R), (0 : ENNReal) from
+        tsum_congr (fun _ => zero_mul _)]
+      exact (tsum_zero (β := MatchingState sim pe_C μ_A_init h_init_R)).symm
+
+/-- **L4 (chain_weight bridges fromAbstractPrefix_base and fromAbstractPrefix)**:
+composing `fromAbstractPrefix_base` with `chain_weight` along an abstract
+trans list yields `fromAbstractPrefix` at the corresponding history.
+Proven by induction on `toList_A` from the end (using `List.reverseRecOn`),
+matching `fromAbstractPrefix_list`'s reversed-list recursion. -/
+private lemma chain_weight_eq_fromAbstractPrefix
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (s_A_init : State_A) (toList_A : List (Label × State_A)) :
+    ∀ (m_final : MatchingState sim pe_C μ_A_init h_init_R),
+    (∑' (m_prev : MatchingState sim pe_C μ_A_init h_init_R),
+        fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_prev *
+        chain_weight m_prev toList_A m_final) =
+      fromAbstractPrefix sim pe_C μ_A_init h_init_R
+        ⟨s_A_init, Stream'.Seq.ofList toList_A⟩
+        (Stream'.Seq.terminates_ofList _) m_final := by
+  classical
+  -- Induction on toList_A from the END (reverseRecOn) matches
+  -- fromAbstractPrefix_list's reversed-list recursion.
+  induction toList_A using List.reverseRecOn with
+  | nil =>
+    intro m_final
+    -- chain_weight m_prev [] m_final = [m_final = m_prev]; tsum collapses to
+    -- fromAbstractPrefix_base m_final.
+    -- fromAbstractPrefix at empty toList_A: unfold to fromAbstractPrefix_base.
+    have h_LHS :
+        (∑' (m_prev : MatchingState sim pe_C μ_A_init h_init_R),
+          fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_prev *
+          chain_weight m_prev [] m_final) =
+        fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_final := by
+      have h_each : ∀ (m_prev : MatchingState sim pe_C μ_A_init h_init_R),
+          chain_weight m_prev [] m_final =
+            (open Classical in if m_final = m_prev then (1 : ENNReal) else 0) := by
+        intro m_prev; rfl
+      simp_rw [h_each]
+      -- ∑' m_prev, base m_prev * [m_final = m_prev] = base m_final.
+      rw [tsum_eq_single m_final (fun m_prev h_ne => ?_)]
+      · rw [if_pos rfl, mul_one]
+      · have h_neq : ¬ m_final = m_prev := fun h => h_ne h.symm
+        rw [if_neg h_neq, mul_zero]
+    rw [h_LHS]
+    -- RHS: fromAbstractPrefix at ⟨s_A_init, Seq.ofList []⟩ = base.
+    unfold fromAbstractPrefix
+    change fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_final =
+        fromAbstractPrefix_list sim pe_C μ_A_init h_init_R s_A_init
+          ((Stream'.Seq.ofList ([] : List (Label × State_A))).toList _).reverse m_final
+    have h_toList :
+        ((Stream'.Seq.ofList ([] : List (Label × State_A))).toList
+          (Stream'.Seq.terminates_ofList _)).reverse = [] := by
+      rw [Stream'.Seq.toList_ofList]
+      rfl
+    rw [h_toList]
+    rfl
+  | append_singleton rest last ih =>
+    intro m_final
+    -- toList_A = rest ++ [last].
+    -- chain_weight m_prev (rest ++ [last]) m_final = ∑' m_mid, chain_weight m_prev rest m_mid
+    --                                                    * step_weight m_mid m_final last.1 last.2.
+    -- This identity is proved via induction on rest (separate sub-lemma below).
+    have h_cw_append : ∀ (m_prev : MatchingState sim pe_C μ_A_init h_init_R),
+        chain_weight m_prev (rest ++ [last]) m_final =
+          ∑' m_mid, chain_weight m_prev rest m_mid *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2 := by
+      intro m_prev
+      clear ih
+      induction rest generalizing m_prev with
+      | nil =>
+        -- chain_weight m_prev [last] m_final = ∑' m_mid, sw m_prev m_mid last.1 last.2
+        --                                       * chain_weight m_mid [] m_final
+        --                                     = ∑' m_mid, sw m_prev m_mid last.1 last.2
+        --                                       * [m_final = m_mid]
+        -- RHS: ∑' m_mid, chain_weight m_prev [] m_mid * sw m_mid m_final last.1 last.2
+        --    = ∑' m_mid, [m_mid = m_prev] * sw m_mid m_final last.1 last.2
+        --    = sw m_prev m_final last.1 last.2.
+        show chain_weight m_prev ([] ++ [last]) m_final =
+          ∑' m_mid, chain_weight m_prev [] m_mid *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2
+        rw [List.nil_append]
+        -- LHS: chain_weight m_prev [last] m_final
+        change (∑' m_mid, step_weight sim pe_C μ_A_init h_init_R m_prev m_mid last.1 last.2 *
+            chain_weight m_mid [] m_final) =
+          ∑' m_mid, chain_weight m_prev [] m_mid *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2
+        -- Simplify chain_weight m_mid [] m_final = [m_final = m_mid].
+        have h_inner_l : ∀ m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+            chain_weight m_mid ([] : List (Label × State_A)) m_final =
+              (open Classical in if m_final = m_mid then (1 : ENNReal) else 0) :=
+          fun m_mid => rfl
+        have h_inner_r : ∀ m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+            chain_weight m_prev ([] : List (Label × State_A)) m_mid =
+              (open Classical in if m_mid = m_prev then (1 : ENNReal) else 0) :=
+          fun m_mid => rfl
+        simp_rw [h_inner_l, h_inner_r]
+        rw [tsum_eq_single m_final (fun m_mid h_ne => by
+              have h_neq : ¬ m_final = m_mid := fun h => h_ne h.symm
+              rw [if_neg h_neq, mul_zero])]
+        rw [tsum_eq_single m_prev (fun m_mid h_ne => by
+              have h_neq : ¬ m_mid = m_prev := fun h => h_ne h
+              rw [if_neg h_neq, zero_mul])]
+        rw [if_pos rfl, if_pos rfl, mul_one, one_mul]
+      | cons head rest_tail ih_rest =>
+        -- chain_weight m_prev ((head :: rest_tail) ++ [last]) m_final
+        --   = ∑' m_mid_0, sw m_prev m_mid_0 head.1 head.2
+        --                  * chain_weight m_mid_0 (rest_tail ++ [last]) m_final
+        --   = ∑' m_mid_0, sw m_prev m_mid_0 head.1 head.2
+        --                 * (∑' m_mid, cw m_mid_0 rest_tail m_mid * sw m_mid m_final last.1 last.2)
+        --   = ∑' m_mid, (∑' m_mid_0, sw m_prev m_mid_0 head.1 head.2 * cw m_mid_0 rest_tail m_mid)
+        --                * sw m_mid m_final last.1 last.2
+        --   = ∑' m_mid, cw m_prev (head :: rest_tail) m_mid * sw m_mid m_final last.1 last.2.
+        show chain_weight m_prev ((head :: rest_tail) ++ [last]) m_final =
+          ∑' m_mid, chain_weight m_prev (head :: rest_tail) m_mid *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2
+        rw [List.cons_append]
+        change (∑' m_mid_0,
+            step_weight sim pe_C μ_A_init h_init_R m_prev m_mid_0 head.1 head.2 *
+            chain_weight m_mid_0 (rest_tail ++ [last]) m_final) =
+          ∑' m_mid, chain_weight m_prev (head :: rest_tail) m_mid *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2
+        simp_rw [ih_rest]
+        -- LHS: ∑' m_mid_0, sw_0 * (∑' m_mid, cw m_mid_0 rest_tail m_mid * sw m_mid).
+        -- Push sw_0 inside the inner tsum.
+        rw [show (∑' m_mid_0 : MatchingState sim pe_C μ_A_init h_init_R,
+            step_weight sim pe_C μ_A_init h_init_R m_prev m_mid_0 head.1 head.2 *
+              (∑' m_mid, chain_weight m_mid_0 rest_tail m_mid *
+                step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2)) =
+            ∑' m_mid_0, ∑' m_mid, step_weight sim pe_C μ_A_init h_init_R m_prev m_mid_0
+              head.1 head.2 * (chain_weight m_mid_0 rest_tail m_mid *
+                step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2) from
+          tsum_congr (fun _ => ENNReal.tsum_mul_left.symm)]
+        -- ∑' m_mid_0, ∑' m_mid, sw_0 * (cw m_mid_0 rest_tail m_mid * sw m_mid).
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun m_mid => ?_)
+        -- ∑' m_mid_0, sw_0 * (cw m_mid_0 rest_tail m_mid * sw m_mid)
+        --   = cw m_prev (head :: rest_tail) m_mid * sw m_mid
+        --   = (∑' m_mid_0, sw_0 m_mid_0 * cw m_mid_0 rest_tail m_mid) * sw m_mid.
+        rw [show (∑' m_mid_0 : MatchingState sim pe_C μ_A_init h_init_R,
+            step_weight sim pe_C μ_A_init h_init_R m_prev m_mid_0 head.1 head.2 *
+              (chain_weight m_mid_0 rest_tail m_mid *
+                step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2)) =
+            (∑' m_mid_0, step_weight sim pe_C μ_A_init h_init_R m_prev m_mid_0 head.1 head.2 *
+              chain_weight m_mid_0 rest_tail m_mid) *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2 from by
+          rw [ENNReal.tsum_mul_right.symm]
+          refine tsum_congr (fun m_mid_0 => ?_)
+          ring]
+        -- cw m_prev (head :: rest_tail) m_mid = ∑' m_mid_0, sw m_prev m_mid_0 * cw m_mid_0.
+        rfl
+    -- Now use h_cw_append: chain_weight m_prev (rest ++ [last]) m_final
+    --   = ∑' m_mid, cw m_prev rest m_mid * sw m_mid m_final last.1 last.2.
+    simp_rw [h_cw_append]
+    -- LHS: ∑' m_prev, base m_prev * (∑' m_mid, cw m_prev rest m_mid * sw m_mid).
+    -- Push base m_prev inside.
+    rw [show (∑' m_prev : MatchingState sim pe_C μ_A_init h_init_R,
+        fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_prev *
+          ∑' m_mid, chain_weight m_prev rest m_mid *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2) =
+        ∑' m_prev, ∑' m_mid,
+          fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_prev *
+            (chain_weight m_prev rest m_mid *
+              step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2) from
+      tsum_congr (fun _ => ENNReal.tsum_mul_left.symm)]
+    rw [ENNReal.tsum_comm]
+    -- ∑' m_mid, ∑' m_prev, base m_prev * (cw m_prev rest m_mid * sw m_mid).
+    -- = ∑' m_mid, (∑' m_prev, base m_prev * cw m_prev rest m_mid) * sw m_mid
+    -- = ∑' m_mid, fromAbstractPrefix ⟨s_A_init, ofList rest⟩ m_mid * sw m_mid (by IH)
+    simp_rw [show ∀ m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+        (∑' m_prev, fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_prev *
+          (chain_weight m_prev rest m_mid *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2)) =
+        (∑' m_prev, fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_prev *
+          chain_weight m_prev rest m_mid) *
+          step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2 from by
+      intro m_mid
+      rw [ENNReal.tsum_mul_right.symm]
+      refine tsum_congr (fun m_prev => ?_)
+      ring]
+    -- Apply IH per-m_mid (ih is universally quantified over m_final).
+    rw [tsum_congr (fun m_mid =>
+      by rw [ih m_mid] : ∀ m_mid : MatchingState sim pe_C μ_A_init h_init_R,
+        (∑' m_prev, fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m_prev *
+          chain_weight m_prev rest m_mid) *
+            step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2 =
+        fromAbstractPrefix sim pe_C μ_A_init h_init_R
+          ⟨s_A_init, Stream'.Seq.ofList rest⟩
+          (Stream'.Seq.terminates_ofList _) m_mid *
+          step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2)]
+    -- Now: ∑' m_mid, fromAbstractPrefix ⟨s_A_init, ofList rest⟩ m_mid
+    --                * step_weight m_mid m_final last.1 last.2
+    -- = fromAbstractPrefix ⟨s_A_init, ofList (rest ++ [last])⟩ m_final.
+    -- Unfold fromAbstractPrefix.
+    unfold fromAbstractPrefix
+    change ∑' m_mid, fromAbstractPrefix_list sim pe_C μ_A_init h_init_R s_A_init
+        (((Stream'.Seq.ofList rest).toList _).reverse) m_mid *
+        step_weight sim pe_C μ_A_init h_init_R m_mid m_final last.1 last.2 =
+      fromAbstractPrefix_list sim pe_C μ_A_init h_init_R s_A_init
+        (((Stream'.Seq.ofList (rest ++ [last])).toList _).reverse) m_final
+    rw [Stream'.Seq.toList_ofList rest, Stream'.Seq.toList_ofList (rest ++ [last])]
+    rw [List.reverse_append, List.reverse_singleton, List.singleton_append]
+    -- fromAbstractPrefix_list (last :: rest.reverse) = ∑' m_prev, fpL rest.reverse *
+    --                                                              step_weight m_prev m_final last.
+    rfl
+
 /-- **§9.5**: marginalising the joint over `e_C`'s state samples
 recovers `pe_A.probOf e_A`. Proven by induction on `e_A.trans` length,
 using `m_dist_posterior_predictive` at each step. -/
@@ -5256,8 +6109,382 @@ theorem joint_marginalises_to_pe_A
                   ∀ k h₁ h₂, ((e_C.trans.toList h_term).get ⟨k, h₁⟩).1 =
                              ((e_A.trans.toList e_A_term).get ⟨k, h₂⟩).1}),
         joint_mass sim pe_C μ_A_init h_init_R e_C.1 e_C.2.choose e_A e_A_term) =
-      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf e_A e_A_term :=
-  sorry
+      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf e_A e_A_term := by
+  classical
+  set toList_A : List (Label × State_A) := e_A.trans.toList e_A_term with h_toList_A_def
+  set n : ℕ := toList_A.length with h_n_def
+  -- Subtype shape: {e_C // ∃ h_term, e_C.init ∈ supp ∧ length n ∧ labels match}.
+  -- Bijection: e_C ↦ (e_C.init (with supp witness), state-list of e_C.trans).
+  let S_LHS : Type :=
+    {e_C : AlterSeq State_C Label //
+      ∃ h_term : e_C.trans.Terminates,
+        e_C.init ∈ pe_C.init.support ∧
+        (e_C.trans.toList h_term).length = n ∧
+        ∀ k h₁ h₂, ((e_C.trans.toList h_term).get ⟨k, h₁⟩).1 =
+                   (toList_A.get ⟨k, h₂⟩).1}
+  let S_RHS : Type :=
+    {s_C_init : State_C // s_C_init ∈ pe_C.init.support} ×
+      {l : List State_C // l.length = n}
+  -- Build the bijection.
+  let toFun : S_LHS → S_RHS := fun e_C =>
+    (⟨e_C.1.init, e_C.2.choose_spec.1⟩,
+      ⟨(e_C.1.trans.toList e_C.2.choose).map Prod.snd, by
+        rw [List.length_map]
+        exact e_C.2.choose_spec.2.1⟩)
+  let invFun : S_RHS → S_LHS := fun p => by
+    refine ⟨⟨p.1.1, Stream'.Seq.ofList (buildToListC toList_A p.2.1)⟩, ?_⟩
+    have h_toList_eq : (Stream'.Seq.ofList (buildToListC toList_A p.2.1)).toList
+        (Stream'.Seq.terminates_ofList _) = buildToListC toList_A p.2.1 :=
+      Stream'.Seq.toList_ofList _
+    have h_len_zip : (buildToListC toList_A p.2.1).length = n := by
+      change (List.zipWith _ toList_A p.2.1).length = n
+      rw [List.length_zipWith, p.2.2]
+      omega
+    refine ⟨Stream'.Seq.terminates_ofList _, p.1.2, ?_, ?_⟩
+    · change ((Stream'.Seq.ofList (buildToListC toList_A p.2.1)).toList _).length = n
+      rw [h_toList_eq]
+      exact h_len_zip
+    · intro k h₁ h₂
+      have h_k_lt_l : k < p.2.1.length := by rw [p.2.2]; exact h₂
+      have h_k_lt_zip : k < (buildToListC toList_A p.2.1).length := by
+        rw [h_len_zip]; exact h₂
+      simp only [List.get_eq_getElem]
+      have h_get_lhs :
+          ((Stream'.Seq.ofList (buildToListC toList_A p.2.1)).toList _)[k]'h₁ =
+          (buildToListC toList_A p.2.1)[k]'h_k_lt_zip := by congr 1
+      rw [h_get_lhs]
+      change ((List.zipWith (fun (p : Label × State_A) (s_C : State_C) => (p.1, s_C))
+        toList_A p.2.1)[k]'_).1 = _
+      simp [List.getElem_zipWith]
+  have h_left_inv : Function.LeftInverse invFun toFun := by
+    intro e_C
+    apply Subtype.ext
+    change (⟨e_C.1.init, Stream'.Seq.ofList _⟩ : AlterSeq State_C Label) = e_C.1
+    obtain ⟨h_term_C, h_supp, h_len_C, h_lab_C⟩ := e_C.2
+    have h_choose_eq : e_C.2.choose = h_term_C := Subsingleton.elim _ _
+    have h_zip_eq :
+        buildToListC toList_A ((e_C.1.trans.toList e_C.2.choose).map Prod.snd) =
+        e_C.1.trans.toList e_C.2.choose := by
+      unfold buildToListC
+      apply List.ext_get
+      · rw [List.length_zipWith, List.length_map]
+        have h_len' : (e_C.1.trans.toList e_C.2.choose).length = n :=
+          e_C.2.choose_spec.2.1
+        rw [h_len', h_n_def]
+        simp
+      · intro k h₁ h₂
+        have h_len' : (e_C.1.trans.toList e_C.2.choose).length = n :=
+          e_C.2.choose_spec.2.1
+        have h_k_lt_C : k < (e_C.1.trans.toList e_C.2.choose).length := h₂
+        have h_k_lt_A : k < toList_A.length := by
+          rw [List.length_zipWith, List.length_map, h_len'] at h₁
+          have : k < min toList_A.length n := h₁
+          have h_min : min toList_A.length n = toList_A.length := by
+            rw [h_n_def]; exact min_self _
+          rw [h_min] at this
+          exact this
+        simp only [List.get_eq_getElem]
+        rw [List.getElem_zipWith, List.getElem_map]
+        change (toList_A[k].1, (e_C.1.trans.toList e_C.2.choose)[k].2) = _
+        have h_lab := e_C.2.choose_spec.2.2 k h_k_lt_C h_k_lt_A
+        ext
+        · simp only at h_lab ⊢
+          exact h_lab.symm
+        · rfl
+    have h_trans : Stream'.Seq.ofList (buildToListC toList_A
+        ((e_C.1.trans.toList e_C.2.choose).map Prod.snd)) = e_C.1.trans := by
+      rw [h_zip_eq, Stream'.Seq.ofList_toList]
+    change (⟨e_C.1.init, Stream'.Seq.ofList _⟩ : AlterSeq State_C Label) = e_C.1
+    rw [h_trans]
+  have h_right_inv : Function.RightInverse invFun toFun := by
+    intro p
+    obtain ⟨⟨s_C_init, h_supp⟩, ⟨l, h_l⟩⟩ := p
+    apply Prod.ext
+    · rfl
+    · apply Subtype.ext
+      change ((Stream'.Seq.ofList (buildToListC toList_A l)).toList _).map Prod.snd = l
+      rw [Stream'.Seq.toList_ofList]
+      apply List.ext_get
+      · rw [List.length_map]
+        change (List.zipWith _ toList_A l).length = l.length
+        rw [List.length_zipWith, h_l, h_n_def]
+        simp
+      · intro k h₁ h₂
+        have h_k_lt_zip : k < (buildToListC toList_A l).length := by
+          rw [List.length_map] at h₁; exact h₁
+        have h_k_lt_A : k < toList_A.length := by
+          rw [show (buildToListC toList_A l).length =
+            min toList_A.length l.length from List.length_zipWith] at h_k_lt_zip
+          have := lt_of_lt_of_le h_k_lt_zip (min_le_left _ _)
+          exact this
+        simp only [List.get_eq_getElem]
+        rw [List.getElem_map]
+        change ((List.zipWith (fun (p : Label × State_A) (s_C : State_C) => (p.1, s_C))
+          toList_A l)[k]'_).2 = _
+        rw [List.getElem_zipWith]
+  let equiv : S_LHS ≃ S_RHS :=
+    { toFun := toFun
+      invFun := invFun
+      left_inv := h_left_inv
+      right_inv := h_right_inv }
+  -- Apply the equiv.
+  rw [show (∑' (e_C : S_LHS),
+        joint_mass sim pe_C μ_A_init h_init_R e_C.1 e_C.2.choose e_A e_A_term) =
+        ∑' (p : S_RHS),
+          joint_mass sim pe_C μ_A_init h_init_R
+            (equiv.symm p).1 (equiv.symm p).2.choose e_A e_A_term from
+      (Equiv.tsum_eq equiv.symm _).symm]
+  -- Unfold joint_mass.
+  have h_jm : ∀ (p : S_RHS),
+      joint_mass sim pe_C μ_A_init h_init_R
+        (equiv.symm p).1 (equiv.symm p).2.choose e_A e_A_term =
+      pe_C.init p.1.1 * μ_A_init e_A.init *
+        joint_mass_path (initial_matching_state sim pe_C μ_A_init h_init_R p.1.1)
+          (buildToListC toList_A p.2.1) toList_A := by
+    intro p
+    obtain ⟨⟨s_C_init, h_supp⟩, ⟨l, h_l⟩⟩ := p
+    unfold joint_mass
+    change pe_C.init s_C_init * μ_A_init e_A.init *
+        joint_mass_path
+          (initial_matching_state sim pe_C μ_A_init h_init_R s_C_init)
+          ((Stream'.Seq.ofList (buildToListC toList_A l)).toList _)
+          (e_A.trans.toList e_A_term) =
+      pe_C.init s_C_init * μ_A_init e_A.init *
+        joint_mass_path
+          (initial_matching_state sim pe_C μ_A_init h_init_R s_C_init)
+          (buildToListC toList_A l) toList_A
+    rw [Stream'.Seq.toList_ofList]
+  rw [tsum_congr h_jm]
+  -- Apply L1: joint_mass_path = ∑' m_final, joint_mass_path_aug.
+  rw [show (∑' (p : S_RHS),
+        pe_C.init p.1.1 * μ_A_init e_A.init *
+          joint_mass_path (initial_matching_state sim pe_C μ_A_init h_init_R p.1.1)
+            (buildToListC toList_A p.2.1) toList_A) =
+        ∑' (p : S_RHS),
+          pe_C.init p.1.1 * μ_A_init e_A.init *
+            ∑' m_final, joint_mass_path_aug
+              (initial_matching_state sim pe_C μ_A_init h_init_R p.1.1)
+              (buildToListC toList_A p.2.1) toList_A m_final from
+      tsum_congr (fun p => by rw [joint_mass_path_eq_tsum_aug])]
+  -- Pull m_final outermost (tsum_prod' to split, then swap).
+  rw [show (∑' (p : S_RHS),
+        pe_C.init p.1.1 * μ_A_init e_A.init *
+          ∑' m_final, joint_mass_path_aug
+            (initial_matching_state sim pe_C μ_A_init h_init_R p.1.1)
+            (buildToListC toList_A p.2.1) toList_A m_final) =
+        ∑' (q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support})
+            (q₂ : {l : List State_C // l.length = n}),
+          pe_C.init q₁.1 * μ_A_init e_A.init *
+            ∑' m_final, joint_mass_path_aug
+              (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1)
+              (buildToListC toList_A q₂.1) toList_A m_final from
+      ENNReal.tsum_prod']
+  -- ∑' q₁, ∑' q₂, F(q₁, q₂).
+  -- Push m_final out and collapse q₂ via L3.
+  -- Step A: factor μ_A_init e_A.init out from each m_final-sum.
+  rw [show
+      (∑' (q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support})
+          (q₂ : {l : List State_C // l.length = n}),
+        pe_C.init q₁.1 * μ_A_init e_A.init *
+          ∑' m_final, joint_mass_path_aug
+            (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1)
+            (buildToListC toList_A q₂.1) toList_A m_final) =
+      ∑' (q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support}),
+        pe_C.init q₁.1 * μ_A_init e_A.init *
+          ∑' (q₂ : {l : List State_C // l.length = n}),
+            ∑' m_final, joint_mass_path_aug
+              (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1)
+              (buildToListC toList_A q₂.1) toList_A m_final from
+      tsum_congr (fun q₁ => ENNReal.tsum_mul_left)]
+  -- Swap q₂ with m_final inside, then apply L3.
+  have h_q₂_collapse : ∀ q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support},
+      (∑' (q₂ : {l : List State_C // l.length = n}),
+        ∑' (m_final : MatchingState sim pe_C μ_A_init h_init_R),
+          joint_mass_path_aug
+            (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1)
+            (buildToListC toList_A q₂.1) toList_A m_final) =
+      ∑' m_final, chain_weight
+        (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1) toList_A m_final := by
+    intro q₁
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun m_final => ?_)
+    exact joint_mass_path_aug_marginal_s_C_aux toList_A
+      (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1) m_final
+  rw [tsum_congr (fun q₁ => by rw [h_q₂_collapse q₁] :
+    ∀ q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support},
+      pe_C.init q₁.1 * μ_A_init e_A.init *
+        ∑' (q₂ : {l : List State_C // l.length = n}),
+          ∑' (m_final : MatchingState sim pe_C μ_A_init h_init_R),
+            joint_mass_path_aug
+              (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1)
+              (buildToListC toList_A q₂.1) toList_A m_final =
+      pe_C.init q₁.1 * μ_A_init e_A.init *
+        ∑' m_final, chain_weight
+          (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1) toList_A m_final)]
+  -- Now: ∑' q₁, pe_C.init q₁.1 * μ_A_init e_A.init * ∑' m_final, cw (m_0_q₁) m_final.
+  -- Push pe_C.init * μ_A_init inside ∑' m_final and rewrite m_0_q₁ to general m_prev sum.
+  -- Goal restructure: convert this to ∑' m_final, ∑' m_prev, base * cw m_prev toList_A m_final.
+  -- Key identity: ∑' s_C_init ∈ supp, pe_C.init s_C_init * μ_A_init e_A.init *
+  --                F(m_0_{s_C_init}) = ∑' m_prev, base(m_prev) * F(m_prev).
+  -- We prove this for F = (fun m_prev => ∑' m_final, chain_weight m_prev toList_A m_final).
+  -- First push pe_C.init * μ_A_init * inside ∑' m_final.
+  rw [show
+      (∑' (q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support}),
+        pe_C.init q₁.1 * μ_A_init e_A.init *
+          ∑' m_final, chain_weight
+            (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1) toList_A m_final) =
+      ∑' (q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support}),
+        ∑' m_final,
+          pe_C.init q₁.1 * μ_A_init e_A.init *
+            chain_weight
+              (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1) toList_A m_final from
+      tsum_congr (fun _ => ENNReal.tsum_mul_left.symm)]
+  -- Swap m_final outermost.
+  rw [ENNReal.tsum_comm]
+  -- ∑' m_final, ∑' q₁, pe_C.init q₁.1 * μ_A_init e_A.init * cw (m_0_q₁) m_final.
+  -- Now bridge q₁ (over supp) to m_prev (with fromAbstractPrefix_base):
+  -- The key identity is:
+  -- ∑' m_prev, fromAbstractPrefix_base e_A.init m_prev * cw m_prev toList_A m_final
+  --   = ∑' q₁ : supp, μ_A_init e_A.init * pe_C.init q₁.1 * cw (m_0_q₁) m_final.
+  -- We prove this via reindexing along the canonical injection q₁ ↦ m_0_q₁.
+  have h_bridge : ∀ m_final : MatchingState sim pe_C μ_A_init h_init_R,
+      (∑' m_prev, fromAbstractPrefix_base sim pe_C μ_A_init h_init_R e_A.init m_prev *
+          chain_weight m_prev toList_A m_final) =
+      ∑' (q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support}),
+        pe_C.init q₁.1 * μ_A_init e_A.init *
+          chain_weight
+            (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1) toList_A m_final := by
+    intro m_final
+    -- ∑' m_prev: only nonzero contributions are at m_prev = initial_matching_state s_C_init
+    -- for s_C_init ∈ supp.
+    refine tsum_eq_tsum_of_ne_zero_bij
+      (fun (q : {q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support} //
+          pe_C.init q₁.1 * μ_A_init e_A.init *
+            chain_weight (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1)
+              toList_A m_final ≠ 0}) =>
+        (initial_matching_state sim pe_C μ_A_init h_init_R q.1.1 :
+          MatchingState sim pe_C μ_A_init h_init_R)) ?_ ?_ ?_
+    · -- Injective.
+      rintro ⟨⟨s₁, h_s₁⟩, _⟩ ⟨⟨s₂, h_s₂⟩, _⟩ h_eq
+      have h_init_eq : s₁ = s₂ := by
+        have := congr_arg
+          (fun m : MatchingState sim pe_C μ_A_init h_init_R => m.e_C.init) h_eq
+        exact this
+      simp only [Subtype.mk.injEq]
+      exact h_init_eq
+    · -- Support of LHS ⊆ image: any m_prev with LHS-summand ≠ 0 has the canonical form.
+      intro m_prev h_m_supp
+      rw [Function.mem_support] at h_m_supp
+      -- fromAbstractPrefix_base ≠ 0 ⟹ m_prev.e_C.trans = nil ∧ m_prev.μ_A_chain = []
+      --                                ∧ m_prev.e_C.init ∈ supp.
+      have h_base_ne : fromAbstractPrefix_base sim pe_C μ_A_init h_init_R e_A.init m_prev ≠ 0 := by
+        intro h0
+        apply h_m_supp
+        rw [h0, zero_mul]
+      unfold fromAbstractPrefix_base at h_base_ne
+      by_cases h_cond :
+          m_prev.e_C.trans = Seq.nil ∧ m_prev.μ_A_chain = [] ∧ m_prev.e_C.init ∈ pe_C.init.support
+      · rw [if_pos h_cond] at h_base_ne
+        -- h_base_ne : μ_A_init e_A.init * pe_C.init m_prev.e_C.init ≠ 0
+        have h_μ_ne : μ_A_init e_A.init ≠ 0 := fun h => h_base_ne (by rw [h]; simp)
+        have h_init_ne : pe_C.init m_prev.e_C.init ≠ 0 :=
+          fun h => h_base_ne (by rw [h]; simp)
+        have h_init_supp : m_prev.e_C.init ∈ pe_C.init.support := h_cond.2.2
+        -- The chain_weight piece is nonzero too because m_prev = canonical(m_prev.e_C.init).
+        have h_canon : m_prev =
+            initial_matching_state sim pe_C μ_A_init h_init_R m_prev.e_C.init := by
+          apply MatchingState.ext_of_data
+          · change m_prev.e_C = ⟨m_prev.e_C.init, Seq.nil⟩
+            conv_lhs => rw [show m_prev.e_C = ⟨m_prev.e_C.init, m_prev.e_C.trans⟩ from rfl,
+                            h_cond.1]
+          · exact h_cond.2.1
+        -- cw at m_prev = cw at canonical(m_prev.e_C.init). The product is nonzero, so we're done.
+        refine ⟨⟨⟨m_prev.e_C.init, h_init_supp⟩, ?_⟩, h_canon.symm⟩
+        -- Need: pe_C.init * μ_A_init * cw (m_0_{m_prev.e_C.init}) toList_A m_final ≠ 0.
+        intro h_zero
+        apply h_m_supp
+        -- LHS-summand at m_prev = base m_prev * cw m_prev toList_A m_final
+        -- = (μ_A_init * pe_C.init) * cw (m_0_{...}) (by h_canon)
+        -- which equals 0 by h_zero (after ring-rearrangement).
+        unfold fromAbstractPrefix_base
+        rw [if_pos h_cond]
+        -- Goal: μ_A_init e_A.init * pe_C.init m_prev.e_C.init *
+        --   chain_weight m_prev toList_A m_final = 0.
+        rw [h_canon]
+        -- After h_canon: (initial_matching_state ... m_prev.e_C.init).e_C.init = m_prev.e_C.init.
+        -- That's definitionally true. Use show to flip the m_prev.e_C.init pattern,
+        -- then ring-rearrange.
+        change μ_A_init e_A.init * pe_C.init m_prev.e_C.init *
+            chain_weight
+              (initial_matching_state sim pe_C μ_A_init h_init_R m_prev.e_C.init)
+              toList_A m_final = 0
+        rw [show μ_A_init e_A.init * pe_C.init m_prev.e_C.init *
+            chain_weight
+              (initial_matching_state sim pe_C μ_A_init h_init_R m_prev.e_C.init)
+              toList_A m_final =
+            pe_C.init m_prev.e_C.init * μ_A_init e_A.init *
+            chain_weight
+              (initial_matching_state sim pe_C μ_A_init h_init_R m_prev.e_C.init)
+              toList_A m_final from by ring]
+        exact h_zero
+      · rw [if_neg h_cond] at h_base_ne
+        exact absurd rfl h_base_ne
+    · -- f(i x) = g x: for q : supp with summand ≠ 0, the LHS at m_0_{q.1.1} equals q's summand.
+      rintro ⟨⟨s_C_init, h_supp⟩, h_nonzero⟩
+      -- Goal: base (m_0_{s_C_init}) * cw (m_0_{s_C_init}) toList_A m_final
+      --     = pe_C.init s_C_init * μ_A_init e_A.init * cw (m_0_{s_C_init}) toList_A m_final.
+      unfold fromAbstractPrefix_base
+      have h_canon_cond :
+          (initial_matching_state sim pe_C μ_A_init h_init_R s_C_init).e_C.trans = Seq.nil ∧
+          (initial_matching_state sim pe_C μ_A_init h_init_R s_C_init).μ_A_chain = [] ∧
+          (initial_matching_state sim pe_C μ_A_init h_init_R s_C_init).e_C.init ∈
+            pe_C.init.support := ⟨rfl, rfl, h_supp⟩
+      rw [if_pos h_canon_cond]
+      change μ_A_init e_A.init * pe_C.init s_C_init *
+        chain_weight
+          (initial_matching_state sim pe_C μ_A_init h_init_R s_C_init) toList_A m_final =
+        pe_C.init s_C_init * μ_A_init e_A.init *
+        chain_weight
+          (initial_matching_state sim pe_C μ_A_init h_init_R s_C_init) toList_A m_final
+      ring
+  -- Apply h_bridge.
+  rw [show
+      (∑' (m_final : MatchingState sim pe_C μ_A_init h_init_R),
+        ∑' (q₁ : {s_C_init : State_C // s_C_init ∈ pe_C.init.support}),
+          pe_C.init q₁.1 * μ_A_init e_A.init *
+            chain_weight
+              (initial_matching_state sim pe_C μ_A_init h_init_R q₁.1) toList_A m_final) =
+      ∑' m_final,
+        (∑' m_prev, fromAbstractPrefix_base sim pe_C μ_A_init h_init_R e_A.init m_prev *
+          chain_weight m_prev toList_A m_final) from
+      tsum_congr (fun m_final => (h_bridge m_final).symm)]
+  -- Apply L4: chain_weight_eq_fromAbstractPrefix.
+  rw [show
+      (∑' (m_final : MatchingState sim pe_C μ_A_init h_init_R),
+        ∑' m_prev, fromAbstractPrefix_base sim pe_C μ_A_init h_init_R e_A.init m_prev *
+          chain_weight m_prev toList_A m_final) =
+      ∑' m_final, fromAbstractPrefix sim pe_C μ_A_init h_init_R
+        ⟨e_A.init, Stream'.Seq.ofList toList_A⟩
+        (Stream'.Seq.terminates_ofList _) m_final from
+      tsum_congr (fun m_final =>
+        chain_weight_eq_fromAbstractPrefix e_A.init toList_A m_final)]
+  -- Apply fromAbstractPrefix_mass_conservation.
+  rw [fromAbstractPrefix_mass_conservation sim pe_C μ_A_init h_init_R
+      ⟨e_A.init, Stream'.Seq.ofList toList_A⟩ (Stream'.Seq.terminates_ofList _)]
+  -- Identify ⟨e_A.init, Seq.ofList toList_A⟩ with e_A: e_A.trans = Seq.ofList toList_A
+  -- via Seq.ofList_toList.
+  have h_e_A_eq : (⟨e_A.init, Stream'.Seq.ofList toList_A⟩ : AlterSeq State_A Label) = e_A := by
+    rw [h_toList_A_def, Stream'.Seq.ofList_toList]
+  have h_aux : ∀ (e : AlterSeq State_A Label) (h : e.trans.Terminates)
+      (_h_trans_eq : e = ⟨e_A.init, Stream'.Seq.ofList toList_A⟩),
+      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf
+        ⟨e_A.init, Stream'.Seq.ofList toList_A⟩
+        (Stream'.Seq.terminates_ofList _) =
+      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf e h := by
+    intro e h h_trans
+    subst h_trans
+    rfl
+  exact h_aux e_A e_A_term h_e_A_eq.symm
 
 /-! #### Top-level trace inclusion theorem (§1) -/
 
