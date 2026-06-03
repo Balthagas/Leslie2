@@ -2697,23 +2697,29 @@ at `m`'s R-coupling.
 state at step k (advanced from `m_0` by the prior trajectory). -/
 
 /-- The per-step joint kernel, parameterised by the matching state `m`.
-Returns 0 when `pe_C.scheduler.next m.e_C = none` (pe_C has halted at
-this prefix). -/
+Returns 0 when `m` lacks an R-witness, or `pe_C.scheduler.next m.e_C = none`
+(pe_C has halted at this prefix), or `(l, μ_C) ∉ d.support`. -/
 noncomputable def joint_kernel
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
     {μ_A_init : PMF State_A}
     {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
-    (_m : MatchingState sim pe_C μ_A_init h_init_R)
-    (_l : Label) (_s_C : State_C) (_s_A : State_A) : ENNReal :=
-  -- TODO: define as
-  --   match pe_C.scheduler.next m.e_C with
-  --   | none => 0
-  --   | some d =>
-  --       ∑' (μ_C : PMF State_C) (μ_A_next : PMF State_A),
-  --         d (l, μ_C) * γ_{m, (l, μ_C)}(s_C, μ_A_next) * μ_A_next s_A
-  -- Requires extracting step-witness from d.support entries to construct γ.
-  sorry
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (s_C : State_C) (s_A : State_A) : ENNReal :=
+  open Classical in
+  if h_valid : m.has_valid_R then
+    match h_next : pe_C.scheduler.next m.e_C with
+    | none => 0
+    | some d =>
+        ∑' (μ_C : PMF State_C),
+          d (l, μ_C) * (
+            if h_supp : (l, μ_C) ∈ d.support then
+              ∑' (μ_A_next : PMF State_A),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+                    (pe_C_step_witness pe_C m.e_C m.e_C_term d h_next l μ_C h_supp))
+                ).γ (s_C, μ_A_next) * μ_A_next s_A
+            else 0)
+  else 0
 
 /-- **Per-step joint marginal over `s_A` (§5)**: summing `joint_kernel`
 over the abstract end-state recovers `pe_C`'s per-step kernel. -/
