@@ -2648,6 +2648,27 @@ noncomputable def current_R
 
 end MatchingState
 
+/-- **MatchingState extensionality (data-only)**: two matching states with
+equal `e_C` and `μ_A_chain` fields are equal. The `e_C_term` and `h_R` fields
+are Prop, hence definitionally equal by Lean 4's proof irrelevance once the
+data fields align. -/
+private theorem MatchingState.ext_of_data
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    {m1 m2 : MatchingState sim pe_C μ_A_init h_init_R}
+    (h_e_C : m1.e_C = m2.e_C) (h_chain : m1.μ_A_chain = m2.μ_A_chain) :
+    m1 = m2 := by
+  cases m1 with
+  | mk e_C1 term1 chain1 hR1 =>
+    cases m2 with
+    | mk e_C2 term2 chain2 hR2 =>
+      simp only at h_e_C h_chain
+      subst h_e_C
+      subst h_chain
+      rfl
+
 /-! #### Step-witness extraction from `pe_C`'s scheduler validity -/
 
 /-- Given a prefix `e_C` of `pe_C` with a `Terminates` witness, the
@@ -3390,6 +3411,69 @@ noncomputable def pe_A_of_simulation
 
 /-! #### Mass-conservation invariant on `fromAbstractPrefix` (§3.2) -/
 
+/-- **Base-case mass conservation**: the total mass of `fromAbstractPrefix_base`
+over all matching states equals `μ_A_init s_A_init`. Proof via re-indexing
+the sum by `m.e_C.init` using `tsum_eq_tsum_of_ne_zero_bij`: the bijection
+maps each `s_C` in `pe_C.init`'s support to the canonical initial matching
+state `⟨⟨s_C, Seq.nil⟩, terminates_nil, [], vacuous_h_R⟩`. -/
+private lemma fromAbstractPrefix_base_tsum_eq
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (s_A_init : State_A) :
+    (∑' m : MatchingState sim pe_C μ_A_init h_init_R,
+        fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m) =
+      μ_A_init s_A_init := by
+  classical
+  have h_reindex :
+      (∑' m : MatchingState sim pe_C μ_A_init h_init_R,
+          fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init m) =
+      ∑' s_C : State_C, μ_A_init s_A_init * pe_C.init s_C := by
+    refine tsum_eq_tsum_of_ne_zero_bij
+      (fun (p : {s_C : State_C // μ_A_init s_A_init * pe_C.init s_C ≠ 0}) =>
+        (⟨⟨p.val, Seq.nil⟩, Stream'.Seq.terminates_nil, [], fun h_ne => absurd rfl h_ne⟩
+         : MatchingState sim pe_C μ_A_init h_init_R)) ?_ ?_ ?_
+    · -- Injectivity: i ⟨s_C₁, _⟩ = i ⟨s_C₂, _⟩ → s_C₁ = s_C₂.
+      rintro ⟨s_C₁, _⟩ ⟨s_C₂, _⟩ h_eq
+      have h_init_eq : s_C₁ = s_C₂ := by
+        have := congr_arg
+          (fun m : MatchingState sim pe_C μ_A_init h_init_R => m.e_C.init) h_eq
+        exact this
+      exact Subtype.ext h_init_eq
+    · -- support f ⊆ range i: any m with fromAbstractPrefix_base m ≠ 0 has the canonical form.
+      intro m h_m_supp
+      rw [Function.mem_support] at h_m_supp
+      unfold fromAbstractPrefix_base at h_m_supp
+      by_cases h_cond :
+          m.e_C.trans = Seq.nil ∧ m.μ_A_chain = [] ∧ m.e_C.init ∈ pe_C.init.support
+      · rw [if_pos h_cond] at h_m_supp
+        refine ⟨⟨m.e_C.init, h_m_supp⟩, ?_⟩
+        apply MatchingState.ext_of_data
+        · -- e_C: ⟨m.e_C.init, Seq.nil⟩ = m.e_C
+          change (⟨m.e_C.init, Seq.nil⟩ : AlterSeq State_C Label) = m.e_C
+          conv_rhs => rw [show m.e_C = ⟨m.e_C.init, m.e_C.trans⟩ from rfl, h_cond.1]
+        · -- μ_A_chain: [] = m.μ_A_chain
+          exact h_cond.2.1.symm
+      · rw [if_neg h_cond] at h_m_supp
+        exact absurd rfl h_m_supp
+    · -- f(i x) = g x.
+      rintro ⟨s_C, h_nonzero⟩
+      change fromAbstractPrefix_base sim pe_C μ_A_init h_init_R s_A_init
+           ⟨⟨s_C, Seq.nil⟩, Stream'.Seq.terminates_nil, [], fun h_ne => absurd rfl h_ne⟩ =
+           μ_A_init s_A_init * pe_C.init s_C
+      unfold fromAbstractPrefix_base
+      have h_s_C_in_supp : s_C ∈ pe_C.init.support := by
+        rw [PMF.mem_support_iff]
+        intro h_zero
+        apply h_nonzero
+        simp only [mul_eq_zero]
+        right
+        exact h_zero
+      rw [if_pos ⟨rfl, rfl, h_s_C_in_supp⟩]
+  rw [h_reindex, ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
+
+
 /-- **Mass-conservation invariant**: the total mass of the matching-state
 posterior at `history_A` equals `pe_A.probOf history_A`.
 
@@ -3420,7 +3504,35 @@ theorem fromAbstractPrefix_mass_conservation
   | _ n ih =>
     rcases Nat.eq_zero_or_pos n with h_zero | h_pos
     · -- Base case: trans.toList = [], so trans = Seq.nil.
-      sorry
+      have h_toList_nil : history_A.trans.toList h_term = [] := by
+        apply List.length_eq_zero_iff.mp; rw [h_len_eq]; exact h_zero
+      have h_trans_length : history_A.trans.length h_term = 0 := by
+        rw [← Stream'.Seq.length_toList, h_toList_nil]; rfl
+      have h_trans_nil : history_A.trans = Seq.nil :=
+        Stream'.Seq.length_eq_zero.mp h_trans_length
+      -- LHS: unfold fromAbstractPrefix to fromAbstractPrefix_base, apply helper.
+      have h_LHS :
+          (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m) =
+          μ_A_init history_A.init := by
+        have h_unfold : ∀ m,
+            fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m =
+            fromAbstractPrefix_base sim pe_C μ_A_init h_init_R history_A.init m := by
+          intro m
+          unfold fromAbstractPrefix
+          rw [h_toList_nil]
+          rfl
+        simp_rw [h_unfold]
+        exact fromAbstractPrefix_base_tsum_eq sim pe_C μ_A_init h_init_R history_A.init
+      -- RHS: pe_A.probOf at empty trans = pe_A.init history_A.init = μ_A_init history_A.init.
+      have h_RHS :
+          (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf history_A h_term =
+          μ_A_init history_A.init := by
+        unfold PMFProbabilisticExecution.probOf
+        rw [h_toList_nil]
+        unfold PMFProbabilisticExecution.probOfRemaining
+        simp only [List.foldl, mul_one]
+        rfl
+      exact h_LHS.trans h_RHS.symm
     · -- Step case: trans non-empty. Split into previous ++ [last], apply
       -- step_weight_marginal_eq_per_state_kernel + m_dist_posterior_predictive_with_mass.
       sorry
@@ -3691,27 +3803,6 @@ theorem joint_kernel_marginal_s_C
     (∑' s_C, joint_kernel m l s_C s_A) =
       per_state_kernel m l s_A :=
   rfl
-
-/-- **MatchingState extensionality (data-only)**: two matching states with
-equal `e_C` and `μ_A_chain` fields are equal. The `e_C_term` and `h_R` fields
-are Prop, hence definitionally equal by Lean 4's proof irrelevance once the
-data fields align. -/
-private theorem MatchingState.ext_of_data
-    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
-    {pe_C : ProbabilisticExecution sys_C.toSystem}
-    {μ_A_init : PMF State_A}
-    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
-    {m1 m2 : MatchingState sim pe_C μ_A_init h_init_R}
-    (h_e_C : m1.e_C = m2.e_C) (h_chain : m1.μ_A_chain = m2.μ_A_chain) :
-    m1 = m2 := by
-  cases m1 with
-  | mk e_C1 term1 chain1 hR1 =>
-    cases m2 with
-    | mk e_C2 term2 chain2 hR2 =>
-      simp only at h_e_C h_chain
-      subst h_e_C
-      subst h_chain
-      rfl
 
 /-- **Indicator-collapse sub-lemma**: for `(s_C', μ_A_next)` such that
 `R s_C' μ_A_next` holds, summing the canonical-extension indicator over all
