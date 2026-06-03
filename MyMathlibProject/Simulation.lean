@@ -3451,6 +3451,27 @@ theorem joint_kernel_marginal_s_C
       per_state_kernel m l s_A :=
   rfl
 
+/-- **Indicator-collapse sub-lemma**: for `(s_C', μ_A_next)` such that
+`R s_C' μ_A_next` holds, summing the canonical-extension indicator over all
+matching states yields `1`. The witness is `advance_pe_C_step m_prev l s_C'
+μ_A_next h_R`; uniqueness up to definitional proof irrelevance for
+`MatchingState`'s `e_C_term` / `h_R` Prop fields collapses the sum. -/
+private theorem matchingState_indicator_sum_eq_one
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m_prev : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (s_C' : State_C) (μ_A_next : PMF State_A)
+    (_h_R : R s_C' μ_A_next) :
+    (∑' m_new : MatchingState sim pe_C μ_A_init h_init_R,
+      (open Classical in
+       if m_new.e_C = ⟨m_prev.e_C.init,
+            m_prev.e_C.trans.append (Seq.cons (l, s_C') Seq.nil)⟩ ∧
+          m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then (1 : ENNReal) else 0)) =
+      1 :=
+  sorry
+
 /-- **Auxiliary lemma (§3.2)**: summing `step_weight m_prev m_new l s_A` over
 the new matching state `m_new` recovers `per_state_kernel m_prev l s_A`.
 
@@ -3460,9 +3481,8 @@ Proof structure:
   - Use Fubini (`ENNReal.tsum_comm`) to swap `∑' m_new` with the inner
     `∑' (μ_C, s_C', μ_A_next)`.
   - For each `(s_C', μ_A_next)`, collapse `∑' m_new, [m_new.e_C = X ∧
-    m_new.μ_A_chain = Y]` to the indicator of `R s_C' μ_A_next` (via
-    definitional proof irrelevance for MatchingState's `e_C_term` / `h_R`
-    fields and `advance_pe_C_step`'s canonical extension).
+    m_new.μ_A_chain = Y]` to the indicator of `R s_C' μ_A_next` via
+    `matchingState_indicator_sum_eq_one`.
   - Absorb the `R` indicator into γ's support (γ > 0 ⟹ R via R_on_support).
   - Bridge to `per_state_kernel_at_d` via `per_state_kernel_eq_at_d`.
 
