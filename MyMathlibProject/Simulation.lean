@@ -2631,18 +2631,41 @@ noncomputable def fromAbstractPrefix
 
 /-! #### `blockEmission_general` and `pe_A_emission_distribution` (§2) -/
 
-/-- `blockEmission_general m`: the per-matching-state emission PMF. -/
+/-- `blockEmission_general m d h_d_eq h_valid`: the per-matching-state
+emission PMF, given that pe_C has not halted at `m.e_C` (i.e., scheduler
+returned `some d`) and `m` has a valid R-witness. Each `(l_C, μ_C)`
+sampled from `d` produces an abstract block step `(l_C, μ_A_next)` via
+`sim.stepWitness`'s γ. -/
 noncomputable def blockEmission_general
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
     {μ_A_init : PMF State_A}
     {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
-    (_m : MatchingState sim pe_C μ_A_init h_init_R) :
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m.e_C = some d)
+    (h_valid : m.has_valid_R) :
     PMF (Label × PMF State_A) :=
-  sorry
+  d.bind (fun (lμ : Label × PMF State_C) =>
+    open Classical in
+    if h_supp : (lμ.1, lμ.2) ∈ d.support then
+      let h_step := pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq lμ.1 lμ.2
+                      (by simpa using h_supp)
+      let ω := sim.stepWitness (m.current_R h_valid) h_step
+      -- Build the PMF: sample μ_A_next from ω, tag with label lμ.1.
+      ω.map (fun μ_A_next => (lμ.1, μ_A_next))
+    else
+      -- Outside support (mass 0 anyway): pick any deterministic value.
+      PMF.pure (lμ.1, PMF.pure m.e_C.init |>.map (fun _ => sys_A.init)))
 
 /-- The `PMF (Option (Label × PMF State_A))` emitted by pe_A's scheduler
-at `history_A`, aggregating over the matching-state posterior. -/
+at `history_A`. Aggregates over the matching-state posterior, splitting
+halt mass (matching states with `pe_C.scheduler.next m.e_C = none` or
+invalid R) from continue mass (via `blockEmission_general`).
+
+Concretization deferred: requires normalising an ENNReal-valued
+expression into a PMF, which needs the mass-conservation invariant
+on `fromAbstractPrefix` (§3.2). -/
 noncomputable def pe_A_emission_distribution
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
