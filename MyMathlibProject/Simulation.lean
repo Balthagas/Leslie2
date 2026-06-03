@@ -5477,7 +5477,169 @@ private theorem trace_coupling_at_matching_state_faithful
       -- Case 2(b): pe_C.scheduler.next m.e_C = some d. The productive case.
       -- Uses PMFRel γ + per-step mass equations + recursive call.
       -- ===========================================================
-      sorry
+      -- Step (b.0): extract d : PMF (Label × PMF State_C) from h_next_C.
+      obtain ⟨d, h_d⟩ := Option.ne_none_iff_exists'.mp h_next_C
+      -- Step (b.1): from StrongInv, m.weak_sched ≠ none ⇒ m.weak_sched = some σ.
+      have h_strong : m.StrongInv :=
+        fromAbstractPrefix_strongInv sim pe_C init_match h_match_R history_A _h_matched
+      have h_ws_ne : m.weak_sched ≠ none := by
+        intro h_ws_none
+        exact h_next_C (h_strong.1.mp h_ws_none)
+      obtain ⟨σ, h_ws⟩ := Option.ne_none_iff_exists'.mp h_ws_ne
+      -- Step (b.2): simplify pe_C's kernel using h_d.
+      have h_kernel_C : ∀ (l : Label) (s : State_C),
+          pe_C.kernel (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) (l, s) =
+          (d.bind fun lμ => PMF.map (fun s' => (lμ.1, s')) lμ.2) (l, s) := by
+        intro l s
+        change (pe_C.scheduler.next
+            (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label)).elim 0 _ = _
+        rw [show pe_C.scheduler.next
+              (⟨m.e_C.init, m.e_C.trans⟩ : AlterSeq State_C Label) =
+              pe_C.scheduler.next m.e_C from rfl]
+        rw [h_d]
+        rfl
+      -- Step (b.3): simplify pe_A_faithful's kernel using `_h_matched`.
+      have h_sched_A : (pe_A_faithful sim pe_C init_match h_match_R s_A_init).scheduler.next
+          (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) =
+            MatchingState.computeNext_PMF m := by
+        change (MatchingState.fromAbstractPrefix sim pe_C init_match h_match_R
+            (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label)).elim
+              (PMF.pure none) MatchingState.computeNext_PMF = _
+        rw [show (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) =
+              history_A from rfl]
+        rw [_h_matched]
+        rfl
+      have h_kernel_A : ∀ (l : Label) (s : State_A),
+          (pe_A_faithful sim pe_C init_match h_match_R s_A_init).kernel
+              (⟨history_A.init, history_A.trans⟩ : AlterSeq State_A Label) (l, s) =
+          ∑' μ, MatchingState.computeNext_PMF m (some (l, μ)) * μ s := by
+        intro l s
+        unfold MatchingState.PMFProbabilisticExecution.kernel
+        rw [h_sched_A]
+      -- Step (b.4): rewrite both kernels in the goal.
+      simp_rw [h_kernel_C, h_kernel_A]
+      -- Step (b.5): decompose by stage: externalEmit (hyper_witness-based)
+      -- vs mid-tau (tauInternal/preExternal/postExternal, σ.next directly).
+      cases h_st : m.stage with
+      | externalEmit =>
+        -- ===========================================================
+        -- Case 2(b.i): externalEmit. computeNext_PMF uses hyper_witness.
+        -- The kernel emits (l, μ) where l is the external label and μ
+        -- is sampled from `w.kernel m.current_abstract_state` (the
+        -- hyper-step kernel from m.current_abstract_state).
+        -- ===========================================================
+        -- Extract w : HyperWitness from HyperWitnessInv (always ≠ none at
+        -- externalEmit per fromAbstractPrefix_hyperWitnessInv).
+        have h_hyp_inv : m.HyperWitnessInv :=
+          fromAbstractPrefix_hyperWitnessInv sim pe_C init_match h_match_R history_A _h_matched
+        have h_hyp_ne : m.hyper_witness ≠ none :=
+          h_hyp_inv (Or.inl h_st)
+        obtain ⟨w, h_w⟩ := Option.ne_none_iff_exists'.mp h_hyp_ne
+        -- Simplify computeNext_PMF m using stage = externalEmit + h_w.
+        have h_compute : MatchingState.computeNext_PMF m =
+            (letI : Decidable (m.current_abstract_state ∈ w.μ_pre.support) :=
+              Classical.propDecidable _
+            if m.current_abstract_state ∈ w.μ_pre.support then
+              (w.kernel m.current_abstract_state).map (fun μ => some (w.l, μ))
+            else
+              PMF.pure none) := by
+          unfold MatchingState.computeNext_PMF
+          rw [h_ws, h_st, h_w]
+        -- Substitute computeNext_PMF's externalEmit reduction.
+        simp_rw [h_compute]
+        -- Case-split on support condition.
+        by_cases h_supp : m.current_abstract_state ∈ w.μ_pre.support
+        · -- Productive sub-case: RHS kernel becomes a map of w.kernel.
+          simp_rw [if_pos h_supp]
+          -- Simplify `PMF.map (fun μ ↦ some (w.l, μ)) (w.kernel cas) (some (l_first, μ))`
+          -- to `if l_first = w.l then (w.kernel cas) μ else 0`.
+          have h_map_apply : ∀ (l_first : Label) (μ : PMF State_A),
+              PMF.map (fun μ' => some (w.l, μ')) (w.kernel m.current_abstract_state)
+                  (some (l_first, μ)) =
+              (if l_first = w.l then (w.kernel m.current_abstract_state) μ else 0) := by
+            intro l_first μ
+            rw [PMF.map_apply]
+            by_cases h_l : l_first = w.l
+            · subst h_l
+              rw [if_pos rfl]
+              rw [tsum_eq_single μ]
+              · rw [if_pos rfl]
+              · intro μ' h_ne_μ
+                rw [if_neg]
+                intro h_eq
+                exact h_ne_μ (Prod.mk.inj (Option.some.inj h_eq)).2.symm
+            · rw [if_neg h_l]
+              apply ENNReal.tsum_eq_zero.mpr
+              intro μ'
+              rw [if_neg]
+              intro h_eq
+              exact h_l (Prod.mk.inj (Option.some.inj h_eq)).1
+          simp_rw [h_map_apply]
+          -- Productive sub-case fully reduces the RHS:
+          --   RHS = ∑' s_first, ((w.kernel cas).bind id) s_first *
+          --           (consumeLabel w.l (cons l₀ τ')).elim 0 (...)
+          -- but matching to the LHS (pe_C's d-driven kernel) still requires the
+          -- PMFRel γ coupling + a recursive call on the continuation traceProb.
+          sorry
+        · -- Non-support sub-case: computeNext = PMF.pure none, RHS kernel = 0.
+          -- The RHS reduces to 0 trivially (PMF.pure none at some _ is 0).
+          -- For equality we need LHS = 0 too. This case must be ruled out
+          -- by an invariant guaranteeing `cas ∈ μ_pre.support` at the
+          -- externalEmit stage — currently not established. The lemma
+          -- `MatchingState.computeNext_externalEmit` at line 4242 already
+          -- requires this support condition as an explicit hypothesis.
+          simp_rw [if_neg h_supp]
+          -- Reduce RHS to 0.
+          rw [show (∑' (l_first : Label) (s_first : State_A),
+                (∑' (μ : PMF State_A), (PMF.pure none : PMF (Option (Label × PMF State_A)))
+                    (some (l_first, μ)) * μ s_first) *
+                (sys_A.consumeLabel l_first (Seq.cons l₀ τ')).elim 0
+                  (fun τ_rest => MatchingState.LabelledSystem.traceProbPMF sys_A
+                    (((pe_A_faithful sim pe_C init_match h_match_R s_A_init).continuationFrom
+                          history_A h_term_A).continuationFrom
+                      ⟨history_A.endState h_term_A, Seq.cons (l_first, s_first) Seq.nil⟩
+                      ⟨1, by
+                        change (Seq.cons (l_first, s_first) Seq.nil).get? 1 = none
+                        rw [Stream'.Seq.get?_cons_succ]
+                        exact Stream'.Seq.terminatedAt_nil⟩) τ_rest)) = 0 from by
+            apply ENNReal.tsum_eq_zero.mpr; intro l_first
+            apply ENNReal.tsum_eq_zero.mpr; intro s_first
+            rw [show (∑' (μ : PMF State_A), (PMF.pure none : PMF (Option (Label × PMF State_A)))
+                  (some (l_first, μ)) * μ s_first) = 0 from by
+              apply ENNReal.tsum_eq_zero.mpr; intro μ
+              rw [PMF.pure_apply_of_ne _ _ (by simp)]; ring]
+            ring]
+          -- Goal: LHS = 0. Requires the CasInSupportInv invariant.
+          sorry
+      | tauInternal _ =>
+        -- ===========================================================
+        -- Case 2(b.ii): mid-tau (tauInternal k). computeNext_PMF m =
+        -- σ.next m.σ_query_prefix. Uses PMFRel γ + recursive call.
+        -- ===========================================================
+        -- Simplify computeNext_PMF in this mid-tau case to σ.next.
+        have h_compute_mid : MatchingState.computeNext_PMF m = σ.next m.σ_query_prefix := by
+          unfold MatchingState.computeNext_PMF
+          rw [h_ws, h_st]
+        simp_rw [h_compute_mid]
+        sorry
+      | preExternal _ =>
+        -- ===========================================================
+        -- Case 2(b.iii): mid-tau (preExternal k). Same as (b.ii).
+        -- ===========================================================
+        have h_compute_mid : MatchingState.computeNext_PMF m = σ.next m.σ_query_prefix := by
+          unfold MatchingState.computeNext_PMF
+          rw [h_ws, h_st]
+        simp_rw [h_compute_mid]
+        sorry
+      | postExternal _ =>
+        -- ===========================================================
+        -- Case 2(b.iv): mid-tau (postExternal k). Same as (b.ii).
+        -- ===========================================================
+        have h_compute_mid : MatchingState.computeNext_PMF m = σ.next m.σ_query_prefix := by
+          unfold MatchingState.computeNext_PMF
+          rw [h_ws, h_st]
+        simp_rw [h_compute_mid]
+        sorry
 
 /-- (Original `trace_coupling_at_matching_state` — superseded by the
 faithful version above. Retained for reference; its 8 Case 2(b)
