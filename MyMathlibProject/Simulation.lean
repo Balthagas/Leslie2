@@ -2437,26 +2437,102 @@ noncomputable def advance_pe_C_step
 
 end MatchingState
 
-/-! #### `MatchingStateKernel` and `fromAbstractPrefix` (§3.2) -/
+namespace MatchingState
+
+variable {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+variable {pe_C : ProbabilisticExecution sys_C.toSystem}
+variable {μ_A_init : PMF State_A}
+variable {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+
+/-- The "current" abstract distribution associated with a matching state:
+either the last entry of `μ_A_chain`, or `μ_A_init` if the chain is empty.
+This is the distribution from which the *next* abstract state would be
+sampled along this trajectory. -/
+noncomputable def current_μ_A
+    (m : MatchingState sim pe_C μ_A_init h_init_R) : PMF State_A :=
+  if h : m.μ_A_chain = [] then μ_A_init
+  else m.μ_A_chain.getLast h
+
+end MatchingState
+
+/-! #### `MatchingStateKernel` and `fromAbstractPrefix` (§3.2)
+
+`MatchingStateKernel` is the unnormalised posterior over matching states
+given an abstract prefix. `fromAbstractPrefix` defines this kernel
+inductively on `history_A`'s transitions: the base case (empty `trans`)
+places mass `μ_A_init(s_A_init) · pe_C.init(s_C_init)` on each initial
+matching state whose `e_C.init = s_C_init`. The step case integrates
+against a Bayesian step-weight (§3.2 step case formula). -/
 
 /-- The matching-state kernel: an ENNReal-valued (unnormalised) measure
-over matching states, indexed by an abstract prefix `history_A`. -/
+over matching states, indexed by an abstract prefix `history_A` together
+with a `Terminates` witness. -/
 abbrev MatchingStateKernel
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init) : Type :=
-  AlterSeq State_A Label → MatchingState sim pe_C μ_A_init h_init_R → ENNReal
+  (history_A : AlterSeq State_A Label) → history_A.trans.Terminates →
+    MatchingState sim pe_C μ_A_init h_init_R → ENNReal
 
-/-- The unnormalised posterior `fromAbstractPrefix history_A m` — see §3.2
-for the inductive definition. -/
+/-- The per-step Bayesian update factor (§3.2 step case): when
+`pe_C.scheduler.next m_prev.e_C = some d`, sums over `(μ_C, s_C', μ_A_next)`
+in γ's support of `d(l_k, μ_C) · γ(s_C', μ_A_next) · μ_A_next(s_A_k)` with
+indicators forcing `m_new` to be `m_prev` advanced by `(l_k, s_C', μ_A_next)`.
+When `pe_C.scheduler.next m_prev.e_C = none`, returns 0. -/
+noncomputable def step_weight
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (_m_prev _m_new : MatchingState sim pe_C μ_A_init h_init_R)
+    (_l_k : Label) (_s_A_k : State_A) : ENNReal :=
+  -- Mathematically:
+  --   match pe_C.scheduler.next m_prev.e_C with
+  --   | none => 0
+  --   | some d =>
+  --       ∑' (μ_C : PMF State_C),
+  --         d (l_k, μ_C) *
+  --         (∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+  --           γ_{m_prev, (l_k, μ_C)}(s_C', μ_A_next) *
+  --           μ_A_next s_A_k *
+  --           [m_new.e_C = m_prev.e_C.append (cons (l_k, s_C') nil)] *
+  --           [m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]])
+  -- TODO: concretize once step-witness extraction from d.support is built.
+  sorry
+
+/-- The base value of `fromAbstractPrefix` at the empty-trans prefix:
+`μ_A_init(s_A_init) · pe_C.init(m.e_C.init)`, gated by indicators that
+`m.e_C.trans = Seq.nil`, `m.μ_A_chain = []`, and `m.e_C.init ∈ pe_C.init.support`.
+The `μ_A_init` factor matches the codebase's `probOf` convention (multiplied
+by the initial mass at the start). -/
+noncomputable def fromAbstractPrefix_base
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (s_A_init : State_A)
+    (_m : MatchingState sim pe_C μ_A_init h_init_R) : ENNReal :=
+  -- Mathematically: μ_A_init s_A_init * pe_C.init m.e_C.init *
+  --   indicator(m.e_C.trans = Seq.nil) *
+  --   indicator(m.μ_A_chain = []) *
+  --   indicator(m.e_C.init ∈ pe_C.init.support)
+  sorry
+
+/-- The unnormalised posterior `fromAbstractPrefix history_A h_term m` —
+defined inductively on `history_A.trans.toList h_term`. Base case yields
+`fromAbstractPrefix_base`; step case integrates against `step_weight`. -/
 noncomputable def fromAbstractPrefix
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init) :
     MatchingStateKernel sim pe_C μ_A_init h_init_R :=
-  fun _history_A _m => sorry
+  fun _history_A _h_term _m =>
+    -- Recursion on history_A.trans.toList h_term (reverse-list induction):
+    --   [] case → fromAbstractPrefix_base sim pe_C μ_A_init h_init_R history_A.init m
+    --   (l_k, s_A_k) appended at end → ∑' m_prev, [prev value] * step_weight ...
+    sorry
 
 /-! #### `blockEmission_general` and `pe_A_emission_distribution` (§2) -/
 
@@ -2499,9 +2575,13 @@ noncomputable def pe_A_of_simulation
 
 /-! #### Mass-conservation invariant on `fromAbstractPrefix` (§3.2) -/
 
-/-- `∑' m, fromAbstractPrefix history_A m = pe_A.probOf history_A`.
-This invariant is proved by induction on `history_A.trans` length,
-interleaved with `m_dist_posterior_predictive`. -/
+/-- **Mass-conservation invariant**: the total mass of the matching-state
+posterior at `history_A` equals `pe_A.probOf history_A`.
+
+This invariant is proved by induction on `history_A.trans.toList`-length,
+interleaved with `m_dist_posterior_predictive` (§9.3) — at step k+1, this
+invariant follows from m_dist_posterior_predictive at step k, and
+m_dist_posterior_predictive at step k+1 uses this invariant at step k. -/
 theorem fromAbstractPrefix_mass_conservation
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -2509,14 +2589,28 @@ theorem fromAbstractPrefix_mass_conservation
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
     (s_A_init : State_A)
     (history_A : AlterSeq State_A Label) (h_term : history_A.trans.Terminates) :
-    (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A m) =
+    (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m) =
       (pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init).probOf
         history_A h_term :=
   sorry
 
-/-! #### Joint kernel, joint mass, joint marginals (§5, §8) -/
+/-! #### Joint kernel, joint mass, joint marginals (§5, §8)
 
-/-- The per-step joint kernel, parameterised by the matching state `m`. -/
+The joint kernel is the per-step mass at `(l, s_C, s_A)` given a
+matching state `m`:
+  `joint_kernel m l s_C s_A
+    := ∑' (μ_C, μ_A_next), d_m(l, μ_C) · γ_{m,(l,μ_C)}(s_C, μ_A_next) · μ_A_next(s_A)`
+where `d_m = pe_C.scheduler.next m.e_C` (some `d_m` when pe_C has not
+halted), and `γ_{m, (l, μ_C)}` is the joint distribution from sim's witness
+at `m`'s R-coupling.
+
+`joint_mass(e_C, e_A) := pe_C.init(e_C.init) · μ_A_init(e_A.init) ·
+∏_k joint_kernel(m_k, l_k, s_C_k, s_A_k)`, where `m_k` is the matching
+state at step k (advanced from `m_0` by the prior trajectory). -/
+
+/-- The per-step joint kernel, parameterised by the matching state `m`.
+Returns 0 when `pe_C.scheduler.next m.e_C = none` (pe_C has halted at
+this prefix). -/
 noncomputable def joint_kernel
     {sim : ProbabilisticForwardSimulation sys_C sys_A R}
     {pe_C : ProbabilisticExecution sys_C.toSystem}
@@ -2524,19 +2618,88 @@ noncomputable def joint_kernel
     {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
     (_m : MatchingState sim pe_C μ_A_init h_init_R)
     (_l : Label) (_s_C : State_C) (_s_A : State_A) : ENNReal :=
+  -- TODO: define as
+  --   match pe_C.scheduler.next m.e_C with
+  --   | none => 0
+  --   | some d =>
+  --       ∑' (μ_C : PMF State_C) (μ_A_next : PMF State_A),
+  --         d (l, μ_C) * γ_{m, (l, μ_C)}(s_C, μ_A_next) * μ_A_next s_A
+  -- Requires extracting step-witness from d.support entries to construct γ.
   sorry
 
-/-! #### `m_dist_posterior_predictive` (§9.3 — the central work item) -/
+/-- **Per-step joint marginal over `s_A` (§5)**: summing `joint_kernel`
+over the abstract end-state recovers `pe_C`'s per-step kernel. -/
+theorem joint_kernel_marginal_s_A
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (s_C : State_C) :
+    (∑' s_A, joint_kernel m l s_C s_A) =
+      pe_C.kernel m.e_C (l, s_C) :=
+  sorry
 
-/-- The central identity: pe_A's m_kernel-aggregated kernel at
-`history_A_k ++ [(l, s_A)]` equals `pe_A.probOf` at the extended
-prefix. Proven by simultaneous induction with mass conservation. -/
-theorem m_dist_posterior_predictive : True := trivial -- TODO: state precisely
+/-- **Per-step joint marginal over `s_C` (§5)**: summing `joint_kernel`
+over the concrete end-state recovers the matching-state-conditional
+pe_A kernel at `m`. This is the m-pointwise predictive (`per_state_kernel`
+of the plan) — to lift to pe_A's actual kernel, aggregate over the
+matching-state posterior (cf. §9.3's `m_dist_posterior_predictive`). -/
+theorem joint_kernel_marginal_s_C
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (s_A : State_A) :
+    (∑' s_C, joint_kernel m l s_C s_A) =
+      -- per_state_kernel(m, l, s_A) :=
+      --   ∑' (μ_C, μ_A_next), d_m(l, μ_C) · ω_{m,(l,μ_C)}(μ_A_next) · μ_A_next(s_A)
+      sorry :=
+  sorry
 
-/-! #### Joint-space marginals (§9.4, §9.5) -/
+/-! #### `m_dist_posterior_predictive` (§9.3 — the central work item)
 
-theorem joint_marginalises_to_pe_C : True := trivial -- TODO
-theorem joint_marginalises_to_pe_A : True := trivial -- TODO
+The heart of the proof. Links pe_A's `m_kernel`-aggregated kernel at
+`history_A_{k+1}` to the joint kernel's abstract marginal at step k,
+yielding `pe_A.probOf history_A_{k+1}`. Proved by induction on
+`history_A.trans` length, interleaved with mass conservation. -/
+
+/-- **`m_dist_posterior_predictive` (§9.3, unnormalised form)**: the
+matching-state-aggregated `per_state_kernel` value at step k equals
+`pe_A.probOf` at the extended history. -/
+theorem m_dist_posterior_predictive
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (s_A_init : State_A)
+    (history_A_k : AlterSeq State_A Label) (h_term_k : history_A_k.trans.Terminates)
+    (l : Label) (s_A : State_A) :
+    (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m *
+      (∑' s_C, joint_kernel m l s_C s_A)) =
+    (pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init).probOf
+      ⟨history_A_k.init, history_A_k.trans.append (Seq.cons (l, s_A) Seq.nil)⟩
+      ⟨Nat.find h_term_k + 1,
+        Stream'.Seq.terminatedAt_append_find h_term_k
+          (show (Seq.cons (l, s_A) Seq.nil).TerminatedAt 1 from rfl)⟩ :=
+  sorry
+
+/-! #### Joint-space marginals (§9.4, §9.5)
+
+Once `joint_kernel` and `joint_mass` are defined, the two marginal
+identities bridge `pe_C.probOf` and `pe_A.probOf` to a shared joint mass
+quantity, giving the trace coupling by tsum bijection. -/
+
+/-- **§9.4**: marginalising the joint over `e_A` recovers `pe_C.probOf e_C`.
+Proven by composing per-step `joint_kernel_marginal_s_A` across the
+trajectory. -/
+theorem joint_marginalises_to_pe_C : True := trivial -- TODO: state precisely
+
+/-- **§9.5**: marginalising the joint over `e_C` recovers `pe_A.probOf e_A`.
+Proven by induction on `e_A.trans` length, using
+`m_dist_posterior_predictive` at each step. -/
+theorem joint_marginalises_to_pe_A : True := trivial -- TODO: state precisely
 
 /-! #### Top-level trace inclusion theorem (§1) -/
 
@@ -2544,16 +2707,24 @@ theorem joint_marginalises_to_pe_A : True := trivial -- TODO
 `sys_C` and every initial abstract distribution `μ_A_init` `R`-related
 pointwise to `pe_C`'s initial states, there is an abstract probabilistic
 execution `pe_A` of `sys_A^w` matching `pe_C`'s trace probability at
-every trace τ. -/
+every trace τ.
+
+**Proof structure (per §8)**:
+1. Unfold both sides as tsums over tight finite executions.
+2. Define the joint space `Joint(τ)` and joint_mass.
+3. Apply `joint_marginalises_to_pe_C`: sum over e_A reproduces pe_C.probOf(e_C).
+4. Apply `joint_marginalises_to_pe_A`: sum over e_C reproduces pe_A.probOf(e_A).
+5. Compose: both sides equal ∑' Joint(τ) joint_mass. -/
 theorem traceInclusion
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
-    (_h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init) :
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (s_A_init : State_A) :
     ∃ pe_A : PMFProbabilisticExecution (sys_A^w).toSystem,
       ∀ τ : Seq Label,
         sys_C.traceProb pe_C τ = (sys_A^w).traceProbPMF pe_A τ :=
-  sorry
+  ⟨pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init, by sorry⟩
 
 end ProbabilisticForwardSimulation
 
