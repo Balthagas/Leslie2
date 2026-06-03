@@ -1534,19 +1534,19 @@ structure PMFScheduler (sys : System State Label) where
     ∀ (l : Label) (μ : PMF State),
       some (l, μ) ∈ (next e).support → sys.step s l μ
 
-/-- **Faithful probabilistic execution**: initial state plus a `PMFScheduler`. -/
+/-- **Faithful probabilistic execution**: an initial distribution `init`
+(a PMF, not necessarily Dirac) plus a `PMFScheduler`. Note: the
+initial distribution is general here (a change from the older
+ProbabilisticExecution structure, which used a single `initState`).
+This is needed for v4 trace inclusion where `pe_A.init = μ_A_init`. -/
 structure PMFProbabilisticExecution (sys : System State Label) where
-  /-- The unique initial state. -/
-  initState : State
+  /-- The initial distribution over states. -/
+  init : PMF State
   scheduler : PMFScheduler sys
 
 namespace PMFProbabilisticExecution
 
 variable {sys : System State Label}
-
-/-- The initial distribution: Dirac on `initState`. -/
-noncomputable def init (pe : PMFProbabilisticExecution sys) : PMF State :=
-  PMF.pure pe.initState
 
 /-- The faithful one-step kernel. Given a prefix `e` and a step `(l, s')`,
 the probability mass is:
@@ -1664,7 +1664,7 @@ on prefixes extended by `history` on the left. -/
 noncomputable def continuationFrom (pe : PMFProbabilisticExecution sys)
     (history : AlterSeq State Label) (h_term : history.trans.Terminates) :
     PMFProbabilisticExecution sys where
-  initState := history.endState h_term
+  init := PMF.pure (history.endState h_term)
   scheduler :=
     { next := fun e' =>
         open Classical in
@@ -1725,16 +1725,6 @@ noncomputable def continuationFrom (pe : PMFProbabilisticExecution sys)
             change (e'.trans.get? k).map Prod.snd = some s
             rw [hk'] at h_state_e'
             exact h_state_e' }
-
-/-- `init` at `initState` is `1`. -/
-@[simp] theorem init_apply_self (pe : PMFProbabilisticExecution sys) :
-    pe.init pe.initState = 1 := by
-  unfold init; exact PMF.pure_apply_self _
-
-/-- `init` at a non-`initState` state is `0`. -/
-theorem init_apply_of_ne (pe : PMFProbabilisticExecution sys) {s : State}
-    (h : s ≠ pe.initState) : pe.init s = 0 := by
-  unfold init; exact PMF.pure_apply_of_ne _ _ h
 
 /-- The `continuationFrom`'s kernel at a local prefix starting at
 `history.endState` equals `pe`'s kernel at the history-extended prefix. -/
@@ -2564,10 +2554,9 @@ noncomputable def pe_A_of_simulation
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
-    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (s_A_init : State_A) :
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init) :
     PMFProbabilisticExecution (sys_A^w).toSystem where
-  initState := s_A_init
+  init := μ_A_init
   scheduler :=
     { next := pe_A_emission_distribution sim pe_C μ_A_init h_init_R
       valid := by sorry }
@@ -2586,10 +2575,9 @@ theorem fromAbstractPrefix_mass_conservation
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (s_A_init : State_A)
     (history_A : AlterSeq State_A Label) (h_term : history_A.trans.Terminates) :
     (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m) =
-      (pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init).probOf
+      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf
         history_A h_term :=
   sorry
 
@@ -2680,12 +2668,11 @@ theorem m_dist_posterior_predictive
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (s_A_init : State_A)
     (history_A_k : AlterSeq State_A Label) (h_term_k : history_A_k.trans.Terminates)
     (l : Label) (s_A : State_A) :
     (∑' m, fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A_k h_term_k m *
       per_state_kernel m l s_A) =
-    (pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init).probOf
+    (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf
       ⟨history_A_k.init, history_A_k.trans.append (Seq.cons (l, s_A) Seq.nil)⟩
       ⟨Nat.find h_term_k + 1,
         Stream'.Seq.terminatedAt_append_find h_term_k
@@ -2749,8 +2736,7 @@ theorem joint_marginalises_to_pe_A
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
     (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (e_A : AlterSeq State_A Label) (e_A_term : e_A.trans.Terminates)
-    (s_A_init : State_A) :
+    (e_A : AlterSeq State_A Label) (e_A_term : e_A.trans.Terminates) :
     (∑' (e_C : {e_C : AlterSeq State_C Label //
                 ∃ h_term : e_C.trans.Terminates,
                   e_C.init ∈ pe_C.init.support ∧
@@ -2758,7 +2744,7 @@ theorem joint_marginalises_to_pe_A
                   ∀ k h₁ h₂, ((e_C.trans.toList h_term).get ⟨k, h₁⟩).1 =
                              ((e_A.trans.toList e_A_term).get ⟨k, h₂⟩).1}),
         joint_mass sim pe_C μ_A_init h_init_R e_C.1 e_C.2.choose e_A e_A_term) =
-      (pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init).probOf e_A e_A_term :=
+      (pe_A_of_simulation sim pe_C μ_A_init h_init_R).probOf e_A e_A_term :=
   sorry
 
 /-! #### Top-level trace inclusion theorem (§1) -/
@@ -2779,12 +2765,11 @@ theorem traceInclusion
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
     (μ_A_init : PMF State_A)
-    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
-    (s_A_init : State_A) :
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init) :
     ∃ pe_A : PMFProbabilisticExecution (sys_A^w).toSystem,
       ∀ τ : Seq Label,
         sys_C.traceProb pe_C τ = (sys_A^w).traceProbPMF pe_A τ :=
-  ⟨pe_A_of_simulation sim pe_C μ_A_init h_init_R s_A_init, by sorry⟩
+  ⟨pe_A_of_simulation sim pe_C μ_A_init h_init_R, by sorry⟩
 
 end ProbabilisticForwardSimulation
 
