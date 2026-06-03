@@ -4758,7 +4758,252 @@ private lemma joint_mass_path_marginal_s_A_aux
     simp only [consSubtypeEquiv, Equiv.ofBijective, Equiv.coe_fn_mk]
     -- After Equiv simp, the sum body has explicit s_A :: rest_s_A_list form. The remaining
     -- substitution + integration manipulation is documented in the inline comments.
-    sorry
+    -- Step 2: split the product tsum into s_A then rest_s_A_list.
+    rw [ENNReal.tsum_prod']
+    -- Step 3: unfold buildToListA on cons-cons.
+    simp only [buildToListA, List.zipWith_cons_cons]
+    -- Step 4: unfold joint_mass_path's outer cons-cons branch.
+    have h_body : ∀ (s_A : State_A) (rest_s_A_list : List State_A),
+        joint_mass_path m (hd :: rest)
+          ((hd.1, s_A) :: List.zipWith (fun p s_A => (p.1, s_A)) rest rest_s_A_list) =
+        ∑' (μ_C : PMF State_C), d (hd.1, μ_C) * (
+          if h_supp : (hd.1, μ_C) ∈ d.support then
+            ∑' (μ_A_next : PMF State_A),
+              (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+                  (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq hd.1 μ_C h_supp))
+              ).γ (hd.2, μ_A_next) * μ_A_next s_A *
+              ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                (if m_next.e_C = ⟨m.e_C.init,
+                      m.e_C.trans.append (Seq.cons (hd.1, hd.2) Seq.nil)⟩ ∧
+                    m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next]
+                  then 1 else 0) *
+                joint_mass_path m_next rest
+                  (List.zipWith (fun p s_A => (p.1, s_A)) rest rest_s_A_list)
+          else 0) := by
+      intro s_A rest_s_A_list
+      -- The cons-cons branch of joint_mass_path unfolds to the if/dif tree;
+      -- under labels-match (rfl), h_valid, h_some, it equals the integration expr.
+      change (open Classical in
+        if (hd.1, hd.2).1 = (hd.1, s_A).1 then
+          if h_valid : m.has_valid_R then
+            if h_some : (pe_C.scheduler.next m.e_C).isSome then
+              ∑' (μ_C : PMF State_C),
+                ((pe_C.scheduler.next m.e_C).get h_some) ((hd.1, s_A).1, μ_C) *
+                (if h_supp : ((hd.1, s_A).1, μ_C) ∈
+                      ((pe_C.scheduler.next m.e_C).get h_some).support then
+                   ∑' (μ_A_next : PMF State_A),
+                     (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+                         (pe_C_step_witness pe_C m.e_C m.e_C_term _
+                           (Option.eq_some_of_isSome h_some) (hd.1, s_A).1 μ_C h_supp))
+                     ).γ ((hd.1, hd.2).2, μ_A_next) * μ_A_next (hd.1, s_A).2 *
+                     ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                       (if m_next.e_C = ⟨m.e_C.init,
+                             m.e_C.trans.append (Seq.cons ((hd.1, hd.2).1, (hd.1, hd.2).2) Seq.nil)⟩ ∧
+                           m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next]
+                         then 1 else 0) *
+                       joint_mass_path m_next rest
+                         (List.zipWith (fun p s_A => (p.1, s_A)) rest rest_s_A_list)
+                 else 0)
+            else 0
+          else 0
+        else 0) = _
+      rw [if_pos rfl, dif_pos h_valid, dif_pos h_some]
+    simp_rw [h_body]
+    -- Goal (LHS): ∑' a, ∑' b, ∑' μ_C, d (hd.1, μ_C) * F(a, b, μ_C).
+    -- Plan: show LHS = ∑' μ_C, d (hd.1, μ_C) * (if h_supp then μ_C hd.2 else 0)
+    --              * pe_C.probOfRemaining canonical rest,
+    -- where canonical = ⟨m.e_C.init, m.e_C.trans.append (Seq.cons hd Seq.nil)⟩.
+    -- Then the d-supported part equals pe_C.kernel m.e_C hd (by joint_kernel_marginal_s_A's
+    -- last-stage identity), multiplied by pe_C.probOfRemaining canonical rest.
+    -- Naming the canonical extension simplifies all subsequent rewrites.
+    set canonical : AlterSeq State_C Label :=
+      ⟨m.e_C.init, m.e_C.trans.append (Seq.cons hd Seq.nil)⟩ with h_canon_def
+    -- For a given μ_C with (hd.1, μ_C) ∈ d.support, abbreviate γ-decomp:
+    --   γ_at(μ_C, h_supp) := the γ-PMF over State_C × PMF State_A.
+    -- Step 5: bring μ_C outermost (swap a↔b, then a↔μ_C inside b-sum, then b↔μ_C outer).
+    rw [ENNReal.tsum_comm,
+        tsum_congr (fun (_ : { l : List State_A // l.length = rest.length }) =>
+                     ENNReal.tsum_comm),
+        ENNReal.tsum_comm]
+    -- Now: ∑' μ_C, ∑' b, ∑' a, d (hd.1, μ_C) * F(a, b, μ_C).
+    -- Step 6: collapse the (b, a) sums inside the if-then-else.
+    -- For each μ_C with h_supp, the inner ∑' a, ∑' b, ∑' μ_A_next, ... factors as
+    --   ∑' μ_A_next, γ * (∑' a, μ_A_next a) * (∑' b, ∑' m_next, [ind] * jmp m_next rest ...)
+    -- = ∑' μ_A_next, γ * 1 * (∑' m_next, [ind] * pe_C.probOfRemaining canonical rest)
+    -- = pe_C.probOfRemaining canonical rest * ∑' μ_A_next, γ * [R-ind]
+    -- = pe_C.probOfRemaining canonical rest * μ_C hd.2
+    -- (the last by PMFRelDecomp.fst_apply_eq_tsum, since γ(hd.2, ·) integrates to μ_C hd.2).
+    -- Then total: ∑' μ_C, d(hd.1, μ_C) * (if h_supp then μ_C hd.2 else 0) *
+    --             pe_C.probOfRemaining canonical rest, which collapses to
+    -- pe_C.kernel m.e_C hd * pe_C.probOfRemaining canonical rest.
+    have h_inner : ∀ μ_C : PMF State_C,
+        (∑' (b : { l // l.length = rest.length }) (a : State_A),
+          d (hd.1, μ_C) *
+            (if h_supp : (hd.1, μ_C) ∈ d.support then
+              ∑' (μ_A_next : PMF State_A),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+                    (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq hd.1 μ_C h_supp))
+                ).γ (hd.2, μ_A_next) * μ_A_next a *
+                ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                  (if m_next.e_C = canonical ∧
+                      m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next]
+                    then 1 else 0) *
+                  joint_mass_path m_next rest
+                    (List.zipWith (fun p s_A => (p.1, s_A)) rest b.1)
+            else 0)) =
+        d (hd.1, μ_C) * μ_C hd.2 * pe_C.probOfRemaining canonical rest := by
+      intro μ_C
+      by_cases h_supp : (hd.1, μ_C) ∈ d.support
+      · -- h_supp: pull d out and process the integration.
+        rw [tsum_congr (fun (_ : { l : List State_A // l.length = rest.length }) =>
+              ENNReal.tsum_mul_left),
+            ENNReal.tsum_mul_left]
+        rw [mul_assoc]
+        congr 1
+        simp only [dif_pos h_supp]
+        -- Now: ∑' b, ∑' a, ∑' μ_A_next, γ * μ_A_next a * ∑' m_next, [ind] * jmp
+        --   = μ_C hd.2 * pe_C.probOfRemaining canonical rest.
+        -- Abbreviate the γ-decomposition (depends only on μ_C and h_supp).
+        set γ : PMF (State_C × PMF State_A) :=
+          (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+              (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq hd.1 μ_C h_supp))).γ
+          with hγ_def
+        -- Abbreviate the m_next-sum indicator (depends only on μ_A_next and b).
+        -- This is now: ∑' b a μ_A_next, γ (hd.2, μ_A_next) * μ_A_next a *
+        --                ∑' m_next, [ind μ_A_next] * jmp m_next rest (zw rest b.1).
+        -- Reorder: bring μ_A_next outermost (3 swaps: b↔a, then a↔μ_A_next inside b, then b↔μ_A_next).
+        rw [ENNReal.tsum_comm,
+            tsum_congr (fun (_ : State_A) => ENNReal.tsum_comm),
+            ENNReal.tsum_comm]
+        -- Goal: ∑' μ_A_next, ∑' s_A, ∑' rest_s_A_list, γ (hd.2, μ_A_next) * μ_A_next s_A *
+        --       ∑' m_next, [ind μ_A_next] * jmp m_next rest (zw rest rest_s_A_list.1)
+        --   = μ_C hd.2 * pe_C.probOfRemaining canonical rest.
+        -- Step A: for each μ_A_next, transform the (s_A, rest_s_A_list, m_next)-sums.
+        -- The inner expression equals γ(hd.2, μ_A_next) * pOR whenever γ > 0 (R then holds,
+        -- so the m_next-sum picks out canonical and jmp(canonical, ...) sums via IH to pOR;
+        -- the s_A-sum of μ_A_next s_A = 1).
+        -- When γ = 0, both sides are 0.
+        have h_per : ∀ μ_A_next : PMF State_A,
+            (∑' (s_A : State_A) (rest_s_A_list : { l // l.length = rest.length }),
+              γ (hd.2, μ_A_next) * μ_A_next s_A *
+                ∑' (m_next : MatchingState sim pe_C μ_A_init h_init_R),
+                  (if m_next.e_C = canonical ∧
+                      m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next]
+                    then 1 else 0) *
+                  joint_mass_path m_next rest
+                    (List.zipWith (fun p s_A => (p.1, s_A)) rest rest_s_A_list.1)) =
+            γ (hd.2, μ_A_next) * pe_C.probOfRemaining canonical rest := by
+          intro μ_A_next
+          by_cases h_γ : γ (hd.2, μ_A_next) = 0
+          · simp [h_γ, tsum_zero]
+          · -- γ > 0 → R hd.2 μ_A_next holds.
+            have h_R : R hd.2 μ_A_next := by
+              have h_supp_γ : (hd.2, μ_A_next) ∈ γ.support := by
+                rw [PMF.mem_support_iff]; exact h_γ
+              have := (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+                  (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq hd.1 μ_C h_supp))).h_R
+                (hd.2, μ_A_next)
+              rw [← hγ_def] at this
+              exact this h_supp_γ
+            -- Step: factor γ out of s_A-sum (both inner parts µ_A_next s_A and
+            -- m_next-sum don't depend on s_A's value in the µ_A_next-sum sense...).
+            -- Pull γ(hd.2, μ_A_next) out via mul_assoc.
+            simp_rw [mul_assoc, ENNReal.tsum_mul_left]
+            congr 1
+            -- Goal: ∑' s_A, μ_A_next s_A * (∑' rest_s_A_list, ∑' m_next, [ind] * jmp).
+            -- Pull μ_A_next s_A out of (a constant in) rest_s_A_list-sum to factor s_A-sum.
+            rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+            -- Goal: ∑' rest_s_A_list, ∑' m_next, [ind] * jmp = pOR(canonical).
+            -- Swap rest_s_A_list and m_next, then pull [ind] out per m_next.
+            rw [ENNReal.tsum_comm]
+            simp_rw [ENNReal.tsum_mul_left]
+            -- ∑' m_next, [ind] * (∑' rest_s_A_list, jmp m_next rest (zw rest rest_s_A_list.1)).
+            -- For each m_next: case-split on the indicator; if true, apply IH.
+            have h_per_mn : ∀ m_next : MatchingState sim pe_C μ_A_init h_init_R,
+                (if m_next.e_C = canonical ∧
+                    m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next] then (1 : ENNReal) else 0) *
+                  (∑' (rest_s_A_list : { l // l.length = rest.length }),
+                    joint_mass_path m_next rest
+                      (List.zipWith (fun p s_A => (p.1, s_A)) rest rest_s_A_list.1)) =
+                (if m_next.e_C = canonical ∧
+                    m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next] then (1 : ENNReal) else 0) *
+                  pe_C.probOfRemaining canonical rest := by
+              intro m_next
+              by_cases h_ind : m_next.e_C = canonical ∧
+                  m_next.μ_A_chain = m.μ_A_chain ++ [μ_A_next]
+              · rw [if_pos h_ind]
+                have h_mn_valid : m_next.has_valid_R := by
+                  left; rw [h_ind.2]; exact List.concat_ne_nil μ_A_next m.μ_A_chain
+                have h_ih := ih m_next h_mn_valid
+                -- h_ih : ∑' s, jmp m_next rest (buildToListA rest s.1) = pOR(m_next.e_C) rest
+                change (1 : ENNReal) * _ = (1 : ENNReal) * _
+                rw [one_mul, one_mul]
+                rw [show (∑' (s : { l // l.length = rest.length }),
+                      joint_mass_path m_next rest
+                        (List.zipWith (fun p s_A => (p.1, s_A)) rest s.1)) =
+                    ∑' (s : { l // l.length = rest.length }),
+                      joint_mass_path m_next rest (buildToListA rest s.1) from rfl]
+                rw [h_ih, h_ind.1]
+              · rw [if_neg h_ind, zero_mul, zero_mul]
+            rw [tsum_congr h_per_mn]
+            -- Goal: ∑' m_next, [ind] * pOR(canonical) = pOR(canonical).
+            rw [ENNReal.tsum_mul_right,
+                matchingState_indicator_sum_eq_one m hd.1 hd.2 μ_A_next h_R, one_mul]
+        rw [tsum_congr h_per]
+        -- Goal: ∑' μ_A_next, γ (hd.2, μ_A_next) * pe_C.probOfRemaining canonical rest
+        --   = μ_C hd.2 * pe_C.probOfRemaining canonical rest.
+        rw [ENNReal.tsum_mul_right]
+        congr 1
+        -- Goal: ∑' μ_A_next, γ (hd.2, μ_A_next) = μ_C hd.2.
+        rw [← (PMFRel.decomp (sim.stepWitness_pmfRel (m.current_R h_valid)
+            (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq hd.1 μ_C h_supp))).fst_apply_eq_tsum hd.2]
+      · -- ¬h_supp: d (hd.1, μ_C) = 0.
+        have h_d0 : d (hd.1, μ_C) = 0 := by
+          rw [PMF.mem_support_iff] at h_supp
+          push Not at h_supp
+          exact h_supp
+        rw [h_d0]
+        simp [tsum_zero]
+    -- Apply h_inner. The current outer LHS has the form
+    --   ∑' μ_C, ∑' a (= rest_s_A_list), ∑' a_1 (= s_A), d * (if ...).
+    -- h_inner has the form ∑' b (= rest_s_A_list), ∑' a (= s_A), d * (if ...).
+    -- So after pulling μ_C outside and ignoring its order, we just need to apply h_inner.
+    rw [tsum_congr h_inner]
+    -- Goal: ∑' μ_C, d (hd.1, μ_C) * μ_C hd.2 * pOR = pe_C.kernel * pOR.
+    rw [ENNReal.tsum_mul_right]
+    congr 1
+    -- Goal: ∑' μ_C, d (hd.1, μ_C) * μ_C hd.2 = pe_C.kernel m.e_C hd.
+    -- Use kernel definition + h_d_eq.
+    unfold ProbabilisticExecution.kernel
+    rw [h_d_eq, Option.elim_some, PMF.bind_apply, ENNReal.tsum_prod']
+    -- ∑' l', ∑' μ_C, d (l', μ_C) * (PMF.map (l', ·) μ_C) hd
+    have h_map : ∀ (l' : Label) (μ_C : PMF State_C),
+        (PMF.map (fun s => (l', s)) μ_C) hd =
+        (if hd.1 = l' then μ_C hd.2 else 0) := by
+      intro l' μ_C
+      rw [PMF.map_apply]
+      by_cases h_l : hd.1 = l'
+      · subst h_l
+        rw [if_pos rfl]
+        rw [tsum_eq_single hd.2 (fun s h_ne => by
+          have h_neq : hd ≠ (hd.1, s) := fun h => h_ne (Prod.mk.inj h).2.symm
+          simp [h_neq])]
+        simp
+      · rw [if_neg h_l]
+        apply ENNReal.tsum_eq_zero.mpr
+        intro s
+        have : hd ≠ (l', s) := fun h => h_l (Prod.mk.inj h).1
+        simp [this]
+    simp_rw [h_map]
+    rw [tsum_eq_single hd.1 (fun l' h_ne => ?_)]
+    · -- l' = hd.1 case.
+      apply tsum_congr
+      intro μ_C
+      rw [if_pos rfl]
+    · -- l' ≠ hd.1: inner is 0.
+      apply ENNReal.tsum_eq_zero.mpr
+      intro μ_C
+      rw [if_neg (Ne.symm h_ne), mul_zero]
 
 /-- **§9.4**: marginalising the joint over `e_A`'s state samples
 recovers `pe_C.probOf e_C`. Proven by composing per-step
