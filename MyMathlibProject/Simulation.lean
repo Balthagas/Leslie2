@@ -2553,8 +2553,9 @@ noncomputable def current_μ_A
   else m.μ_A_chain.getLast h
 
 /-- The "current" concrete state associated with a matching state: the
-end-state of `e_C`. The full result type is `State_C`. -/
-noncomputable def current_s_C
+end-state of `e_C`. Defined as `abbrev` so it reduces definitionally
+(needed for `sim.stepWitness` typeclass-unification at use sites). -/
+noncomputable abbrev current_s_C
     (m : MatchingState sim pe_C μ_A_init h_init_R) : State_C :=
   m.e_C.endState m.e_C_term
 
@@ -2771,6 +2772,69 @@ noncomputable def blockEmission_general
     else
       -- Outside support (mass 0 anyway): pick any deterministic value.
       PMF.pure (lμ.1, PMF.pure sys_A.init))
+
+/-- **Flat form for `blockEmission_general (l, μ)`**: avoids the nested
+let-bindings of `blockEmission_general` by expressing the value at a
+specific `(l, μ)` as a single tsum over `μ_C` (with `l' = l` selected). -/
+private theorem blockEmission_general_apply_eq
+    {sim : ProbabilisticForwardSimulation sys_C sys_A R}
+    {pe_C : ProbabilisticExecution sys_C.toSystem}
+    {μ_A_init : PMF State_A}
+    {h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init}
+    (m : MatchingState sim pe_C μ_A_init h_init_R)
+    (d : PMF (Label × PMF State_C))
+    (h_d_eq : pe_C.scheduler.next m.e_C = some d)
+    (h_valid : m.has_valid_R)
+    (l : Label) (μ : PMF State_A) :
+    blockEmission_general m d h_d_eq h_valid (l, μ) =
+    ∑' μ_C : PMF State_C, d (l, μ_C) *
+      (open Classical in
+       if h_supp : (l, μ_C) ∈ d.support then
+        sim.stepWitness (m.current_R h_valid)
+          (pe_C_step_witness pe_C m.e_C m.e_C_term d h_d_eq l μ_C h_supp) μ
+      else 0) := by
+  classical
+  unfold blockEmission_general
+  rw [PMF.bind_apply]
+  rw [ENNReal.tsum_prod']
+  -- Show l' ≠ l contributes 0; then for l' = l reduce.
+  rw [tsum_eq_single l (fun l' h_ne_l => ?_)]
+  swap
+  · -- l' ≠ l: ∑' μ_C, d (l', μ_C) * (branch (l', μ_C)) (l, μ) = 0
+    apply ENNReal.tsum_eq_zero.mpr
+    intro μ_C
+    by_cases h_supp : (l', μ_C) ∈ d.support
+    · simp only [dif_pos h_supp]
+      -- (ω.map (l', ·)) (l, μ) = ∑' a, if (l, μ) = (l', a) then ω a else 0 = 0 (l ≠ l').
+      rw [PMF.map_apply]
+      -- Show the product is 0 by showing the right factor (inner sum) is 0.
+      apply mul_eq_zero_of_ne_zero_imp_eq_zero
+      intro _
+      apply ENNReal.tsum_eq_zero.mpr
+      intro a
+      have h_pair_ne : (l, μ) ≠ (l', a) :=
+        fun h_eq => h_ne_l (Prod.mk.inj h_eq).1.symm
+      rw [if_neg h_pair_ne]
+    · simp only [dif_neg h_supp]
+      have h_d_zero : d (l', μ_C) = 0 := by
+        rw [PMF.mem_support_iff] at h_supp; push_neg at h_supp; exact h_supp
+      rw [h_d_zero, zero_mul]
+  -- l' = l case.
+  refine tsum_congr (fun μ_C => ?_)
+  by_cases h_supp : (l, μ_C) ∈ d.support
+  · simp only [dif_pos h_supp]
+    congr 1
+    -- (ω.map (l, ·)) (l, μ) = ω μ
+    rw [PMF.map_apply]
+    rw [tsum_eq_single μ (fun a h_ne_a => by
+      have : (l, μ) ≠ (l, a) := fun h => h_ne_a (Prod.mk.inj h).2.symm
+      simp [this])]
+    simp
+  · simp only [dif_neg h_supp]
+    -- d (l, μ_C) = 0
+    have h_d_zero : d (l, μ_C) = 0 := by
+      rw [PMF.mem_support_iff] at h_supp; push_neg at h_supp; exact h_supp
+    rw [h_d_zero, zero_mul, zero_mul]
 
 /-- **Per-matching-state emission**: the `PMF (Option (Label × PMF State_A))`
 that pe_A would emit if we *knew* the matching state were exactly `m`.
@@ -3387,12 +3451,20 @@ private theorem blockEmission_general_emission_marginal_at_d
     (∑' μ : PMF State_A,
       blockEmission_general m d h_d_eq h_valid (l, μ) * μ s_A) =
     per_state_kernel_at_d m d h_d_eq h_valid l s_A := by
-  -- Both sides reduce to ∑' μ_C, d (l, μ_C) * (ω_{m,l,μ_C}.bind id) s_A.
-  -- LHS: PMF.bind_apply + ENNReal.tsum_comm + PMF.map_apply + tsum_eq_single l
-  --      (∑' (l', μ_C) → ∑' μ_C with l' = l forced by indicator).
-  -- RHS: tsum_comm on s_C ↔ μ_C; γ snd marginal collapses ∑' s_C, γ(s_C, μ_A_next) = ω(μ_A_next);
-  --      then ∑' μ_A_next, ω μ_A_next * μ_A_next s_A = (ω.bind id) s_A.
-  -- ~60-80 lines. Deferred to follow-up.
+  -- With the helper `blockEmission_general_apply_eq` now available,
+  -- the proof structure is:
+  -- 1. Rewrite LHS's blockEmission_general via the helper.
+  -- 2. tsum_mul_right + tsum_comm to swap ∑' μ ↔ ∑' μ_C.
+  -- 3. Unfold per_state_kernel_at_d on RHS; tsum_comm to swap ∑' s_C ↔ ∑' μ_C.
+  -- 4. Element-wise (per μ_C): factor d(l, μ_C); inner sums reduce.
+  -- 5. For in-support case: ∑' μ, ω μ * μ s_A = (ω.bind id) s_A via PMF.bind_apply;
+  --    ∑' s_C ∑' μ_A_next, γ * μ_A_next s_A = (ω.bind id) s_A via
+  --    per_step_mass_marginal_abstract.
+  -- 6. For not-in-support: both sides 0 since d(l, μ_C) = 0.
+  -- This proof structure is documented and partially attempted; specific
+  -- intermediate `rw [show ... from ...]` steps run into associativity/
+  -- ENNReal.tsum_mul_left pattern-matching issues. Deferred (likely needs
+  -- careful staged proof with separate helper lemmas for each manipulation).
   sorry
 
 /-- **§9.3 sub-lemma A** (`blockEmission_general_emission_marginal`):
