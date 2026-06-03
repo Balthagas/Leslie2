@@ -4637,6 +4637,31 @@ private def buildToListA (toList_C : List (Label × State_C))
     (s_A_list : List State_A) : List (Label × State_A) :=
   List.zipWith (fun p s_A => (p.1, s_A)) toList_C s_A_list
 
+/-- **Cons-equiv for length-restricted lists**: `α × {l // l.length = n} ≃
+{l // l.length = n+1}` via `(a, t) ↦ a :: t`. Used to re-index the
+s_A_list-sum in `joint_mass_path_marginal_s_A_aux`'s step case. -/
+private noncomputable def consSubtypeEquiv {α : Type} (n : ℕ) :
+    α × {l : List α // l.length = n} ≃ {l : List α // l.length = n + 1} :=
+  Equiv.ofBijective
+    (fun p => ⟨p.1 :: p.2.1, by simp [p.2.2]⟩) <| by
+      refine ⟨?_, ?_⟩
+      · -- Injective
+        rintro ⟨a, ⟨la, ha⟩⟩ ⟨b, ⟨lb, hb⟩⟩ h_eq
+        have h := Subtype.ext_iff.mp h_eq
+        simp only [List.cons.injEq] at h
+        obtain ⟨h_head, h_tail⟩ := h
+        cases h_head
+        congr 1
+        exact Subtype.ext h_tail
+      · -- Surjective
+        rintro ⟨l, h_len⟩
+        cases l with
+        | nil => simp at h_len
+        | cons a t =>
+          refine ⟨(a, ⟨t, ?_⟩), ?_⟩
+          · simpa using h_len
+          · rfl
+
 /-- **List-level s_A-marginal of joint_mass_path** (§9.4 auxiliary):
 summing `joint_mass_path m toList_C (buildToListA toList_C s_A_list)` over
 all `s_A_list` of length `toList_C.length` equals
