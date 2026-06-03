@@ -2944,6 +2944,88 @@ noncomputable def pe_A_emission_distribution
 
 /-! #### `pe_A` as a `PMFProbabilisticExecution sys_A^w` -/
 
+/-- **Structural decomposition of step_weight's support**: when
+`step_weight m_prev m_new l s_A ≠ 0`, there exists a `μ_A_next` such that
+`m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]` and `μ_A_next s_A ≠ 0`.
+This captures the constraint imposed by the canonical-extension indicator
+inside `step_weight_at_d`. -/
+private lemma step_weight_pos_implies_structure
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R)
+    (pe_C : ProbabilisticExecution sys_C.toSystem)
+    (μ_A_init : PMF State_A)
+    (h_init_R : ∀ s_C ∈ pe_C.init.support, R s_C μ_A_init)
+    (m_prev m_new : MatchingState sim pe_C μ_A_init h_init_R)
+    (l : Label) (s_A : State_A)
+    (h : step_weight sim pe_C μ_A_init h_init_R m_prev m_new l s_A ≠ 0) :
+    ∃ μ_A_next : PMF State_A,
+      m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] ∧
+      μ_A_next s_A ≠ 0 := by
+  classical
+  unfold step_weight at h
+  by_cases h_valid : m_prev.has_valid_R
+  · rw [dif_pos h_valid] at h
+    by_cases h_some : (pe_C.scheduler.next m_prev.e_C).isSome
+    · rw [dif_pos h_some] at h
+      unfold step_weight_at_d at h
+      -- h : ∑' μ_C, d(l, μ_C) * (if h_supp then ∑' s_C' μ_A_next, γ * ... * [ind] else 0) ≠ 0
+      rw [ne_eq, ENNReal.tsum_eq_zero] at h
+      push Not at h
+      obtain ⟨μ_C, h_μ_C⟩ := h
+      -- d(l, μ_C) ≠ 0 AND the if-branch ≠ 0
+      have h_d_ne : ((pe_C.scheduler.next m_prev.e_C).get h_some) (l, μ_C) ≠ 0 := by
+        intro h_d_zero
+        apply h_μ_C
+        rw [h_d_zero, zero_mul]
+      have h_inner_ne :
+          (open Classical in
+           if h_supp : (l, μ_C) ∈ ((pe_C.scheduler.next m_prev.e_C).get h_some).support then
+             ∑' (s_C' : State_C) (μ_A_next : PMF State_A),
+               (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                   (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term _
+                     (Option.eq_some_of_isSome h_some) l μ_C h_supp))
+               ).γ (s_C', μ_A_next) * μ_A_next s_A *
+               (if m_new.e_C = ⟨m_prev.e_C.init,
+                   m_prev.e_C.trans.append (Seq.cons (l, s_C') Seq.nil)⟩ ∧
+                 m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+           else 0) ≠ 0 := by
+        intro h_inner_zero
+        apply h_μ_C
+        rw [h_inner_zero, mul_zero]
+      -- Extract h_supp.
+      by_cases h_supp : (l, μ_C) ∈ ((pe_C.scheduler.next m_prev.e_C).get h_some).support
+      · rw [dif_pos h_supp] at h_inner_ne
+        -- Inner sum ≠ 0: ∃ s_C', μ_A_next with γ * μ_A_next.s_A * [ind] ≠ 0
+        rw [ne_eq, ENNReal.tsum_eq_zero] at h_inner_ne
+        push Not at h_inner_ne
+        obtain ⟨s_C', h_sC⟩ := h_inner_ne
+        rw [ne_eq, ENNReal.tsum_eq_zero] at h_sC
+        push Not at h_sC
+        obtain ⟨μ_A_next, h_term⟩ := h_sC
+        -- h_term : γ(s_C', μ_A_next) * μ_A_next s_A * [ind] ≠ 0
+        -- All factors ≠ 0.
+        refine ⟨μ_A_next, ?_, ?_⟩
+        · -- m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+          by_contra h_chain_ne
+          apply h_term
+          have h_ind_zero :
+              (if m_new.e_C = ⟨m_prev.e_C.init,
+                   m_prev.e_C.trans.append (Seq.cons (l, s_C') Seq.nil)⟩ ∧
+                 m_new.μ_A_chain = m_prev.μ_A_chain ++
+                 [μ_A_next] then (1 : ENNReal) else 0) = 0 := by
+            rw [if_neg]; intro ⟨_, h2⟩; exact h_chain_ne h2
+          rw [h_ind_zero, mul_zero]
+        · -- μ_A_next s_A ≠ 0
+          by_contra h_μ_A_zero
+          apply h_term
+          rw [h_μ_A_zero]
+          ring
+      · rw [dif_neg h_supp] at h_inner_ne
+        exact absurd rfl h_inner_ne
+    · rw [dif_neg h_some] at h
+      exact absurd rfl h
+  · rw [dif_neg h_valid] at h
+    exact absurd rfl h
+
 /-- **Structural invariant on fromAbstractPrefix's support**: for each
 matching state `m` in `fromAbstractPrefix history_A`'s positive-mass
 support, `m.current_μ_A.support` contains the endstate of `history_A`.
@@ -2951,8 +3033,16 @@ support, `m.current_μ_A.support` contains the endstate of `history_A`.
 This holds because `step_weight` places positive mass only on
 `m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]` with the constraint
 `μ_A_next s_A_k > 0` (i.e., `s_A_k ∈ μ_A_next.support`) implicit in the
-nontrivial γ contribution. Proof requires unfolding the recursion and
-induction on `history_A`'s length. -/
+nontrivial γ contribution.
+
+Proof structure: case-split on `(history_A.trans.toList h_term).reverse`.
+* Empty case ⟹ history_A.trans = nil. fromAbstractPrefix_base ≠ 0 gives
+  μ_A_chain = [] and μ_A_init(s_A_init) > 0. current_μ_A = μ_A_init,
+  endState = init = s_A_init.
+* Cons (head :: tail) ⟹ ∃ m_prev with positive prefix-mass and
+  step_weight ≠ 0. step_weight_pos_implies_structure gives μ_A_next with
+  m.μ_A_chain ending in μ_A_next and μ_A_next(head.2) ≠ 0. current_μ_A =
+  μ_A_next; endState = head.2 via endState_append_singleton. -/
 theorem current_μ_A_support_contains_history_A_endState
     (sim : ProbabilisticForwardSimulation sys_C sys_A R)
     (pe_C : ProbabilisticExecution sys_C.toSystem)
@@ -2961,8 +3051,108 @@ theorem current_μ_A_support_contains_history_A_endState
     (history_A : AlterSeq State_A Label) (h_term : history_A.trans.Terminates)
     (m : MatchingState sim pe_C μ_A_init h_init_R)
     (h_mass : fromAbstractPrefix sim pe_C μ_A_init h_init_R history_A h_term m ≠ 0) :
-    history_A.endState h_term ∈ m.current_μ_A.support :=
-  sorry
+    history_A.endState h_term ∈ m.current_μ_A.support := by
+  classical
+  unfold fromAbstractPrefix at h_mass
+  -- h_mass : fromAbstractPrefix_list ... history_A.init (toList.reverse) m ≠ 0
+  rcases h_rev_eq : (history_A.trans.toList h_term).reverse with _ | ⟨head, tail⟩
+  · -- nil case: toList.reverse = [], so toList = [], so trans = nil.
+    have h_toList_nil : history_A.trans.toList h_term = [] :=
+      List.reverse_eq_nil_iff.mp h_rev_eq
+    have h_trans_length : history_A.trans.length h_term = 0 := by
+      rw [← Stream'.Seq.length_toList, h_toList_nil]; rfl
+    have h_trans_nil : history_A.trans = Seq.nil :=
+      Stream'.Seq.length_eq_zero.mp h_trans_length
+    -- Unfold fromAbstractPrefix_list at nil; h_mass becomes fromAbstractPrefix_base ≠ 0.
+    rw [h_rev_eq] at h_mass
+    unfold fromAbstractPrefix_list fromAbstractPrefix_base at h_mass
+    by_cases h_cond :
+        m.e_C.trans = Seq.nil ∧ m.μ_A_chain = [] ∧ m.e_C.init ∈ pe_C.init.support
+    · rw [if_pos h_cond] at h_mass
+      have h_init_ne_zero : μ_A_init history_A.init ≠ 0 := by
+        intro h_zero
+        apply h_mass
+        rw [h_zero, zero_mul]
+      have h_μ_chain_nil : m.μ_A_chain = [] := h_cond.2.1
+      unfold MatchingState.current_μ_A
+      rw [dif_pos h_μ_chain_nil]
+      -- Goal: history_A.endState h_term ∈ μ_A_init.support
+      have h_endState_eq_init : history_A.endState h_term = history_A.init := by
+        have h_find : Nat.find h_term = 0 := by
+          apply Nat.eq_zero_of_le_zero
+          apply Nat.find_le
+          rw [h_trans_nil]
+          exact Stream'.Seq.terminatedAt_nil
+        have h_stateAt : history_A.stateAt (Nat.find h_term) = some history_A.init := by
+          rw [h_find]; rfl
+        have h_endState_some := AlterSeq.stateAt_find_eq_endState history_A h_term
+        rw [h_stateAt] at h_endState_some
+        exact (Option.some.inj h_endState_some).symm
+      rw [h_endState_eq_init, PMF.mem_support_iff]
+      exact h_init_ne_zero
+    · rw [if_neg h_cond] at h_mass
+      exact absurd rfl h_mass
+  · -- cons case: rev_list = head :: tail. head is the LAST transition of history_A.
+    rw [h_rev_eq] at h_mass
+    unfold fromAbstractPrefix_list at h_mass
+    -- h_mass : ∑' m_prev, fromAbstractPrefix_list ... tail m_prev * step_weight ... ≠ 0
+    rw [ne_eq, ENNReal.tsum_eq_zero] at h_mass
+    push Not at h_mass
+    obtain ⟨m_prev, h_prod⟩ := h_mass
+    have h_step :
+        step_weight sim pe_C μ_A_init h_init_R m_prev m head.1 head.2 ≠ 0 := by
+      intro h_step_zero
+      apply h_prod
+      rw [h_step_zero, mul_zero]
+    obtain ⟨μ_A_next, h_chain_eq, h_supp_s_A⟩ :=
+      step_weight_pos_implies_structure sim pe_C μ_A_init h_init_R m_prev m head.1 head.2 h_step
+    -- m.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next]
+    -- current_μ_A m = μ_A_next.
+    have h_chain_ne_nil : m.μ_A_chain ≠ [] := by
+      rw [h_chain_eq]; exact List.append_ne_nil_of_right_ne_nil _ (List.cons_ne_nil _ _)
+    have h_current_eq : m.current_μ_A = μ_A_next := by
+      unfold MatchingState.current_μ_A
+      simp only [h_chain_eq,
+        dif_neg (List.append_ne_nil_of_right_ne_nil m_prev.μ_A_chain
+          (List.cons_ne_nil μ_A_next [])),
+        List.getLast_append_singleton]
+    -- Show history_A.trans = (ofList tail.reverse).append (cons head nil) via h_rev_eq.
+    have h_toList_eq : history_A.trans.toList h_term = tail.reverse ++ [head] := by
+      have h1 : (history_A.trans.toList h_term).reverse.reverse = (head :: tail).reverse := by
+        rw [h_rev_eq]
+      rw [List.reverse_reverse] at h1
+      simpa using h1
+    have h_trans_eq :
+        history_A.trans = (Stream'.Seq.ofList tail.reverse).append (Seq.cons head Seq.nil) := by
+      conv_lhs => rw [← Stream'.Seq.ofList_toList history_A.trans h_term, h_toList_eq]
+      rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+    have h_prev_term_aux : (Stream'.Seq.ofList tail.reverse).Terminates :=
+      Stream'.Seq.terminates_ofList _
+    -- Reconstruct history_A as ⟨init, (ofList tail.reverse).append (cons head nil)⟩.
+    have h_ha_struct : history_A =
+        (⟨history_A.init, (Stream'.Seq.ofList tail.reverse).append (Seq.cons head Seq.nil)⟩
+          : AlterSeq State_A Label) := by
+      cases history_A with
+      | mk init trans =>
+        simp only [AlterSeq.mk.injEq, true_and]
+        exact h_trans_eq
+    have h_endState_eq : history_A.endState h_term = head.2 := by
+      -- Hand-craft via a strong-typed auxiliary equation.
+      have h_aux : ∀ (e : AlterSeq State_A Label) (h : e.trans.Terminates),
+          e.trans = (Stream'.Seq.ofList tail.reverse).append (Seq.cons head Seq.nil) →
+          e.endState h = head.2 := by
+        intro e h h_trans
+        -- Cases on e to expose its components; subst on h_trans.
+        cases e with
+        | mk init_e trans_e =>
+          subst h_trans
+          have h_target := AlterSeq.endState_append_singleton
+            (⟨init_e, Stream'.Seq.ofList tail.reverse⟩ : AlterSeq State_A Label)
+            h_prev_term_aux head.1 head.2
+          exact h_target
+      exact h_aux history_A h_term h_trans_eq
+    rw [h_endState_eq, h_current_eq, PMF.mem_support_iff]
+    exact h_supp_s_A
 
 /-- Step 1 of validity: unwind `pe_A_emission_distribution`'s support
 membership to extract a matching state `m` with positive mass under
