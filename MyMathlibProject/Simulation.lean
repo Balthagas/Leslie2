@@ -3544,7 +3544,118 @@ private theorem step_weight_marginal_eq_per_state_kernel
   by_cases h_valid : m_prev.has_valid_R
   · by_cases h_some : (pe_C.scheduler.next m_prev.e_C).isSome
     · -- Main case: h_valid and scheduler.next = some d.
-      sorry
+      set d : PMF (Label × PMF State_C) := (pe_C.scheduler.next m_prev.e_C).get h_some with hd_def
+      have h_d_eq : pe_C.scheduler.next m_prev.e_C = some d :=
+        Option.eq_some_of_isSome h_some
+      -- Convert LHS via step_weight unfold.
+      have h_LHS_eq : ∀ m_new : MatchingState sim pe_C μ_A_init h_init_R,
+          step_weight sim pe_C μ_A_init h_init_R m_prev m_new l s_A =
+          step_weight_at_d sim pe_C μ_A_init h_init_R m_prev m_new d h_d_eq h_valid l s_A := by
+        intro m_new
+        unfold step_weight
+        rw [dif_pos h_valid, dif_pos h_some]
+      simp_rw [h_LHS_eq]
+      -- Convert RHS to per_state_kernel_at_d.
+      rw [per_state_kernel_eq_at_d m_prev d h_d_eq h_valid]
+      -- Set the decomp once per μ_C (γ in scope).
+      -- Show both sides equal a common intermediate form:
+      --   ∑' μ_C, d(l, μ_C) * (if h_supp then ∑' (s_C, μ_A_next), γ(s_C, μ_A_next) * μ_A_next s_A else 0)
+      set common : ENNReal := ∑' μ_C : PMF State_C, d (l, μ_C) *
+        (open Classical in
+         if h_supp : (l, μ_C) ∈ d.support then
+           ∑' (p : State_C × PMF State_A),
+             (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                 (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l μ_C h_supp))
+             ).γ (p.1, p.2) * p.2 s_A
+         else 0) with hcommon_def
+      have h_LHS : (∑' m_new : MatchingState sim pe_C μ_A_init h_init_R,
+          step_weight_at_d sim pe_C μ_A_init h_init_R m_prev m_new d h_d_eq h_valid l s_A) =
+          common := by
+        unfold step_weight_at_d
+        -- LHS: ∑' m_new, ∑' μ_C, d(l,μ_C) * (if h_supp then INNER(m_new, μ_C) else 0)
+        --      where INNER(m_new, μ_C) = ∑' (s_C', μ_A_next), γ * μ_A_next.s_A * [ind(m_new)]
+        rw [ENNReal.tsum_comm]
+        rw [hcommon_def]
+        refine tsum_congr (fun μ_C => ?_)
+        -- Inner: ∑' m_new, d * (if h_supp then ∑' (s_C', μ_A_next), γ * μ_A_next.s_A * [ind] else 0)
+        rw [ENNReal.tsum_mul_left]
+        congr 1
+        by_cases h_supp : (l, μ_C) ∈ d.support
+        · simp only [dif_pos h_supp]
+          -- ∑' m_new, ∑' (s_C', μ_A_next), γ * μ_A_next.s_A * [ind]
+          -- Swap m_new with (s_C', μ_A_next) (double tsum_comm).
+          rw [show (∑' (m_new : MatchingState sim pe_C μ_A_init h_init_R)
+                      (s_C' : State_C) (μ_A_next : PMF State_A),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                    (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l μ_C h_supp))
+                ).γ (s_C', μ_A_next) * μ_A_next s_A *
+                (if m_new.e_C = ⟨m_prev.e_C.init,
+                    m_prev.e_C.trans.append (Seq.cons (l, s_C') Seq.nil)⟩ ∧
+                  m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)) =
+              ∑' (s_C' : State_C) (μ_A_next : PMF State_A)
+                  (m_new : MatchingState sim pe_C μ_A_init h_init_R),
+                (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                    (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l μ_C h_supp))
+                ).γ (s_C', μ_A_next) * μ_A_next s_A *
+                (if m_new.e_C = ⟨m_prev.e_C.init,
+                    m_prev.e_C.trans.append (Seq.cons (l, s_C') Seq.nil)⟩ ∧
+                  m_new.μ_A_chain = m_prev.μ_A_chain ++ [μ_A_next] then 1 else 0)
+            from by rw [ENNReal.tsum_comm]; refine tsum_congr (fun s_C' => ?_);
+                    rw [ENNReal.tsum_comm]]
+          -- Convert RHS: ∑' p → ∑' s_C' ∑' μ_A_next.
+          rw [ENNReal.tsum_prod' (f := fun p =>
+            (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l μ_C h_supp))
+            ).γ (p.1, p.2) * p.2 s_A)]
+          -- LHS: ∑' (s_C', μ_A_next, m_new), γ * μ_A_next s_A * [ind(m_new)]
+          -- RHS: ∑' (s_C', μ_A_next), γ * μ_A_next s_A
+          -- For each (s_C', μ_A_next): factor γ * μ_A_next s_A out of m_new-sum,
+          -- then absorb via R_on_support + matchingState_indicator_sum_eq_one.
+          refine tsum_congr (fun s_C' => ?_)
+          refine tsum_congr (fun μ_A_next => ?_)
+          -- Goal: ∑' m_new, γ * μ_A_next s_A * [ind(m_new)] = γ * μ_A_next s_A.
+          rw [ENNReal.tsum_mul_left]
+          -- Goal: γ * μ_A_next s_A * ∑' m_new, [ind] = γ * μ_A_next s_A (RHS uncurries to .2 s_A).
+          -- Set γ_val for case-split.
+          set γ_val : ENNReal :=
+            (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l μ_C h_supp))
+            ).γ (s_C', μ_A_next) with hγ_def
+          by_cases h_γ : γ_val = 0
+          · -- γ_val = 0: both sides reduce to 0 via zero_mul.
+            simp [h_γ]
+          · -- γ_val > 0: R s_C' μ_A_next holds; indicator sum = 1.
+            have h_R : R s_C' μ_A_next := by
+              have h_supp_γ : (s_C', μ_A_next) ∈
+                  (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                      (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l μ_C h_supp))
+                  ).γ.support := by
+                rw [PMF.mem_support_iff]; exact h_γ
+              exact (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                  (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l μ_C h_supp))
+                ).h_R (s_C', μ_A_next) h_supp_γ
+            rw [matchingState_indicator_sum_eq_one m_prev l s_C' μ_A_next h_R, mul_one]
+        · simp only [dif_neg h_supp]
+          rw [tsum_zero]
+      have h_RHS : per_state_kernel_at_d m_prev d h_d_eq h_valid l s_A = common := by
+        unfold per_state_kernel_at_d joint_kernel_at_d
+        -- RHS: ∑' s_C, ∑' μ_C, d * (if h_supp then ∑' μ_A_next, γ(s_C, μ_A_next) * μ_A_next.s_A else 0)
+        rw [ENNReal.tsum_comm]
+        rw [hcommon_def]
+        refine tsum_congr (fun μ_C => ?_)
+        rw [ENNReal.tsum_mul_left]
+        congr 1
+        by_cases h_supp : (l, μ_C) ∈ d.support
+        · simp only [dif_pos h_supp]
+          -- ∑' s_C, ∑' μ_A_next, γ(s_C, μ_A_next) * μ_A_next.s_A
+          -- = ∑' p : State_C × PMF State_A, γ(p.1, p.2) * p.2 s_A
+          rw [ENNReal.tsum_prod' (f := fun p =>
+            (PMFRel.decomp (sim.stepWitness_pmfRel (m_prev.current_R h_valid)
+                (pe_C_step_witness pe_C m_prev.e_C m_prev.e_C_term d h_d_eq l μ_C h_supp))
+            ).γ (p.1, p.2) * p.2 s_A)]
+        · simp only [dif_neg h_supp]
+          rw [tsum_zero]
+      exact h_LHS.trans h_RHS.symm
     · -- None branch: step_weight = 0 and per_state_kernel = 0.
       have h_each : ∀ m_new : MatchingState sim pe_C μ_A_init h_init_R,
           step_weight sim pe_C μ_A_init h_init_R m_prev m_new l s_A = 0 := by
