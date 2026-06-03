@@ -4674,7 +4674,7 @@ private lemma joint_mass_path_marginal_s_A_aux
         pe_C.probOfRemaining m.e_C []
     simp only [List.length_nil]
     rw [tsum_eq_single (⟨[], rfl⟩ : {l : List State_A // l.length = 0})]
-    · show joint_mass_path m [] (buildToListA [] []) = pe_C.probOfRemaining m.e_C []
+    · change joint_mass_path m [] (buildToListA [] []) = pe_C.probOfRemaining m.e_C []
       unfold buildToListA
       simp only [List.zipWith_nil_left]
       rfl
@@ -4685,17 +4685,41 @@ private lemma joint_mass_path_marginal_s_A_aux
       exact Subtype.ext this
   | cons hd rest ih =>
     intro m h_valid
-    -- Step case: induct on rest. The key combinatorial moves:
-    --   1. Reindex the subtype sum to (s_A : State_A) × (rest_s_A_list : {l // l.length = rest.length}).
-    --   2. Unfold joint_mass_path's cons branch.
-    --   3. ∑' s_A μ_A_next.s_A = 1 (PMF total mass).
-    --   4. Collapse ∑' m_1 [indicator] to canonical via MatchingState.ext_of_data
-    --      (using γ-positive → R from PMFRelDecomp.h_R for the canonical's h_R proof).
-    --   5. Apply IH at canonical_m_1 (rest is smaller).
-    --   6. Pull pe_C.probOfRemaining (constant) out of γ-integration.
-    --   7. ∑' μ_A_next γ = μ_C(s_C) (PMFRelDecomp.fst_apply_eq_tsum).
-    --   8. ∑' μ_C d * μ_C.s_C = pe_C.kernel m.e_C hd.
-    --   9. probOfRemaining_cons: kernel * probOfRemaining(extension) = probOfRemaining at hd :: rest.
+    classical
+    -- Apply probOfRemaining_cons on the RHS: pe_C.probOfRemaining m.e_C (hd :: rest)
+    --   = pe_C.kernel m.e_C hd * pe_C.probOfRemaining (m.e_C extended by hd) rest.
+    rw [ProbabilisticExecution.probOfRemaining_cons]
+    -- Case-split on whether pe_C's scheduler is active at m.e_C.
+    by_cases h_some : (pe_C.scheduler.next m.e_C).isSome
+    swap
+    · -- ¬h_some: pe_C halted, both sides are 0.
+      -- LHS: joint_mass_path = 0 (cons branch returns 0 under ¬h_some).
+      -- RHS: pe_C.kernel m.e_C hd = 0 (kernel uses scheduler.next).
+      have h_LHS : (∑' (s_A_list : {l : List State_A // l.length = (hd :: rest).length}),
+          joint_mass_path m (hd :: rest) (buildToListA (hd :: rest) s_A_list.1)) = 0 := by
+        apply ENNReal.tsum_eq_zero.mpr
+        rintro ⟨s_A_list, h_len⟩
+        -- s_A_list has length rest.length + 1 ≥ 1, so it's a cons.
+        cases s_A_list with
+        | nil => simp at h_len
+        | cons s_A rest_s_A_list =>
+          change joint_mass_path m (hd :: rest)
+            (buildToListA (hd :: rest) (s_A :: rest_s_A_list)) = 0
+          unfold buildToListA
+          rw [List.zipWith_cons_cons]
+          show joint_mass_path m (hd :: rest) ((hd.1, s_A) ::
+            List.zipWith (fun p s_A => (p.1, s_A)) rest rest_s_A_list) = 0
+          unfold joint_mass_path
+          simp only [dif_neg h_some, dif_pos h_valid, if_pos]
+      rw [h_LHS]
+      -- RHS: pe_C.kernel m.e_C hd = 0.
+      have h_kernel : pe_C.kernel m.e_C hd = 0 := by
+        unfold ProbabilisticExecution.kernel
+        rcases h_eq : pe_C.scheduler.next m.e_C with _ | d
+        · simp
+        · exfalso; rw [h_eq] at h_some; simp at h_some
+      rw [h_kernel, zero_mul]
+    -- h_some: main case. The substantial manipulations below.
     sorry
 
 /-- **§9.4**: marginalising the joint over `e_A`'s state samples
