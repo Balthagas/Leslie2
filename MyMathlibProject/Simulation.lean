@@ -3261,6 +3261,109 @@ noncomputable def joint_mass
   joint_mass_path (initial_matching_state sim pe_C μ_A_init h_init_R e_C.init)
     (e_C.trans.toList e_C_term) (e_A.trans.toList e_A_term)
 
+/-! #### `tightExecsA_characterisation` (§9.2)
+
+The plan §9.2 characterises `TightExecsA(τ)` as the set of `e_A`'s whose
+trans-list has external sub-sequence equal to `τ` (and which ends with
+an external label or are empty). This is the structural enumeration
+used by §9.5's induction on `n = |e_A.trans|`.
+
+For a Lean-mechanical induction on `n`, the key operations are:
+* **Last-step decomposition**: for tight `e_A` with non-empty trans,
+  write `e_A.trans = trans'.append (cons (l_last, s_last) nil)` with
+  `l_last` external (= the last entry of τ).
+* **Truncation**: for `e_A` with `trans = trans'.append (cons _ nil)`,
+  let `e_A' = ⟨e_A.init, trans'⟩` (the truncation). This `e_A'` has
+  trace `τ'` (= τ with last entry removed), but is not necessarily
+  tight (its last label may be internal).
+
+The induction in §9.5 uses these operations to relate `pe_A.probOf e_A`
+to `pe_A.probOf e_A'`; tightness is recovered at the boundary via the
+last-external-label condition. -/
+
+/-- **Truncation to a given list of transitions**: convert a list of
+(Label × State) back to an AlterSeq. Useful for the induction over
+trans's length in §9.5. -/
+noncomputable def fromList (init : State_A) (l : List (Label × State_A)) :
+    AlterSeq State_A Label :=
+  ⟨init, Stream'.Seq.ofList l⟩
+
+/-- **Tight execution has external last label** (§9.2): a tight
+execution with non-empty trans has a position `n` such that `get? n` is
+an external label and `TerminatedAt (n+1)`. -/
+theorem tightExec_has_external_last
+    (ls : LabelledSystem State_A Label) (e : AlterSeq State_A Label)
+    (h_tight : ls.IsTight e) (h_nonempty : e.trans ≠ Seq.nil) :
+    ∃ (n : ℕ) (l_last : Label) (s_last : State_A),
+      e.trans.get? n = some (l_last, s_last) ∧
+      e.trans.TerminatedAt (n + 1) ∧
+      ¬ ls.internal l_last := by
+  rcases h_tight with h_term_0 | ⟨n, l, s, h_get, h_term, h_ext⟩
+  · -- TerminatedAt 0: then e.trans = nil. Contradiction.
+    exfalso
+    apply h_nonempty
+    exact Stream'.Seq.terminatedAt_zero_iff.mp h_term_0
+  · exact ⟨n, l, s, h_get, h_term, h_ext⟩
+
+/-- **Tightness extension by an external transition**: if `e_A` has any
+finite trans and we append a transition with an external label, the
+result is tight. -/
+theorem isTight_append_external
+    (ls : LabelledSystem State_A Label) (e : AlterSeq State_A Label)
+    (h_term : e.trans.Terminates) (l : Label) (s : State_A)
+    (h_ext : ¬ ls.internal l) :
+    ls.IsTight ⟨e.init, e.trans.append (Seq.cons (l, s) Seq.nil)⟩ := by
+  -- IsTight: TerminatedAt 0 (trans empty) OR ∃ external label at position n
+  -- with TerminatedAt (n+1). Use the second disjunct with n = Nat.find h_term.
+  right
+  refine ⟨Nat.find h_term, l, s, ?_, ?_, h_ext⟩
+  · -- get? at Nat.find h_term gives the appended (l, s).
+    change (e.trans.append (Seq.cons (l, s) Seq.nil)).get? (Nat.find h_term) = some (l, s)
+    have := Stream'.Seq.get?_append_find h_term (Seq.cons (l, s) Seq.nil) 0
+    rw [Nat.add_zero] at this
+    rw [this]
+    rfl
+  · -- TerminatedAt (Nat.find h_term + 1) by terminatedAt_append_find.
+    change (e.trans.append (Seq.cons (l, s) Seq.nil)).TerminatedAt (Nat.find h_term + 1)
+    exact Stream'.Seq.terminatedAt_append_find h_term
+      (show (Seq.cons (l, s) Seq.nil).TerminatedAt 1 from rfl)
+
+/-- **`tightExecsA_characterisation` — empty-trans case**: tight + trace nil
+iff trans empty. (Provided by the existing `trans_nil_of_tight_trace_nil`
+and the reverse direction is trivial.) -/
+theorem tightExecsA_trans_nil_iff
+    (ls : LabelledSystem State_A Label) (e : AlterSeq State_A Label) :
+    (ls.trace e = Seq.nil ∧ ls.IsTight e) ↔ e.trans = Seq.nil := by
+  refine ⟨fun ⟨h_trace, h_tight⟩ => ?_, fun h_nil => ?_⟩
+  · exact trans_nil_of_tight_trace_nil ls e h_trace h_tight
+  · refine ⟨?_, ?_⟩
+    · rw [show e = ⟨e.init, e.trans⟩ from rfl, h_nil]
+      exact ls.trace_init e.init
+    · left
+      rw [h_nil]; exact Stream'.Seq.terminatedAt_nil
+
+/-- **`tightExecsA_characterisation` (§9.2 — useful form)**: a tight
+finite execution `e_A` either has empty trans (and τ = nil) or has a
+last position with an external label matching the trace's last entry.
+
+In its full plan-§9.2 form, the bijection between `TightExecsA(τ)` and
+list-based structural data uses Fin n → Bool/Label/State_A. We provide
+the practical decomposition needed for §9.5's induction via the
+structural lemmas `tightExec_has_external_last` (extracts the last
+external position) and `isTight_append_external` (constructs tight
+executions by appending an external transition). -/
+theorem tightExecsA_characterisation
+    (ls : LabelledSystem State_A Label) (e : AlterSeq State_A Label)
+    (h_term : e.trans.Terminates) (h_tight : ls.IsTight e) :
+    e.trans = Seq.nil ∨
+    ∃ (n : ℕ) (l_last : Label) (s_last : State_A),
+      e.trans.get? n = some (l_last, s_last) ∧
+      e.trans.TerminatedAt (n + 1) ∧
+      ¬ ls.internal l_last := by
+  rcases h_tight with h_t0 | h_n
+  · left; exact Stream'.Seq.terminatedAt_zero_iff.mp h_t0
+  · right; exact h_n
+
 /-- **§9.4**: marginalising the joint over `e_A`'s state samples
 recovers `pe_C.probOf e_C`. Proven by composing per-step
 `joint_kernel_marginal_s_A` across the trajectory. -/
