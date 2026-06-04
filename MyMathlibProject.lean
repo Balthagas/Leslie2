@@ -1,3 +1,4 @@
 import MyMathlibProject.Basic
 import MyMathlibProject.Composition
+import MyMathlibProject.SeqHelper
 import MyMathlibProject.Simulation

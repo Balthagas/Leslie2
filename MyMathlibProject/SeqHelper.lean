@@ -1,0 +1,353 @@
+/-
+Copyright (c) 2026 Gaspard Reghem. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Gaspard Reghem
+-/
+
+import Mathlib.Data.Seq.Defs
+import Mathlib.Data.Seq.Basic
+import Mathlib.Tactic.Ring
+import Mathlib.Data.List.Basic
+
+/-!
+# `Stream'.Seq` helpers
+
+Pure helper lemmas and definitions about possibly-infinite sequences
+(`Stream'.Seq`) that are independent of the PLTS development: facts about
+`append`, a noncomputable `filter`, and basic `toList`/splitting lemmas.
+-/
+
+open Stream'
+
+namespace Stream'.Seq
+
+variable {α : Type*}
+
+/-- For `n` the *exact* length of `s` (i.e. `s.TerminatedAt n` and `s` is not
+terminated at any smaller index), positions in `s.append s'` past `n` reduce
+to positions in `s'`: `(s.append s').get? (n + k) = s'.get? k`. -/
+theorem get?_append_after_length {s s' : Seq α} {n : ℕ}
+    (h_min : ∀ k < n, ¬ s.TerminatedAt k)
+    (h_done : s.TerminatedAt n) (k : ℕ) :
+    (s.append s').get? (n + k) = s'.get? k := by
+  induction n generalizing s with
+  | zero =>
+    rw [terminatedAt_zero_iff] at h_done
+    subst h_done
+    rw [nil_append, Nat.zero_add]
+  | succ j ih =>
+    have h_not_term_0 : ¬ s.TerminatedAt 0 := h_min 0 (Nat.zero_lt_succ _)
+    cases s with
+    | nil => exact absurd terminatedAt_nil h_not_term_0
+    | cons a t =>
+      rw [cons_append, show j + 1 + k = (j + k) + 1 from by ring, get?_cons_succ]
+      apply ih
+      · intro k' hk'
+        have h_succ_lt : k' + 1 < j + 1 := by omega
+        have h_not := h_min (k' + 1) h_succ_lt
+        rwa [cons_terminatedAt_succ_iff] at h_not
+      · rwa [cons_terminatedAt_succ_iff] at h_done
+
+/-- Specialization: `(s.append s').get? (Nat.find h + k) = s'.get? k`. -/
+theorem get?_append_find {s : Seq α} (h : s.Terminates) (s' : Seq α) (k : ℕ) :
+    (s.append s').get? (Nat.find h + k) = s'.get? k :=
+  get?_append_after_length (fun _ hk => Nat.find_min h hk) (Nat.find_spec h) k
+
+/-- Before `s` terminates at position `k`, append's `get?` agrees with `s`'s. -/
+theorem get?_append_before_length {s s' : Seq α} {k : ℕ}
+    (h_not_term : ¬ s.TerminatedAt k) :
+    (s.append s').get? k = s.get? k := by
+  induction k generalizing s with
+  | zero =>
+    cases s with
+    | nil => exact absurd terminatedAt_nil h_not_term
+    | cons a t => rw [cons_append]; rfl
+  | succ k' ih =>
+    cases s with
+    | nil => exact absurd terminatedAt_nil h_not_term
+    | cons a t =>
+      rw [cons_append, get?_cons_succ, get?_cons_succ]
+      exact ih (by rwa [← cons_terminatedAt_succ_iff (x := a)])
+
+/-- `(s.append s').TerminatedAt (Nat.find h + n)` when `s'.TerminatedAt n`. -/
+theorem terminatedAt_append_find {s : Seq α} (h : s.Terminates) {s' : Seq α}
+    {n : ℕ} (h_s' : s'.TerminatedAt n) :
+    (s.append s').TerminatedAt (Nat.find h + n) := by
+  change (s.append s').get? _ = none
+  rw [get?_append_find h s' n]; exact h_s'
+
+/-- `Terminates` transfers from a cons to its tail. -/
+theorem terminates_tail_of_cons {a : α} {s : Seq α}
+    (h : (cons a s).Terminates) : s.Terminates :=
+  terminates_cons_iff.mp h
+
+/-- `toList` of a cons. -/
+theorem toList_cons {a : α} {s : Seq α} (h : (cons a s).Terminates) :
+    (cons a s).toList h = a :: s.toList (terminates_tail_of_cons h) := by
+  unfold toList
+  have h' : s.Terminates := terminates_tail_of_cons h
+  rw [show (cons a s).length h = s.length h' + 1 from length_cons h']
+  exact take_succ_cons
+
+/-- Filter a (possibly infinite) sequence by a predicate, keeping only the
+elements that satisfy it. Noncomputable: locating the next satisfying element
+requires non-constructively inspecting arbitrarily many positions when the
+predicate fails on a long run. -/
+noncomputable def filter (p : α → Prop) (s : Seq α) : Seq α :=
+  open Classical in
+  Seq.corec (fun cur : Seq α =>
+    if h : ∃ n, ∃ a, cur.get? n = some a ∧ p a then
+      some ((Nat.find_spec h).choose, cur.drop (Nat.find h + 1))
+    else none) s
+
+/-- Filtering the empty sequence yields the empty sequence. -/
+@[simp] theorem filter_nil (p : α → Prop) : (nil : Seq α).filter p = nil := by
+  classical
+  unfold filter
+  apply corec_nil
+  show (if _ : ∃ n, ∃ a, (nil : Seq α).get? n = some a ∧ p a then _ else none) = none
+  rw [dif_neg]
+  rintro ⟨n, a, h_eq, _⟩
+  simp at h_eq
+
+/-- Filtering `cons a s` by a predicate that holds at `a`: the result is
+`cons a (s.filter p)`. -/
+theorem filter_cons_pos {p : α → Prop} (a : α) (s : Seq α) (h : p a) :
+    (cons a s).filter p = cons a (s.filter p) := by
+  classical
+  unfold filter
+  apply corec_cons
+  have h_ex : ∃ n, ∃ a', (cons a s).get? n = some a' ∧ p a' :=
+    ⟨0, a, by simp, h⟩
+  have h_find_zero : Nat.find h_ex = 0 :=
+    (Nat.find_eq_zero h_ex).mpr ⟨a, by simp, h⟩
+  change (if h' : ∃ n, ∃ a', (cons a s).get? n = some a' ∧ p a' then
+         some ((Nat.find_spec h').choose, (cons a s).drop (Nat.find h' + 1))
+       else none) = some (a, s)
+  rw [dif_pos h_ex]
+  have h_choose_eq : (Nat.find_spec h_ex).choose = a := by
+    have h_spec_get : (cons a s).get? (Nat.find h_ex) =
+        some (Nat.find_spec h_ex).choose := (Nat.find_spec h_ex).choose_spec.1
+    have h_at_zero : (cons a s).get? (Nat.find h_ex) = some a := by
+      rw [h_find_zero]; simp
+    have : some a = some (Nat.find_spec h_ex).choose := h_at_zero.symm.trans h_spec_get
+    exact (Option.some_inj.mp this).symm
+  rw [h_choose_eq, h_find_zero]
+  rfl
+
+/-- `(cons a s).drop (n + 1) = s.drop n`: dropping one more from `cons a s` is
+the same as dropping one from `s`. -/
+private theorem drop_cons_succ (a : α) (s : Seq α) (n : ℕ) :
+    (cons a s).drop (n + 1) = s.drop n := by
+  induction n with
+  | zero => rfl
+  | succ k ih =>
+    change tail ((cons a s).drop (k + 1)) = tail (s.drop k)
+    rw [ih]
+
+/-- Filtering `cons a s` by a predicate that fails at `a`: the result equals
+`s.filter p`. -/
+theorem filter_cons_neg {p : α → Prop} (a : α) (s : Seq α) (h : ¬ p a) :
+    (cons a s).filter p = s.filter p := by
+  classical
+  apply Seq.eq_of_bisim
+    (R := fun t₁ t₂ =>
+      t₁ = t₂ ∨ ∃ a' s', ¬ p a' ∧ t₁ = (cons a' s').filter p ∧ t₂ = s'.filter p)
+  · -- IsBisimulation
+    have bisim_refl : ∀ x, BisimO
+        (fun t₁ t₂ => t₁ = t₂ ∨ ∃ a' s', ¬ p a' ∧
+          t₁ = (cons a' s').filter p ∧ t₂ = s'.filter p) x x := by
+      intro x
+      cases x with
+      | none => trivial
+      | some pr =>
+        obtain ⟨v, t'⟩ := pr
+        exact ⟨rfl, Or.inl rfl⟩
+    rintro t₁ t₂ (rfl | ⟨a', s', h', rfl, rfl⟩)
+    · exact bisim_refl _
+    · -- Show: destruct ((cons a' s').filter p) = destruct (s'.filter p),
+      -- then BisimO follows by reflexivity.
+      suffices h_de : destruct ((cons a' s').filter p) = destruct (s'.filter p) by
+        rw [h_de]; exact bisim_refl _
+      unfold filter
+      rw [corec_eq, corec_eq]
+      -- Goal: omap _ (body (cons a' s')) = omap _ (body s')
+      congr 1
+      -- Goal: body (cons a' s') = body s', by case analysis.
+      by_cases h_s_ex : ∃ m, ∃ a'', s'.get? m = some a'' ∧ p a''
+      · -- Case A: `s'` has a `p`-satisfying element.
+        have h_cons_ex : ∃ n, ∃ a'', (cons a' s').get? n = some a'' ∧ p a'' := by
+          obtain ⟨m, a'', h_get, h_p⟩ := h_s_ex
+          exact ⟨m + 1, a'', by simp [h_get], h_p⟩
+        -- `Nat.find h_cons_ex = Nat.find h_s_ex + 1`.
+        have h_find_eq : Nat.find h_cons_ex = Nat.find h_s_ex + 1 := by
+          apply le_antisymm
+          · apply Nat.find_min' h_cons_ex
+            obtain ⟨a'', h_get, h_p⟩ := Nat.find_spec h_s_ex
+            exact ⟨a'', by simp [h_get], h_p⟩
+          · -- Extract a witness `a''` at `Nat.find h_cons_ex` in `cons a' s'`,
+            -- then split that position as `m + 1` (it's positive since `¬ p a'`).
+            obtain ⟨a'', h_get, h_p⟩ := Nat.find_spec h_cons_ex
+            -- `Nat.find h_cons_ex ≥ 1`.
+            have h_pos : 1 ≤ Nat.find h_cons_ex := by
+              rcases Nat.eq_zero_or_pos (Nat.find h_cons_ex) with h_zero | h_pos
+              · exfalso
+                rw [h_zero] at h_get
+                have h_eq : a' = a'' := by simpa using h_get
+                subst h_eq
+                exact h' h_p
+              · exact h_pos
+            obtain ⟨m, hm⟩ : ∃ m, Nat.find h_cons_ex = m + 1 :=
+              Nat.exists_eq_succ_of_ne_zero (Nat.one_le_iff_ne_zero.mp h_pos)
+            rw [hm]
+            apply Nat.succ_le_succ
+            apply Nat.find_min' h_s_ex
+            rw [hm] at h_get
+            exact ⟨a'', by simpa using h_get, h_p⟩
+        change (if h : ∃ n, ∃ a'', (cons a' s').get? n = some a'' ∧ p a'' then
+                  some ((Nat.find_spec h).choose, (cons a' s').drop (Nat.find h + 1))
+                else none) =
+               (if h : ∃ n, ∃ a'', s'.get? n = some a'' ∧ p a'' then
+                  some ((Nat.find_spec h).choose, s'.drop (Nat.find h + 1))
+                else none)
+        rw [dif_pos h_cons_ex, dif_pos h_s_ex]
+        -- Drop equality.
+        have h_drop_eq : (cons a' s').drop (Nat.find h_cons_ex + 1) =
+            s'.drop (Nat.find h_s_ex + 1) := by
+          rw [h_find_eq]
+          exact drop_cons_succ a' s' (Nat.find h_s_ex + 1)
+        -- Choose equality.
+        have h_choose_eq : (Nat.find_spec h_cons_ex).choose =
+            (Nat.find_spec h_s_ex).choose := by
+          have h_cons_at_succ : (cons a' s').get? (Nat.find h_s_ex + 1) =
+              some (Nat.find_spec h_cons_ex).choose := by
+            rw [← h_find_eq]; exact (Nat.find_spec h_cons_ex).choose_spec.1
+          have h_shift : (cons a' s').get? (Nat.find h_s_ex + 1) =
+              s'.get? (Nat.find h_s_ex) := by simp
+          have h_s_via : s'.get? (Nat.find h_s_ex) =
+              some (Nat.find_spec h_cons_ex).choose := h_shift ▸ h_cons_at_succ
+          have h_s_get : s'.get? (Nat.find h_s_ex) =
+              some (Nat.find_spec h_s_ex).choose :=
+            (Nat.find_spec h_s_ex).choose_spec.1
+          exact Option.some_inj.mp (h_s_via.symm.trans h_s_get)
+        rw [h_choose_eq, h_drop_eq]
+      · -- Case B: neither `s'` nor `cons a' s'` has a `p`-satisfying element.
+        have h_cons_neg :
+            ¬ ∃ n, ∃ a'', (cons a' s').get? n = some a'' ∧ p a'' := by
+          rintro ⟨n, a'', h_get, h_p⟩
+          cases n with
+          | zero =>
+            have h_eq : a' = a'' := by simpa using h_get
+            subst h_eq
+            exact h' h_p
+          | succ k =>
+            exact h_s_ex ⟨k, a'', by simpa using h_get, h_p⟩
+        change (if h : ∃ n, ∃ a'', (cons a' s').get? n = some a'' ∧ p a'' then
+                  some ((Nat.find_spec h).choose, (cons a' s').drop (Nat.find h + 1))
+                else none) =
+               (if h : ∃ n, ∃ a'', s'.get? n = some a'' ∧ p a'' then
+                  some ((Nat.find_spec h).choose, s'.drop (Nat.find h + 1))
+                else none)
+        rw [dif_neg h_cons_neg, dif_neg h_s_ex]
+  · right
+    exact ⟨a, s, h, rfl, rfl⟩
+
+/-- `toList` of an `append` is the list-level concatenation of the two
+constituent `toList`s. -/
+theorem toList_append {α : Type*} (s s' : Seq α) (h_s : s.Terminates)
+    (h_s' : s'.Terminates) (h_combined : (s.append s').Terminates) :
+    (s.append s').toList h_combined = s.toList h_s ++ s'.toList h_s' := by
+  -- Induct on s.length h_s, with s, h_s, h_combined universally quantified.
+  suffices h_aux : ∀ (n : ℕ) (s : Seq α) (h_s : s.Terminates),
+      s.length h_s = n → ∀ (h_combined : (s.append s').Terminates),
+      (s.append s').toList h_combined = s.toList h_s ++ s'.toList h_s' from
+    h_aux (s.length h_s) s h_s rfl h_combined
+  intro n
+  induction n with
+  | zero =>
+    intro s h_s h_len h_combined
+    have h_s_nil : s = Seq.nil := length_eq_zero.mp h_len
+    subst h_s_nil
+    -- Goal: (nil.append s').toList h_combined = nil.toList h_s ++ s'.toList h_s'.
+    -- nil.toList = []. (nil.append s') = s'. Goal reduces to s'.toList = s'.toList.
+    have h_nil_toList : (Seq.nil : Seq α).toList h_s = [] := toList_nil
+    rw [h_nil_toList, List.nil_append]
+    -- Goal: (nil.append s').toList h_combined = s'.toList h_s'.
+    -- Use proof irrelevance + nil_append.
+    congr 1
+    exact nil_append s'
+  | succ n ih =>
+    intro s h_s h_len h_combined
+    have h_ne : s ≠ Seq.nil := by
+      intro h_nil
+      subst h_nil
+      rw [length_nil] at h_len
+      exact Nat.succ_ne_zero n h_len.symm
+    cases s with
+    | nil =>
+      exact absurd rfl h_ne
+    | cons a t =>
+      have h_t_term : t.Terminates := terminates_tail_of_cons h_s
+      have h_t_len : t.length h_t_term = n := by
+        have : (cons a t).length h_s = t.length h_t_term + 1 := length_cons h_t_term
+        rw [this] at h_len
+        omega
+      -- (cons a t).append s' = cons a (t.append s') (cons_append).
+      have h_cons_app : (cons a t).append s' = cons a (t.append s') := cons_append a t s'
+      -- Use this to compute both sides.
+      -- LHS: (cons a t).append s'.toList h_combined.
+      -- By proof irrelevance, this equals (cons a (t.append s')).toList h_combined'
+      -- where h_combined' is the corresponding Terminates proof.
+      have h_tail_combined : (t.append s').Terminates := by
+        have : ((cons a t).append s').Terminates := h_combined
+        rw [h_cons_app] at this
+        exact terminates_tail_of_cons this
+      have h_cons_tail_combined : (cons a (t.append s')).Terminates := by
+        rw [← h_cons_app]; exact h_combined
+      -- LHS: rewrite via the seq equality, then apply toList_cons.
+      have h_LHS : ((cons a t).append s').toList h_combined =
+          a :: (t.append s').toList h_tail_combined := by
+        rw [show ((cons a t).append s').toList h_combined =
+              (cons a (t.append s')).toList h_cons_tail_combined from by
+          congr 1]
+        exact toList_cons h_cons_tail_combined
+      rw [h_LHS]
+      rw [toList_cons h_s]
+      rw [ih t h_t_term h_t_len h_tail_combined]
+      rfl
+
+/-- **Seq-splitting helper**: any terminating `Seq` whose `toList` is
+non-empty can be expressed as `previous.append (cons last nil)` for some
+terminating `previous` and last element `last`. Used for induction on
+`AlterSeq` length: lets us peel off the most recent transition.
+
+The construction takes `previous := ofList (toList.dropLast)` and `last :=
+toList.getLast h_nonempty`; correctness follows from `dropLast ++ [getLast]
+= toList`, `ofList_append`, and `ofList_toList`. -/
+theorem exists_split_last
+    {α : Type} (s : Seq α) (h_term : s.Terminates)
+    (h_nonempty : s.toList h_term ≠ []) :
+    ∃ (previous : Seq α) (last : α) (h_prev : previous.Terminates),
+      s = previous.append (Seq.cons last Seq.nil) ∧
+      previous.toList h_prev = (s.toList h_term).dropLast ∧
+      last = (s.toList h_term).getLast h_nonempty := by
+  let toL := s.toList h_term
+  let lst := toL.getLast h_nonempty
+  let prevList := toL.dropLast
+  let previous : Seq α := Stream'.Seq.ofList prevList
+  have h_prev : previous.Terminates := Stream'.Seq.terminates_ofList prevList
+  have h_split : toL = prevList ++ [lst] :=
+    (List.dropLast_append_getLast h_nonempty).symm
+  refine ⟨previous, lst, h_prev, ?_, ?_, rfl⟩
+  · -- s = previous.append (cons lst nil)
+    -- s = ofList (toList s h_term) = ofList (prevList ++ [lst])
+    --   = (ofList prevList).append (ofList [lst])
+    --   = previous.append (cons lst (ofList []))
+    --   = previous.append (cons lst nil)
+    have h_s_eq : s = Stream'.Seq.ofList toL := (Stream'.Seq.ofList_toList s h_term).symm
+    rw [h_s_eq, h_split, Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons,
+        Stream'.Seq.ofList_nil]
+  · -- previous.toList h_prev = prevList = dropLast (toL).
+    exact Stream'.Seq.toList_ofList prevList
+
+end Stream'.Seq

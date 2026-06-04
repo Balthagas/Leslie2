@@ -8,6 +8,7 @@ import Mathlib.Probability.ProbabilityMassFunction.Monad
 import Mathlib.Probability.ProbabilityMassFunction.Constructions
 import Mathlib.Data.Seq.Defs
 import Mathlib.Data.Seq.Basic
+import MyMathlibProject.SeqHelper
 
 /-!
 # Probabilistic Labelled Transition System (PLTS)
@@ -16,78 +17,6 @@ PLTS are the basic model used to represent protocols.
 -/
 
 open Stream'
-
-namespace Stream'.Seq
-
-variable {α : Type*}
-
-/-- For `n` the *exact* length of `s` (i.e. `s.TerminatedAt n` and `s` is not
-terminated at any smaller index), positions in `s.append s'` past `n` reduce
-to positions in `s'`: `(s.append s').get? (n + k) = s'.get? k`. -/
-theorem get?_append_after_length {s s' : Seq α} {n : ℕ}
-    (h_min : ∀ k < n, ¬ s.TerminatedAt k)
-    (h_done : s.TerminatedAt n) (k : ℕ) :
-    (s.append s').get? (n + k) = s'.get? k := by
-  induction n generalizing s with
-  | zero =>
-    rw [terminatedAt_zero_iff] at h_done
-    subst h_done
-    rw [nil_append, Nat.zero_add]
-  | succ j ih =>
-    have h_not_term_0 : ¬ s.TerminatedAt 0 := h_min 0 (Nat.zero_lt_succ _)
-    cases s with
-    | nil => exact absurd terminatedAt_nil h_not_term_0
-    | cons a t =>
-      rw [cons_append, show j + 1 + k = (j + k) + 1 from by ring, get?_cons_succ]
-      apply ih
-      · intro k' hk'
-        have h_succ_lt : k' + 1 < j + 1 := by omega
-        have h_not := h_min (k' + 1) h_succ_lt
-        rwa [cons_terminatedAt_succ_iff] at h_not
-      · rwa [cons_terminatedAt_succ_iff] at h_done
-
-/-- Specialization: `(s.append s').get? (Nat.find h + k) = s'.get? k`. -/
-theorem get?_append_find {s : Seq α} (h : s.Terminates) (s' : Seq α) (k : ℕ) :
-    (s.append s').get? (Nat.find h + k) = s'.get? k :=
-  get?_append_after_length (fun _ hk => Nat.find_min h hk) (Nat.find_spec h) k
-
-/-- Before `s` terminates at position `k`, append's `get?` agrees with `s`'s. -/
-theorem get?_append_before_length {s s' : Seq α} {k : ℕ}
-    (h_not_term : ¬ s.TerminatedAt k) :
-    (s.append s').get? k = s.get? k := by
-  induction k generalizing s with
-  | zero =>
-    cases s with
-    | nil => exact absurd terminatedAt_nil h_not_term
-    | cons a t => rw [cons_append]; rfl
-  | succ k' ih =>
-    cases s with
-    | nil => exact absurd terminatedAt_nil h_not_term
-    | cons a t =>
-      rw [cons_append, get?_cons_succ, get?_cons_succ]
-      exact ih (by rwa [← cons_terminatedAt_succ_iff (x := a)])
-
-/-- `(s.append s').TerminatedAt (Nat.find h + n)` when `s'.TerminatedAt n`. -/
-theorem terminatedAt_append_find {s : Seq α} (h : s.Terminates) {s' : Seq α}
-    {n : ℕ} (h_s' : s'.TerminatedAt n) :
-    (s.append s').TerminatedAt (Nat.find h + n) := by
-  change (s.append s').get? _ = none
-  rw [get?_append_find h s' n]; exact h_s'
-
-/-- `Terminates` transfers from a cons to its tail. -/
-theorem terminates_tail_of_cons {a : α} {s : Seq α}
-    (h : (cons a s).Terminates) : s.Terminates :=
-  terminates_cons_iff.mp h
-
-/-- `toList` of a cons. -/
-theorem toList_cons {a : α} {s : Seq α} (h : (cons a s).Terminates) :
-    (cons a s).toList h = a :: s.toList (terminates_tail_of_cons h) := by
-  unfold toList
-  have h' : s.Terminates := terminates_tail_of_cons h
-  rw [show (cons a s).length h = s.length h' + 1 from length_cons h']
-  exact take_succ_cons
-
-end Stream'.Seq
 
 namespace PLTS
 
