@@ -174,6 +174,135 @@ private theorem runFromState_stop (sys : LabelledSystem State Label) :
     (stop sys).run n s = PMF.pure s :=
   runFromState_stop sys n ⟨s, Seq.nil⟩ s
 
+/-- The fuel-bounded variant of a WeakScheduler: behaves as `σ` until the
+prefix's transition sequence has accumulated `n` or more entries, then forces
+a halt by emitting `none`. The resulting scheduler halts after at most `n`
+outer steps when run via `run n` (since each outer step extends the prefix by
+exactly one transition; starting from the empty prefix, after `n` steps the
+seq has `n` entries and `(σ.boundedFuel n).next` would emit `none`). -/
+noncomputable def boundedFuel (σ : WeakScheduler sys) (n : ℕ) : WeakScheduler sys where
+  next e :=
+    open Classical in
+    -- Active iff the prefix has fewer than `n` transitions, i.e.,
+    -- `e.trans.TerminatedAt (n - 1)` (for `n ≥ 1`) — equivalently
+    -- `∃ k, k < n ∧ e.trans.TerminatedAt k`.
+    if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
+    else PMF.pure none
+  valid := by
+    intro e k s h_term h_state l μ h_supp
+    classical
+    by_cases h_act : (∃ k, k < n ∧ e.trans.TerminatedAt k)
+    · have h_eq : (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
+                    else PMF.pure none) = σ.next e := if_pos h_act
+      rw [h_eq] at h_supp
+      exact σ.valid e k s h_term h_state l μ h_supp
+    · have h_eq : (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
+                    else PMF.pure none) = PMF.pure none := if_neg h_act
+      rw [h_eq, PMF.mem_support_pure_iff] at h_supp
+      exact absurd h_supp (by simp)
+  internal_only := by
+    intro e l μ h_supp
+    classical
+    by_cases h_act : (∃ k, k < n ∧ e.trans.TerminatedAt k)
+    · have h_eq : (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
+                    else PMF.pure none) = σ.next e := if_pos h_act
+      rw [h_eq] at h_supp
+      exact σ.internal_only e l μ h_supp
+    · have h_eq : (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
+                    else PMF.pure none) = PMF.pure none := if_neg h_act
+      rw [h_eq, PMF.mem_support_pure_iff] at h_supp
+      exact absurd h_supp (by simp)
+
+/-- `(σ.boundedFuel n).next e` reduces to `σ.next e` whenever the prefix's
+transition sequence has accumulated fewer than `n` entries. -/
+theorem boundedFuel_next_of_active (σ : WeakScheduler sys) (n : ℕ)
+    (e : AlterSeq State Label) (h : ∃ k, k < n ∧ e.trans.TerminatedAt k) :
+    (σ.boundedFuel n).next e = σ.next e := by
+  classical
+  change (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
+            else PMF.pure none) = _
+  exact if_pos h
+
+/-- Auxiliary lemma: `boundedFuel n`'s `runFromState k` matches `σ.runFromState k`
+whenever the current prefix `e` has accumulated at most `n - k` transitions
+(so even if we add `k` more transitions, the prefix length stays ≤ n, leaving
+the bounded scheduler in its "active" branch). Concretely we require
+`e.trans.TerminatedAt (n - k)` (for `k ≥ 1` this is enough to derive active
+on the current prefix; for `k = 0` the conclusion is trivial). -/
+private theorem runFromState_boundedFuel_eq_aux (σ : WeakScheduler sys) (n : ℕ) :
+    ∀ (k : ℕ) (e : AlterSeq State Label) (s : State),
+      k ≤ n →
+      e.trans.TerminatedAt (n - k) →
+      (σ.boundedFuel n).runFromState k e s = σ.runFromState k e s := by
+  intro k
+  induction k with
+  | zero =>
+    intro e s _h_le _h_term
+    -- Both sides equal `PMF.pure s`.
+    rfl
+  | succ m ih =>
+    intro e s h_le h_term
+    have h_le' : m ≤ n := Nat.le_of_succ_le h_le
+    -- We have `e.trans.TerminatedAt (n - (m+1))`. From `m + 1 ≤ n` we get
+    -- `n - (m+1) < n`, so the active-witness `(n - (m+1))` validates
+    -- `boundedFuel.next e = σ.next e`. After one step, the prefix grows by 1
+    -- and the new prefix is `TerminatedAt (n - m)` by `terminatedAt_append`.
+    have h_active : ∃ k, k < n ∧ e.trans.TerminatedAt k :=
+      ⟨n - (m + 1), by omega, h_term⟩
+    have h_next : (σ.boundedFuel n).next e = σ.next e :=
+      boundedFuel_next_of_active σ n e h_active
+    -- Unfold one step of `runFromState` and rewrite the head emission PMF.
+    change ((σ.boundedFuel n).next e).bind (fun
+        | none => PMF.pure s
+        | some (l, μ_q) => μ_q.bind fun s' =>
+            (σ.boundedFuel n).runFromState m
+              ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s')
+      = (σ.next e).bind (fun
+        | none => PMF.pure s
+        | some (l, μ_q) => μ_q.bind fun s' =>
+            σ.runFromState m
+              ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s')
+    rw [h_next]
+    -- Body congruence; both binds are over `σ.next e`.
+    congr 1
+    funext sub
+    rcases sub with _ | ⟨l, μ_q⟩
+    · -- `none` branch: both sides are `PMF.pure s`.
+      rfl
+    · -- `some (l, μ_q)` branch: bind μ_q with the inductive equality.
+      change μ_q.bind (fun s' => (σ.boundedFuel n).runFromState m
+          ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s')
+        = μ_q.bind (fun s' => σ.runFromState m
+            ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s')
+      congr 1
+      funext s'
+      -- Apply IH; need to show the extended prefix is `TerminatedAt (n - m)`.
+      refine ih _ _ h_le' ?_
+      -- The extended prefix's seq is `e.trans.append (cons (l, s') nil)`,
+      -- which is `TerminatedAt (Nat.find ⟨n - (m+1), h_term⟩ + 1)`, hence
+      -- by `terminated_stable` upward at `n - m`.
+      have h_app_term : (e.trans.append (Seq.cons (l, s') Seq.nil)).TerminatedAt
+          (Nat.find (⟨n - (m + 1), h_term⟩ : e.trans.Terminates) + 1) :=
+        Stream'.Seq.terminatedAt_append_find ⟨n - (m + 1), h_term⟩
+          (show (Seq.cons (l, s') Seq.nil : Seq (Label × State)).TerminatedAt 1
+            from rfl)
+      have h_find_le : Nat.find (⟨n - (m + 1), h_term⟩ : e.trans.Terminates) ≤
+          n - (m + 1) := Nat.find_le h_term
+      change (e.trans.append (Seq.cons (l, s') Seq.nil)).TerminatedAt (n - m)
+      apply Stream'.Seq.terminated_stable _ _ h_app_term
+      omega
+
+/-- Running `σ.boundedFuel n` for `n` steps from `⟨s, Seq.nil⟩` yields the same
+PMF as running `σ` for `n` steps. -/
+theorem run_boundedFuel_eq (σ : WeakScheduler sys) (n : ℕ) (s : State) :
+    (σ.boundedFuel n).run n s = σ.run n s := by
+  unfold run
+  refine runFromState_boundedFuel_eq_aux σ n n ⟨s, Seq.nil⟩ s (le_refl _) ?_
+  -- `(Seq.nil).TerminatedAt (n - n) = TerminatedAt 0`, which holds.
+  rw [Nat.sub_self]
+  change (Seq.nil : Seq (Label × State)).TerminatedAt 0
+  rfl
+
 /-- For any weak scheduler `σ`, state `s`, and fuel `n`, the mass that
 `σ.run n s` places on `s` is at least the probability that `σ`'s first emission
 from `⟨s, Seq.nil⟩` is `none` (i.e., immediately halts, keeping the chain at
@@ -222,20 +351,30 @@ namespace weakTau
 
 variable {sys : LabelledSystem State Label} {μ_init μ : PMF State}
 
-/-- Classical extraction of the underlying `WeakScheduler` from a `weakTau`
-proof. -/
-noncomputable def witness (h : weakTau sys μ_init μ) : WeakScheduler sys :=
-  h.choose
-
 /-- Classical extraction of the fuel from a `weakTau` proof. -/
 noncomputable def witness_fuel (h : weakTau sys μ_init μ) : ℕ :=
   h.choose_spec.choose
 
+/-- Classical extraction of the underlying `WeakScheduler` from a `weakTau`
+proof, wrapped via `boundedFuel` to guarantee almost-sure termination within
+`witness_fuel` outer steps. The wrapping preserves `run witness_fuel` (by
+`run_boundedFuel_eq`), so `witness_run` still holds. -/
+noncomputable def witness (h : weakTau sys μ_init μ) : WeakScheduler sys :=
+  h.choose.boundedFuel h.witness_fuel
+
 /-- The extracted scheduler, when run from `μ_init` for the extracted fuel,
 reaches `μ`. -/
 theorem witness_run (h : weakTau sys μ_init μ) :
-    μ_init.bind (h.witness.run h.witness_fuel) = μ :=
-  h.choose_spec.choose_spec
+    μ_init.bind (h.witness.run h.witness_fuel) = μ := by
+  unfold witness
+  -- Replace the boundedFuel run with the original run pointwise via funext.
+  have h_run_eq : ∀ s : State,
+      (h.choose.boundedFuel h.witness_fuel).run h.witness_fuel s
+        = h.choose.run h.witness_fuel s := fun s =>
+    WeakScheduler.run_boundedFuel_eq h.choose h.witness_fuel s
+  rw [show (h.choose.boundedFuel h.witness_fuel).run h.witness_fuel
+        = h.choose.run h.witness_fuel from funext h_run_eq]
+  exact h.choose_spec.choose_spec
 
 end weakTau
 
