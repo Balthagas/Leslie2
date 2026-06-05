@@ -671,8 +671,166 @@ private lemma reachProb_invariant
     · rw [dif_neg h_e_term'] at h_reach'
       exact absurd rfl h_reach'
 
+/-- **`tsum` over `Option α` splits into the `none` summand and the `some`-sum.**
+Mirror of `tsum_list_split_head_tail` for `Option`. -/
+private lemma tsum_option_split_none_some {α : Type} (f : Option α → ENNReal) :
+    ∑' o : Option α, f o = f none + ∑' a : α, f (some a) := by
+  rw [← (Equiv.optionEquivSumPUnit.{0, _} α).symm.tsum_eq f]
+  rw [Summable.tsum_sum ENNReal.summable ENNReal.summable]
+  rw [add_comm]
+  congr 1
+  rw [tsum_eq_single (b := (⟨⟩ : PUnit))]
+  · rfl
+  · rintro ⟨⟩ h; exact (h rfl).elim
+
+/-! ### First-reach mass and trap-corrected normalisation
+
+The previous `pe_of_weak` normalised by `totalMass`, the joint *escape*
+probability at observed `e`. That silently conditioned out the
+infinite-stutter mass at `e` and redistributed it across the escape
+outcomes — incorrect even when each individual stutter probability is
+`< 1`, because the infinite product of stutter probabilities can
+converge to a positive number.
+
+`FirstReach e` is the *first-visit reach mass*: the joint probability the
+algorithm ever has `e` as a prefix. Mathematically `FirstReach e =
+(pe_of_weak …).probOf e`. We give it an independent (non-circular)
+recursion on `e.trans.toList`:
+
+* base `e.trans = nil`: `FirstReach = pe'.initState e.init`;
+* step `e = e_prev ++ [(l_last, s_last)]`:
+  `FirstReach e = ∑ μ, jointUnnorm e_prev (some (l_last, μ)) · μ s_last`
+  (the per-`(l_last, s_last)` sys-step kernel mass at the shorter prefix
+  `e_prev`, which depends only on `pe'`-side machinery).
+
+The trap-mass at `e` is `FirstReach e − totalMass e`; it equals the joint
+mass of trajectories that reach `e` and then enter an infinite stutter
+without ever escaping. The corrected scheduler routes this mass to
+`none` (halt), so the coupling conserves mass on both sides. -/
+
+/-- **First-reach (cylinder) mass at `e`.** See the section docstring. -/
+private noncomputable def FirstReach
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) : ENNReal :=
+  open Classical in
+  if h_term : e.trans.Terminates then
+    (e.trans.toList h_term).reverseRecOn
+      (motive := fun _ => ENNReal)
+      (pe'.initState e.init)
+      (fun trans_prev last_step _ih =>
+        let e_prev : AlterSeq State Label :=
+          ⟨e.init, Seq.ofList trans_prev⟩
+        ∑' μ : PMF State,
+          jointUnnorm sys pe' e_prev (some (last_step.1, μ)) * μ last_step.2)
+  else 0
+
+/-- **Escape mass is bounded by first-reach mass**: `totalMass e ≤ FirstReach e`.
+
+The gap `FirstReach e − totalMass e` is the joint mass of trajectories
+that reach `e` and never escape (the infinite-stutter event at `e`).
+The corrected scheduler in `pe_of_weak` routes that mass to `none`.
+Deferred. -/
+private lemma totalMass_le_FirstReach
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) :
+    totalMass sys pe' e ≤ FirstReach sys pe' e := by
+  sorry
+
+/-- **`FirstReach` on an execution with empty trans collapses to the initial
+mass.** Mirrors `probOf_nil`. -/
+private lemma FirstReach_nil
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (s : State) :
+    FirstReach sys pe' ⟨s, Seq.nil⟩ = pe'.initState s := by
+  unfold FirstReach
+  rw [dif_pos Stream'.Seq.terminates_nil, Stream'.Seq.toList_nil,
+      List.reverseRecOn_nil]
+
+/-- **Cons-end factorisation for `FirstReach`** (mirrors `probOf_append_singleton`).
+Appending a single transition `last` at the end rewrites `FirstReach` as the
+per-`μ` sys-step kernel mass at the truncated prefix. -/
+private lemma FirstReach_append_singleton
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (s : State) (sq : Seq (Label × State)) (h_sq : sq.Terminates)
+    (last : Label × State)
+    (h_app : (sq.append (Seq.cons last Seq.nil)).Terminates) :
+    FirstReach sys pe' ⟨s, sq.append (Seq.cons last Seq.nil)⟩ =
+      ∑' μ : PMF State,
+        jointUnnorm sys pe' ⟨s, sq⟩ (some (last.1, μ)) * μ last.2 := by
+  unfold FirstReach
+  rw [dif_pos h_app]
+  have h_singleton_term : (Seq.cons last Seq.nil : Seq (Label × State)).Terminates :=
+    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  have h_toList : (sq.append (Seq.cons last Seq.nil)).toList h_app =
+      sq.toList h_sq ++ [last] := by
+    rw [Stream'.Seq.toList_append sq (Seq.cons last Seq.nil) h_sq h_singleton_term h_app]
+    congr 1
+    rw [Stream'.Seq.toList_cons]
+    simp [Stream'.Seq.toList_nil]
+  rw [show (⟨s, sq.append (Seq.cons last Seq.nil)⟩ : AlterSeq State Label).trans.toList h_app
+        = sq.toList h_sq ++ [last] from h_toList]
+  rw [List.reverseRecOn_concat]
+  -- `Seq.ofList (sq.toList h_sq) = sq`, and outer init `s` matches `e.init`.
+  rw [Stream'.Seq.ofList_toList sq h_sq]
+
+/-- **Trap-corrected unnormalised mass** at observed `e`. Differs from
+`jointUnnorm` only at `none`, where the infinite-stutter trap mass
+`FirstReach e − totalMass e` is added. Used to build `pe_of_weak`'s
+marginal scheduler. -/
+private noncomputable def correctedMass
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) (opt : Option (Label × PMF State)) : ENNReal :=
+  jointUnnorm sys pe' e opt +
+    opt.elim (FirstReach sys pe' e - totalMass sys pe' e) (fun _ => 0)
+
+/-- **`correctedMass` at a `some`-emission is just `jointUnnorm`** —
+the trap correction only touches the `none` summand. -/
+private lemma correctedMass_some
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) (lμ : Label × PMF State) :
+    correctedMass sys pe' e (some lμ) = jointUnnorm sys pe' e (some lμ) := by
+  unfold correctedMass; simp
+
+/-- **The corrected mass tsums to `FirstReach`**: the trap contribution
+`FirstReach − totalMass` plus the escape mass `totalMass` recover the
+full first-reach mass. -/
+private lemma correctedMass_tsum_eq_FirstReach
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) :
+    (∑' opt, correctedMass sys pe' e opt) = FirstReach sys pe' e := by
+  unfold correctedMass
+  rw [ENNReal.tsum_add]
+  have h_tm : (∑' opt, jointUnnorm sys pe' e opt) = totalMass sys pe' e := rfl
+  have h_trap :
+      (∑' opt : Option (Label × PMF State),
+        opt.elim (FirstReach sys pe' e - totalMass sys pe' e) (fun _ => 0)) =
+        FirstReach sys pe' e - totalMass sys pe' e := by
+    rw [tsum_option_split_none_some]; simp
+  rw [h_tm, h_trap, add_comm]
+  exact tsub_add_cancel_of_le (totalMass_le_FirstReach sys pe' e)
+
 /-- **Witness pe : ProbabilisticExecution sys.toSystem** constructed
-algorithmically from `pe' : ProbabilisticExecution sys^w.toSystem`. -/
+algorithmically from `pe' : ProbabilisticExecution sys^w.toSystem`.
+
+At each observed `e`, the scheduler is the *trap-corrected* marginal of the
+joint algorithm's next event conditional on reaching `e`:
+
+* `next e (some (l, μ)) = jointUnnorm e (some (l, μ)) / FirstReach e`;
+* `next e (none)        = (jointUnnorm e (none) + trap(e)) / FirstReach e`,
+
+with `trap(e) := FirstReach e − totalMass e` the joint mass of
+infinite-stutter trajectories at `e`. The corners `FirstReach e ∈ {0, ⊤}`
+fall back to `PMF.pure none` — the first is a vacuous corner with no joint
+mass at `e`, and the second (`FirstReach = ⊤`) is precluded by
+`FirstReach_ne_top` proven later (the 3-way split avoids a circular
+dependency between `pe_of_weak`'s definition and `FirstReach_ne_top`'s
+proof, which uses `FirstReach_eq_probOf`). -/
 private noncomputable def pe_of_weak (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem) :
     ProbabilisticExecution sys.toSystem where
@@ -680,54 +838,38 @@ private noncomputable def pe_of_weak (sys : LabelledSystem State Label)
   scheduler :=
     { next := fun e =>
         open Classical in
-        if h_tm0 : totalMass sys pe' e = 0 then
-          -- **Stutter-trap fallback.** From observed `e`, the algorithm
-          -- enters infinite stutter with probability 1 (no future visible
-          -- action and pe' never halts). We default to `PMF.pure none`,
-          -- treating the trap as a halt at `e`.
-          --
-          -- NOTE: this fallback choice is plausible but not 100% verified.
-          -- If trace-coupling proofs fail at the trap case, revisit.
+        if h_fr0 : FirstReach sys pe' e = 0 then
+          PMF.pure none
+        else if h_fr_top : FirstReach sys pe' e = ⊤ then
           PMF.pure none
         else
-          -- Normalised marginalised PMF:
-          --   scheduler.next e (X) := jointUnnorm e X / totalMass e
-          -- using `PMF.normalize` on `jointUnnorm sys pe' e`. The function's
-          -- tsum equals `totalMass` by construction (mass at `none` is the
-          -- joint mass of halt outcomes; mass at `some (l, μ)` integrates
-          -- `visible d` outcomes against `d (l, μ)`).
-          if h_tm_top : totalMass sys pe' e = ⊤ then
-            -- Degenerate `⊤`-mass fallback (also annotated as unverified).
-            PMF.pure none
-          else
-            -- `totalMass` is by definition `∑' opt, jointUnnorm opt`, so the
-            -- precondition `(jointUnnorm e).tsum ≠ 0` is `h_tm0`'s negation
-            -- (we are in the `else` branch), and similarly for `⊤`.
-            PMF.normalize (jointUnnorm sys pe' e) h_tm0 h_tm_top
+          PMF.normalize (correctedMass sys pe' e)
+            ((correctedMass_tsum_eq_FirstReach sys pe' e).symm ▸ h_fr0)
+            ((correctedMass_tsum_eq_FirstReach sys pe' e).symm ▸ h_fr_top)
       valid := by
         intro e n s _h_term _h_state l μ h_supp
-        -- `h_supp : some (l, μ) ∈ (next e).support`.
-        -- Beta-reduce the lambda and split the if-then-else cases.
         classical
         change some (l, μ) ∈
           ((open Classical in
-            if h_tm0 : totalMass sys pe' e = 0 then
+            if h_fr0 : FirstReach sys pe' e = 0 then
               PMF.pure none
-            else if h_tm_top : totalMass sys pe' e = ⊤ then
+            else if h_fr_top : FirstReach sys pe' e = ⊤ then
               PMF.pure none
             else
-              PMF.normalize (jointUnnorm sys pe' e) h_tm0 h_tm_top)).support at h_supp
-        split_ifs at h_supp with h_tm0 h_tm_top
-        · -- Stutter-trap fallback: support = {none}, so `some (l, μ)` ∉ support.
+              PMF.normalize (correctedMass sys pe' e)
+                ((correctedMass_tsum_eq_FirstReach sys pe' e).symm ▸ h_fr0)
+                ((correctedMass_tsum_eq_FirstReach sys pe' e).symm ▸ h_fr_top))).support
+            at h_supp
+        split_ifs at h_supp with h_fr0 h_fr_top
+        · -- FirstReach = 0 fallback: support = {none}.
           rw [PMF.support_pure] at h_supp
           exact absurd h_supp (by simp)
-        · -- ⊤-mass fallback: same.
+        · -- FirstReach = ⊤ fallback: support = {none}.
           rw [PMF.support_pure] at h_supp
           exact absurd h_supp (by simp)
-        · -- Main case: support comes from `PMF.normalize jointUnnorm`.
-          -- Extract a witness (e_w, d) with positive contribution, then
-          -- apply the two helper lemmas.
+        · -- Main case: support comes from `PMF.normalize correctedMass`.
           rw [PMF.mem_support_iff, PMF.normalize_apply] at h_supp
+          rw [correctedMass_some] at h_supp
           have h_ju_ne_zero : jointUnnorm sys pe' e (some (l, μ)) ≠ 0 := by
             intro h_eq
             apply h_supp
@@ -1984,67 +2126,159 @@ private lemma tightStepFactor_chain_pre_empty_iter_start_eq_e_prev
     simp
 
 /-- **Helper.** Explicit case-split formula for `pe_of_weak.scheduler.next` at a
-`some (l, μ)` argument. The three cases mirror the definition of
-`pe_of_weak`'s scheduler: stutter-trap fallback, ⊤-mass fallback, and the
-normalised main case. -/
+`some (l, μ)` argument. Three cases: `FirstReach ∈ {0, ⊤}` vacuous fallbacks,
+and the normalised main case dividing by `FirstReach`. The `some`-coefficient
+agrees with `jointUnnorm` (only the `none`-coefficient absorbs the trap mass). -/
 private lemma pe_of_weak_scheduler_next_some_apply
     (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem)
     (prefix_ : AlterSeq State Label) (l : Label) (μ : PMF State) :
     (pe_of_weak sys pe').scheduler.next prefix_ (some (l, μ)) =
       (open Classical in
-       if totalMass sys pe' prefix_ = 0 then 0
-       else if totalMass sys pe' prefix_ = ⊤ then 0
+       if FirstReach sys pe' prefix_ = 0 then 0
+       else if FirstReach sys pe' prefix_ = ⊤ then 0
        else jointUnnorm sys pe' prefix_ (some (l, μ)) /
-              totalMass sys pe' prefix_) := by
+              FirstReach sys pe' prefix_) := by
   classical
-  -- Unfold `pe_of_weak.scheduler.next`.
   change (open Classical in
-            if h_tm0 : totalMass sys pe' prefix_ = 0 then
+            if h_fr0 : FirstReach sys pe' prefix_ = 0 then
               PMF.pure none
-            else if h_tm_top : totalMass sys pe' prefix_ = ⊤ then
+            else if h_fr_top : FirstReach sys pe' prefix_ = ⊤ then
               PMF.pure none
             else
-              PMF.normalize (jointUnnorm sys pe' prefix_) h_tm0 h_tm_top)
+              PMF.normalize (correctedMass sys pe' prefix_)
+                ((correctedMass_tsum_eq_FirstReach sys pe' prefix_).symm ▸ h_fr0)
+                ((correctedMass_tsum_eq_FirstReach sys pe' prefix_).symm ▸ h_fr_top))
               (some (l, μ)) = _
-  split_ifs with h_tm0 h_tm_top
-  · -- totalMass = 0: kernel evaluates `PMF.pure none` at `some (l, μ)`, which is 0.
-    rw [PMF.pure_apply]; simp
-  · -- totalMass = ⊤: same.
-    rw [PMF.pure_apply]; simp
-  · -- Main case: PMF.normalize_apply.
-    rw [PMF.normalize_apply]
-    -- `(∑' x, jointUnnorm e x) = totalMass e` by definition of `totalMass`.
+  split_ifs with h_fr0 h_fr_top
+  · rw [PMF.pure_apply]; simp
+  · rw [PMF.pure_apply]; simp
+  · rw [PMF.normalize_apply, correctedMass_some,
+        correctedMass_tsum_eq_FirstReach]
     rw [ENNReal.div_eq_inv_mul, mul_comm]
-    rfl
 
 /-- **Helper.** Explicit case-split formula for `pe_of_weak.kernel` at
-`(l_last, s_last)`. Derived from `pe_of_weak_scheduler_next_some_apply` by
-unfolding `ProbabilisticExecution.kernel` and pulling the case-split's
-constant factor outside the `μ`-tsum. -/
+`(l_last, s_last)`. Three cases mirroring the scheduler. -/
 private lemma pe_of_weak_kernel_eq
     (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem)
     (prefix_ : AlterSeq State Label) (l : Label) (s : State) :
     (pe_of_weak sys pe').kernel prefix_ (l, s) =
       (open Classical in
-       if totalMass sys pe' prefix_ = 0 then 0
-       else if totalMass sys pe' prefix_ = ⊤ then 0
+       if FirstReach sys pe' prefix_ = 0 then 0
+       else if FirstReach sys pe' prefix_ = ⊤ then 0
        else (∑' μ : PMF State,
               jointUnnorm sys pe' prefix_ (some (l, μ)) * μ s) /
-              totalMass sys pe' prefix_) := by
+              FirstReach sys pe' prefix_) := by
   classical
-  -- Unfold the kernel and apply `pe_of_weak_scheduler_next_some_apply` to
-  -- each summand.
   unfold ProbabilisticExecution.kernel
   simp only [pe_of_weak_scheduler_next_some_apply sys pe' prefix_]
-  split_ifs with h_tm0 h_tm_top
+  split_ifs with h_fr0 h_fr_top
   · simp
   · simp
-  · -- Pull `/ totalMass` outside the tsum.
-    rw [ENNReal.div_eq_inv_mul]
+  · rw [ENNReal.div_eq_inv_mul]
     simp_rw [ENNReal.div_eq_inv_mul, mul_assoc]
     rw [← ENNReal.tsum_mul_left]
+
+/-- **`FirstReach` equals `pe_of_weak.probOf`**. By strong induction on
+`e.trans.toList.length`, using `FirstReach_nil` / `probOf_nil` at the base
+and `FirstReach_append_singleton` / `probOf_append_singleton` /
+`pe_of_weak_kernel_eq` at the step (with `FirstReach`-denominator cancellation
+via `ENNReal.mul_div_cancel`). The `FirstReach (prefix) = 0` corner is
+handled by `totalMass_le_FirstReach + jointUnnorm_eq_zero_of_totalMass_eq_zero`,
+which forces both sides to `0`. -/
+private lemma FirstReach_eq_probOf
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) (h_e_term : e.trans.Terminates) :
+    FirstReach sys pe' e = (pe_of_weak sys pe').probOf e h_e_term := by
+  classical
+  obtain ⟨i, sq⟩ := e
+  -- Strong induction on `(sq.toList h_e_term).length`.
+  set n : ℕ := (sq.toList h_e_term).length with hn_def
+  clear_value n
+  induction n using Nat.strong_induction_on generalizing sq with
+  | _ n ih =>
+    by_cases h_sq_nil : sq = Seq.nil
+    · -- Base case.
+      subst h_sq_nil
+      rw [FirstReach_nil sys pe' i]
+      exact ((pe_of_weak sys pe').probOf_nil i).symm
+    · -- Step case: split sq at its last entry.
+      have h_toL_ne : sq.toList h_e_term ≠ [] := by
+        intro h_nil; apply h_sq_nil
+        rw [← Stream'.Seq.ofList_toList sq h_e_term, h_nil]; rfl
+      obtain ⟨prev, last, h_prev_term, h_struct, h_prev_toList, h_last_eq⟩ :=
+        Stream'.Seq.exists_split_last sq h_e_term h_toL_ne
+      -- Substitute `sq` by its split form everywhere; this rewrites
+      -- `h_e_term` and the strong-induction `ih` against the new shape too.
+      subst h_struct
+      have h_singleton_term :
+          (Seq.cons last Seq.nil : Seq (Label × State)).Terminates :=
+        Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+      have h_sq_toList :
+          (prev.append (Seq.cons last Seq.nil)).toList h_e_term =
+            prev.toList h_prev_term ++ [last] := by
+        rw [Stream'.Seq.toList_append prev (Seq.cons last Seq.nil)
+              h_prev_term h_singleton_term h_e_term]
+        congr 1
+        rw [Stream'.Seq.toList_cons]; simp [Stream'.Seq.toList_nil]
+      -- IH at the shorter prefix `⟨i, prev⟩`.
+      have h_IH :
+          FirstReach sys pe' ⟨i, prev⟩ =
+            (pe_of_weak sys pe').probOf ⟨i, prev⟩ h_prev_term := by
+        refine ih (prev.toList h_prev_term).length ?_ prev h_prev_term rfl
+        rw [hn_def, h_sq_toList]; simp
+      rw [FirstReach_append_singleton sys pe' i prev h_prev_term last h_e_term,
+        (pe_of_weak sys pe').probOf_append_singleton i prev h_prev_term last h_e_term,
+        ← h_IH]
+      -- Unfold the kernel and case-split on `FirstReach ⟨i, prev⟩`.
+      rcases last with ⟨l, s⟩
+      rw [pe_of_weak_kernel_eq sys pe' ⟨i, prev⟩ l s]
+      split_ifs with h_fr0 h_fr_top
+      · -- FirstReach = 0: both sides collapse to 0.
+        rw [mul_zero]
+        have h_tm0 : totalMass sys pe' ⟨i, prev⟩ = 0 := by
+          have h := totalMass_le_FirstReach sys pe' ⟨i, prev⟩
+          rw [h_fr0] at h; exact le_antisymm h bot_le
+        have h_jU_zero : ∀ opt, jointUnnorm sys pe' ⟨i, prev⟩ opt = 0 := by
+          intro opt
+          have h_tm0' := h_tm0
+          unfold totalMass at h_tm0'
+          exact ENNReal.tsum_eq_zero.mp h_tm0' opt
+        refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
+        rw [h_jU_zero (some (l, μ))]; simp
+      · -- FirstReach = ⊤: contradicts IH (probOf ≤ pe.init ≤ 1, so FR ≤ 1).
+        exfalso
+        have h_le : FirstReach sys pe' ⟨i, prev⟩ ≤ 1 := by
+          rw [h_IH]
+          exact (ProbabilisticExecution.probOf_le_init _ _ h_prev_term).trans
+            (PMF.coe_le_one _ _)
+        exact (lt_of_le_of_lt h_le ENNReal.one_lt_top).ne h_fr_top
+      · -- Main case: cancel via `ENNReal.mul_div_cancel` using `h_fr_top : FR ≠ ⊤`.
+        exact (ENNReal.mul_div_cancel h_fr0 h_fr_top).symm
+
+/-- **`FirstReach` is finite** (in fact `≤ 1`). For terminating `e`,
+`FirstReach e = probOf e ≤ pe.init e.init ≤ 1`. For non-terminating `e`,
+`FirstReach e = 0`. -/
+private lemma FirstReach_ne_top
+    (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) :
+    FirstReach sys pe' e ≠ ⊤ := by
+  classical
+  by_cases h_term : e.trans.Terminates
+  · rw [FirstReach_eq_probOf sys pe' e h_term]
+    have h_le : (pe_of_weak sys pe').probOf e h_term ≤
+                (pe_of_weak sys pe').init e.init :=
+      ProbabilisticExecution.probOf_le_init _ e h_term
+    exact (lt_of_le_of_lt (h_le.trans (PMF.coe_le_one _ _))
+      ENNReal.one_lt_top).ne
+  · have h_zero : FirstReach sys pe' e = 0 := by
+      unfold FirstReach
+      rw [dif_neg h_term]
+    rw [h_zero]
+    exact ENNReal.zero_ne_top
 
 /-- **Identity 1**: `tightStepFactor` at `chain_pre = []` for an external
 `l_last` equals the marginal of `iterOutcome.visible(d) · d (l_last, μ) · μ s_last`
@@ -2993,20 +3227,16 @@ private lemma sum_reachProb_tightStepFactor_eq_jointUnnorm_sum
 
 /-- **Degenerate-vanishing helper for the marginal identity A base case.**
 
-When `totalMass e_prev = 0` or `totalMass e_prev = ⊤`, the
-`reachProb · tightStepFactor` LHS of
-`sum_reachProb_tightStepFactor_eq_jointTight_kernel` vanishes.
+When `totalMass e_prev = 0`, the `reachProb · tightStepFactor` LHS of
+`sum_reachProb_tightStepFactor_eq_jointTight_kernel` vanishes. The
+`totalMass = ⊤` branch is now vacuous: `totalMass ≤ FirstReach ≤ 1 < ⊤`,
+so `totalMass = ⊤` is impossible.
 
-**Strategy.** Apply Identity 1 (`tightStepFactor_eq_iterOutcome_visible_marginal`)
-to rewrite `tightStepFactor` as `∑' μ d, iter.visible(d) · d (l_last, μ) · μ s_last`.
-Swap the order of summation (Fubini) and recognise the inner sum as
-`jointUnnorm e_prev (some (l_last, μ)) · μ s_last`. In the `totalMass = 0`
-case, every `jointUnnorm` summand vanishes
-(`jointUnnorm_eq_zero_of_totalMass_eq_zero`); the `totalMass = ⊤` case is
-handled by a focused sub-sorry pending a separate boundedness argument.
-
-**Status:** mostly closed (only the `totalMass = ⊤` branch remains as a
-focused sub-sorry). -/
+**Strategy.** Apply Identity-1 + Fubini to rewrite the LHS as
+`∑' μ, jointUnnorm e_prev (some (l_last, μ)) * μ s_last`. In the
+`totalMass = 0` branch, every `jointUnnorm` summand vanishes. In the
+`totalMass = ⊤` branch, derive a contradiction from
+`totalMass_le_FirstReach + FirstReach_ne_top`. -/
 private lemma sum_reachProb_tightStepFactor_eq_zero_of_totalMass_degenerate
     (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem)
@@ -3020,225 +3250,27 @@ private lemma sum_reachProb_tightStepFactor_eq_zero_of_totalMass_degenerate
         reachProb sys pe' e_w_pre e_prev *
           tightStepFactor sys pe' e_w_pre l_last e_prev e) = 0 := by
   classical
-  -- Apply the shared Identity-1+Fubini reduction to rewrite the LHS as
-  -- `∑' μ, jointUnnorm e_prev (some (l_last, μ)) * μ s_last`.
   rw [sum_reachProb_tightStepFactor_eq_jointUnnorm_sum sys pe' e e_prev
     h_e_term h_prev_term l_last s_last h_ext h_struct h_init]
-  -- Case-split on `h_deg`.
   rcases h_deg with h_tm0 | h_tm_top
   · -- totalMass = 0: every `jointUnnorm e_prev opt = 0`.
     refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
     rw [jointUnnorm_eq_zero_of_totalMass_eq_zero sys pe' e_prev h_tm0]
     ring
-  · -- totalMass = ⊤: focused sub-sorry. Requires a separate boundedness
-    -- argument (e.g. jointUnnorm e_prev (some _) ≤ 1 always, or that the
-    -- ⊤-mass concentrates at `none`).
-    sorry
+  · -- totalMass = ⊤: impossible since `totalMass ≤ FirstReach < ⊤`.
+    exfalso
+    apply FirstReach_ne_top sys pe' e_prev
+    exact le_antisymm le_top (h_tm_top ▸ totalMass_le_FirstReach sys pe' e_prev)
 
-/-- **Focused conservation sub-lemma (Identity 3, base case core).**
-
-The total non-stutter outflow from the initial-state boundary equals
-the initial-state mass:
-`totalMass sys pe' ⟨s_init, Seq.nil⟩ = pe'.initState s_init`.
-
-**Mathematical content.** Unfolding `totalMass = ∑' opt, jointUnnorm opt`
-and using `iterOutcome.halt + ∑ d, iterOutcome.visible(d) · 1 +
-iterOutcome.stutter = 1` (PMF total mass), the RHS becomes
-`∑' e_w, reachProb sys pe' e_w ⟨s_init, Seq.nil⟩ ·
-  (1 - iterOutcome.stutter at (e_w, ⟨s_init, Seq.nil⟩))`. This is the
-"mass arriving at the initial-state boundary and exiting non-stuttering"
-sum.
-
-The geometric series identity then telescopes:
-* `reachProb e_w_extended e_prev = reachProb e_w e_prev ·
-  iterOutcome.stutter at (e_w, e_prev)` when `e_w_extended` extends
-  `e_w` by an internal-stutter step.
-* The sum `∑' e_w, reachProb · (1 - stutter)` collects, at each
-  stutter-chain length, the mass that exits non-stuttering at that
-  length.
-* These contributions telescope to `pe'.initState s_init -
-  lim (∏ stutters)`. Under the algorithm's well-foundedness (stutter
-  probabilities strictly less than 1 in aggregate over reachable
-  boundaries), the limit is 0.
-
-**Status.** Deferred (focused sub-sorry). Substantive geometric-series /
-stutter-chain conservation argument; see top-level docstring of Identity 3.
-This is the *single substantive sub-claim* of the Identity 3 base case;
-all other reductions are mechanical. -/
-private lemma totalMass_nil_eq_initState
-    (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (s_init : State) :
-    totalMass sys pe' ⟨s_init, Seq.nil⟩ = pe'.initState s_init := by
-  sorry
-
-/-- **Identity 3 — base case (`e_prev.trans = Seq.nil`).**
-
-Specialisation of `sum_jointTight_eq_totalMass` to `e_prev = ⟨s_init, Seq.nil⟩`.
-
-**LHS.** By `jointTight_nil`, only `e_w_prev = ⟨s_init, Seq.nil⟩`
-contributes, giving `pe'.initState s_init`. Mechanised here via
-`jointTight_marginal_A_base` (which proves LHS =
-`(pe_of_weak sys pe').probOf ⟨s_init, Seq.nil⟩ _`) combined with
-`probOf_nil` (which collapses the RHS to `pe'.initState s_init`).
-
-**RHS.** `totalMass sys pe' ⟨s_init, Seq.nil⟩ = pe'.initState s_init`
-is the substantive geometric-series conservation; isolated as the
-focused sub-lemma `totalMass_nil_eq_initState` above. -/
-private lemma sum_jointTight_eq_totalMass_nil
-    (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (s_init : State) :
-    (∑' e_w_prev : AlterSeq State Label,
-        jointTight sys pe' e_w_prev ⟨s_init, Seq.nil⟩) =
-      totalMass sys pe' ⟨s_init, Seq.nil⟩ := by
-  -- LHS = `pe'.initState s_init` via `jointTight_marginal_A_base`:
-  -- the marginal A base case gives LHS = `(pe_of_weak sys pe').probOf
-  -- ⟨s_init, Seq.nil⟩ _`, which collapses to `pe'.initState s_init` by
-  -- `probOf_nil` (since `(pe_of_weak sys pe').init = pe'.initState`).
-  rw [jointTight_marginal_A_base sys pe' s_init,
-      (pe_of_weak sys pe').probOf_nil]
-  -- RHS reduction is the substantive conservation sub-lemma.
-  exact (totalMass_nil_eq_initState sys pe' s_init).symm
-
-/-- **Identity 3 — step case (`e_prev.trans = trans_prev ++ [(l_prev, s_prev)]`
-with `l_prev` external).**
-
-Specialisation of `sum_jointTight_eq_totalMass` to a non-empty tight
-`e_prev`. The last entry `(l_prev, s_prev)` is the most recent external
-sys-step; `trans_prev` is the (still tight) prefix at the previous
-iteration boundary.
-
-**LHS.** By `jointTight_step_external`, each `jointTight (e_w_prev, e_prev)`
-expands as `∑' e_iter_start, reachProb (e_w_prev, e_iter_start)
-* tightStepFactor (e_w_prev, l_prev, e_iter_start, e_prev)`.
-
-**RHS.** Same `(1 - stutter@e_w_prev)`-weighted reachProb sum as in the
-nil case, but now anchored at the post-step state.
-
-**Conservation argument.** The mass arriving tight at `e_prev` is the mass
-that emerged from the previous tight visit (at `e_prev_prev := iteration
-start prior to `(l_prev, s_prev)`) and successfully completed an
-`l_prev`-emitting iteration. This decomposes via Identity 1 + Identity 2
-into the same `∑' e_w, reachProb e_w e_prev * (1 - stutter@e_w)` shape as
-the nil case, with the inductive hypothesis providing the conservation at
-`e_prev_prev`.
-
-**Status.** Deferred (focused sub-sorry). Requires an Identity-1+Identity-2
-chain to descend to the inductive sub-prefix `e_prev_prev`, then the IH at
-`e_prev_prev` to close. -/
-private lemma sum_jointTight_eq_totalMass_step
-    (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (e_prev : AlterSeq State Label)
-    (h_prev_term : e_prev.trans.Terminates)
-    (h_prev_tight : sys.IsTight e_prev)
-    (h_nonempty : e_prev.trans ≠ Seq.nil)
-    (IH : ∀ (e_prev' : AlterSeq State Label) (h_prev'_term : e_prev'.trans.Terminates),
-            sys.IsTight e_prev' →
-            (e_prev'.trans.toList h_prev'_term).length <
-              (e_prev.trans.toList h_prev_term).length →
-            (∑' e_w_prev : AlterSeq State Label,
-                jointTight sys pe' e_w_prev e_prev') =
-              totalMass sys pe' e_prev') :
-    (∑' e_w_prev : AlterSeq State Label, jointTight sys pe' e_w_prev e_prev) =
-      totalMass sys pe' e_prev := by
-  -- Silence the unused-IH warning until the substantive proof lands.
-  let _ := IH
-  let _ := h_prev_tight
-  let _ := h_nonempty
-  sorry
-
-/-- **Identity 3 (jointTight ↔ totalMass conservation).**
-
-For any tight terminating `e_prev`, summing `jointTight (e_w_prev, e_prev)`
-over the pre-iteration `sys^w`-history `e_w_prev` equals
-`totalMass sys pe' e_prev`.
-
-This is the "inflow = outflow" conservation identity at the tight prefix
-`e_prev`: the LHS counts the joint mass of pre-iteration histories whose
-iteration arrives tight at `e_prev`, the RHS is the outgoing one-step mass
-budget of the `pe_of_weak`-kernel at `e_prev`. The two are equal because
-each tight visit to `e_prev` carries the same mass on both sides; the
-mathematical content is a geometric-series argument over stutter-chains at
-the `e_prev`-boundary.
-
-**Proof structure.** Strong induction on the length of `e_prev.trans.toList`,
-dispatched to:
-
-* `sum_jointTight_eq_totalMass_nil` for the base case (`e_prev.trans = nil`);
-* `sum_jointTight_eq_totalMass_step` for the inductive step (non-empty
-  tight `e_prev`), using the IH at strictly shorter tight prefixes.
-
-**Status.** Wired to the two sub-lemmas; sub-lemma bodies deferred. -/
-private lemma sum_jointTight_eq_totalMass
-    (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (e_prev : AlterSeq State Label)
-    (h_prev_term : e_prev.trans.Terminates)
-    (h_prev_tight : sys.IsTight e_prev) :
-    (∑' e_w_prev : AlterSeq State Label, jointTight sys pe' e_w_prev e_prev) =
-      totalMass sys pe' e_prev := by
-  classical
-  -- Strong induction on the length of `e_prev.trans.toList`.
-  set n : ℕ := (e_prev.trans.toList h_prev_term).length with hn_def
-  clear_value n
-  induction n using Nat.strong_induction_on generalizing e_prev with
-  | _ n IH =>
-    by_cases h_nil : e_prev.trans = Seq.nil
-    · -- Base case: `e_prev.trans = Seq.nil`. Reduce to
-      -- `sum_jointTight_eq_totalMass_nil` at `s_init = e_prev.init`.
-      obtain ⟨s_init, t⟩ := e_prev
-      dsimp at h_nil
-      subst h_nil
-      exact sum_jointTight_eq_totalMass_nil sys pe' s_init
-    · -- Step case: non-empty tight `e_prev`. Dispatch to
-      -- `sum_jointTight_eq_totalMass_step` with the strong-induction IH.
-      refine sum_jointTight_eq_totalMass_step sys pe' e_prev h_prev_term
-        h_prev_tight h_nil ?_
-      intro e_prev' h_prev'_term h_prev'_tight h_len_lt
-      exact IH (e_prev'.trans.toList h_prev'_term).length
-        (hn_def ▸ h_len_lt) e_prev' h_prev'_term h_prev'_tight rfl
-
-/-- **Main-case identity for the marginal identity A base case.**
-
-When `totalMass e_prev ∉ {0, ⊤}`, the substantive `reachProb ·
-tightStepFactor` / `jointTight · kernel` identity holds (the
-totalMass-denominator cancellation at the heart of marginal identity A).
-
-**Justification.** The shared Identity-1 + Fubini reduction
-(`sum_reachProb_tightStepFactor_eq_jointUnnorm_sum`) rewrites the LHS as
-`∑' μ, jointUnnorm e_prev (some (l_last, μ)) · μ s_last`. The
-conservation identity `sum_jointTight_eq_totalMass` rewrites the
-`∑' e_w_prev, jointTight` factor on the RHS as `totalMass e_prev`. With
-`totalMass e_prev ∉ {0, ⊤}`, `ENNReal.mul_div_cancel` cancels the
-`totalMass e_prev` denominator and yields the equality. -/
-private lemma sum_reachProb_tightStepFactor_eq_jointTight_kernel_main
-    (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (e e_prev : AlterSeq State Label)
-    (h_e_term : e.trans.Terminates) (h_prev_term : e_prev.trans.Terminates)
-    (h_prev_tight : sys.IsTight e_prev)
-    (l_last : Label) (s_last : State) (h_ext : ¬ sys.internal l_last)
-    (h_struct : e.trans = e_prev.trans.append (Seq.cons (l_last, s_last) Seq.nil))
-    (h_init : e_prev.init = e.init)
-    (h_tm0 : ¬ totalMass sys pe' e_prev = 0)
-    (h_tm_top : ¬ totalMass sys pe' e_prev = ⊤) :
-    (∑' e_w_pre : AlterSeq State Label,
-        reachProb sys pe' e_w_pre e_prev *
-          tightStepFactor sys pe' e_w_pre l_last e_prev e)
-      = (∑' e_w_prev : AlterSeq State Label, jointTight sys pe' e_w_prev e_prev) *
-          ((∑' μ : PMF State,
-              jointUnnorm sys pe' e_prev (some (l_last, μ)) * μ s_last) /
-             totalMass sys pe' e_prev) := by
-  classical
-  -- Step 1: Apply the shared Identity-1 + Fubini reduction to the LHS.
-  rw [sum_reachProb_tightStepFactor_eq_jointUnnorm_sum sys pe' e e_prev
-    h_e_term h_prev_term l_last s_last h_ext h_struct h_init]
-  -- Step 2: Apply Identity 3 to the `∑' e_w_prev, jointTight` factor on the RHS.
-  rw [sum_jointTight_eq_totalMass sys pe' e_prev h_prev_term h_prev_tight]
-  -- Step 3: Cancel the `totalMass e_prev` denominator.
-  rw [ENNReal.mul_div_cancel h_tm0 h_tm_top]
+/-! **Retired (Phase 2):** the `totalMass`-denominator conservation chain
+(`totalMass_nil_eq_initState`, `sum_jointTight_eq_totalMass_nil`,
+`sum_jointTight_eq_totalMass_step`, `sum_jointTight_eq_totalMass`, and the
+totalMass-version `sum_reachProb_tightStepFactor_eq_jointTight_kernel_main`)
+has been removed. The substantive cancellation in
+`sum_reachProb_tightStepFactor_eq_jointTight_kernel` now uses the
+marginal-A IH at `e_prev` (`∑ jointTight = probOf`) plus
+`FirstReach_eq_probOf` plus `ENNReal.mul_div_cancel`, divided by
+`FirstReach e_prev` rather than `totalMass e_prev`. -/
 
 /-- **Marginal identity A — base case, Sub-claim 2: substantive identity at
 the collapse.**
@@ -3267,7 +3299,10 @@ private lemma sum_reachProb_tightStepFactor_eq_jointTight_kernel
     (_h_prev_tight : sys.IsTight e_prev)
     (l_last : Label) (s_last : State) (h_ext : ¬ sys.internal l_last)
     (h_struct : e.trans = e_prev.trans.append (Seq.cons (l_last, s_last) Seq.nil))
-    (h_init : e_prev.init = e.init) :
+    (h_init : e_prev.init = e.init)
+    (h_IH : (∑' e_w_prev : AlterSeq State Label,
+              jointTight sys pe' e_w_prev e_prev) =
+            (pe_of_weak sys pe').probOf e_prev h_prev_term) :
     (∑' e_w_pre : AlterSeq State Label,
         reachProb sys pe' e_w_pre e_prev *
           tightStepFactor sys pe' e_w_pre l_last e_prev e)
@@ -3275,9 +3310,7 @@ private lemma sum_reachProb_tightStepFactor_eq_jointTight_kernel
           (pe_of_weak sys pe').kernel
             ⟨e_prev.init, e_prev.trans.append (Seq.ofList [])⟩ (l_last, s_last) := by
   classical
-  -- **Phase A: simplify the RHS prefix to `e_prev`.** The kernel's prefix
-  -- `⟨e_prev.init, e_prev.trans.append (Seq.ofList [])⟩` equals `e_prev`
-  -- via `Seq.ofList_nil` and `Seq.append_nil`.
+  -- **Phase A: simplify the RHS prefix to `e_prev`.**
   have h_prefix_eq :
       (⟨e_prev.init, e_prev.trans.append (Seq.ofList [])⟩ : AlterSeq State Label) =
         e_prev := by
@@ -3285,30 +3318,33 @@ private lemma sum_reachProb_tightStepFactor_eq_jointTight_kernel
     dsimp
     rw [Stream'.Seq.append_nil]
   rw [h_prefix_eq]
-  -- **Phase B: case-split on `totalMass e_prev`.** Use `pe_of_weak_kernel_eq`
-  -- to expose the kernel's explicit structure. The 0 / ⊤ branches collapse
-  -- the RHS to 0; the main branch is the substantive cancellation.
+  -- **Phase B: unfold the kernel via `pe_of_weak_kernel_eq` and case-split on
+  -- `FirstReach e_prev`.** The `FirstReach = 0` branch collapses both sides
+  -- to 0; the main branch is the substantive cancellation, closed via the
+  -- marginal-A IH `h_IH` plus `FirstReach_eq_probOf`.
   rw [pe_of_weak_kernel_eq sys pe' e_prev l_last s_last]
-  -- Case-split on `totalMass e_prev`. The 0 / ⊤ branches collapse the RHS
-  -- to `_ * 0 = 0` (since the kernel evaluates to 0); we discharge them
-  -- via `sum_reachProb_tightStepFactor_eq_zero_of_totalMass_degenerate`,
-  -- which packages the LHS-vanishes claim in the degenerate cases. The
-  -- main branch is the substantive totalMass-denominator cancellation.
-  split_ifs with h_tm0 h_tm_top
-  · -- Degenerate: totalMass = 0. RHS = `_ * 0 = 0`. Reduce LHS to 0.
+  split_ifs with h_fr0 h_fr_top
+  · -- Degenerate: FirstReach = 0. RHS collapses; LHS collapses via TM ≤ FR = 0.
     rw [mul_zero]
+    have h_tm0 : totalMass sys pe' e_prev = 0 := by
+      have h := totalMass_le_FirstReach sys pe' e_prev
+      rw [h_fr0] at h
+      exact le_antisymm h bot_le
     exact sum_reachProb_tightStepFactor_eq_zero_of_totalMass_degenerate
       sys pe' e e_prev h_e_term h_prev_term l_last s_last h_ext h_struct h_init
       (Or.inl h_tm0)
-  · -- Degenerate: totalMass = ⊤. RHS = `_ * 0 = 0`. Reduce LHS to 0.
-    rw [mul_zero]
-    exact sum_reachProb_tightStepFactor_eq_zero_of_totalMass_degenerate
-      sys pe' e e_prev h_e_term h_prev_term l_last s_last h_ext h_struct h_init
-      (Or.inr h_tm_top)
-  · -- Main case: totalMass-denominator cancellation. Substantive sub-sorry.
-    exact sum_reachProb_tightStepFactor_eq_jointTight_kernel_main
-      sys pe' e e_prev h_e_term h_prev_term _h_prev_tight l_last s_last h_ext
-      h_struct h_init h_tm0 h_tm_top
+  · -- Degenerate: FirstReach = ⊤. Vacuous: `FirstReach = probOf ≤ pe.init ≤ 1`.
+    exfalso
+    have h_le : FirstReach sys pe' e_prev ≤ 1 := by
+      rw [FirstReach_eq_probOf sys pe' e_prev h_prev_term]
+      exact (ProbabilisticExecution.probOf_le_init _ _ h_prev_term).trans
+        (PMF.coe_le_one _ _)
+    exact (lt_of_le_of_lt h_le ENNReal.one_lt_top).ne h_fr_top
+  · -- Main case: substantive `FirstReach`-denominator cancellation.
+    rw [sum_reachProb_tightStepFactor_eq_jointUnnorm_sum sys pe' e e_prev
+      h_e_term h_prev_term l_last s_last h_ext h_struct h_init]
+    rw [h_IH, ← FirstReach_eq_probOf sys pe' e_prev h_prev_term]
+    exact (ENNReal.mul_div_cancel h_fr0 h_fr_top).symm
 
 /-- **Marginal identity A — kernel-chain step identity, base case** (the
 substantive "internal chain is empty" identity).
@@ -3336,7 +3372,10 @@ private lemma jointTight_step_kernel_chain_identity_base
     (h_struct : e.trans = e_prev.trans.append
         (Seq.ofList ([] ++ [(l_last, s_last)])))
     (_h_init : e_prev.init = e.init)
-    (h_ext : ¬ sys.internal l_last) :
+    (h_ext : ¬ sys.internal l_last)
+    (h_IH : (∑' e_w_prev : AlterSeq State Label,
+              jointTight sys pe' e_w_prev e_prev) =
+            (pe_of_weak sys pe').probOf e_prev h_prev_term) :
     (∑' e_w_pre : AlterSeq State Label, jointTight sys pe' e_w_pre e) =
       (∑' e_w_prev : AlterSeq State Label, jointTight sys pe' e_w_prev e_prev) *
         pe_of_weak_kernel_chain sys pe' e_prev
@@ -3391,10 +3430,10 @@ private lemma jointTight_step_kernel_chain_identity_base
           h_e_term h_prev_term _h_prev_tight l_last s_last h_ext h_struct
           _h_init e_w_pre e_iter_start h_ne, mul_zero]
   rw [tsum_congr h_collapse]
-  -- Sub-claim 2 closes the substantive identity (totalMass-denominator
-  -- telescoping at the collapsed term).
+  -- Sub-claim 2 closes the substantive identity (FirstReach-denominator
+  -- cancellation at the collapsed term), using the marginal-A IH at `e_prev`.
   exact sum_reachProb_tightStepFactor_eq_jointTight_kernel sys pe' e e_prev
-    h_e_term h_prev_term _h_prev_tight l_last s_last h_ext h_struct _h_init
+    h_e_term h_prev_term _h_prev_tight l_last s_last h_ext h_struct _h_init h_IH
 
 /-- **Marginal identity A — kernel-chain step identity, inductive step**
 (extending the internal sub-chain by one entry).
@@ -3471,29 +3510,27 @@ private lemma jointTight_step_kernel_chain_identity
         (Seq.ofList (chain_pre ++ [(l_last, s_last)])))
     (h_init : e_prev.init = e.init)
     (h_ext : ¬ sys.internal l_last)
-    (h_chain_int : ∀ pair ∈ chain_pre, sys.internal pair.1) :
+    (h_chain_int : ∀ pair ∈ chain_pre, sys.internal pair.1)
+    (h_IH : (∑' e_w_prev : AlterSeq State Label,
+              jointTight sys pe' e_w_prev e_prev) =
+            (pe_of_weak sys pe').probOf e_prev h_prev_term) :
     (∑' e_w_pre : AlterSeq State Label, jointTight sys pe' e_w_pre e) =
       (∑' e_w_prev : AlterSeq State Label, jointTight sys pe' e_w_prev e_prev) *
         pe_of_weak_kernel_chain sys pe' e_prev
           (chain_pre ++ [(l_last, s_last)]) := by
-  -- Induct on `chain_pre` from the right. Generalise over `e` and the
-  -- structural hypotheses that depend on `chain_pre`, so the IH applies
-  -- at the "smaller" execution `e'` produced by the shorter chain.
+  -- Induct on `chain_pre` from the right.
   induction chain_pre using List.reverseRecOn generalizing e with
   | nil =>
     -- Base case: chain_pre = []. Delegate to the substantive base sub-lemma.
     exact jointTight_step_kernel_chain_identity_base sys pe' e e_prev
       h_prev_term h_e_term h_prev_tight h_e_tight l_last s_last
-      h_struct h_init h_ext
+      h_struct h_init h_ext h_IH
   | append_singleton rest last ih =>
-    -- Inductive step: chain_pre = rest ++ [last] with `last.1` internal.
-    -- The IH applies at any `e'` produced from `rest ++ [(l_last, s_last)]`.
     have h_last_int : sys.internal last.1 := h_chain_int last (by
       rw [List.mem_append]; right; exact List.mem_singleton.mpr rfl)
     have h_rest_int : ∀ pair ∈ rest, sys.internal pair.1 := by
       intro pair hp
       exact h_chain_int pair (by rw [List.mem_append]; left; exact hp)
-    -- Repackage `last : Label × State` as `(l_int, s_int)`.
     obtain ⟨l_int, s_int⟩ := last
     exact jointTight_step_kernel_chain_identity_inductive_step sys pe' e e_prev
       h_prev_term h_e_term h_prev_tight h_e_tight rest l_int s_int l_last s_last
@@ -3541,7 +3578,8 @@ private lemma jointTight_marginal_A_iteration_step_identity
       (pe_of_weak sys pe').probOf e h_e_term := by
   -- Step 1: rewrite the LHS marginal via the substantive sub-lemma.
   rw [jointTight_step_kernel_chain_identity sys pe' e e_prev h_prev_term h_e_term
-        h_prev_tight h_e_tight chain_pre l_last s_last h_struct h_init h_ext h_chain_int]
+        h_prev_tight h_e_tight chain_pre l_last s_last h_struct h_init h_ext h_chain_int
+        h_IH]
   -- Step 2: apply the IH to replace the marginal at e_prev.
   rw [h_IH]
   -- Step 3: rewrite RHS so that the appended trans matches the chain factorisation.
@@ -4167,18 +4205,6 @@ private lemma chainProb_total_mass_of_boundedFuel
     ⟨0, rfl⟩ ?_
   -- length of Seq.nil = 0, so 0 + n = n.
   rw [Seq.length_nil, Nat.zero_add]
-
-/-- **`tsum` over `Option α` splits into the `none` summand and the `some`-sum.**
-Mirror of `tsum_list_split_head_tail` for `Option`. -/
-private lemma tsum_option_split_none_some {α : Type} (f : Option α → ENNReal) :
-    ∑' o : Option α, f o = f none + ∑' a : α, f (some a) := by
-  rw [← (Equiv.optionEquivSumPUnit.{0, _} α).symm.tsum_eq f]
-  rw [Summable.tsum_sum ENNReal.summable ENNReal.summable]
-  rw [add_comm]
-  congr 1
-  rw [tsum_eq_single (b := (⟨⟩ : PUnit))]
-  · rfl
-  · rintro ⟨⟩ h; exact (h rfl).elim
 
 /-- **Auxiliary endState-marginal induction for `chainProb_endState_marginal_of_boundedFuel`.**
 Parameter `k` is the "remaining fuel": the prefix `e` is required to have *exact*
