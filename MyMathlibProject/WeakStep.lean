@@ -108,6 +108,15 @@ noncomputable def LabelledSystem.traceProb (ls : LabelledSystem State Label)
       e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e},
     pe.probOf e.1 e.2.1
 
+/-! ### Trace-distribution sets achievable by a system -/
+
+/-- The set of trace distributions achievable by some probabilistic execution
+of the labelled system `ls`. Equality of this set across two systems means
+the systems are trace-distribution-equivalent. -/
+def achievableTraceDists (ls : LabelledSystem State Label) :
+    Set (Seq Label → ENNReal) :=
+  {D | ∃ pe : ProbabilisticExecution ls.toSystem, ∀ τ, ls.traceProb pe τ = D τ}
+
 /-! ### Weak Schedulers -/
 
 /-- A *weak scheduler* for a labelled system: a `Scheduler` whose emissions are
@@ -164,6 +173,40 @@ private theorem runFromState_stop (sys : LabelledSystem State Label) :
 @[simp] theorem run_stop (sys : LabelledSystem State Label) (n : ℕ) (s : State) :
     (stop sys).run n s = PMF.pure s :=
   runFromState_stop sys n ⟨s, Seq.nil⟩ s
+
+/-- For any weak scheduler `σ`, state `s`, and fuel `n`, the mass that
+`σ.run n s` places on `s` is at least the probability that `σ`'s first emission
+from `⟨s, Seq.nil⟩` is `none` (i.e., immediately halts, keeping the chain at
+`s`). For `n = 0` the inequality is `σ.next none ≤ 1`; for `n = m+1`, the
+`none`-branch in the bind contributes exactly `σ.next none × 1` to the mass at
+`s`. -/
+lemma run_apply_self_ge_next_none {sys : LabelledSystem State Label}
+    (σ : WeakScheduler sys) (s : State) :
+    ∀ n, σ.next ⟨s, Seq.nil⟩ none ≤ (σ.run n s) s := by
+  intro n
+  change σ.next ⟨s, Seq.nil⟩ none ≤ (σ.runFromState n ⟨s, Seq.nil⟩ s) s
+  induction n with
+  | zero =>
+    -- runFromState 0 _ s = PMF.pure s.
+    change σ.next ⟨s, Seq.nil⟩ none ≤ (PMF.pure s : PMF State) s
+    rw [PMF.pure_apply, if_pos rfl]
+    exact PMF.coe_le_one _ _
+  | succ m _ =>
+    -- runFromState (m+1) ⟨s, nil⟩ s = (σ.next ⟨s, nil⟩).bind (match-body).
+    change σ.next ⟨s, Seq.nil⟩ none ≤
+      ((σ.next ⟨s, Seq.nil⟩).bind (fun (sub_emit : Option (Label × PMF State)) =>
+        match sub_emit with
+        | none => (PMF.pure s : PMF State)
+        | some (l, μ_q) => μ_q.bind fun s' =>
+            σ.runFromState m ⟨s, Seq.nil.append (Seq.cons (l, s') Seq.nil)⟩ s')) s
+    rw [PMF.bind_apply]
+    -- Goal: σ.next none ≤ ∑' a, σ.next a * (match a with ...) s.
+    refine le_trans ?_ (ENNReal.le_tsum (α := Option (Label × PMF State)) none)
+    -- After ENNReal.le_tsum none: bound by σ.next none * (match none with ...) s
+    --   = σ.next none * (PMF.pure s) s = σ.next none * 1 = σ.next none.
+    change σ.next ⟨s, Seq.nil⟩ none ≤
+      σ.next ⟨s, Seq.nil⟩ none * ((PMF.pure s : PMF State) s)
+    rw [PMF.pure_apply, if_pos rfl, mul_one]
 
 end WeakScheduler
 

@@ -1,6 +1,7 @@
 import MyMathlibProject.Basic
 import MyMathlibProject.Composition
 import MyMathlibProject.Construction
+import MyMathlibProject.Distribution
 import MyMathlibProject.SeqHelper
 import MyMathlibProject.Simulation
 import MyMathlibProject.WeakStep

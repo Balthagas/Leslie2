@@ -73,6 +73,20 @@ theorem stateAt_find_eq_endState (e : AlterSeq State Label)
     e.stateAt (Nat.find h) = some (e.endState h) :=
   Option.eq_some_of_isSome _
 
+/-- If `e.trans = Seq.nil`, the `endState` of `e` is its `init`. -/
+theorem endState_of_trans_nil
+    (e : AlterSeq State Label) (h_nil : e.trans = Seq.nil)
+    (h : e.trans.Terminates) :
+    e.endState h = e.init := by
+  have h_term0 : e.trans.TerminatedAt 0 := by
+    rw [h_nil]; rfl
+  have h_find : Nat.find h = 0 := (Nat.find_eq_zero h).mpr h_term0
+  have h_stateAt := stateAt_find_eq_endState e h
+  rw [h_find] at h_stateAt
+  have h_zero : e.stateAt 0 = some e.init := rfl
+  rw [h_zero] at h_stateAt
+  exact (Option.some.inj h_stateAt).symm
+
 /-- The `endState` of an alterSeq extended by appending a single transition
 `(l, s)` is `s` (the destination of the appended transition). -/
 theorem endState_append_singleton

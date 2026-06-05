@@ -350,4 +350,110 @@ theorem exists_split_last
   · -- previous.toList h_prev = prevList = dropLast (toL).
     exact Stream'.Seq.toList_ofList prevList
 
+/-- `Seq.filter` distributes over `append` when the left sequence terminates.
+Proved by induction on the underlying list of the left sequence. -/
+theorem filter_append (p : α → Prop) (s t : Seq α)
+    (h_s : s.Terminates) :
+    (s.append t).filter p = (s.filter p).append (t.filter p) := by
+  classical
+  obtain ⟨l, hl⟩ : ∃ l : List α, s = Seq.ofList l :=
+    ⟨s.toList h_s, (Seq.ofList_toList _ _).symm⟩
+  subst hl
+  clear h_s
+  induction l with
+  | nil =>
+    rw [Seq.ofList_nil, Seq.nil_append, Seq.filter_nil, Seq.nil_append]
+  | cons a t' ih =>
+    rw [Seq.ofList_cons, Seq.cons_append]
+    by_cases h_p : p a
+    · rw [Seq.filter_cons_pos a _ h_p, Seq.filter_cons_pos a _ h_p, Seq.cons_append, ih]
+    · rw [Seq.filter_cons_neg a _ h_p, Seq.filter_cons_neg a _ h_p, ih]
+
+/-- Right-cancellation for append-of-singleton on terminating sequences: if
+`A ++ [x] = B ++ [y]` with both `A`, `B` terminating, then `x = y`. -/
+theorem append_singleton_inj_right
+    (A B : Seq α) (h_A : A.Terminates) (h_B : B.Terminates) (x y : α)
+    (h : A.append (Seq.cons x Seq.nil) = B.append (Seq.cons y Seq.nil)) :
+    x = y := by
+  classical
+  have h_x_term : (Seq.cons x Seq.nil).Terminates :=
+    Seq.terminates_cons_iff.mpr Seq.terminates_nil
+  have h_y_term : (Seq.cons y Seq.nil).Terminates :=
+    Seq.terminates_cons_iff.mpr Seq.terminates_nil
+  have h_AX_term : (A.append (Seq.cons x Seq.nil)).Terminates :=
+    ⟨_, Seq.terminatedAt_append_find h_A h_x_term.choose_spec⟩
+  have h_BY_term : (B.append (Seq.cons y Seq.nil)).Terminates :=
+    ⟨_, Seq.terminatedAt_append_find h_B h_y_term.choose_spec⟩
+  have h_toL : (A.append (Seq.cons x Seq.nil)).toList h_AX_term
+              = (B.append (Seq.cons y Seq.nil)).toList h_BY_term := by congr 1
+  rw [Seq.toList_append A _ h_A h_x_term h_AX_term,
+      Seq.toList_append B _ h_B h_y_term h_BY_term] at h_toL
+  have h_x_toL : (Seq.cons x Seq.nil).toList h_x_term = [x] := by
+    rw [Seq.toList_cons h_x_term]; congr 1; exact Seq.toList_nil
+  have h_y_toL : (Seq.cons y Seq.nil).toList h_y_term = [y] := by
+    rw [Seq.toList_cons h_y_term]; congr 1; exact Seq.toList_nil
+  rw [h_x_toL, h_y_toL] at h_toL
+  have h_last := congrArg List.getLast? h_toL
+  rw [List.getLast?_concat, List.getLast?_concat] at h_last
+  exact Option.some_inj.mp h_last
+
+/-- Left-cancellation for append-of-singleton on terminating sequences: if
+`A ++ [x] = B ++ [y]` with both `A`, `B` terminating, then `A = B`. -/
+theorem append_singleton_inj_left
+    (A B : Seq α) (h_A : A.Terminates) (h_B : B.Terminates) (x y : α)
+    (h : A.append (Seq.cons x Seq.nil) = B.append (Seq.cons y Seq.nil)) :
+    A = B := by
+  classical
+  have h_x_term : (Seq.cons x Seq.nil).Terminates :=
+    Seq.terminates_cons_iff.mpr Seq.terminates_nil
+  have h_y_term : (Seq.cons y Seq.nil).Terminates :=
+    Seq.terminates_cons_iff.mpr Seq.terminates_nil
+  have h_AX_term : (A.append (Seq.cons x Seq.nil)).Terminates :=
+    ⟨_, Seq.terminatedAt_append_find h_A h_x_term.choose_spec⟩
+  have h_BY_term : (B.append (Seq.cons y Seq.nil)).Terminates :=
+    ⟨_, Seq.terminatedAt_append_find h_B h_y_term.choose_spec⟩
+  have h_toL : (A.append (Seq.cons x Seq.nil)).toList h_AX_term
+              = (B.append (Seq.cons y Seq.nil)).toList h_BY_term := by congr 1
+  rw [Seq.toList_append A _ h_A h_x_term h_AX_term,
+      Seq.toList_append B _ h_B h_y_term h_BY_term] at h_toL
+  have h_x_toL : (Seq.cons x Seq.nil).toList h_x_term = [x] := by
+    rw [Seq.toList_cons h_x_term]; congr 1; exact Seq.toList_nil
+  have h_y_toL : (Seq.cons y Seq.nil).toList h_y_term = [y] := by
+    rw [Seq.toList_cons h_y_term]; congr 1; exact Seq.toList_nil
+  rw [h_x_toL, h_y_toL] at h_toL
+  have h_dropLast := congrArg List.dropLast h_toL
+  rw [List.dropLast_concat, List.dropLast_concat] at h_dropLast
+  have h_A_toL_eq : A = Seq.ofList (A.toList h_A) :=
+    (Seq.ofList_toList _ _).symm
+  have h_B_toL_eq : B = Seq.ofList (B.toList h_B) :=
+    (Seq.ofList_toList _ _).symm
+  rw [h_A_toL_eq, h_B_toL_eq, h_dropLast]
+
+/-- Filter preserves termination: a filter of a terminating sequence
+is itself terminating. -/
+theorem terminates_filter (p : α → Prop) (s : Seq α)
+    (h : s.Terminates) : (s.filter p).Terminates := by
+  classical
+  obtain ⟨l, rfl⟩ : ∃ l : List α, s = Seq.ofList l :=
+    ⟨s.toList h, (Seq.ofList_toList _ _).symm⟩
+  have h_t : ∀ t : List α, ((↑t : Seq α).filter p).Terminates := by
+    intro t
+    induction t with
+    | nil =>
+      change ((Seq.nil : Seq α).filter p).Terminates
+      rw [Stream'.Seq.filter_nil]
+      exact Seq.terminates_nil
+    | cons a t ih =>
+      rw [Stream'.Seq.ofList_cons]
+      by_cases h_p : p a
+      · rw [Stream'.Seq.filter_cons_pos a _ h_p]
+        rcases ih with ⟨m, hm⟩
+        refine ⟨m + 1, ?_⟩
+        change (Seq.cons a ((Seq.ofList t).filter p)).get? (m + 1) = none
+        rw [Seq.get?_cons_succ]
+        exact hm
+      · rw [Stream'.Seq.filter_cons_neg a _ h_p]
+        exact ih
+  exact h_t l
+
 end Stream'.Seq
