@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
+import MyMathlibProject.PmfUtils
 import MyMathlibProject.WeakStep
 
 /-!
@@ -67,10 +68,9 @@ every state. Preserves labels. This is the map `g` that embeds finite
 `sys`-executions into `𝒟(sys)`-executions, used to transport a
 probabilistic execution of `sys` to one of `𝒟(sys)` of the same trace
 distribution. -/
-noncomputable def AlterSeq.dirac (e : AlterSeq State Label) :
-    AlterSeq (PMF State) Label where
-  init := PMF.pure e.init
-  trans := e.trans.map (fun lq => (lq.1, PMF.pure lq.2))
+noncomputable abbrev AlterSeq.dirac (e : AlterSeq State Label) :
+    AlterSeq (PMF State) Label :=
+  e.map PMF.pure
 
 /-- Lift a `sys`-scheduler to a `𝒟(sys)`-scheduler. On a history `E` that
 arises from a `sys`-execution `e` via `e.dirac`, run the underlying
@@ -106,7 +106,7 @@ noncomputable def Scheduler.dist {sys : LabelledSystem State Label}
         simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hopt_eq
         obtain ⟨hl_eq, hμ_eq⟩ := hopt_eq
         -- `hl_eq : l' = l`, `hμ_eq : μ'.map PMF.pure = μ`.
-        set e₀ := hImg.choose with he₀_def
+        set e₀ := hImg.choose
         have he_eq : e₀.dirac = e := hImg.choose_spec
         -- Transport `e.trans.TerminatedAt n` to `e₀.trans.TerminatedAt n`.
         have he₀_finite : e₀.trans.TerminatedAt n := by
@@ -159,59 +159,20 @@ noncomputable def ProbabilisticExecution.dist {sys : LabelledSystem State Label}
 
 /-- `AlterSeq.dirac` preserves termination: an execution is finite iff
 its Dirac-lift is. -/
-@[simp] theorem AlterSeq.dirac_trans_terminates_iff (e : AlterSeq State Label) :
-    e.dirac.trans.Terminates ↔ e.trans.Terminates := by
-  change (e.trans.map (fun lq => (lq.1, PMF.pure lq.2))).Terminates ↔ _
-  exact Stream'.Seq.terminates_map_iff
-
-/-- `PMF.pure` is injective: two Diracs are equal only on equal points. -/
-theorem PMF.pure_injective : Function.Injective (@PMF.pure State) := by
-  intro a b h
-  by_contra hne
-  have h_app : (PMF.pure a) a = (PMF.pure b) a := by rw [h]
-  rw [PMF.pure_apply_self, PMF.pure_apply, if_neg hne] at h_app
-  exact one_ne_zero h_app
+theorem AlterSeq.dirac_trans_terminates_iff (e : AlterSeq State Label) :
+    e.dirac.trans.Terminates ↔ e.trans.Terminates :=
+  AlterSeq.map_trans_terminates_iff PMF.pure e
 
 /-- `AlterSeq.dirac` is injective: the Dirac-lift uniquely determines its
 preimage. -/
 theorem AlterSeq.dirac_injective :
-    Function.Injective (@AlterSeq.dirac State Label) := by
-  rintro ⟨i₁, t₁⟩ ⟨i₂, t₂⟩ h
-  have h_init : PMF.pure i₁ = PMF.pure i₂ := congr_arg AlterSeq.init h
-  have h_trans :
-      t₁.map (fun lq : Label × State => (lq.1, PMF.pure lq.2))
-      = t₂.map (fun lq : Label × State => (lq.1, PMF.pure lq.2)) :=
-    congr_arg AlterSeq.trans h
-  obtain rfl := PMF.pure_injective h_init
-  congr 1
-  apply Stream'.Seq.ext
-  intro n
-  have hn :
-      (Stream'.Seq.map (fun lq : Label × State => (lq.1, PMF.pure lq.2)) t₁).get? n
-      = (Stream'.Seq.map (fun lq : Label × State => (lq.1, PMF.pure lq.2)) t₂).get? n := by
-    rw [h_trans]
-  rw [Stream'.Seq.map_get?, Stream'.Seq.map_get?] at hn
-  cases h1 : t₁.get? n with
-  | none =>
-    cases h2 : t₂.get? n with
-    | none => rfl
-    | some lq2 => rw [h1, h2] at hn; simp at hn
-  | some lq1 =>
-    cases h2 : t₂.get? n with
-    | none => rw [h1, h2] at hn; simp at hn
-    | some lq2 =>
-      rw [h1, h2] at hn
-      obtain ⟨l1, s1⟩ := lq1
-      obtain ⟨l2, s2⟩ := lq2
-      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hn
-      obtain ⟨rfl, h_pure⟩ := hn
-      obtain rfl := PMF.pure_injective h_pure
-      rfl
+    Function.Injective (@AlterSeq.dirac State Label) :=
+  AlterSeq.map_injective PMF.pure_injective
 
 /-- Unfolding of the lifted scheduler on a Dirac-lifted history. By
 injectivity of `dirac`, the `Classical.choose` inside `Scheduler.dist`'s
 `then` branch is the original `e`. -/
-theorem Scheduler.dist_next_dirac {sys : LabelledSystem State Label}
+@[simp] theorem Scheduler.dist_next_dirac {sys : LabelledSystem State Label}
     (sch : Scheduler sys.toSystem) (e : AlterSeq State Label) :
     sch.dist.next e.dirac
       = (sch.next e).map (Option.map (fun lν => (lν.1, lν.2.map PMF.pure))) := by
@@ -230,18 +191,8 @@ theorem ProbabilisticExecution.dist_kernel_dirac_pure
     {sys : LabelledSystem State Label} (pe : ProbabilisticExecution sys.toSystem)
     (e : AlterSeq State Label) (l : Label) (s' : State) :
     pe.dist.kernel e.dirac (l, PMF.pure s') = pe.kernel e (l, s') := by
-  -- Helper: `PMF.map PMF.pure` is injective (since `PMF.pure` is).
-  have h_map_inj : Function.Injective (@PMF.map State (PMF State) PMF.pure) := by
-    intro p q h
-    ext a
-    have h1 : (p.map PMF.pure) (PMF.pure a) = (q.map PMF.pure) (PMF.pure a) := by rw [h]
-    rw [PMF.map_apply, PMF.map_apply] at h1
-    rw [tsum_eq_single a (fun b hb =>
-      if_neg (fun heq => hb (PMF.pure_injective heq).symm))] at h1
-    rw [tsum_eq_single a (fun b hb =>
-      if_neg (fun heq => hb (PMF.pure_injective heq).symm))] at h1
-    rw [if_pos rfl, if_pos rfl] at h1
-    exact h1
+  have h_map_inj : Function.Injective (@PMF.map State (PMF State) PMF.pure) :=
+    PMF.map_injective PMF.pure_injective
   -- Unfold both kernels and expose the lifted scheduler.
   change (∑' ω, pe.scheduler.dist.next e.dirac (some (l, ω)) * ω (PMF.pure s'))
        = ∑' ν, pe.scheduler.next e (some (l, ν)) * ν s'
@@ -344,14 +295,8 @@ theorem AlterSeq.dirac_append_singleton
     (⟨e.init, e.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil)⟩
       : AlterSeq State Label).dirac
     = ⟨e.dirac.init, e.dirac.trans.append
-        (Stream'.Seq.cons (l, PMF.pure s') Stream'.Seq.nil)⟩ := by
-  change (⟨PMF.pure e.init,
-          (e.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil)).map _⟩
-        : AlterSeq (PMF State) Label) =
-      ⟨PMF.pure e.init,
-       (e.trans.map _).append (Stream'.Seq.cons (l, PMF.pure s') Stream'.Seq.nil)⟩
-  congr 1
-  rw [Stream'.Seq.map_append, Stream'.Seq.map_cons, Stream'.Seq.map_nil]
+        (Stream'.Seq.cons (l, PMF.pure s') Stream'.Seq.nil)⟩ :=
+  AlterSeq.map_append_singleton PMF.pure e l s'
 
 /-- **Unified probability of a lifted execution.** The lifted probabilistic
 execution `pe.dist` assigns to a finite `𝒟(sys)`-execution `E` the
@@ -491,7 +436,7 @@ theorem ProbabilisticExecution.dist_probOf
         e_t.dirac = (⟨μ_init, Stream'.Seq.ofList rest⟩ : AlterSeq (PMF State) Label)
     · rw [dif_pos h_trunc]
       -- Stabilize the witness via `set` to dodge dependent-rewrite motive issues.
-      set e_t := h_trunc.choose with he_t_def
+      set e_t := h_trunc.choose
       have he_t_spec : e_t.dirac
           = (⟨μ_init, Stream'.Seq.ofList rest⟩ : AlterSeq (PMF State) Label) :=
         h_trunc.choose_spec
@@ -567,7 +512,7 @@ theorem ProbabilisticExecution.dist_probOf
               = (Stream'.Seq.ofList rest).append
                 (Stream'.Seq.cons (l, μ_succ) Stream'.Seq.nil) := by
             have := congr_arg AlterSeq.trans he
-            simpa [AlterSeq.dirac] using this
+            simpa [AlterSeq.dirac, AlterSeq.map] using this
           -- Get the index `rest.length` of both sides.
           have h_idx := congr_arg (fun s => s.get? rest.length) h_trans
           -- LHS: `(e.trans.map f).get? rest.length = (e.trans.get? rest.length).map f`.
@@ -677,6 +622,19 @@ theorem ProbabilisticExecution.dist_probOf
         rw [h_init, h_prev_map_eq]
       rw [dif_neg h_not_full]
 
+/-- **Probability is preserved by the Dirac-lift.** Specialization of
+`dist_probOf` to the Dirac case: the lifted execution `pe.dist` assigns
+to `e.dirac` the same probability that `pe` assigns to `e`. -/
+theorem ProbabilisticExecution.dist_probOf_dirac
+    {sys : LabelledSystem State Label} (pe : ProbabilisticExecution sys.toSystem)
+    (e : AlterSeq State Label) (h_fin : e.trans.Terminates) :
+    pe.dist.probOf e.dirac ((AlterSeq.dirac_trans_terminates_iff e).mpr h_fin)
+      = pe.probOf e h_fin := by
+  have h_im : ∃ e' : AlterSeq State Label, e'.dirac = e.dirac := ⟨e, rfl⟩
+  have : h_im.choose = e := AlterSeq.dirac_injective h_im.choose_spec
+  rw [dist_probOf, dif_pos h_im]
+  congr 1
+
 /-- The Dirac-lift preserves the trace: external/internal labels of an
 execution are unchanged when lifting to `𝒟(sys)`, since `𝒟(sys).internal
 = sys.internal` and `dirac` preserves all labels.
@@ -740,79 +698,31 @@ execution of `𝒟(sys)` achieving the same trace distribution. -/
 theorem dist_traceProb_subset (sys : LabelledSystem State Label) :
     achievableTraceDists sys ⊆ achievableTraceDists 𝒟(sys) := by
   classical
-  intro D hD
-  obtain ⟨pe, h_pe⟩ := hD
+  intro D ⟨pe, h_pe⟩
   refine ⟨pe.dist, fun τ => ?_⟩
   rw [← h_pe τ]
-  -- Goal: 𝒟(sys).traceProb pe.dist τ = sys.traceProb pe τ
   unfold LabelledSystem.traceProb
-  -- Use `tsum_eq_tsum_of_ne_zero_bij` with the injection
-  -- `e ↦ ⟨e.1.dirac, ...⟩` from the RHS subtype into the LHS subtype.
-  set RHSSubtype : Type := {e : AlterSeq State Label //
-      e.trans.Terminates ∧ sys.trace e = τ ∧ sys.IsTight e} with hRHS
-  set LHSSubtype : Type := {E : AlterSeq (PMF State) Label //
-      E.trans.Terminates ∧ 𝒟(sys).trace E = τ ∧ 𝒟(sys).IsTight E} with hLHS
-  set g : RHSSubtype → ENNReal := fun e => pe.probOf e.1 e.2.1 with hg
-  set f : LHSSubtype → ENNReal := fun E => pe.dist.probOf E.1 E.2.1 with hf
-  change (∑' E : LHSSubtype, f E) = ∑' e : RHSSubtype, g e
   refine tsum_eq_tsum_of_ne_zero_bij
-    (i := fun e : Function.support g =>
-      (⟨e.1.1.dirac,
-        (AlterSeq.dirac_trans_terminates_iff e.1.1).mpr e.1.2.1,
-        (AlterSeq.dirac_trace sys e.1.1).trans e.1.2.2.1,
-        (AlterSeq.dirac_isTight_iff sys e.1.1).mpr e.1.2.2.2⟩ : LHSSubtype))
-    ?_ ?_ ?_
-  · -- Injectivity.
-    rintro ⟨⟨e₁, h₁⟩, hsupp₁⟩ ⟨⟨e₂, h₂⟩, hsupp₂⟩ h_eq
-    have h_dirac : e₁.dirac = e₂.dirac := congr_arg Subtype.val h_eq
-    have : e₁ = e₂ := AlterSeq.dirac_injective h_dirac
-    subst this
-    rfl
-  · -- Support of LHS lies in range of `i`: any `E` with non-zero
-    -- `pe.dist.probOf E _` must be in the image of `dirac`, and the
-    -- preimage satisfies the RHS conditions.
-    rintro ⟨E, hE_fin, hE_trace, hE_tight⟩ hE_ne
-    simp only [Function.mem_support, ne_eq, hf] at hE_ne
-    -- Use `dist_probOf`: if `E` is not in the dirac image, value is 0.
-    rw [ProbabilisticExecution.dist_probOf] at hE_ne
-    by_cases h_im : ∃ e : AlterSeq State Label, e.dirac = E
-    · -- E = e.dirac for some e; the preimage is the corresponding RHS element.
-      rw [dif_pos h_im] at hE_ne
-      obtain ⟨e, he⟩ := h_im
-      -- The conditions on `e` follow from those on `E` and the helper lemmas.
-      have he_fin : e.trans.Terminates :=
-        (AlterSeq.dirac_trans_terminates_iff e).mp (he.symm ▸ hE_fin)
-      have he_trace : sys.trace e = τ := by
-        rw [← AlterSeq.dirac_trace sys e, he]; exact hE_trace
-      have he_tight : sys.IsTight e :=
-        (AlterSeq.dirac_isTight_iff sys e).mp (he.symm ▸ hE_tight)
-      refine ⟨⟨⟨e, he_fin, he_trace, he_tight⟩, ?_⟩, ?_⟩
-      · -- e is in the support: pe.probOf e _ ≠ 0.
-        simp only [Function.mem_support, ne_eq]
-        -- From hE_ne in the `then` branch.
-        intro h_zero
-        apply hE_ne
-        -- pe.probOf h_im.choose _ = pe.probOf e _ because dirac is injective.
-        have h_choose : (⟨e, he⟩ : ∃ e' : AlterSeq State Label, e'.dirac = E).choose = e :=
-          AlterSeq.dirac_injective
-            ((⟨e, he⟩ : ∃ e' : AlterSeq State Label, e'.dirac = E).choose_spec.trans he.symm)
-        -- Rewrite the choose to `e`.
-        convert h_zero using 2
-      · -- Match: `i` of preimage equals `E`.
-        exact Subtype.ext he
-    · rw [dif_neg h_im] at hE_ne
-      exact absurd rfl hE_ne
-  · -- Values match: `f (i x) = g x`, where `f` is LHS sum and `g` is RHS sum.
-    rintro ⟨⟨e, he_fin, he_trace, he_tight⟩, hsupp⟩
-    -- Goal: pe.dist.probOf e.dirac _ = pe.probOf e _.
-    simp only [hf, hg]
-    rw [ProbabilisticExecution.dist_probOf]
-    have h_im : ∃ e' : AlterSeq State Label, e'.dirac = e.dirac := ⟨e, rfl⟩
-    rw [dif_pos h_im]
-    -- `h_im.choose` is `e` by injectivity.
-    have h_choose : h_im.choose = e :=
-      AlterSeq.dirac_injective h_im.choose_spec
-    congr 1
+    (i := fun e => ⟨e.1.1.dirac,
+      (AlterSeq.dirac_trans_terminates_iff e.1.1).mpr e.1.2.1,
+      (AlterSeq.dirac_trace sys e.1.1).trans e.1.2.2.1,
+      (AlterSeq.dirac_isTight_iff sys e.1.1).mpr e.1.2.2.2⟩)
+    (fun _ _ h => Subtype.ext (Subtype.ext
+      (AlterSeq.dirac_injective (congr_arg Subtype.val h))))
+    ?_
+    (fun ⟨⟨e, he_fin, _, _⟩, _⟩ => pe.dist_probOf_dirac e he_fin)
+  rintro ⟨E, hE_fin, hE_trace, hE_tight⟩ hE_ne
+  change pe.dist.probOf E hE_fin ≠ 0 at hE_ne
+  rw [ProbabilisticExecution.dist_probOf] at hE_ne
+  split_ifs at hE_ne with h_im
+  · set e := h_im.choose
+    have he : e.dirac = E := h_im.choose_spec
+    rw [← he] at hE_fin hE_trace hE_tight
+    exact ⟨⟨⟨e, (AlterSeq.dirac_trans_terminates_iff e).mp hE_fin,
+      (AlterSeq.dirac_trace sys e) ▸ hE_trace,
+      (AlterSeq.dirac_isTight_iff sys e).mp hE_tight⟩, hE_ne⟩,
+      Subtype.ext he⟩
+  · exact absurd rfl hE_ne
 
 /-- **Superset direction of `dist_traceProb_eq`** (deferred). -/
 theorem dist_traceProb_superset (sys : LabelledSystem State Label) :
