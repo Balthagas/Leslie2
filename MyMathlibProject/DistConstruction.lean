@@ -3090,6 +3090,258 @@ private theorem ProbabilisticExecution.bayes_inversion_step_reindex
     rintro ⟨⟨⟨e'_pre, h_t⟩, q_new⟩, _⟩
     rfl
 
+/-- **Hyperstep marginal decomposition.** For a 𝒟(sys)-scheduler emission
+`(l, ω)` at a terminating history `E`, the post-state marginal of `ω`
+decomposes as the state-wise mixture of the per-state hyperStep-kernel
+bind:
+```
+(ω.bind id) q = ∑' s, (E.endState hE) s · ((distHyperKernel E l ω s).bind id) q
+```
+This is the `μ_post = μ_pre.bind (fun s => (p s).bind id)` conjunct of the
+hyperStep witness, restated in terms of `distHyperKernel`. The bridge
+identity needed to relate `ofDist.kernel` and `Z_global` in the crux.
+
+Proof outline: from `pe'.scheduler.valid` extract a hyperStep witness for
+`hyperStep sys (E.endState hE) l (ω.bind id)`. The witness's
+`post_eq_bind` conjunct gives the equality. Reconcile the
+classically-chosen `distHyperKernel` with the scheduler-extracted kernel
+via `Subsingleton.elim` on `Terminates` proofs (as in
+`distHyperKernel_step`). -/
+private theorem ProbabilisticExecution.hyperStep_marginal_decomp
+    {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution 𝒟(sys).toSystem)
+    {E : AlterSeq (PMF State) Label} (hE : E.trans.Terminates)
+    {l : Label} {ω : PMF (PMF State)}
+    (h_supp : some (l, ω) ∈ (pe'.scheduler.next E).support)
+    (q : State) :
+    (ω.bind id) q
+      = ∑' s : State, (E.endState hE) s *
+          ((pe'.distHyperKernel E l ω s).bind id) q := by
+  classical
+  -- Extract hyperStep witness from `pe'.scheduler.valid`.
+  have h_hyper : hyperStep sys (E.endState hE) l (ω.bind id) := by
+    have := pe'.scheduler.valid E (Nat.find hE) (E.endState hE)
+      (Nat.find_spec hE) (AlterSeq.stateAt_find_eq_endState E hE) l ω h_supp
+    change hyperStep sys (E.endState hE) l (ω.bind id) at this
+    exact this
+  -- The existential in `distHyperKernel` holds; expose the classical kernel.
+  have hex : ∃ hE' : E.trans.Terminates,
+      hyperStep sys (E.endState hE') l (ω.bind id) := ⟨hE, h_hyper⟩
+  have h_def : pe'.distHyperKernel E l ω = hex.choose_spec.kernel := by
+    unfold ProbabilisticExecution.distHyperKernel
+    rw [dif_pos hex]
+  -- post_eq_bind: `(ω.bind id) = (E.endState hex.choose).bind (fun s => (kernel s).bind id)`.
+  have h_post := hex.choose_spec.post_eq_bind
+  have h_choose : hex.choose = hE := Subsingleton.elim _ _
+  -- Evaluate at q.
+  conv_lhs => rw [h_post]
+  rw [PMF.bind_apply]
+  -- Goal: `∑' s, (E.endState hex.choose) s * ((kernel s).bind id) q
+  --     = ∑' s, (E.endState hE) s * ((distHyperKernel E l ω s).bind id) q`.
+  apply tsum_congr
+  intro s
+  rw [h_choose, h_def]
+
+/-- **`ofDist.kernel` explicit expansion.** Unfolds `Scheduler.ofDist.next`'s
+nested binds to express `ofDist.kernel` as a double tsum:
+```
+ofDist.kernel e'_pre (l, q) =
+  ∑' E, belief e'_pre E *
+    ∑' ω, scheduler.next E (some (l, ω)) *
+      (distHyperKernel E l ω (e'_pre.endState)).bind id q
+```
+Compare to the definition of `Z_global`, which has `(ω.bind id) q` instead
+of `(distHyperKernel ... e'_pre.endState).bind id q`. The two differ by
+the choice of `s` in `hyperStep_marginal_decomp`: `Z_global` averages over
+`s ∈ E.endState.support`, while `ofDist.kernel` evaluates at the specific
+`s = e'_pre.endState`. This asymmetry is the source of the
+`Φ` non-pointwise-1 phenomenon in the crux. -/
+private theorem ProbabilisticExecution.ofDist_kernel_expand
+    {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution 𝒟(sys).toSystem)
+    (e'_pre : AlterSeq State Label) (h_e'_pre_term : e'_pre.trans.Terminates)
+    (l : Label) (q : State) :
+    pe'.ofDist.kernel e'_pre (l, q) =
+      ∑' E : AlterSeq (PMF State) Label,
+        pe'.belief e'_pre E *
+        ∑' ω : PMF (PMF State),
+          pe'.scheduler.next E (some (l, ω)) *
+          ((pe'.distHyperKernel E l ω (e'_pre.endState h_e'_pre_term)).bind id) q := by
+  classical
+  -- Unfold `ofDist.kernel` to the μ-tsum.
+  unfold ProbabilisticExecution.kernel
+  -- Step 1: Rewrite each `ofDist.scheduler.next e'_pre (some (l, μ'))` via dif_pos.
+  have h_sch_eq : ∀ μ' : PMF State,
+      pe'.ofDist.scheduler.next e'_pre (some (l, μ'))
+        = ((pe'.belief e'_pre).bind (fun E =>
+            (pe'.scheduler.next E).bind (fun opt =>
+              match opt with
+              | none => PMF.pure none
+              | some (l', ω) =>
+                  (pe'.distHyperKernel E l' ω (e'_pre.endState h_e'_pre_term)).map
+                    (fun μ'' => some (l', μ''))))) (some (l, μ')) := by
+    intro μ'
+    change (open Classical in
+      if h_term : e'_pre.trans.Terminates then
+        (pe'.belief e'_pre).bind (fun E =>
+          (pe'.scheduler.next E).bind (fun opt =>
+            match opt with
+            | none => PMF.pure none
+            | some (l', ω) =>
+                (pe'.distHyperKernel E l' ω (e'_pre.endState h_term)).map
+                  (fun μ'' => some (l', μ''))))
+      else
+        PMF.pure none) (some (l, μ')) = _
+    rw [dif_pos h_e'_pre_term]
+  -- Helper: map evaluation at `some (l, μ')`.
+  have h_map_l : ∀ (E : AlterSeq (PMF State) Label) (ω : PMF (PMF State)) (μ' : PMF State),
+      ((pe'.distHyperKernel E l ω (e'_pre.endState h_e'_pre_term)).map
+        (fun μ'' => (some (l, μ'') : Option (Label × PMF State))))
+        (some (l, μ'))
+      = pe'.distHyperKernel E l ω (e'_pre.endState h_e'_pre_term) μ' := by
+    intro E ω μ'
+    rw [PMF.map_apply]
+    rw [tsum_eq_single μ']
+    · simp
+    · intro μ'' h_ne
+      have h_neq : (some (l, μ') : Option (Label × PMF State)) ≠ some (l, μ'') := by
+        intro h; apply h_ne; injection h with h1
+        exact ((Prod.mk.inj h1).2).symm
+      rw [if_neg h_neq]
+  have h_map_ne : ∀ (E : AlterSeq (PMF State) Label)
+      (l' : Label) (h_lab : l' ≠ l) (ω : PMF (PMF State)) (μ' : PMF State),
+      ((pe'.distHyperKernel E l' ω (e'_pre.endState h_e'_pre_term)).map
+        (fun μ'' => (some (l', μ'') : Option (Label × PMF State))))
+        (some (l, μ'))
+      = 0 := by
+    intro E l' h_lab ω μ'
+    rw [PMF.map_apply]
+    apply ENNReal.tsum_eq_zero.mpr
+    intro μ''
+    have h_neq : (some (l, μ') : Option (Label × PMF State)) ≠ some (l', μ'') := by
+      intro h; apply h_lab; injection h with h1
+      exact ((Prod.mk.inj h1).1).symm
+    rw [if_neg h_neq]
+  -- Step 2: For each (E, μ'), inner bind picks out the `some (l, ω)` branch.
+  have h_inner_eval : ∀ (E : AlterSeq (PMF State) Label) (μ' : PMF State),
+      ((pe'.scheduler.next E).bind (fun opt =>
+        match opt with
+        | none => PMF.pure none
+        | some (l', ω) =>
+            (pe'.distHyperKernel E l' ω (e'_pre.endState h_e'_pre_term)).map
+              (fun μ'' => some (l', μ'')))) (some (l, μ'))
+      = ∑' ω : PMF (PMF State),
+          pe'.scheduler.next E (some (l, ω)) *
+          pe'.distHyperKernel E l ω (e'_pre.endState h_e'_pre_term) μ' := by
+    intro E μ'
+    rw [PMF.bind_apply]
+    -- ∑' opt, sched_E opt * (match opt with …) at (some (l, μ')).
+    -- Equivalently: reindex tsum to be over PMF (PMF State) via opt = some (l, ω);
+    -- all other `opt` contribute zero.
+    refine tsum_eq_tsum_of_ne_zero_bij
+      (i := fun p => some (l, p.1)) ?_ ?_ ?_
+    · -- Injectivity.
+      rintro ⟨ω₁, h1⟩ ⟨ω₂, h2⟩ h_eq
+      simp only at h_eq
+      apply Subtype.ext
+      exact (Prod.mk.inj (Option.some.inj h_eq)).2
+    · -- Coverage: every nonzero opt is of the form `some (l, ω)`.
+      rintro opt h_opt_ne
+      -- h_opt_ne is membership in support; unfold.
+      have h_opt_ne' :
+          (pe'.scheduler.next E) opt *
+            (match opt with
+              | none => (PMF.pure none : PMF (Option (Label × PMF State)))
+              | some (l', ω) =>
+                  (pe'.distHyperKernel E l' ω (e'_pre.endState h_e'_pre_term)).map
+                    (fun μ'' => some (l', μ''))) (some (l, μ')) ≠ 0 := h_opt_ne
+      have h_match_ne :
+          (match opt with
+            | none => (PMF.pure none : PMF (Option (Label × PMF State)))
+            | some (l', ω) =>
+                (pe'.distHyperKernel E l' ω (e'_pre.endState h_e'_pre_term)).map
+                  (fun μ'' => some (l', μ''))) (some (l, μ')) ≠ 0 := by
+        intro h0
+        apply h_opt_ne'
+        rw [h0, mul_zero]
+      cases opt with
+      | none =>
+        exfalso
+        apply h_match_ne
+        change (PMF.pure (α := Option (Label × PMF State)) none) (some (l, μ')) = 0
+        rw [PMF.pure_apply]
+        have h_neq : (some (l, μ') : Option (Label × PMF State)) ≠ none := by
+          intro h; exact (Option.some_ne_none _ h)
+        rw [if_neg h_neq]
+      | some lω =>
+        obtain ⟨l', ω⟩ := lω
+        by_cases h_lab : l' = l
+        · cases h_lab
+          refine ⟨⟨ω, ?_⟩, rfl⟩
+          -- Need: ω is in support of the ω-sum (nonzero contribution).
+          intro h_zero
+          simp only at h_zero
+          apply h_opt_ne'
+          change (pe'.scheduler.next E) (some (l, ω)) *
+            ((pe'.distHyperKernel E l ω (e'_pre.endState h_e'_pre_term)).map
+              (fun μ'' => (some (l, μ'') : Option (Label × PMF State))))
+              (some (l, μ')) = 0
+          rw [h_map_l E ω μ', h_zero]
+        · exfalso
+          apply h_match_ne
+          change ((pe'.distHyperKernel E l' ω (e'_pre.endState h_e'_pre_term)).map
+            (fun μ'' => (some (l', μ'') : Option (Label × PMF State))))
+            (some (l, μ')) = 0
+          exact h_map_ne E l' h_lab ω μ'
+    · -- The summand equality.
+      rintro ⟨ω, _⟩
+      simp only
+      show (pe'.scheduler.next E) (some (l, ω)) *
+          ((pe'.distHyperKernel E l ω (e'_pre.endState h_e'_pre_term)).map
+            (fun μ'' => (some (l, μ'') : Option (Label × PMF State))))
+            (some (l, μ'))
+        = (pe'.scheduler.next E) (some (l, ω)) *
+            (pe'.distHyperKernel E l ω (e'_pre.endState h_e'_pre_term)) μ'
+      rw [h_map_l E ω μ']
+  -- Step 3: Combine. Substitute h_sch_eq + PMF.bind_apply + h_inner_eval into LHS.
+  have h_lhs_per_mu : ∀ μ' : PMF State,
+      pe'.ofDist.scheduler.next e'_pre (some (l, μ')) * μ' q
+      = (∑' E : AlterSeq (PMF State) Label,
+            pe'.belief e'_pre E *
+            ∑' ω : PMF (PMF State),
+              pe'.scheduler.next E (some (l, ω)) *
+              pe'.distHyperKernel E l ω (e'_pre.endState h_e'_pre_term) μ') * μ' q := by
+    intro μ'
+    rw [h_sch_eq μ', PMF.bind_apply]
+    congr 1
+    apply tsum_congr
+    intro E
+    rw [h_inner_eval E μ']
+  rw [tsum_congr h_lhs_per_mu]
+  -- Now LHS: ∑' μ', (∑' E, belief · ∑' ω, sched · distHyperKernel μ') · μ' q.
+  -- Pull μ' q inside the E-sum.
+  conv_lhs => rw [tsum_congr (fun μ' => by rw [← ENNReal.tsum_mul_right])]
+  -- LHS: ∑' μ', ∑' E, (belief * (∑' ω, sched * distHyperKernel μ')) * μ' q.
+  rw [ENNReal.tsum_comm]
+  -- LHS: ∑' E, ∑' μ', (belief * (∑' ω, sched * distHyperKernel μ')) * μ' q.
+  apply tsum_congr
+  intro E
+  -- Inner E term.
+  conv_lhs =>
+    rw [tsum_congr (fun μ' => by rw [mul_assoc])]
+    rw [ENNReal.tsum_mul_left]
+  congr 1
+  -- ∑' μ', (∑' ω, sched · distHyperKernel μ') · μ' q
+  --   = ∑' ω, sched · ((distHyperKernel _).bind id) q.
+  conv_lhs => rw [tsum_congr (fun μ' => by rw [← ENNReal.tsum_mul_right])]
+  rw [ENNReal.tsum_comm]
+  apply tsum_congr
+  intro ω
+  -- ∑' μ', sched · distHyperKernel _ μ' · μ' q = sched · (distHyperKernel _).bind id q.
+  conv_lhs => rw [tsum_congr (fun μ' => by rw [mul_assoc])]
+  rw [ENNReal.tsum_mul_left, PMF.bind_apply]
+  rfl
+
 /-- **Sub-lemma 4 — The crux algebraic identity (LEFT AS SORRY).** Given the
 inductive hypothesis, the double sum
 ```
