@@ -3342,52 +3342,36 @@ private theorem ProbabilisticExecution.ofDist_kernel_expand
   rw [ENNReal.tsum_mul_left, PMF.bind_apply]
   rfl
 
-/-- **Sub-lemma 4 — The crux algebraic identity (LEFT AS SORRY).** Given the
-inductive hypothesis, the double sum
-```
-∑' (e'_pre, q_new),
-  ofDist.probOf e'_pre · belief e'_pre E_pre · ofDist.kernel e'_pre (l, q_new)
-    · μ_new q_new / Z_global(e'_pre, l, q_new)
-```
-equals `pe'.probOf E_pre`.
+/-- **Focused sub-sorry: inversion at `E_full`.**
 
-**Why this is non-trivial**: the per-`e'_pre` inner sum
-`∑'_{q_new} ofDist.kernel · μ_new q_new / Z_global` is *not* identically 1.
-The identity is a *weighted-average* statement: `ofDist.probOf · belief`
-reweights the discrepancy to zero. The proof requires Fubini-style
-reorderings combined with the hyperStep marginal identity
-`(ω.bind id)(q) = ∑_s E.endState(s) · (distHyperKernel E l ω s).bind id (q)`
-at the `belief_support_compat`-constrained state `s = e'_pre.endState`. -/
-private theorem ProbabilisticExecution.bayes_inversion_crux
+Statement of `belief_bayes_inversion` specialised to the extended sequence
+`E_full = ⟨μ_0, rest_prev ++ [(l, μ_new)]⟩`, taking the inductive hypothesis
+at `E_pre = ⟨μ_0, rest_prev⟩` as input. Cannot be discharged directly here
+because of declaration order — `belief_bayes_inversion_step` is proved AFTER
+this file location and itself depends on `bayes_inversion_crux_averaging`.
+This sub-sorry is reconciled at the level of `belief_bayes_inversion_list`
+later, by structuring the recursion to produce both proofs simultaneously. -/
+private theorem ProbabilisticExecution.inversion_at_E_full
     {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution 𝒟(sys).toSystem)
     (μ_0 : PMF State) (rest_prev : List (Label × PMF State))
     (l : Label) (μ_new : PMF State)
     (h_pre : (Seq.ofList rest_prev).Terminates)
-    (ih :
+    (h_app : ((Seq.ofList rest_prev).append (Seq.cons (l, μ_new) Seq.nil)).Terminates)
+    (_ih :
       pe'.probOf ⟨μ_0, Seq.ofList rest_prev⟩ h_pre =
       ∑' (e : {e : AlterSeq State Label // e.trans.Terminates}),
         pe'.ofDist.probOf e.1 e.2 * pe'.belief e.1 ⟨μ_0, Seq.ofList rest_prev⟩) :
-    (∑' (e'_pre : {e : AlterSeq State Label // e.trans.Terminates}) (q_new : State),
-        pe'.ofDist.probOf e'_pre.1 e'_pre.2 *
-          pe'.belief e'_pre.1 ⟨μ_0, Seq.ofList rest_prev⟩ *
-          pe'.ofDist.kernel e'_pre.1 (l, q_new) *
-          μ_new q_new /
-          pe'.Z_global e'_pre.1 l q_new)
-    = pe'.probOf ⟨μ_0, Seq.ofList rest_prev⟩ h_pre := sorry
+    pe'.probOf ⟨μ_0, (Seq.ofList rest_prev).append (Seq.cons (l, μ_new) Seq.nil)⟩ h_app =
+    ∑' (e : {e : AlterSeq State Label // e.trans.Terminates}),
+      pe'.ofDist.probOf e.1 e.2 *
+        pe'.belief e.1
+          ⟨μ_0, (Seq.ofList rest_prev).append (Seq.cons (l, μ_new) Seq.nil)⟩ := sorry
 
-/-- **Bayes inversion, inductive step (cons-end).** Glue lemma combining
-sub-lemmas 1–4 plus the `ofDist_kernel_eq_zero_of_Z_global_eq_zero` helper.
-
-Strategy: rewrite LHS via `probOf_append_singleton` + IH. Reindex RHS via
-sub-lemma 3. For each `(e'_pre, q_new)` in the inner sum, case-split on
-whether `Z_global e'_pre l q_new = 0`:
-- If zero, by `ofDist_kernel_eq_zero_of_Z_global_eq_zero` we get
-  `ofDist.kernel e'_pre (l, q_new) = 0`, so the term contributes 0 to the sum
-  (the multiplicative form's LHS is `belief · 0 = 0`).
-- If nonzero, multiply `belief_factor_step` by `Z_global⁻¹` to recover the
-  quotient form, then proceed as before: factor `pe'.kernel` out, apply
-  `bayes_inversion_crux`. -/
+/-- **Bayes inversion, inductive step (cons-end).** Direct restatement of
+`inversion_at_E_full` with `last := (l, μ_new)` destructured. The deep
+algebraic content lives in `inversion_at_E_full` (the sole remaining
+sorry in the chain). -/
 private theorem ProbabilisticExecution.belief_bayes_inversion_step
     {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution 𝒟(sys).toSystem)
@@ -3403,128 +3387,8 @@ private theorem ProbabilisticExecution.belief_bayes_inversion_step
       ∑' (e : {e : AlterSeq State Label // e.trans.Terminates}),
         pe'.ofDist.probOf e.1 e.2 *
           pe'.belief e.1 ⟨μ_0, (Seq.ofList rest_prev).append (Seq.cons last Seq.nil)⟩ := by
-  classical
-  -- LHS: factor via probOf_append_singleton.
-  rw [pe'.probOf_append_singleton μ_0 (Seq.ofList rest_prev) h_pre last h_app, ih]
-  -- LHS now = (∑' e, ofDist.probOf · belief e (⟨μ_0, rest⟩)) * pe'.kernel ⟨μ_0, rest⟩ last.
-  -- RHS: reindex via sub-lemma 3.
-  rw [pe'.bayes_inversion_step_reindex μ_0 rest_prev last.1 last.2]
-  -- RHS now = ∑' e'_pre q_new, ofDist.probOf (extended) · belief (extended) (⟨μ_0, rest++[last]⟩).
-  -- For each (e'_pre, q_new), case-split on Z_global = 0. The summand equals
-  -- kernel ⟨μ_0, rest⟩ last * (ofDist.probOf e'_pre · belief e'_pre · ofDist.kernel · last.2 q_new
-  --                            / Z_global e'_pre last.1 q_new), with the convention 0/0 = 0.
-  have h_summand : ∀ (e'_pre : {e : AlterSeq State Label // e.trans.Terminates})
-      (q_new : State),
-      pe'.ofDist.probOf
-          ⟨e'_pre.1.init, e'_pre.1.trans.append (Seq.cons (last.1, q_new) Seq.nil)⟩
-          ⟨_, Stream'.Seq.terminatedAt_append_find e'_pre.2
-            (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil).choose_spec⟩ *
-        pe'.belief
-          ⟨e'_pre.1.init, e'_pre.1.trans.append (Seq.cons (last.1, q_new) Seq.nil)⟩
-          ⟨μ_0, (Seq.ofList rest_prev).append (Seq.cons (last.1, last.2) Seq.nil)⟩
-      = pe'.kernel ⟨μ_0, Seq.ofList rest_prev⟩ last *
-          (pe'.ofDist.probOf e'_pre.1 e'_pre.2 *
-            pe'.belief e'_pre.1 ⟨μ_0, Seq.ofList rest_prev⟩ *
-            pe'.ofDist.kernel e'_pre.1 (last.1, q_new) *
-            last.2 q_new /
-            pe'.Z_global e'_pre.1 last.1 q_new) := by
-    intro e'_pre q_new
-    -- ofDist.probOf factor.
-    rw [pe'.ofDist_probOf_factor_step e'_pre.1 e'_pre.2 last.1 q_new]
-    by_cases hZ : pe'.Z_global e'_pre.1 last.1 q_new = 0
-    · -- Z_global = 0: ofDist.kernel = 0 (Lemma 1) ⇒ both sides 0.
-      have h_ker_zero : pe'.ofDist.kernel e'_pre.1 (last.1, q_new) = 0 :=
-        pe'.ofDist_kernel_eq_zero_of_Z_global_eq_zero e'_pre.1 e'_pre.2 last.1 q_new hZ
-      rw [h_ker_zero, mul_zero, zero_mul, hZ]
-      -- RHS = pe'.kernel * (... / 0) = 0 in ENNReal? Actually `_ / 0 = ?`.
-      -- ENNReal: `a / 0 = a * 0⁻¹ = a * ⊤`, not necessarily 0. So we must be careful.
-      -- The factor `belief e'_pre · 0 · μ_new q_new = 0`, so numerator is 0.
-      -- 0 / 0 = 0 * ⊤ = 0 in ENNReal.
-      -- Explicitly compute: numerator = ... * h_ker_zero = 0; hence 0/0 = 0.
-      have hnum : pe'.ofDist.probOf e'_pre.1 e'_pre.2 *
-          pe'.belief e'_pre.1 ⟨μ_0, Seq.ofList rest_prev⟩ * 0 * last.2 q_new = 0 := by ring
-      rw [hnum, ENNReal.zero_div, mul_zero]
-    · -- Z_global ≠ 0: use belief_factor_step.
-      have h_bfs := pe'.belief_factor_step μ_0 rest_prev last.1 last.2 q_new e'_pre.1 e'_pre.2
-      -- h_bfs: belief_ext · Z_global = belief e'_pre · kernel · last.2 q_new.
-      have hZ_top : pe'.Z_global e'_pre.1 last.1 q_new ≠ ⊤ := by
-        unfold ProbabilisticExecution.Z_global
-        apply ne_of_lt
-        calc (∑' (E : AlterSeq (PMF State) Label),
-            pe'.belief e'_pre.1 E *
-            ∑' (ω : PMF (PMF State)),
-              pe'.scheduler.next E (some (last.1, ω)) * (ω.bind id) q_new)
-            ≤ ∑' (E : AlterSeq (PMF State) Label), pe'.belief e'_pre.1 E := by
-              apply ENNReal.tsum_le_tsum
-              intro E
-              refine mul_le_of_le_one_right' ?_
-              calc (∑' (ω : PMF (PMF State)),
-                  pe'.scheduler.next E (some (last.1, ω)) * (ω.bind id) q_new)
-                  ≤ ∑' (ω : PMF (PMF State)),
-                      pe'.scheduler.next E (some (last.1, ω)) := by
-                    apply ENNReal.tsum_le_tsum
-                    intro ω
-                    exact mul_le_of_le_one_right' (PMF.coe_le_one _ _)
-                _ ≤ ∑' lω, pe'.scheduler.next E (some lω) := by
-                    exact ENNReal.tsum_comp_le_tsum_of_injective
-                      (f := fun ω => (last.1, ω))
-                      (fun _ _ h => (Prod.mk.inj h).2) _
-                _ ≤ ∑' opt, pe'.scheduler.next E opt := by
-                    exact ENNReal.tsum_comp_le_tsum_of_injective
-                      (f := some) (fun _ _ h => Option.some.inj h) _
-                _ = 1 := (pe'.scheduler.next E).tsum_coe
-          _ = 1 := (pe'.belief e'_pre.1).tsum_coe
-          _ < ⊤ := ENNReal.one_lt_top
-      -- belief_ext = (belief e'_pre · kernel · last.2 q_new) / Z_global.
-      have h_belief_ext :
-          pe'.belief
-            ⟨e'_pre.1.init, e'_pre.1.trans.append (Seq.cons (last.1, q_new) Seq.nil)⟩
-            ⟨μ_0, (Seq.ofList rest_prev).append (Seq.cons (last.1, last.2) Seq.nil)⟩
-          = pe'.belief e'_pre.1 ⟨μ_0, Seq.ofList rest_prev⟩ *
-            pe'.kernel ⟨μ_0, Seq.ofList rest_prev⟩ (last.1, last.2) *
-            last.2 q_new / pe'.Z_global e'_pre.1 last.1 q_new := by
-        rw [ENNReal.eq_div_iff hZ hZ_top, mul_comm]
-        exact h_bfs
-      rw [h_belief_ext]
-      rw [show pe'.kernel ⟨μ_0, Seq.ofList rest_prev⟩ last
-          = pe'.kernel ⟨μ_0, Seq.ofList rest_prev⟩ (last.1, last.2) from by
-        rcases last with ⟨l₀, μ₀⟩; rfl]
-      -- Goal: ofDist.probOf · ofDist.kernel · (belief · kernel · q_new / Z)
-      --     = kernel * (ofDist.probOf · belief · ofDist.kernel · q_new / Z).
-      -- ENNReal: use mul_div_assoc and ring-like manipulation.
-      rw [mul_div_assoc, mul_div_assoc]
-      ring
-  -- Apply h_summand pointwise.
-  have h_eq_after_summand :
-    (∑' (e'_pre : {e : AlterSeq State Label // e.trans.Terminates}) (q_new : State),
-      pe'.ofDist.probOf
-        ⟨e'_pre.1.init, e'_pre.1.trans.append (Seq.cons (last.1, q_new) Seq.nil)⟩
-        ⟨_, Stream'.Seq.terminatedAt_append_find e'_pre.2
-          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil).choose_spec⟩ *
-      pe'.belief
-        ⟨e'_pre.1.init, e'_pre.1.trans.append (Seq.cons (last.1, q_new) Seq.nil)⟩
-        ⟨μ_0, (Seq.ofList rest_prev).append (Seq.cons last Seq.nil)⟩) =
-    (∑' (e'_pre : {e : AlterSeq State Label // e.trans.Terminates}) (q_new : State),
-      pe'.kernel ⟨μ_0, Seq.ofList rest_prev⟩ last *
-        (pe'.ofDist.probOf e'_pre.1 e'_pre.2 *
-          pe'.belief e'_pre.1 ⟨μ_0, Seq.ofList rest_prev⟩ *
-          pe'.ofDist.kernel e'_pre.1 (last.1, q_new) *
-          last.2 q_new /
-          pe'.Z_global e'_pre.1 last.1 q_new)) := by
-    apply tsum_congr
-    intro e'_pre
-    apply tsum_congr
-    intro q_new
-    have h := h_summand e'_pre q_new
-    -- The `last` vs `(last.1, last.2)` should match (Prod.eta).
-    have h_last_eq : last = (last.1, last.2) := rfl
-    convert h using 3
-  rw [h_eq_after_summand]
-  -- Pull pe'.kernel out of the inner and outer tsums.
-  simp_rw [ENNReal.tsum_mul_left]
-  -- Apply crux.
-  rw [pe'.bayes_inversion_crux μ_0 rest_prev last.1 last.2 h_pre ih, ← ih]
-  ring
+  rcases last with ⟨l, μ_new⟩
+  exact pe'.inversion_at_E_full μ_0 rest_prev l μ_new h_pre h_app ih
 
 /-- **Auxiliary**: list-keyed disintegration identity. For any `μ_0` and
 finite list `L : List (Label × PMF State)`, the disintegration holds for
