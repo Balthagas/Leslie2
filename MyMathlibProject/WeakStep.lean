@@ -111,11 +111,19 @@ noncomputable def LabelledSystem.traceProb (ls : LabelledSystem State Label)
 /-! ### Trace-distribution sets achievable by a system -/
 
 /-- The set of trace distributions achievable by some probabilistic execution
-of the labelled system `ls`. Equality of this set across two systems means
-the systems are trace-distribution-equivalent. -/
+of the labelled system `ls` **that starts at the system's initial state**, i.e.
+whose initial distribution is the Dirac `PMF.pure ls.init`. Equality of this set
+across two systems means the systems are trace-distribution-equivalent.
+
+The Dirac-init requirement is essential: it restricts to executions that
+correspond to genuine runs of `ls` from its designated start state. Without it
+the `𝒟(sys)` lift admits mixture initial distributions over `PMF State` that no
+single `sys`-execution realises, and the trace-distribution equivalence fails
+(the `𝒟`-side `belief` reconstruction is unsound for mixture inits). -/
 def achievableTraceDists (ls : LabelledSystem State Label) :
     Set (Seq Label → ENNReal) :=
-  {D | ∃ pe : ProbabilisticExecution ls.toSystem, ∀ τ, ls.traceProb pe τ = D τ}
+  {D | ∃ pe : ProbabilisticExecution ls.toSystem,
+    pe.initState = PMF.pure ls.toSystem.init ∧ ∀ τ, ls.traceProb pe τ = D τ}
 
 /-! ### Weak Schedulers -/
 
