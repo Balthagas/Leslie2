@@ -125,12 +125,286 @@ def achievableTraceDists (ls : LabelledSystem State Label) :
   {D | ∃ pe : ProbabilisticExecution ls.toSystem,
     pe.initState = PMF.pure ls.toSystem.init ∧ ∀ τ, ls.traceProb pe τ = D τ}
 
+/-! ### Regrouping `traceProb` by label list
+
+`traceTightLabs` and `traceProb_eq_labProb_sum` depend only on `ls.internal`
+(via `trace`/`IsTight`), so they are shared by every construction that keeps the
+internal-label predicate (`𝒟(sys)`, `sys^w`). They live here so all such
+constructions can reuse the regrouping. -/
+
+open Classical in
+/-- The label lists realisable by a *tight* execution with external trace `τ`:
+the external (non-internal) sublist of `labs` equals `τ`, and `labs` is empty or
+ends with an external label. Depends only on `ls.internal`, so it is *identical*
+for `sys` and any construction sharing `internal` (e.g. `𝒟(sys)`, `sys^w`). -/
+def LabelledSystem.traceTightLabs {S L : Type} (ls : LabelledSystem S L)
+    (τ : Seq L) (labs : List L) : Prop :=
+  ((Seq.ofList labs).filter (fun l => ¬ ls.internal l) = τ) ∧
+    (∀ l, labs.getLast? = some l → ¬ ls.internal l)
+
+/-- Mapping `Prod.fst` over a `Seq.ofList` equals `Seq.ofList` of the mapped list. -/
+private theorem LabelledSystem.map_ofList {S L : Type} (l : List (L × S)) :
+    (Seq.ofList l).map Prod.fst = Seq.ofList (l.map Prod.fst) := by
+  induction l with
+  | nil => rw [Stream'.Seq.ofList_nil, Stream'.Seq.map_nil, List.map_nil, Stream'.Seq.ofList_nil]
+  | cons a l ih =>
+    rw [Stream'.Seq.ofList_cons, Stream'.Seq.map_cons, List.map_cons, Stream'.Seq.ofList_cons, ih]
+
+/-- The trace can be expressed as first mapping `Prod.fst` then filtering by
+"non-internal", swapping the order in the definition of `trace`. -/
+private theorem LabelledSystem.trace_eq_filter_map {S L : Type} (ls : LabelledSystem S L)
+    (e : AlterSeq S L) :
+    ls.trace e = (e.trans.map Prod.fst).filter (fun l => ¬ ls.internal l) := by
+  unfold LabelledSystem.trace
+  rw [Stream'.Seq.filter_map Prod.fst (fun l => ¬ ls.internal l)]
+  rfl
+
+open Classical in
+/-- The correspondence at the heart of the reindexing: for a terminating
+execution `e` with label list `labs := (e.trans.toList h).map Prod.fst`, being a
+trace-`τ` tight execution is equivalent to `traceTightLabs τ labs`. -/
+private theorem LabelledSystem.tight_iff {S L : Type} (ls : LabelledSystem S L)
+    (τ : Seq L) (e : AlterSeq S L) (h : e.trans.Terminates) :
+    (ls.trace e = τ ∧ ls.IsTight e)
+      ↔ ls.traceTightLabs τ ((e.trans.toList h).map Prod.fst) := by
+  set labs := (e.trans.toList h).map Prod.fst with hlabs
+  have h_map : e.trans.map Prod.fst = Seq.ofList labs := by
+    rw [hlabs, ← LabelledSystem.map_ofList, Stream'.Seq.ofList_toList e.trans h]
+  unfold LabelledSystem.traceTightLabs
+  -- Part 1: trace equality.
+  have part1 : ls.trace e = τ ↔ (Seq.ofList labs).filter (fun l => ¬ ls.internal l) = τ := by
+    rw [ls.trace_eq_filter_map e, h_map]
+  -- Part 2: tightness equality.
+  have part2 : ls.IsTight e ↔ (∀ l, labs.getLast? = some l → ¬ ls.internal l) := by
+    unfold LabelledSystem.IsTight
+    -- `labs.getLast? = (e.trans.get? (length - 1)).map Prod.fst`.
+    have h_glast : labs.getLast? = (e.trans.get? (e.trans.length h - 1)).map Prod.fst := by
+      rw [hlabs, List.getLast?_map, Stream'.Seq.getLast?_toList e.trans h]
+    by_cases h0 : e.trans.TerminatedAt 0
+    · -- Empty transitions: tight (left disjunct), getLast? = none, RHS vacuous.
+      have h_nil : e.trans = Stream'.Seq.nil := Stream'.Seq.terminatedAt_zero_iff.mp h0
+      have h_len0 : e.trans.length h = 0 :=
+        Nat.le_zero.mp (Stream'.Seq.length_le_iff.mpr h0)
+      have h_getlast_none : labs.getLast? = none := by
+        rw [h_glast, h_len0]
+        rw [show e.trans.get? (0 - 1) = none from by rw [h_nil]; rfl]
+        rfl
+      constructor
+      · intro _ l hl; rw [h_getlast_none] at hl; exact absurd hl (by simp)
+      · intro _; left; exact h0
+    · -- Nonempty: length ≥ 1, left disjunct false; both sides reduce to `¬ internal l₀`.
+      have h_len_pos : 1 ≤ e.trans.length h := by
+        by_contra hc
+        exact h0 (Stream'.Seq.length_le_iff.mp (Nat.lt_one_iff.mp (Nat.not_le.mp hc)).le)
+      set len := e.trans.length h with hlen
+      -- `e.trans.get? (len - 1)` is `some (l₀, s₀)`.
+      have h_not_term : ¬ e.trans.TerminatedAt (len - 1) := by
+        intro hT
+        have : len ≤ len - 1 := Stream'.Seq.length_le_iff.mpr hT
+        omega
+      have h_exists : ∃ ls₀ : L × S, e.trans.get? (len - 1) = some ls₀ := by
+        cases hg : e.trans.get? (len - 1) with
+        | none => exact absurd hg h_not_term
+        | some v => exact ⟨v, rfl⟩
+      obtain ⟨⟨l₀, s₀⟩, h_get0⟩ := h_exists
+      have h_term_len : e.trans.TerminatedAt len :=
+        Stream'.Seq.length_le_iff.mp (le_refl len)
+      have h_glast0 : labs.getLast? = some l₀ := by
+        rw [h_glast, h_get0]; rfl
+      constructor
+      · rintro (hT0 | ⟨n, l, s, h_getn, h_termn, h_notint⟩)
+        · exact absurd hT0 h0
+        · -- Show `n = len - 1`, hence `l = l₀`.
+          have h_not_termn : ¬ e.trans.TerminatedAt n := by
+            intro hT
+            rw [Stream'.Seq.TerminatedAt, h_getn] at hT
+            exact absurd hT (by simp)
+          have h_n_lt : n < len := by
+            by_contra hc
+            exact h_not_termn (Stream'.Seq.length_le_iff.mp (Nat.not_lt.mp hc))
+          have h_len_le : len ≤ n + 1 := Stream'.Seq.length_le_iff.mpr h_termn
+          have h_n_eq : n = len - 1 := by omega
+          subst h_n_eq
+          rw [h_get0] at h_getn
+          obtain ⟨rfl, _⟩ := Prod.mk.injEq .. ▸ (Option.some.injEq ..).mp h_getn
+          intro l' hl'
+          rw [h_glast0] at hl'
+          obtain rfl : l' = l₀ := ((Option.some.injEq ..).mp hl').symm
+          exact h_notint
+      · intro hall
+        right
+        refine ⟨len - 1, l₀, s₀, h_get0, ?_, ?_⟩
+        · rw [show len - 1 + 1 = len from by omega]; exact h_term_len
+        · exact hall l₀ h_glast0
+  rw [part1, part2]
+
+open Classical in
+/-- **Regroup `traceProb` by label list.** Each tight, trace-`τ` execution has a
+label list `labs` with `traceTightLabs τ labs`; grouping the `traceProb` sum by
+`labs` yields, per such `labs`, the total `probOf`-mass of executions with label
+list `labs`. -/
+theorem LabelledSystem.traceProb_eq_labProb_sum {S L : Type} (ls : LabelledSystem S L)
+    (pe : ProbabilisticExecution ls.toSystem) (τ : Seq L) :
+    ls.traceProb pe τ
+      = ∑' labs : List L,
+          (if ls.traceTightLabs τ labs then
+            ∑' e : AlterSeq S L,
+              dite (e.trans.Terminates ∧ e.trans.map Prod.fst = Seq.ofList labs)
+                (fun h => pe.probOf e h.1) (fun _ => 0)
+          else 0) := by
+  classical
+  unfold LabelledSystem.traceProb
+  -- Step 1: push the `if` inside the inner `tsum`.
+  rw [show (∑' labs : List L,
+        (if ls.traceTightLabs τ labs then
+          ∑' e : AlterSeq S L,
+            dite (e.trans.Terminates ∧ e.trans.map Prod.fst = Seq.ofList labs)
+              (fun h => pe.probOf e h.1) (fun _ => 0)
+        else 0))
+      = ∑' labs : List L, ∑' e : AlterSeq S L,
+          (if ls.traceTightLabs τ labs then
+            dite (e.trans.Terminates ∧ e.trans.map Prod.fst = Seq.ofList labs)
+              (fun h => pe.probOf e h.1) (fun _ => 0)
+          else 0) from by
+    refine tsum_congr fun labs => ?_
+    by_cases hc : ls.traceTightLabs τ labs
+    · simp only [if_pos hc]
+    · simp only [if_neg hc, tsum_zero]]
+  -- Step 2: combine the double sum into a single sum over `List L × AlterSeq S L`.
+  rw [← ENNReal.tsum_prod' (f := fun p : List L × AlterSeq S L =>
+      if ls.traceTightLabs τ p.1 then
+        dite (p.2.trans.Terminates ∧ Seq.map Prod.fst p.2.trans = (↑p.1 : Seq L))
+          (fun h => pe.probOf p.2 h.1) (fun _ => 0)
+      else 0)]
+  -- Abbreviations for the two summands.
+  set G : List L × AlterSeq S L → ENNReal := fun p =>
+      if ls.traceTightLabs τ p.1 then
+        dite (p.2.trans.Terminates ∧ Seq.map Prod.fst p.2.trans = (↑p.1 : Seq L))
+          (fun h => pe.probOf p.2 h.1) (fun _ => 0)
+      else 0 with hG_def
+  -- Membership in `support G` forces both branch conditions.
+  have G_supp : ∀ p : List L × AlterSeq S L, G p ≠ 0 →
+      ls.traceTightLabs τ p.1 ∧
+        ∃ hT : p.2.trans.Terminates, Seq.map Prod.fst p.2.trans = (↑p.1 : Seq L) := by
+    intro p hp
+    rw [hG_def] at hp
+    simp only at hp
+    by_cases hc : ls.traceTightLabs τ p.1
+    · rw [if_pos hc] at hp
+      by_cases hd : p.2.trans.Terminates ∧ Seq.map Prod.fst p.2.trans = (↑p.1 : Seq L)
+      · exact ⟨hc, hd.1, hd.2⟩
+      · rw [dif_neg hd] at hp; exact absurd rfl hp
+    · rw [if_neg hc] at hp; exact absurd rfl hp
+  -- From the branch conditions, recover the correspondence: `p.1 = labs` of `p.2`.
+  have G_corr : ∀ p : List L × AlterSeq S L, G p ≠ 0 →
+      ∃ hT : p.2.trans.Terminates,
+        p.1 = (p.2.trans.toList hT).map Prod.fst ∧
+        ls.trace p.2 = τ ∧ ls.IsTight p.2 := by
+    intro p hp
+    obtain ⟨hc, hT, hmap⟩ := G_supp p hp
+    have h_p1 : p.1 = (p.2.trans.toList hT).map Prod.fst := by
+      apply Stream'.Seq.ofList_injective
+      rw [← LabelledSystem.map_ofList, Stream'.Seq.ofList_toList p.2.trans hT, hmap]
+    refine ⟨hT, h_p1, ?_⟩
+    have := (ls.tight_iff τ p.2 hT).mpr (h_p1 ▸ hc)
+    exact ⟨this.1, this.2⟩
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (i := fun p => (⟨(p : List L × AlterSeq S L).2,
+      (G_corr p.1 p.2).choose,
+      (G_corr p.1 p.2).choose_spec.2.1,
+      (G_corr p.1 p.2).choose_spec.2.2⟩ :
+        {e : AlterSeq S L // e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e}))
+    ?hinj ?hf ?hfg
+  case hinj =>
+    rintro ⟨p₁, hp₁⟩ ⟨p₂, hp₂⟩ heq
+    -- The `AlterSeq` components agree.
+    have h2 : p₁.2 = p₂.2 := congr_arg Subtype.val heq
+    -- The label lists agree via injectivity of `ofList`.
+    obtain ⟨_, hmap₁⟩ := (G_supp p₁ hp₁).2
+    obtain ⟨_, hmap₂⟩ := (G_supp p₂ hp₂).2
+    have h1 : p₁.1 = p₂.1 := by
+      apply Stream'.Seq.ofList_injective
+      show (↑p₁.1 : Seq L) = ↑p₂.1
+      rw [← hmap₁, ← hmap₂, h2]
+    have : p₁ = p₂ := Prod.ext h1 h2
+    subst this; rfl
+  case hf =>
+    rintro ⟨e, hEprop⟩ hne
+    have he_fin : e.trans.Terminates := hEprop.1
+    have he_trace : ls.trace e = τ := hEprop.2.1
+    have he_tight : ls.IsTight e := hEprop.2.2
+    change pe.probOf e he_fin ≠ 0 at hne
+    -- The preimage label list.
+    set labs := (e.trans.toList he_fin).map Prod.fst with hlabs
+    have h_tt : ls.traceTightLabs τ labs := (ls.tight_iff τ e he_fin).mp ⟨he_trace, he_tight⟩
+    have h_map : Seq.map Prod.fst e.trans = (↑labs : Seq L) := by
+      rw [hlabs, ← LabelledSystem.map_ofList, Stream'.Seq.ofList_toList e.trans he_fin]
+    have hGne : G (labs, e) ≠ 0 := by
+      rw [hG_def]
+      simp only
+      rw [if_pos h_tt, dif_pos ⟨he_fin, h_map⟩]
+      exact hne
+    exact ⟨⟨(labs, e), hGne⟩, Subtype.ext rfl⟩
+  case hfg =>
+    rintro ⟨p, hp⟩
+    obtain ⟨hc, hT, hmap⟩ := G_supp p hp
+    change pe.probOf p.2 _ = G p
+    rw [hG_def]
+    simp only
+    rw [if_pos hc, dif_pos ⟨hT, hmap⟩]
+
+/-! ### `probOf` is linear in the initial distribution -/
+
+/-- `List.reverseRecOn` with a multiplicative step is linear in its base value. -/
+private theorem reverseRecOn_mul_base {γ : Type*} {M : Type*} [Monoid M] (L : List γ)
+    (B : M) (g : List γ → γ → M) :
+    L.reverseRecOn (motive := fun _ => M) B (fun rest last ih => ih * g rest last)
+      = B * L.reverseRecOn (motive := fun _ => M) 1 (fun rest last ih => ih * g rest last) := by
+  induction L using List.reverseRecOn with
+  | nil => rw [List.reverseRecOn_nil, List.reverseRecOn_nil, mul_one]
+  | append_singleton rest last ih =>
+    rw [List.reverseRecOn_concat, List.reverseRecOn_concat, ih, mul_assoc]
+
+/-- `probOf` factors through the initial mass: producing `e` from `μ_init` is
+`μ_init e.init` times producing `e` from the Dirac on `e.init` (the transition
+kernels depend only on the scheduler, not the initial distribution). -/
+theorem ProbabilisticExecution.probOf_init_factor {Sys : System State Label}
+    (sch : Scheduler Sys) (μ_init : PMF State)
+    (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    (⟨μ_init, sch⟩ : ProbabilisticExecution Sys).probOf e h
+      = μ_init e.init * (⟨PMF.pure e.init, sch⟩ : ProbabilisticExecution Sys).probOf e h := by
+  have hbase : (⟨μ_init, sch⟩ : ProbabilisticExecution Sys).init e.init = μ_init e.init := rfl
+  have hbase' : (⟨PMF.pure e.init, sch⟩ : ProbabilisticExecution Sys).init e.init = 1 :=
+    PMF.pure_apply_self e.init
+  have hker : ∀ rest last,
+      (⟨PMF.pure e.init, sch⟩ : ProbabilisticExecution Sys).kernel ⟨e.init, Seq.ofList rest⟩ last
+      = (⟨μ_init, sch⟩ : ProbabilisticExecution Sys).kernel ⟨e.init, Seq.ofList rest⟩ last :=
+    fun _ _ => rfl
+  unfold ProbabilisticExecution.probOf
+  rw [hbase, hbase']
+  simp only [hker]
+  exact reverseRecOn_mul_base (e.trans.toList h) (μ_init e.init)
+    (fun rest last =>
+    (⟨μ_init, sch⟩ : ProbabilisticExecution Sys).kernel ⟨e.init, Seq.ofList rest⟩ last)
+
+/-- **`probOf` is linear in the initial distribution.** Producing the execution
+`e` from a mixture `μ_init` is the `μ_init`-average of producing it from each
+Dirac start. The "un-disintegration" identity used to glue weak-τ phases. -/
+theorem ProbabilisticExecution.probOf_init_mix {Sys : System State Label}
+    (sch : Scheduler Sys) (μ_init : PMF State)
+    (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    (⟨μ_init, sch⟩ : ProbabilisticExecution Sys).probOf e h
+      = ∑' s, μ_init s * (⟨PMF.pure s, sch⟩ : ProbabilisticExecution Sys).probOf e h := by
+  classical
+  rw [tsum_eq_single e.init (fun s hs => by
+    rw [ProbabilisticExecution.probOf_init_factor sch (PMF.pure s) e h,
+      PMF.pure_apply_of_ne _ _ (Ne.symm hs), zero_mul, mul_zero])]
+  exact ProbabilisticExecution.probOf_init_factor sch μ_init e h
+
 /-! ### Weak Schedulers -/
 
 /-- A *weak scheduler* for a labelled system: a `Scheduler` whose emissions are
-restricted to internal labels. The unbounded number of τ-steps to take when
-running is supplied externally to `run` (rather than baked into the scheduler),
-so this structure has no `runtime` field. -/
+restricted to internal labels. -/
 structure WeakScheduler (sys : LabelledSystem State Label)
     extends Scheduler sys.toSystem where
   internal_only : ∀ (e : AlterSeq State Label) (l : Label) (μ : PMF State),
@@ -140,261 +414,1271 @@ namespace WeakScheduler
 
 variable {sys : LabelledSystem State Label}
 
-/-- Run the weak scheduler from a prefix `e` with current state `s`, for `n`
-iterations. After `n` recursions (or upon hitting a `none` output) the result
-is the Dirac on the current state. -/
-noncomputable def runFromState (σ : WeakScheduler sys) :
-    ℕ → AlterSeq State Label → State → PMF State
-  | 0,     _, s => PMF.pure s
-  | n + 1, e, s => (σ.next e).bind fun
-    | none           => PMF.pure s
-    | some (l, μ_q) => μ_q.bind fun s' =>
-        σ.runFromState n ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s'
-
-/-- Run the weak scheduler from a single state `s` for `n` iterations,
-starting from the trivial prefix `⟨s, Seq.nil⟩`. The fuel `n` is now an
-external parameter (previously a field on `WeakScheduler`). -/
-noncomputable def run (σ : WeakScheduler sys) (n : ℕ) (s : State) : PMF State :=
-  σ.runFromState n ⟨s, Seq.nil⟩ s
-
-/-- The weak scheduler that immediately stops on every prefix. Used to witness
-reflexivity of weak transitions: it takes no τ-steps, so its run from any state
-`s` is the Dirac `PMF.pure s` regardless of the fuel. -/
+/-- The weak scheduler that immediately stops on every prefix: it emits `⊥`
+(`none`) everywhere. Used to witness reflexivity of weak transitions — it takes
+no τ-steps, so it halts at once with the chain still at its starting state. -/
 noncomputable def stop (sys : LabelledSystem State Label) : WeakScheduler sys where
   next _ := PMF.pure none
   valid e _ _ _ _ l μ h := by simp at h
   internal_only e l μ h := by simp at h
 
-/-- `(stop sys).runFromState n e s` is always the Dirac on `s`, since the
-scheduler emits `none` immediately. -/
-private theorem runFromState_stop (sys : LabelledSystem State Label) :
-    ∀ (n : ℕ) (e : AlterSeq State Label) (s : State),
-      (stop sys).runFromState n e s = PMF.pure s := by
-  intro n
-  induction n with
-  | zero => intros; rfl
-  | succ n ih =>
-    intro e s
-    change ((stop sys).next e).bind _ = PMF.pure s
-    simp only [stop, PMF.pure_bind]
+/-- The **halting mass** of a weak scheduler `σ` from source `μ_init`, at a
+terminating finite execution `e`: the probability of producing the transition
+sequence `e` (under the probabilistic execution `⟨μ_init, σ⟩`) and then emitting
+`⊥` (halting) at the prefix `e`. This is `probOf e · σ.next e ⊥`. -/
+noncomputable def haltMass (σ : WeakScheduler sys) (μ_init : PMF State)
+    (e : {e : AlterSeq State Label // e.trans.Terminates}) : ENNReal :=
+  (⟨μ_init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
+    * σ.next e.1 none
 
-@[simp] theorem run_stop (sys : LabelledSystem State Label) (n : ℕ) (s : State) :
-    (stop sys).run n s = PMF.pure s :=
-  runFromState_stop sys n ⟨s, Seq.nil⟩ s
+/-- **`haltMass` is linear in the source distribution** (lifting `probOf_init_mix`,
+since the halt probability `σ.next e ⊥` depends only on the scheduler). The
+"un-disintegration over the source" used to glue weak-τ phases. -/
+theorem haltMass_init_mix (σ : WeakScheduler sys) (μ_init : PMF State)
+    (e : {e : AlterSeq State Label // e.trans.Terminates}) :
+    σ.haltMass μ_init e = ∑' s, μ_init s * σ.haltMass (PMF.pure s) e := by
+  unfold WeakScheduler.haltMass
+  rw [ProbabilisticExecution.probOf_init_mix σ.toScheduler μ_init e.1 e.2,
+    ← ENNReal.tsum_mul_right]
+  exact tsum_congr (fun s => by ring)
 
-/-- The fuel-bounded variant of a WeakScheduler: behaves as `σ` until the
-prefix's transition sequence has accumulated `n` or more entries, then forces
-a halt by emitting `none`. The resulting scheduler halts after at most `n`
-outer steps when run via `run n` (since each outer step extends the prefix by
-exactly one transition; starting from the empty prefix, after `n` steps the
-seq has `n` entries and `(σ.boundedFuel n).next` would emit `none`). -/
-noncomputable def boundedFuel (σ : WeakScheduler sys) (n : ℕ) : WeakScheduler sys where
+/-! ### Sequential composition of weak schedulers (`bind`) -/
+
+/-- Dropping a prefix of a terminating execution's transition sequence again
+terminates. -/
+private theorem drop_terminates {e : AlterSeq State Label} (hT : e.trans.Terminates) (j : ℕ) :
+    (e.trans.drop j).Terminates := by
+  obtain ⟨N, hN⟩ := hT
+  exact ⟨N, by
+    change (e.trans.drop j).get? N = none
+    rw [Stream'.Seq.drop_get?]
+    exact Stream'.Seq.terminated_stable e.trans (Nat.le_add_left N j) hN⟩
+
+/-- The state of `e` after `j` transitions (junk default `e.init` outside the
+valid range; only used for `j < length`, where `stateAt j` is `some`). -/
+private noncomputable def stateAfter (e : AlterSeq State Label) (j : ℕ) : State :=
+  (e.stateAt j).getD e.init
+
+open Classical in
+/-- The (un-normalized) belief weight over the split point of `bind σ k` at a
+terminating execution `e`. `none` = σ produced all of `e` (and is still active);
+`some j` = σ halted after `j` transitions and `k` produced the rest. Source-
+independent: Dirac sources `PMF.pure` are used throughout. -/
+private noncomputable def bindWeight (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (hT : e.trans.Terminates) : Option ℕ → ENNReal
+  | none => (⟨PMF.pure e.init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf e hT
+  | some j =>
+      if _hj : j < e.trans.length hT then
+        σ.haltMass (PMF.pure e.init)
+            ⟨⟨e.init, Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩
+          * (⟨PMF.pure (stateAfter e j), (k (stateAfter e j)).toScheduler⟩
+              : ProbabilisticExecution sys.toSystem).probOf
+              ⟨stateAfter e j, e.trans.drop j⟩ (drop_terminates hT j)
+      else 0
+
+/-- The total belief weight is finite: the `some`-part is supported on
+`{j | j < length}` and every weight is `≤ 1`. -/
+private theorem bindWeight_tsum_ne_top (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (hT : e.trans.Terminates) :
+    (∑' o, bindWeight σ k e hT o) ≠ ⊤ := by
+  classical
+  -- `probOf` from a Dirac source is `≤ 1`.
+  have hprob_le_one : ∀ (sch : Scheduler sys.toSystem) (e' : AlterSeq State Label)
+      (h' : e'.trans.Terminates),
+      (⟨PMF.pure e'.init, sch⟩ : ProbabilisticExecution sys.toSystem).probOf e' h' ≤ 1 := by
+    intro sch e' h'
+    refine le_trans (ProbabilisticExecution.probOf_le_init _ e' h') ?_
+    rw [ProbabilisticExecution.init_eq_initState]
+    exact PMF.coe_le_one _ _
+  -- Bound each weight by `1`.
+  have hbound : ∀ o : Option ℕ, bindWeight σ k e hT o ≤ 1 := by
+    intro o
+    cases o with
+    | none =>
+      change (⟨PMF.pure e.init, σ.toScheduler⟩ :
+        ProbabilisticExecution sys.toSystem).probOf e hT ≤ 1
+      exact hprob_le_one _ e hT
+    | some j =>
+      change (if _ : j < e.trans.length hT then _ else 0) ≤ 1
+      by_cases hj : j < e.trans.length hT
+      · rw [dif_pos hj]
+        refine mul_le_one' ?_ (hprob_le_one _ _ _)
+        unfold WeakScheduler.haltMass
+        exact mul_le_one' (hprob_le_one _ _ _) (PMF.coe_le_one _ _)
+      · rw [dif_neg hj]; exact zero_le_one
+  -- The `some`-weights vanish off `Finset.range (length)`.
+  set S : Finset (Option ℕ) :=
+    insert none ((Finset.range (e.trans.length hT)).image some) with hS
+  have hzero : ∀ o ∉ S, bindWeight σ k e hT o = 0 := by
+    intro o ho
+    cases o with
+    | none => exact absurd (Finset.mem_insert_self none _) ho
+    | some j =>
+      have hj : ¬ j < e.trans.length hT := by
+        intro hlt
+        exact ho (Finset.mem_insert_of_mem
+          (Finset.mem_image.mpr ⟨j, Finset.mem_range.mpr hlt, rfl⟩))
+      change (if hj : j < e.trans.length hT then _ else 0) = 0
+      rw [dif_neg hj]
+  rw [tsum_eq_sum hzero]
+  refine ENNReal.sum_ne_top.mpr ?_
+  intro o _
+  exact ne_top_of_le_ne_top ENNReal.one_ne_top (hbound o)
+
+/-- The first-step action when the belief says "σ stays active to the end":
+fold σ's halt into `k`'s first step at the end-state of `e`. -/
+private noncomputable def actionBot (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (hT : e.trans.Terminates) : PMF (Option (Label × PMF State)) :=
+  (σ.next e).bind (fun o => match o with
+    | none => (k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩
+    | some lμ => PMF.pure (some lμ))
+
+/-- The first-step action when the belief says "σ halted after `j` steps": let
+`k` (started at the state after `j`) act on the remaining suffix. -/
+private noncomputable def actionK (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (j : ℕ) : PMF (Option (Label × PMF State)) :=
+  (k (stateAfter e j)).next ⟨stateAfter e j, e.trans.drop j⟩
+
+/-- The end-state of the `j`-suffix `⟨stateAfter e j, e.trans.drop j⟩` equals the
+end-state of `e` (both are the final state of `e`), for `j` within range. -/
+private theorem endState_drop (e : AlterSeq State Label) (hT : e.trans.Terminates) (j : ℕ)
+    (hj : j < e.trans.length hT) :
+    (⟨stateAfter e j, e.trans.drop j⟩ : AlterSeq State Label).endState (drop_terminates hT j)
+      = e.endState hT := by
+  classical
+  set N := e.trans.length hT with hN
+  -- `e`'s canonical end index is `N`.
+  have hNe : Nat.find hT = N := rfl
+  -- `e` does not terminate before `N`; in particular not at `j` (since `j < N`).
+  have h_not_term_lt : ∀ k < N, ¬ e.trans.TerminatedAt k := fun k hk => Nat.find_min hT hk
+  -- `e.trans.TerminatedAt N`.
+  have hN_term : e.trans.TerminatedAt N := Nat.find_spec hT
+  -- The drop's canonical end index is `N - j`.
+  set d : AlterSeq State Label := ⟨stateAfter e j, e.trans.drop j⟩ with hd
+  have hd_term := drop_terminates hT j
+  -- `(e.trans.drop j).TerminatedAt (N - j)`.
+  have hdrop_term : (e.trans.drop j).TerminatedAt (N - j) := by
+    change (e.trans.drop j).get? (N - j) = none
+    rw [Stream'.Seq.drop_get?, show j + (N - j) = N from by omega]
+    exact hN_term
+  -- `(e.trans.drop j)` does not terminate before `N - j`.
+  have hdrop_not : ∀ m < N - j, ¬ (e.trans.drop j).TerminatedAt m := by
+    intro m hm hcontra
+    apply h_not_term_lt (j + m) (by omega)
+    change e.trans.get? (j + m) = none
+    rw [← Stream'.Seq.drop_get?]; exact hcontra
+  -- Hence `Nat.find hd_term = N - j`.
+  have hNd : Nat.find hd_term = N - j := by
+    apply le_antisymm (Nat.find_le hdrop_term)
+    by_contra hc
+    push Not at hc
+    exact hdrop_not (Nat.find hd_term) hc (Nat.find_spec hd_term)
+  -- `N - j ≥ 1` since `j < N`.
+  have hpos : 1 ≤ N - j := by omega
+  obtain ⟨m, hm⟩ : ∃ m, N - j = m + 1 := Nat.exists_eq_succ_of_ne_zero (by omega)
+  -- Reduce to equality of the underlying `stateAt` options.
+  have hstate : d.stateAt (Nat.find hd_term) = e.stateAt (Nat.find hT) := by
+    rw [hNd, hNe, hm]
+    change ((e.trans.drop j).get? m).map Prod.snd = e.stateAt N
+    rw [Stream'.Seq.drop_get?]
+    have hNeq : N = (j + m) + 1 := by omega
+    rw [hNeq]
+    rfl
+  rw [AlterSeq.stateAt_find_eq_endState d hd_term,
+    AlterSeq.stateAt_find_eq_endState e hT] at hstate
+  exact (Option.some_inj.mp hstate)
+
+open Classical in
+/-- **Sequential composition** of weak schedulers: `bind σ k` runs `σ` from the
+start and, at `σ`'s almost-sure halt at state `s`, switches to `k s`. The σ→k
+boundary is invisible in the concrete history, so the first step is a *belief*
+over the split point (`bindWeight`, source-independent), realised by
+`PMF.normalize` then `bind` into `actionBot`/`actionK`. -/
+noncomputable def bind (σ : WeakScheduler sys) (k : State → WeakScheduler sys) :
+    WeakScheduler sys where
   next e :=
-    open Classical in
-    -- Active iff the prefix has fewer than `n` transitions, i.e.,
-    -- `e.trans.TerminatedAt (n - 1)` (for `n ≥ 1`) — equivalently
-    -- `∃ k, k < n ∧ e.trans.TerminatedAt k`.
-    if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
+    if hT : e.trans.Terminates then
+      if h0 : (∑' o, bindWeight σ k e hT o) ≠ 0 then
+        (PMF.normalize (bindWeight σ k e hT) h0 (bindWeight_tsum_ne_top σ k e hT)).bind
+          (fun o => match o with
+            | none => actionBot σ k e hT
+            | some j => actionK k e j)
+      else PMF.pure none
     else PMF.pure none
   valid := by
-    intro e k s h_term h_state l μ h_supp
     classical
-    by_cases h_act : (∃ k, k < n ∧ e.trans.TerminatedAt k)
-    · have h_eq : (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
-                    else PMF.pure none) = σ.next e := if_pos h_act
-      rw [h_eq] at h_supp
-      exact σ.valid e k s h_term h_state l μ h_supp
-    · have h_eq : (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
-                    else PMF.pure none) = PMF.pure none := if_neg h_act
-      rw [h_eq, PMF.mem_support_pure_iff] at h_supp
+    intro e n s e_term_n e_stateAt_eq l μ h_supp
+    have hT : e.trans.Terminates := ⟨n, e_term_n⟩
+    -- Identify `s` as `e.endState hT` (`n` is the canonical end index).
+    have h_find_le : Nat.find hT ≤ n := Nat.find_le e_term_n
+    have h_n_le : n ≤ Nat.find hT := by
+      by_contra h_lt
+      push Not at h_lt
+      rcases n with _ | m
+      · exact absurd h_lt (Nat.not_lt_zero _)
+      · have hk_ge : Nat.find hT ≤ m := Nat.lt_succ_iff.mp h_lt
+        have h_term_k : e.trans.TerminatedAt m :=
+          Stream'.Seq.terminated_stable e.trans hk_ge (Nat.find_spec hT)
+        have h_state_none : e.stateAt (m + 1) = none := by
+          change (e.trans.get? m).map Prod.snd = none
+          rw [show e.trans.get? m = none from h_term_k]; rfl
+        rw [h_state_none] at e_stateAt_eq
+        exact Option.some_ne_none s e_stateAt_eq.symm
+    have h_n_eq : n = Nat.find hT := le_antisymm h_n_le h_find_le
+    have h_s_eq : s = e.endState hT := by
+      have h := AlterSeq.stateAt_find_eq_endState e hT
+      rw [← h_n_eq] at h; rw [h] at e_stateAt_eq
+      exact (Option.some.inj e_stateAt_eq).symm
+    subst h_s_eq
+    -- Reduce the support membership to the main branch.
+    change some (l, μ) ∈
+      (if hT' : e.trans.Terminates then
+        if h0 : ∑' (o : Option ℕ), σ.bindWeight k e hT' o ≠ 0 then
+          (PMF.normalize (σ.bindWeight k e hT') h0 _).bind fun o =>
+            match o with
+            | none => σ.actionBot k e hT'
+            | some j => actionK k e j
+        else PMF.pure none
+      else PMF.pure none).support at h_supp
+    rw [dif_pos hT] at h_supp
+    by_cases h0 : ∑' (o : Option ℕ), σ.bindWeight k e hT o ≠ 0
+    · rw [dif_pos h0, PMF.mem_support_bind_iff] at h_supp
+      obtain ⟨o, ho_mem, h_supp⟩ := h_supp
+      cases o with
+      | none =>
+        -- `actionBot`: emission comes from σ or from k at the end-state.
+        change some (l, μ) ∈ (σ.actionBot k e hT).support at h_supp
+        unfold WeakScheduler.actionBot at h_supp
+        rw [PMF.mem_support_bind_iff] at h_supp
+        obtain ⟨o', ho'_mem, h_supp⟩ := h_supp
+        cases o' with
+        | none =>
+          -- From `(k (e.endState hT)).next ⟨e.endState hT, nil⟩`.
+          change some (l, μ) ∈ ((k (e.endState hT)).next
+            ⟨e.endState hT, Seq.nil⟩).support at h_supp
+          exact (k (e.endState hT)).valid ⟨e.endState hT, Seq.nil⟩ 0 (e.endState hT)
+            (by change (Seq.nil : Seq (Label × State)).get? 0 = none; rfl) rfl l μ h_supp
+        | some lμ' =>
+          -- From `σ.next e`, via `pure (some lμ')`.
+          change some (l, μ) ∈ (PMF.pure (some lμ')).support at h_supp
+          rw [PMF.mem_support_pure_iff] at h_supp
+          have : lμ' = (l, μ) := (Option.some.inj h_supp).symm
+          subst this
+          exact σ.valid e n (e.endState hT) e_term_n
+            (h_n_eq ▸ AlterSeq.stateAt_find_eq_endState e hT) l μ ho'_mem
+      | some j =>
+        -- `actionK`: emission from `k (stateAfter e j)` on the suffix.
+        change some (l, μ) ∈ (actionK k e j).support at h_supp
+        unfold WeakScheduler.actionK at h_supp
+        -- `j < length` from `bindWeight (some j) ≠ 0`.
+        rw [PMF.mem_support_normalize_iff] at ho_mem
+        have hj : j < e.trans.length hT := by
+          by_contra hc
+          apply ho_mem
+          change (if _ : j < e.trans.length hT then _ else 0) = 0
+          rw [dif_neg hc]
+        -- Apply `k`'s validity at the canonical end of the suffix (end-state `e.endState hT`).
+        set d : AlterSeq State Label := ⟨stateAfter e j, e.trans.drop j⟩ with hd
+        have hd_term := drop_terminates hT j
+        have hvalid := (k (stateAfter e j)).valid d (Nat.find hd_term) (d.endState hd_term)
+          (Nat.find_spec hd_term) (AlterSeq.stateAt_find_eq_endState d hd_term) l μ h_supp
+        rw [endState_drop e hT j hj] at hvalid
+        exact hvalid
+    · rw [dif_neg h0] at h_supp
+      change some (l, μ) ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
+      rw [PMF.mem_support_pure_iff] at h_supp
       exact absurd h_supp (by simp)
   internal_only := by
-    intro e l μ h_supp
     classical
-    by_cases h_act : (∃ k, k < n ∧ e.trans.TerminatedAt k)
-    · have h_eq : (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
-                    else PMF.pure none) = σ.next e := if_pos h_act
-      rw [h_eq] at h_supp
-      exact σ.internal_only e l μ h_supp
-    · have h_eq : (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
-                    else PMF.pure none) = PMF.pure none := if_neg h_act
-      rw [h_eq, PMF.mem_support_pure_iff] at h_supp
+    intro e l μ h_supp
+    by_cases hT : e.trans.Terminates
+    · change some (l, μ) ∈
+        (if hT' : e.trans.Terminates then
+          if h0 : ∑' (o : Option ℕ), σ.bindWeight k e hT' o ≠ 0 then
+            (PMF.normalize (σ.bindWeight k e hT') h0 _).bind fun o =>
+              match o with
+              | none => σ.actionBot k e hT'
+              | some j => actionK k e j
+          else PMF.pure none
+        else PMF.pure none).support at h_supp
+      rw [dif_pos hT] at h_supp
+      by_cases h0 : ∑' (o : Option ℕ), σ.bindWeight k e hT o ≠ 0
+      · rw [dif_pos h0, PMF.mem_support_bind_iff] at h_supp
+        obtain ⟨o, _, h_supp⟩ := h_supp
+        cases o with
+        | none =>
+          change some (l, μ) ∈ (σ.actionBot k e hT).support at h_supp
+          unfold WeakScheduler.actionBot at h_supp
+          rw [PMF.mem_support_bind_iff] at h_supp
+          obtain ⟨o', ho'_mem, h_supp⟩ := h_supp
+          cases o' with
+          | none =>
+            change some (l, μ) ∈ ((k (e.endState hT)).next
+              ⟨e.endState hT, Seq.nil⟩).support at h_supp
+            exact (k (e.endState hT)).internal_only ⟨e.endState hT, Seq.nil⟩ l μ h_supp
+          | some lμ' =>
+            change some (l, μ) ∈ (PMF.pure (some lμ')).support at h_supp
+            rw [PMF.mem_support_pure_iff] at h_supp
+            have : lμ' = (l, μ) := (Option.some.inj h_supp).symm
+            subst this
+            exact σ.internal_only e l μ ho'_mem
+        | some j =>
+          change some (l, μ) ∈ (actionK k e j).support at h_supp
+          unfold WeakScheduler.actionK at h_supp
+          exact (k (stateAfter e j)).internal_only ⟨stateAfter e j, e.trans.drop j⟩ l μ h_supp
+      · rw [dif_neg h0] at h_supp
+        change some (l, μ) ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
+        rw [PMF.mem_support_pure_iff] at h_supp
+        exact absurd h_supp (by simp)
+    · change some (l, μ) ∈
+        (if hT' : e.trans.Terminates then _ else
+          PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
+      rw [dif_neg hT] at h_supp
+      rw [PMF.mem_support_pure_iff] at h_supp
       exact absurd h_supp (by simp)
 
-/-- `(σ.boundedFuel n).next e` reduces to `σ.next e` whenever the prefix's
-transition sequence has accumulated fewer than `n` entries. -/
-theorem boundedFuel_next_of_active (σ : WeakScheduler sys) (n : ℕ)
-    (e : AlterSeq State Label) (h : ∃ k, k < n ∧ e.trans.TerminatedAt k) :
-    (σ.boundedFuel n).next e = σ.next e := by
-  classical
-  change (if (∃ k, k < n ∧ e.trans.TerminatedAt k) then σ.next e
-            else PMF.pure none) = _
-  exact if_pos h
+/-! ### `bind_haltMass`: helpers -/
 
-/-- Auxiliary lemma: `boundedFuel n`'s `runFromState k` matches `σ.runFromState k`
-whenever the current prefix `e` has accumulated at most `n - k` transitions
-(so even if we add `k` more transitions, the prefix length stays ≤ n, leaving
-the bounded scheduler in its "active" branch). Concretely we require
-`e.trans.TerminatedAt (n - k)` (for `k ≥ 1` this is enough to derive active
-on the current prefix; for `k = 0` the conclusion is trivial). -/
-private theorem runFromState_boundedFuel_eq_aux (σ : WeakScheduler sys) (n : ℕ) :
-    ∀ (k : ℕ) (e : AlterSeq State Label) (s : State),
-      k ≤ n →
-      e.trans.TerminatedAt (n - k) →
-      (σ.boundedFuel n).runFromState k e s = σ.runFromState k e s := by
-  intro k
-  induction k with
-  | zero =>
-    intro e s _h_le _h_term
-    -- Both sides equal `PMF.pure s`.
-    rfl
-  | succ m ih =>
-    intro e s h_le h_term
-    have h_le' : m ≤ n := Nat.le_of_succ_le h_le
-    -- We have `e.trans.TerminatedAt (n - (m+1))`. From `m + 1 ≤ n` we get
-    -- `n - (m+1) < n`, so the active-witness `(n - (m+1))` validates
-    -- `boundedFuel.next e = σ.next e`. After one step, the prefix grows by 1
-    -- and the new prefix is `TerminatedAt (n - m)` by `terminatedAt_append`.
-    have h_active : ∃ k, k < n ∧ e.trans.TerminatedAt k :=
-      ⟨n - (m + 1), by omega, h_term⟩
-    have h_next : (σ.boundedFuel n).next e = σ.next e :=
-      boundedFuel_next_of_active σ n e h_active
-    -- Unfold one step of `runFromState` and rewrite the head emission PMF.
-    change ((σ.boundedFuel n).next e).bind (fun
-        | none => PMF.pure s
-        | some (l, μ_q) => μ_q.bind fun s' =>
-            (σ.boundedFuel n).runFromState m
-              ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s')
-      = (σ.next e).bind (fun
-        | none => PMF.pure s
-        | some (l, μ_q) => μ_q.bind fun s' =>
-            σ.runFromState m
-              ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s')
-    rw [h_next]
-    -- Body congruence; both binds are over `σ.next e`.
-    congr 1
-    funext sub
-    rcases sub with _ | ⟨l, μ_q⟩
-    · -- `none` branch: both sides are `PMF.pure s`.
-      rfl
-    · -- `some (l, μ_q)` branch: bind μ_q with the inductive equality.
-      change μ_q.bind (fun s' => (σ.boundedFuel n).runFromState m
-          ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s')
-        = μ_q.bind (fun s' => σ.runFromState m
-            ⟨e.init, e.trans.append (Seq.cons (l, s') Seq.nil)⟩ s')
-      congr 1
-      funext s'
-      -- Apply IH; need to show the extended prefix is `TerminatedAt (n - m)`.
-      refine ih _ _ h_le' ?_
-      -- The extended prefix's seq is `e.trans.append (cons (l, s') nil)`,
-      -- which is `TerminatedAt (Nat.find ⟨n - (m+1), h_term⟩ + 1)`, hence
-      -- by `terminated_stable` upward at `n - m`.
-      have h_app_term : (e.trans.append (Seq.cons (l, s') Seq.nil)).TerminatedAt
-          (Nat.find (⟨n - (m + 1), h_term⟩ : e.trans.Terminates) + 1) :=
-        Stream'.Seq.terminatedAt_append_find ⟨n - (m + 1), h_term⟩
-          (show (Seq.cons (l, s') Seq.nil : Seq (Label × State)).TerminatedAt 1
-            from rfl)
-      have h_find_le : Nat.find (⟨n - (m + 1), h_term⟩ : e.trans.Terminates) ≤
-          n - (m + 1) := Nat.find_le h_term
-      change (e.trans.append (Seq.cons (l, s') Seq.nil)).TerminatedAt (n - m)
-      apply Stream'.Seq.terminated_stable _ _ h_app_term
-      omega
-
-/-- Running `σ.boundedFuel n` for `n` steps from `⟨s, Seq.nil⟩` yields the same
-PMF as running `σ` for `n` steps. -/
-theorem run_boundedFuel_eq (σ : WeakScheduler sys) (n : ℕ) (s : State) :
-    (σ.boundedFuel n).run n s = σ.run n s := by
-  unfold run
-  refine runFromState_boundedFuel_eq_aux σ n n ⟨s, Seq.nil⟩ s (le_refl _) ?_
-  -- `(Seq.nil).TerminatedAt (n - n) = TerminatedAt 0`, which holds.
-  rw [Nat.sub_self]
-  change (Seq.nil : Seq (Label × State)).TerminatedAt 0
+/-- Split an `ENNReal` tsum over `Option γ` into the `none` value plus the tsum
+over `some`. -/
+private theorem tsum_option_enn {γ : Type} (f : Option γ → ENNReal) :
+    (∑' o, f o) = f none + ∑' n, f (some n) := by
+  rw [← (Equiv.optionEquivSumPUnit.{0} γ).symm.tsum_eq f,
+    Summable.tsum_sum ENNReal.summable ENNReal.summable, add_comm]
+  congr 1
+  rw [tsum_eq_single PUnit.unit (by rintro ⟨⟩ h; exact absurd rfl h)]
   rfl
 
-/-- For any weak scheduler `σ`, state `s`, and fuel `n`, the mass that
-`σ.run n s` places on `s` is at least the probability that `σ`'s first emission
-from `⟨s, Seq.nil⟩` is `none` (i.e., immediately halts, keeping the chain at
-`s`). For `n = 0` the inequality is `σ.next none ≤ 1`; for `n = m+1`, the
-`none`-branch in the bind contributes exactly `σ.next none × 1` to the mass at
-`s`. -/
-lemma run_apply_self_ge_next_none {sys : LabelledSystem State Label}
-    (σ : WeakScheduler sys) (s : State) :
-    ∀ n, σ.next ⟨s, Seq.nil⟩ none ≤ (σ.run n s) s := by
-  intro n
-  change σ.next ⟨s, Seq.nil⟩ none ≤ (σ.runFromState n ⟨s, Seq.nil⟩ s) s
-  induction n with
-  | zero =>
-    -- runFromState 0 _ s = PMF.pure s.
-    change σ.next ⟨s, Seq.nil⟩ none ≤ (PMF.pure s : PMF State) s
-    rw [PMF.pure_apply, if_pos rfl]
-    exact PMF.coe_le_one _ _
-  | succ m _ =>
-    -- runFromState (m+1) ⟨s, nil⟩ s = (σ.next ⟨s, nil⟩).bind (match-body).
-    change σ.next ⟨s, Seq.nil⟩ none ≤
-      ((σ.next ⟨s, Seq.nil⟩).bind (fun (sub_emit : Option (Label × PMF State)) =>
-        match sub_emit with
-        | none => (PMF.pure s : PMF State)
-        | some (l, μ_q) => μ_q.bind fun s' =>
-            σ.runFromState m ⟨s, Seq.nil.append (Seq.cons (l, s') Seq.nil)⟩ s')) s
-    rw [PMF.bind_apply]
-    -- Goal: σ.next none ≤ ∑' a, σ.next a * (match a with ...) s.
-    refine le_trans ?_ (ENNReal.le_tsum (α := Option (Label × PMF State)) none)
-    -- After ENNReal.le_tsum none: bound by σ.next none * (match none with ...) s
-    --   = σ.next none * (PMF.pure s) s = σ.next none * 1 = σ.next none.
-    change σ.next ⟨s, Seq.nil⟩ none ≤
-      σ.next ⟨s, Seq.nil⟩ none * ((PMF.pure s : PMF State) s)
-    rw [PMF.pure_apply, if_pos rfl, mul_one]
+/-- `Seq.take` of `Seq.ofList` is `List.take`. -/
+private theorem take_ofList {γ : Type} (L : List γ) (j : ℕ) :
+    Stream'.Seq.take j (Stream'.Seq.ofList L) = L.take j := by
+  induction j generalizing L with
+  | zero => simp [Stream'.Seq.take]
+  | succ n ih =>
+    cases L with
+    | nil => simp [Stream'.Seq.take]
+    | cons a t =>
+      rw [Stream'.Seq.ofList_cons, Stream'.Seq.take_succ_cons, List.take_succ_cons, ih]
+
+/-- `Seq.drop` of `Seq.ofList` is `Seq.ofList ∘ List.drop`. -/
+private theorem drop_ofList {γ : Type} (L : List γ) (j : ℕ) :
+    Stream'.Seq.drop (Stream'.Seq.ofList L) j = Stream'.Seq.ofList (L.drop j) := by
+  induction j generalizing L with
+  | zero => simp
+  | succ n ih =>
+    cases L with
+    | nil => simp [Stream'.Seq.drop_nil]
+    | cons a t =>
+      rw [Stream'.Seq.ofList_cons, List.drop_succ_cons, Stream'.Seq.drop_succ_cons, ih]
+
+/-- `Seq.ofList` of a list with one element appended is `append` of a singleton `cons`. -/
+private theorem ofList_append_singleton {γ : Type} (L : List γ) (x : γ) :
+    Stream'.Seq.ofList (L ++ [x])
+      = (Stream'.Seq.ofList L).append (Seq.cons x Seq.nil) := by
+  induction L with
+  | nil => simp [Stream'.Seq.ofList_nil, Stream'.Seq.nil_append, Stream'.Seq.ofList_cons]
+  | cons a t ih =>
+    rw [List.cons_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_cons,
+      Stream'.Seq.cons_append, ih]
+
+/-- `length` of `Seq.ofList` is `List.length`. -/
+private theorem length_ofList {γ : Type} (L : List γ) :
+    (Stream'.Seq.ofList L).length (Stream'.Seq.terminates_ofList L) = L.length := by
+  rw [← Stream'.Seq.length_toList, Stream'.Seq.toList_ofList]
+
+open Classical in
+/-- **Normalizer-cancellation.** Scaling `(bind σ k).next e` by the total belief
+weight `Z(e) := ∑' o, bindWeight σ k e hT o` cancels the `PMF.normalize`, leaving
+the raw belief-weighted mixture of `actionBot`/`actionK` (evaluated at any `b`).
+Holds in both branches: when `Z(e) = 0` both sides vanish. -/
+private theorem bind_next_smul (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (hT : e.trans.Terminates) (b : Option (Label × PMF State)) :
+    (∑' o, bindWeight σ k e hT o) * (bind σ k).next e b
+      = ∑' (i : Option ℕ), bindWeight σ k e hT i
+          * (match i with
+              | none => actionBot σ k e hT
+              | some j => actionK k e j : PMF (Option (Label × PMF State))) b := by
+  have hnext : (bind σ k).next e
+      = if hT' : e.trans.Terminates then
+          if h0 : (∑' o, bindWeight σ k e hT' o) ≠ 0 then
+            (PMF.normalize (bindWeight σ k e hT') h0 (bindWeight_tsum_ne_top σ k e hT')).bind
+              (fun o => match o with
+                | none => actionBot σ k e hT'
+                | some j => actionK k e j)
+          else PMF.pure none
+        else PMF.pure none := rfl
+  rw [hnext, dif_pos hT]
+  by_cases h0 : (∑' o, bindWeight σ k e hT o) ≠ 0
+  · rw [dif_pos h0, PMF.bind_apply, ← ENNReal.tsum_mul_left]
+    apply tsum_congr
+    intro i
+    rw [PMF.normalize_apply]
+    rw [show (∑' o, bindWeight σ k e hT o)
+          * (bindWeight σ k e hT i * (∑' x, bindWeight σ k e hT x)⁻¹
+              * (match i with
+                  | none => actionBot σ k e hT
+                  | some j => actionK k e j : PMF (Option (Label × PMF State))) b)
+        = (bindWeight σ k e hT i
+            * (match i with
+                | none => actionBot σ k e hT
+                | some j => actionK k e j : PMF (Option (Label × PMF State))) b)
+          * ((∑' o, bindWeight σ k e hT o) * (∑' x, bindWeight σ k e hT x)⁻¹) from by ring]
+    rw [ENNReal.mul_inv_cancel h0 (bindWeight_tsum_ne_top σ k e hT), mul_one]
+  · push Not at h0
+    rw [dif_neg (by rw [h0]; simp), h0, zero_mul]
+    symm
+    rw [ENNReal.tsum_eq_zero] at h0 ⊢
+    intro i
+    rw [h0 i, zero_mul]
+
+/-- The `(l, s')`-kernel of `actionK k e j`: aggregating `actionK`'s emission over
+`ν` with weight `ν s'` is exactly `k (stateAfter e j)`'s one-step kernel on the
+remaining suffix `⟨stateAfter e j, e.trans.drop j⟩`. -/
+private theorem actionK_kernel (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (j : ℕ) (l : Label) (s' : State) :
+    (∑' ν, (actionK k e j) (some (l, ν)) * ν s')
+      = (⟨PMF.pure (stateAfter e j), (k (stateAfter e j)).toScheduler⟩
+          : ProbabilisticExecution sys.toSystem).kernel
+          ⟨stateAfter e j, e.trans.drop j⟩ (l, s') := by
+  rfl
+
+/-- The `(l, s')`-kernel of `actionBot σ k e hT`: σ's one-step kernel on `e` plus
+σ's halt mass times `k (e.endState)`'s first-step kernel from the end-state. -/
+private theorem actionBot_kernel (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (hT : e.trans.Terminates) (l : Label) (s' : State) :
+    (∑' ν, (actionBot σ k e hT) (some (l, ν)) * ν s')
+      = (⟨PMF.pure e.init, σ.toScheduler⟩
+          : ProbabilisticExecution sys.toSystem).kernel e (l, s')
+        + σ.next e none
+          * (⟨PMF.pure (e.endState hT), (k (e.endState hT)).toScheduler⟩
+              : ProbabilisticExecution sys.toSystem).kernel
+              ⟨e.endState hT, Seq.nil⟩ (l, s') := by
+  classical
+  unfold actionBot
+  -- expand the outer bind and the `ν`-sum
+  simp only [PMF.bind_apply]
+  -- target RHS kernels in tsum form
+  rw [show (⟨PMF.pure e.init, σ.toScheduler⟩
+        : ProbabilisticExecution sys.toSystem).kernel e (l, s')
+      = ∑' ν, σ.next e (some (l, ν)) * ν s' from rfl]
+  rw [show (⟨PMF.pure (e.endState hT), (k (e.endState hT)).toScheduler⟩
+        : ProbabilisticExecution sys.toSystem).kernel ⟨e.endState hT, Seq.nil⟩ (l, s')
+      = ∑' ν, (k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩ (some (l, ν)) * ν s' from rfl]
+  rw [show σ.next e none
+        * ∑' ν, (k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩ (some (l, ν)) * ν s'
+      = ∑' ν, σ.next e none
+          * ((k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩ (some (l, ν)) * ν s')
+      from (ENNReal.tsum_mul_left).symm]
+  rw [← ENNReal.tsum_add]
+  apply tsum_congr
+  intro ν
+  -- LHS at ν: (∑' o, σ.next e o * matchAction o (some (l,ν))) * ν s'
+  rw [show (∑' (a : Option (Label × PMF State)),
+        σ.next e a * (match a with
+          | none => (k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩
+          | some lμ => PMF.pure (some lμ) : PMF (Option (Label × PMF State))) (some (l, ν)))
+      = σ.next e none * ((k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩) (some (l, ν))
+        + ∑' lμ : Label × PMF State,
+          σ.next e (some lμ) * (PMF.pure (some lμ) : PMF (Option (Label × PMF State))) (some (l, ν))
+      from tsum_option_enn _]
+  -- collapse the `some` tsum to `σ.next e (some (l,ν))`
+  rw [show (∑' lμ : Label × PMF State,
+        σ.next e (some lμ) * (PMF.pure (some lμ) : PMF (Option (Label × PMF State))) (some (l, ν)))
+      = σ.next e (some (l, ν)) from by
+        rw [tsum_eq_single (l, ν) (fun lμ hlμ => by
+          rw [PMF.pure_apply, if_neg (by intro h; exact hlμ (Option.some.inj h).symm), mul_zero])]
+        rw [PMF.pure_apply, if_pos rfl, mul_one]]
+  ring
+
+/-- `stateAfter ⟨s₀, ofList L⟩` of the empty offset is `s₀`. -/
+private theorem stateAfter_ofList_zero (s₀ : State) (L : List (Label × State)) :
+    stateAfter ⟨s₀, Stream'.Seq.ofList L⟩ 0 = s₀ := by
+  unfold stateAfter
+  rfl
+
+/-- `stateAfter ⟨s₀, ofList L⟩ (n+1)` reads the `n`-th list entry's destination. -/
+private theorem stateAfter_ofList_succ (s₀ : State) (L : List (Label × State)) (n : ℕ) :
+    stateAfter ⟨s₀, Stream'.Seq.ofList L⟩ (n + 1) = ((L[n]?).map Prod.snd).getD s₀ := by
+  unfold stateAfter AlterSeq.stateAt
+  simp only
+  rw [Stream'.Seq.ofList_get?]
+
+/-- `stateAfter` is invariant under appending one transition, for offsets within
+the original length. -/
+private theorem stateAfter_append_eq (s₀ : State) (L : List (Label × State))
+    (x : Label × State) (j : ℕ) (hj : j ≤ L.length) :
+    stateAfter ⟨s₀, Stream'.Seq.ofList (L ++ [x])⟩ j
+      = stateAfter ⟨s₀, Stream'.Seq.ofList L⟩ j := by
+  cases j with
+  | zero => rw [stateAfter_ofList_zero, stateAfter_ofList_zero]
+  | succ n =>
+    rw [stateAfter_ofList_succ, stateAfter_ofList_succ]
+    have hn : n < L.length := Nat.lt_of_succ_le hj
+    rw [List.getElem?_append_left hn]
+
+/-- `stateAfter e (length e)` is the end-state of the (terminating) execution `e`. -/
+private theorem stateAfter_length_eq_endState (e : AlterSeq State Label)
+    (hT : e.trans.Terminates) :
+    stateAfter e (e.trans.length hT) = e.endState hT := by
+  unfold stateAfter
+  rw [show e.trans.length hT = Nat.find hT from rfl,
+    AlterSeq.stateAt_find_eq_endState e hT]
+  rfl
+
+/-- `probOf` only depends on the `AlterSeq` (proofs of termination are
+irrelevant): equal `AlterSeq`s have equal `probOf`. -/
+private theorem probOf_congr_eq {Sys : System State Label}
+    (pe : ProbabilisticExecution Sys) {e₁ e₂ : AlterSeq State Label}
+    (heq : e₁ = e₂) (h₁ : e₁.trans.Terminates) (h₂ : e₂.trans.Terminates) :
+    pe.probOf e₁ h₁ = pe.probOf e₂ h₂ := by
+  subst heq; rfl
+
+/-- `haltMass` only depends on the underlying `AlterSeq`. -/
+private theorem haltMass_congr_eq (σ : WeakScheduler sys) (μ : PMF State)
+    {e₁ e₂ : {e : AlterSeq State Label // e.trans.Terminates}}
+    (heq : e₁.1 = e₂.1) :
+    σ.haltMass μ e₁ = σ.haltMass μ e₂ := by
+  obtain ⟨e₁, h₁⟩ := e₁
+  obtain ⟨e₂, h₂⟩ := e₂
+  simp only at heq
+  subst heq; rfl
+
+/-- The `none`-weight of `e = e' ++ [(l,s')]` is the `none`-weight of `e'` times
+σ's one-step kernel. -/
+private theorem bindWeight_none_append (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (s₀ : State) (L' : List (Label × State)) (l : Label) (s' : State) :
+    bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+        (Stream'.Seq.terminates_ofList _) none
+      = bindWeight σ k ⟨s₀, Stream'.Seq.ofList L'⟩ (Stream'.Seq.terminates_ofList _) none
+        * (⟨PMF.pure s₀, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).kernel
+            ⟨s₀, Stream'.Seq.ofList L'⟩ (l, s') := by
+  have heq : (⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ : AlterSeq State Label)
+      = ⟨s₀, (Stream'.Seq.ofList L').append (Seq.cons (l, s') Seq.nil)⟩ := by
+    rw [ofList_append_singleton]
+  change (⟨PMF.pure s₀, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf
+        ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ _
+      = (⟨PMF.pure s₀, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf
+          ⟨s₀, Stream'.Seq.ofList L'⟩ _
+        * (⟨PMF.pure s₀, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).kernel
+            ⟨s₀, Stream'.Seq.ofList L'⟩ (l, s')
+  rw [probOf_congr_eq _ heq _ (heq ▸ Stream'.Seq.terminates_ofList (L' ++ [(l, s')]))]
+  rw [ProbabilisticExecution.probOf_append_singleton _ s₀ (Stream'.Seq.ofList L')
+    (Stream'.Seq.terminates_ofList L') (l, s') _]
+
+/-- The `(some j)`-weight of `e = e' ++ [(l,s')]` for `j < |L'|`: it equals the
+`(some j)`-weight of `e'` times `k`'s one-step kernel on the suffix. -/
+private theorem bindWeight_some_lt (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (s₀ : State) (L' : List (Label × State)) (l : Label) (s' : State)
+    (j : ℕ) (hj : j < L'.length) :
+    bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+        (Stream'.Seq.terminates_ofList _) (some j)
+      = bindWeight σ k ⟨s₀, Stream'.Seq.ofList L'⟩ (Stream'.Seq.terminates_ofList _) (some j)
+        * (⟨PMF.pure (stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j),
+              (k (stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j)).toScheduler⟩
+            : ProbabilisticExecution sys.toSystem).kernel
+            ⟨stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j,
+              (Stream'.Seq.ofList L').drop j⟩ (l, s') := by
+  classical
+  -- length facts
+  have hlenE : (Stream'.Seq.ofList (L' ++ [(l, s')]) : Seq (Label × State)).length
+      (Stream'.Seq.terminates_ofList _) = L'.length + 1 := by
+    rw [length_ofList]; simp
+  have hlenE' : (Stream'.Seq.ofList L' : Seq (Label × State)).length
+      (Stream'.Seq.terminates_ofList _) = L'.length := length_ofList L'
+  -- stateAfter invariance
+  have hstate : stateAfter ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ j
+      = stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j :=
+    stateAfter_append_eq s₀ L' (l, s') j (le_of_lt hj)
+  -- unfold both `some j` weights
+  change (if _hj : j < (Stream'.Seq.ofList (L' ++ [(l, s')])).length
+          (Stream'.Seq.terminates_ofList _) then
+        σ.haltMass (PMF.pure s₀)
+            ⟨⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList (L' ++ [(l, s')])).take j)⟩, _⟩
+          * (⟨PMF.pure (stateAfter ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ j),
+                (k (stateAfter ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ j)).toScheduler⟩
+              : ProbabilisticExecution sys.toSystem).probOf
+              ⟨stateAfter ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ j,
+                (Stream'.Seq.ofList (L' ++ [(l, s')])).drop j⟩ _
+        else 0)
+      = (if _hj : j < (Stream'.Seq.ofList L').length (Stream'.Seq.terminates_ofList _) then
+          σ.haltMass (PMF.pure s₀)
+              ⟨⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList L').take j)⟩, _⟩
+            * (⟨PMF.pure (stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j),
+                  (k (stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j)).toScheduler⟩
+                : ProbabilisticExecution sys.toSystem).probOf
+                ⟨stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j,
+                  (Stream'.Seq.ofList L').drop j⟩ _
+          else 0) * _
+  rw [dif_pos (show j < (Stream'.Seq.ofList (L' ++ [(l, s')])).length _ by rw [hlenE]; omega),
+    dif_pos (show j < (Stream'.Seq.ofList L').length _ by rw [hlenE']; exact hj)]
+  -- the take-factor (haltMass) agrees
+  have htake : (⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList (L' ++ [(l, s')])).take j)⟩
+        : AlterSeq State Label)
+      = ⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList L').take j)⟩ := by
+    rw [take_ofList, take_ofList, List.take_append_of_le_length (le_of_lt hj)]
+  rw [haltMass_congr_eq σ (PMF.pure s₀)
+    (e₁ := ⟨⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList (L' ++ [(l, s')])).take j)⟩,
+      Stream'.Seq.terminates_ofList _⟩)
+    (e₂ := ⟨⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList L').take j)⟩,
+      Stream'.Seq.terminates_ofList _⟩) htake]
+  rw [mul_assoc]
+  congr 1
+  -- the probOf factor expands via append-singleton + stateAfter equality
+  rw [hstate]
+  have heq2 : (⟨stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j,
+        (Stream'.Seq.ofList (L' ++ [(l, s')])).drop j⟩ : AlterSeq State Label)
+      = ⟨stateAfter ⟨s₀, Stream'.Seq.ofList L'⟩ j,
+        ((Stream'.Seq.ofList L').drop j).append (Seq.cons (l, s') Seq.nil)⟩ := by
+    rw [drop_ofList, drop_ofList, List.drop_append_of_le_length (le_of_lt hj),
+      ofList_append_singleton]
+  rw [probOf_congr_eq _ heq2 _
+    (heq2 ▸ drop_terminates (e := ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩)
+      (Stream'.Seq.terminates_ofList _) j)]
+  rw [ProbabilisticExecution.probOf_append_singleton _ _ ((Stream'.Seq.ofList L').drop j)
+    (drop_terminates (e := ⟨s₀, Stream'.Seq.ofList L'⟩)
+      (Stream'.Seq.terminates_ofList L') j) (l, s') _]
+
+/-- The **top-split** `(some |L'|)`-weight of `e = e' ++ [(l,s')]`: σ produced all
+of `e'` and halted; `k` produces the single final step. Equals `e'`'s `none`-weight
+times σ's halt mass times `k`'s first-step kernel from the end-state. -/
+private theorem bindWeight_some_top (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (s₀ : State) (L' : List (Label × State)) (l : Label) (s' : State) :
+    bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+        (Stream'.Seq.terminates_ofList _) (some L'.length)
+      = bindWeight σ k ⟨s₀, Stream'.Seq.ofList L'⟩ (Stream'.Seq.terminates_ofList _) none
+        * (σ.next ⟨s₀, Stream'.Seq.ofList L'⟩ none
+          * (⟨PMF.pure ((⟨s₀, Stream'.Seq.ofList L'⟩ : AlterSeq State Label).endState
+                  (Stream'.Seq.terminates_ofList _)),
+                (k ((⟨s₀, Stream'.Seq.ofList L'⟩ : AlterSeq State Label).endState
+                  (Stream'.Seq.terminates_ofList _))).toScheduler⟩
+              : ProbabilisticExecution sys.toSystem).kernel
+              ⟨(⟨s₀, Stream'.Seq.ofList L'⟩ : AlterSeq State Label).endState
+                (Stream'.Seq.terminates_ofList _), Seq.nil⟩ (l, s')) := by
+  classical
+  set e' : AlterSeq State Label := ⟨s₀, Stream'.Seq.ofList L'⟩ with he'
+  set send := e'.endState (Stream'.Seq.terminates_ofList L') with hsend
+  have hlenE : (Stream'.Seq.ofList (L' ++ [(l, s')]) : Seq (Label × State)).length
+      (Stream'.Seq.terminates_ofList _) = L'.length + 1 := by
+    rw [length_ofList]; simp
+  -- stateAfter at top split = end state of e'
+  have hstate : stateAfter ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ L'.length = send := by
+    rw [stateAfter_append_eq s₀ L' (l, s') L'.length (le_refl _)]
+    rw [show (L'.length : ℕ) = (Stream'.Seq.ofList L').length (Stream'.Seq.terminates_ofList _) from
+      (length_ofList L').symm]
+    exact stateAfter_length_eq_endState e' (Stream'.Seq.terminates_ofList L')
+  -- unfold the top-split weight
+  change (if _hj : L'.length < (Stream'.Seq.ofList (L' ++ [(l, s')])).length
+          (Stream'.Seq.terminates_ofList _) then
+        σ.haltMass (PMF.pure s₀)
+            ⟨⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList (L' ++ [(l, s')])).take L'.length)⟩, _⟩
+          * (⟨PMF.pure (stateAfter ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ L'.length),
+                (k (stateAfter ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ L'.length)).toScheduler⟩
+              : ProbabilisticExecution sys.toSystem).probOf
+              ⟨stateAfter ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ L'.length,
+                (Stream'.Seq.ofList (L' ++ [(l, s')])).drop L'.length⟩ _
+        else 0) = _
+  rw [dif_pos (show L'.length < (Stream'.Seq.ofList (L' ++ [(l, s')])).length _ by
+    rw [hlenE]; omega)]
+  -- take L'.length = L'
+  have htake : (⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList (L' ++ [(l, s')])).take L'.length)⟩
+        : AlterSeq State Label) = e' := by
+    rw [take_ofList, List.take_left]
+  rw [haltMass_congr_eq σ (PMF.pure s₀)
+    (e₁ := ⟨⟨s₀, Stream'.Seq.ofList ((Stream'.Seq.ofList (L' ++ [(l, s')])).take L'.length)⟩,
+      Stream'.Seq.terminates_ofList _⟩)
+    (e₂ := ⟨e', Stream'.Seq.terminates_ofList L'⟩) htake]
+  -- σ.haltMass (pure s₀) e' = bindWeight e' none * σ.next e' none
+  rw [show σ.haltMass (PMF.pure s₀) ⟨e', Stream'.Seq.terminates_ofList L'⟩
+      = bindWeight σ k e' (Stream'.Seq.terminates_ofList _) none * σ.next e' none from rfl]
+  rw [hstate]
+  -- drop L'.length e.trans = cons (l,s') nil
+  have hdrop : (⟨send, (Stream'.Seq.ofList (L' ++ [(l, s')])).drop L'.length⟩
+        : AlterSeq State Label)
+      = ⟨send, (Seq.nil : Seq (Label × State)).append (Seq.cons (l, s') Seq.nil)⟩ := by
+    rw [drop_ofList, List.drop_append_of_le_length (le_refl _), List.drop_length,
+      List.nil_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil,
+      Stream'.Seq.nil_append]
+  rw [probOf_congr_eq _ hdrop _
+    (hdrop ▸ drop_terminates (e := ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩)
+      (Stream'.Seq.terminates_ofList _) L'.length)]
+  rw [ProbabilisticExecution.probOf_append_singleton _ send (Seq.nil : Seq (Label × State))
+    Stream'.Seq.terminates_nil (l, s') _]
+  rw [ProbabilisticExecution.probOf_nil]
+  rw [ProbabilisticExecution.init_eq_initState]
+  simp only [PMF.pure_apply_self]
+  ring
+
+open Classical in
+/-- **Reach step identity.** Scaling the `bind`-kernel one step `(l,s')` from `e'`
+by `e'`'s total belief weight gives `e = e' ++ [(l,s')]`'s total belief weight.
+The core of the telescoping `reach` lemma. -/
+private theorem reach_step (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (s₀ : State) (L' : List (Label × State)) (l : Label) (s' : State) :
+    (∑' o, bindWeight σ k ⟨s₀, Stream'.Seq.ofList L'⟩ (Stream'.Seq.terminates_ofList _) o)
+        * (⟨PMF.pure s₀, (bind σ k).toScheduler⟩
+            : ProbabilisticExecution sys.toSystem).kernel ⟨s₀, Stream'.Seq.ofList L'⟩ (l, s')
+      = ∑' o, bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+          (Stream'.Seq.terminates_ofList _) o := by
+  classical
+  set e' : AlterSeq State Label := ⟨s₀, Stream'.Seq.ofList L'⟩ with he'
+  set Z' := ∑' o, bindWeight σ k e' (Stream'.Seq.terminates_ofList L') o with hZ'
+  -- Reduce LHS to ∑' i, bindWeight e' i * κ(i).
+  have hkernel : (⟨PMF.pure s₀, (bind σ k).toScheduler⟩
+        : ProbabilisticExecution sys.toSystem).kernel e' (l, s')
+      = ∑' ν, (bind σ k).next e' (some (l, ν)) * ν s' := rfl
+  rw [hkernel, ← ENNReal.tsum_mul_left]
+  -- push Z' into each ν-term and apply bind_next_smul
+  rw [show (∑' ν, Z' * ((bind σ k).next e' (some (l, ν)) * ν s'))
+      = ∑' ν, (∑' i, bindWeight σ k e' (Stream'.Seq.terminates_ofList L') i
+          * (match i with
+              | none => actionBot σ k e' (Stream'.Seq.terminates_ofList L')
+              | some j => actionK k e' j : PMF (Option (Label × PMF State))) (some (l, ν))) * ν s'
+      from by
+        apply tsum_congr; intro ν
+        rw [← mul_assoc, hZ', bind_next_smul]]
+  -- ∑' ν ∑' i ... * ν s'  =  ∑' i ∑' ν ... * ν s'
+  rw [show (∑' ν, (∑' i, bindWeight σ k e' (Stream'.Seq.terminates_ofList L') i
+          * (match i with
+              | none => actionBot σ k e' (Stream'.Seq.terminates_ofList L')
+              | some j => actionK k e' j : PMF (Option (Label × PMF State))) (some (l, ν))) * ν s')
+      = ∑' i, bindWeight σ k e' (Stream'.Seq.terminates_ofList L') i
+          * (∑' ν, (match i with
+              | none => actionBot σ k e' (Stream'.Seq.terminates_ofList L')
+              | some j => actionK k e' j : PMF (Option (Label × PMF State))) (some (l, ν)) * ν s')
+      from by
+        rw [show (∑' ν, (∑' i, bindWeight σ k e' (Stream'.Seq.terminates_ofList L') i
+              * (match i with
+                | none => actionBot σ k e' (Stream'.Seq.terminates_ofList L')
+                | some j => actionK k e' j : ) (some (l, ν))) * ν s')
+            = ∑' ν, ∑' i, (bindWeight σ k e' (Stream'.Seq.terminates_ofList L') i
+              * (match i with
+                | none => actionBot σ k e' (Stream'.Seq.terminates_ofList L')
+                | some j => actionK k e' j : PMF (Option (Label × PMF State))) (some (l, ν))) * ν s'
+            from by
+              apply tsum_congr; intro ν; rw [← ENNReal.tsum_mul_right]]
+        rw [ENNReal.tsum_comm]
+        apply tsum_congr; intro i
+        rw [← ENNReal.tsum_mul_left]
+        apply tsum_congr; intro ν
+        ring]
+  -- split both sides over `none` / `some j`
+  rw [tsum_option_enn (fun i => bindWeight σ k e' (Stream'.Seq.terminates_ofList L') i
+        * ∑' ν, (match i with
+            | none => actionBot σ k e' (Stream'.Seq.terminates_ofList L')
+            | some j => actionK k e' j : PMF (Option (Label × PMF State))) (some (l, ν)) * ν s')]
+  rw [tsum_option_enn (fun o => bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+        (Stream'.Seq.terminates_ofList _) o)]
+  -- the `none`-term on LHS uses actionBot_kernel
+  rw [show (∑' ν, (actionBot σ k e' (Stream'.Seq.terminates_ofList L')) (some (l, ν)) * ν s')
+      = (⟨PMF.pure e'.init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).kernel e' (l, s')
+        + σ.next e' none
+          * (⟨PMF.pure (e'.endState (Stream'.Seq.terminates_ofList L')),
+                (k (e'.endState (Stream'.Seq.terminates_ofList L'))).toScheduler⟩
+              : ProbabilisticExecution sys.toSystem).kernel
+              ⟨e'.endState (Stream'.Seq.terminates_ofList L'), Seq.nil⟩ (l, s')
+      from actionBot_kernel σ k e' (Stream'.Seq.terminates_ofList L') l s']
+  -- expand the `none` LHS term:
+  -- bindWeight e' none * (kσ + ...) = bindWeight e none + bindWeight e top
+  rw [show bindWeight σ k e' (Stream'.Seq.terminates_ofList L') none *
+      ((⟨PMF.pure e'.init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).kernel e' (l, s')
+          + σ.next e' none
+            * (⟨PMF.pure (e'.endState (Stream'.Seq.terminates_ofList L')),
+                  (k (e'.endState (Stream'.Seq.terminates_ofList L'))).toScheduler⟩
+                : ProbabilisticExecution sys.toSystem).kernel
+                ⟨e'.endState (Stream'.Seq.terminates_ofList L'), Seq.nil⟩ (l, s'))
+      = bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+          (Stream'.Seq.terminates_ofList _) none
+        + bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+            (Stream'.Seq.terminates_ofList _) (some L'.length)
+      from by
+        rw [mul_add]
+        simp only [he']
+        rw [← bindWeight_none_append σ k s₀ L' l s', ← bindWeight_some_top σ k s₀ L' l s']]
+  -- the `some j` terms:
+  -- bindWeight e' (some j) * κ(some j) = bindWeight e (some j) for j<|L'|, 0 else
+  rw [show (∑' j, bindWeight σ k e' (Stream'.Seq.terminates_ofList L') (some j)
+          * ∑' ν, (actionK k e' j) (some (l, ν)) * ν s')
+      = ∑' j, (if j < L'.length then
+          bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+            (Stream'.Seq.terminates_ofList _) (some j) else 0)
+      from by
+        apply tsum_congr; intro j
+        rw [actionK_kernel]
+        by_cases hj : j < L'.length
+        · rw [if_pos hj]
+          simp only [he']
+          rw [← bindWeight_some_lt σ k s₀ L' l s' j hj]
+        · rw [if_neg hj]
+          rw [show bindWeight σ k e' (Stream'.Seq.terminates_ofList L') (some j) = 0 from by
+            change (if _ : j < (Stream'.Seq.ofList L').length _ then _ else 0) = 0
+            rw [dif_neg (by rw [length_ofList]; exact hj)]]
+          rw [zero_mul]]
+  -- now: (bindWeight e none + bindWeight e top) + ∑' j (filtered)
+  --    = bindWeight e none + ∑' j, bindWeight e (some j)
+  rw [add_assoc]
+  congr 1
+  -- ∑' j, bindWeight e (some j) = bindWeight e (some |L'|) + ∑' j (filtered)
+  rw [show (∑' j, bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+        (Stream'.Seq.terminates_ofList _) (some j))
+      = bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+          (Stream'.Seq.terminates_ofList _) (some L'.length)
+        + ∑' j, (if j < L'.length then
+            bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+              (Stream'.Seq.terminates_ofList _) (some j) else 0)
+      from by
+        have hsplit : ∀ j, bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+              (Stream'.Seq.terminates_ofList _) (some j)
+            = (if j = L'.length then
+                bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+                  (Stream'.Seq.terminates_ofList _) (some L'.length) else 0)
+              + (if j < L'.length then
+                bindWeight σ k ⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩
+                  (Stream'.Seq.terminates_ofList _) (some j) else 0) := by
+          intro j
+          rcases lt_trichotomy j L'.length with hlt | heq | hgt
+          · rw [if_neg (Nat.ne_of_lt hlt), if_pos hlt, zero_add]
+          · subst heq; rw [if_pos rfl, if_neg (lt_irrefl _), add_zero]
+          · rw [if_neg (Nat.ne_of_gt hgt), if_neg (Nat.not_lt.mpr (le_of_lt hgt)), add_zero]
+            -- bindWeight e (some j) = 0 for j > |L'|
+            change (if _ : j < (Stream'.Seq.ofList (L' ++ [(l, s')])).length _ then _ else 0) = 0
+            rw [dif_neg (by rw [length_ofList]; simp; omega)]
+        rw [tsum_congr hsplit, ENNReal.tsum_add]
+        congr 1
+        rw [tsum_eq_single L'.length (fun j hj => if_neg hj)]
+        rw [if_pos rfl]]
+
+open Classical in
+/-- **Reach (Lemma A).** Running the `bind σ k` scheduler from `pure s₀` produces
+the execution `e` with probability equal to the total belief weight `Z(e)`. Proven
+by reverse (cons-end) induction on `L`, with `reach_step` as the inductive step. -/
+private theorem reach (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (s₀ : State) (L : List (Label × State)) :
+    (⟨PMF.pure s₀, (bind σ k).toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf
+        ⟨s₀, Stream'.Seq.ofList L⟩ (Stream'.Seq.terminates_ofList L)
+      = ∑' o, bindWeight σ k ⟨s₀, Stream'.Seq.ofList L⟩ (Stream'.Seq.terminates_ofList L) o := by
+  classical
+  induction L using List.reverseRecOn with
+  | nil =>
+    -- LHS = pure s₀ s₀ = 1; RHS = Z(⟨s₀, nil⟩) = 1
+    change (⟨PMF.pure s₀, (bind σ k).toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf
+        ⟨s₀, Seq.nil⟩ Stream'.Seq.terminates_nil
+      = ∑' o, bindWeight σ k ⟨s₀, Seq.nil⟩ Stream'.Seq.terminates_nil o
+    rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
+      PMF.pure_apply_self]
+    rw [tsum_option_enn (fun o => bindWeight σ k ⟨s₀, Seq.nil⟩ Stream'.Seq.terminates_nil o)]
+    rw [show bindWeight σ k ⟨s₀, Seq.nil⟩ Stream'.Seq.terminates_nil none
+        = (⟨PMF.pure s₀, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf
+            ⟨s₀, Seq.nil⟩ Stream'.Seq.terminates_nil from rfl]
+    rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
+      PMF.pure_apply_self]
+    rw [show (∑' n, bindWeight σ k ⟨s₀, Seq.nil⟩ Stream'.Seq.terminates_nil (some n)) = 0 from by
+      rw [ENNReal.tsum_eq_zero]
+      intro n
+      change (if _ : n < (Seq.nil : Seq (Label × State)).length Stream'.Seq.terminates_nil
+            then _ else 0) = 0
+      rw [dif_neg (by rw [Stream'.Seq.length_nil]; omega)]]
+    rw [add_zero]
+  | append_singleton L' x ih =>
+    obtain ⟨l, s'⟩ := x
+    -- e.trans = (ofList L').append (cons (l,s') nil)
+    have heq : (⟨s₀, Stream'.Seq.ofList (L' ++ [(l, s')])⟩ : AlterSeq State Label)
+        = ⟨s₀, (Stream'.Seq.ofList L').append (Seq.cons (l, s') Seq.nil)⟩ := by
+      rw [ofList_append_singleton]
+    rw [probOf_congr_eq _ heq _
+      (heq ▸ Stream'.Seq.terminates_ofList (L' ++ [(l, s')]))]
+    rw [ProbabilisticExecution.probOf_append_singleton _ s₀ (Stream'.Seq.ofList L')
+      (Stream'.Seq.terminates_ofList L') (l, s') _]
+    rw [ih, reach_step σ k s₀ L' l s']
+
+/-- `actionBot ... none = σ.next e none * (k's halt-step at the end-state)`. -/
+private theorem actionBot_none (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (hT : e.trans.Terminates) :
+    (actionBot σ k e hT) none
+      = σ.next e none * (k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩ none := by
+  classical
+  unfold actionBot
+  rw [PMF.bind_apply, tsum_option_enn]
+  rw [show (∑' lμ : Label × PMF State, σ.next e (some lμ)
+        * (PMF.pure (some lμ) : PMF (Option (Label × PMF State))) none) = 0 from by
+    apply (ENNReal.tsum_eq_zero).mpr
+    intro lμ
+    rw [PMF.pure_apply, if_neg (by simp), mul_zero]]
+  rw [add_zero]
+
+open Classical in
+/-- **Halt-unfold (Lemma B).** Scaling `(bind σ k).next e none` (the halt prob) by
+the total belief weight `Z(e)` gives the capped sum (over split points `j`) of the
+product `σ.haltMass · k.haltMass`. -/
+private theorem halt_unfold (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (e : AlterSeq State Label) (hT : e.trans.Terminates) :
+    (∑' o, bindWeight σ k e hT o) * (bind σ k).next e none
+      = ∑ j ∈ Finset.range (e.trans.length hT + 1),
+          σ.haltMass (PMF.pure e.init)
+            ⟨⟨e.init, Stream'.Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩
+          * (k (stateAfter e j)).haltMass (PMF.pure (stateAfter e j))
+              ⟨⟨stateAfter e j, e.trans.drop j⟩, drop_terminates hT j⟩ := by
+  classical
+  set N := e.trans.length hT with hN
+  -- the summand function
+  set F : ℕ → ENNReal := fun j =>
+    σ.haltMass (PMF.pure e.init)
+      ⟨⟨e.init, Stream'.Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩
+    * (k (stateAfter e j)).haltMass (PMF.pure (stateAfter e j))
+        ⟨⟨stateAfter e j, e.trans.drop j⟩, drop_terminates hT j⟩ with hF
+  rw [bind_next_smul]
+  rw [tsum_option_enn (fun i => bindWeight σ k e hT i
+      * (match i with
+          | none => actionBot σ k e hT
+          | some j => actionK k e j : PMF (Option (Label × PMF State))) none)]
+  -- the `none` term equals F N
+  rw [show bindWeight σ k e hT none
+        * (actionBot σ k e hT) none = F N from by
+      rw [actionBot_none, hF]
+      simp only []
+      -- prefix at N is `e` itself; stateAfter N = endState; suffix-trans = nil
+      have hstateN : stateAfter e N = e.endState hT := by
+        rw [hN]; exact stateAfter_length_eq_endState e hT
+      have hprefix : (⟨e.init, Stream'.Seq.ofList (e.trans.take N)⟩) = e := by
+        rw [show Stream'.Seq.take N e.trans = e.trans.toList hT from rfl,
+          Stream'.Seq.ofList_toList]
+      have hdropnil : e.trans.drop N = Seq.nil := by
+        apply Stream'.Seq.ext
+        intro m
+        rw [Stream'.Seq.drop_get?, Stream'.Seq.get?_nil]
+        exact Stream'.Seq.terminated_stable e.trans (Nat.le_add_right N m) (Nat.find_spec hT)
+      -- rewrite the haltMass factors
+      rw [haltMass_congr_eq σ (PMF.pure e.init)
+        (e₁ := ⟨⟨e.init, Stream'.Seq.ofList (e.trans.take N)⟩, Stream'.Seq.terminates_ofList _⟩)
+        (e₂ := ⟨e, hT⟩) hprefix]
+      rw [hstateN]
+      -- (k endState).haltMass (pure endState) ⟨⟨endState, nil⟩, _⟩
+      rw [haltMass_congr_eq (k (e.endState hT)) (PMF.pure (e.endState hT))
+        (e₁ := ⟨⟨e.endState hT, e.trans.drop N⟩, drop_terminates hT N⟩)
+        (e₂ := ⟨⟨e.endState hT, Seq.nil⟩, Stream'.Seq.terminates_nil⟩)
+        (by simp only; rw [hdropnil])]
+      -- expand both haltMass and probOf_nil = 1
+      change (⟨PMF.pure e.init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf e hT
+          * (σ.next e none * (k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩ none)
+        = ((⟨PMF.pure e.init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf e hT
+            * σ.next e none)
+          * ((⟨PMF.pure (e.endState hT), (k (e.endState hT)).toScheduler⟩
+                : ProbabilisticExecution sys.toSystem).probOf ⟨e.endState hT, Seq.nil⟩
+                Stream'.Seq.terminates_nil
+              * (k (e.endState hT)).next ⟨e.endState hT, Seq.nil⟩ none)
+      rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
+        PMF.pure_apply_self, one_mul]
+      ring]
+  -- the `some j` terms
+  rw [show (∑' j, bindWeight σ k e hT (some j) * (actionK k e j) none)
+      = ∑' j, (if j < N then F j else 0) from by
+      apply tsum_congr; intro j
+      by_cases hj : j < N
+      · rw [if_pos hj, hF]
+        simp only []
+        -- unfold bindWeight (some j) via dif_pos
+        rw [show bindWeight σ k e hT (some j)
+            = σ.haltMass (PMF.pure e.init)
+                ⟨⟨e.init, Stream'.Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩
+              * (⟨PMF.pure (stateAfter e j), (k (stateAfter e j)).toScheduler⟩
+                  : ProbabilisticExecution sys.toSystem).probOf
+                  ⟨stateAfter e j, e.trans.drop j⟩ (drop_terminates hT j) from by
+          change (if _ : j < e.trans.length hT then _ else 0) = _
+          rw [dif_pos (by rw [← hN]; exact hj)]]
+        -- actionK none and haltMass of suffix
+        change σ.haltMass (PMF.pure e.init)
+              ⟨⟨e.init, Stream'.Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩
+            * (⟨PMF.pure (stateAfter e j), (k (stateAfter e j)).toScheduler⟩
+                : ProbabilisticExecution sys.toSystem).probOf
+                ⟨stateAfter e j, e.trans.drop j⟩ (drop_terminates hT j)
+            * (k (stateAfter e j)).next ⟨stateAfter e j, e.trans.drop j⟩ none
+          = σ.haltMass (PMF.pure e.init)
+              ⟨⟨e.init, Stream'.Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩
+            * (k (stateAfter e j)).haltMass (PMF.pure (stateAfter e j))
+                ⟨⟨stateAfter e j, e.trans.drop j⟩, drop_terminates hT j⟩
+        rw [show (k (stateAfter e j)).haltMass (PMF.pure (stateAfter e j))
+              ⟨⟨stateAfter e j, e.trans.drop j⟩, drop_terminates hT j⟩
+            = (⟨PMF.pure (stateAfter e j), (k (stateAfter e j)).toScheduler⟩
+                : ProbabilisticExecution sys.toSystem).probOf
+                ⟨stateAfter e j, e.trans.drop j⟩ (drop_terminates hT j)
+              * (k (stateAfter e j)).next ⟨stateAfter e j, e.trans.drop j⟩ none from rfl]
+        ring
+      · rw [if_neg hj]
+        rw [show bindWeight σ k e hT (some j) = 0 from by
+          change (if _ : j < e.trans.length hT then _ else 0) = 0
+          rw [dif_neg (by rw [← hN]; exact hj)]]
+        rw [zero_mul]]
+  -- convert tsum to Finset.sum and reassemble
+  rw [Finset.sum_range_succ]
+  rw [add_comm]
+  congr 1
+  rw [show (∑' j, (if j < N then F j else 0)) = ∑ j ∈ Finset.range N, F j from by
+    rw [tsum_eq_sum (s := Finset.range N) (fun j hj => if_neg (by
+      rw [Finset.mem_range] at hj; omega))]
+    apply Finset.sum_congr rfl
+    intro j hj
+    rw [Finset.mem_range] at hj
+    rw [if_pos hj]]
+
+/-- `bindWeight` only depends on the underlying `AlterSeq`. -/
+private theorem bindWeight_congr_eq (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    {e₁ e₂ : AlterSeq State Label} (heq : e₁ = e₂)
+    {h₁ : e₁.trans.Terminates} {h₂ : e₂.trans.Terminates} (o : Option ℕ) :
+    bindWeight σ k e₁ h₁ o = bindWeight σ k e₂ h₂ o := by
+  subst heq; rfl
+
+/-- `haltMass` factors through the source mass on the start state: `μ_init s₀` times
+the Dirac-source halt mass equals the `μ_init`-source halt mass (the source only
+enters through the initial state). -/
+private theorem haltMass_pure_smul (σ : WeakScheduler sys) (μ_init : PMF State)
+    (s₀ : State) (t : Seq (Label × State)) (h : t.Terminates) :
+    μ_init s₀ * σ.haltMass (PMF.pure s₀) ⟨⟨s₀, t⟩, h⟩
+      = σ.haltMass μ_init ⟨⟨s₀, t⟩, h⟩ := by
+  change μ_init s₀ * ((⟨PMF.pure s₀, σ.toScheduler⟩
+        : ProbabilisticExecution sys.toSystem).probOf ⟨s₀, t⟩ h * σ.next ⟨s₀, t⟩ none)
+    = (⟨μ_init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf ⟨s₀, t⟩ h
+      * σ.next ⟨s₀, t⟩ none
+  rw [ProbabilisticExecution.probOf_init_factor σ.toScheduler μ_init ⟨s₀, t⟩ h]
+  change μ_init s₀ * ((⟨PMF.pure s₀, σ.toScheduler⟩
+        : ProbabilisticExecution sys.toSystem).probOf ⟨s₀, t⟩ h * σ.next ⟨s₀, t⟩ none)
+    = μ_init s₀ * (⟨PMF.pure s₀, σ.toScheduler⟩
+        : ProbabilisticExecution sys.toSystem).probOf ⟨s₀, t⟩ h * σ.next ⟨s₀, t⟩ none
+  ring
+
+open Classical in
+/-- **Correctness of `bind`** (the chain-rule / belief telescoping): the halting
+mass of `bind σ k` from `μ_init` is the convolution over the split point: it sums,
+over the split point `j` (number of steps before σ hands off to `k`), the product
+of σ's halt mass on the `j`-prefix and `k`'s halt mass on the suffix. -/
+theorem bind_haltMass (σ : WeakScheduler sys) (k : State → WeakScheduler sys)
+    (μ_init : PMF State) (e : {e : AlterSeq State Label // e.trans.Terminates}) :
+    (bind σ k).haltMass μ_init e
+      = ∑ j ∈ Finset.range (e.1.trans.length e.2 + 1),
+          σ.haltMass μ_init
+            ⟨⟨e.1.init, Seq.ofList (e.1.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩
+          * (k (stateAfter e.1 j)).haltMass (PMF.pure (stateAfter e.1 j))
+              ⟨⟨stateAfter e.1 j, e.1.trans.drop j⟩, drop_terminates e.2 j⟩ := by
+  classical
+  obtain ⟨e, hT⟩ := e
+  -- e = ⟨e.init, ofList (toList)⟩
+  have heofL : (⟨e.init, Stream'.Seq.ofList (e.trans.toList hT)⟩ : AlterSeq State Label) = e := by
+    rw [Stream'.Seq.ofList_toList]
+  -- unfold haltMass and factor the source mass
+  change (⟨μ_init, (bind σ k).toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf e hT
+      * (bind σ k).next e none = _
+  rw [ProbabilisticExecution.probOf_init_factor (bind σ k).toScheduler μ_init e hT]
+  -- probOf ⟨pure e.init, bind⟩ e = reach
+  rw [show (⟨PMF.pure e.init, (bind σ k).toScheduler⟩
+        : ProbabilisticExecution sys.toSystem).probOf e hT
+      = ∑' o, bindWeight σ k e hT o from by
+    rw [probOf_congr_eq (⟨PMF.pure e.init, (bind σ k).toScheduler⟩
+        : ProbabilisticExecution sys.toSystem) heofL.symm hT
+      (Stream'.Seq.terminates_ofList _)]
+    rw [reach σ k e.init (e.trans.toList hT)]
+    apply tsum_congr
+    intro o
+    exact bindWeight_congr_eq σ k heofL o]
+  -- Z(e) * bind.next e none = capped sum via halt_unfold
+  rw [mul_assoc, halt_unfold σ k e hT]
+  -- push μ_init e.init into the sum, fold via haltMass_pure_smul
+  rw [Finset.mul_sum]
+  apply Finset.sum_congr rfl
+  intro j _hj
+  rw [← mul_assoc]
+  rw [haltMass_pure_smul σ μ_init e.init (Stream'.Seq.ofList (e.trans.take j))
+    (Stream'.Seq.terminates_ofList _)]
 
 end WeakScheduler
 
-/-- Weak (internal) transition `μ_init ⇒^τ μ` on initial distributions: there
-exists a weak scheduler and a fuel `n` whose run, sampled over starting states
-from `μ_init`, produces the distribution `μ`. The "from a single state" case is
-recovered as `weakTau sys (PMF.pure s) μ`. -/
+open Classical in
+/-- Weak (internal) transition `μ_init ⇒^τ μ`: there is a weak (internal-only)
+scheduler `σ` that, run from `μ_init`, **halts almost surely** — the total
+halting mass `∑' e, σ.haltMass μ_init e` (over terminating finite executions)
+equals `1` — and whose distribution of *final* states equals `μ`, i.e. `μ` is
+the image of the halting distribution on executions under the last-state map
+`AlterSeq.endState`.
+
+This is the run-to-halt semantics of the τ-closure: the process takes
+internal steps until it spontaneously stops, and `μ` records where it stops. The
+"from a single state" case is recovered as `weakTau sys (PMF.pure s) μ`. -/
 def weakTau (sys : LabelledSystem State Label)
     (μ_init : PMF State) (μ : PMF State) : Prop :=
-  ∃ (σ : WeakScheduler sys) (n : ℕ), μ_init.bind (σ.run n) = μ
+  ∃ σ : WeakScheduler sys,
+    (∑' e, σ.haltMass μ_init e) = 1 ∧
+    ∀ s, μ s = ∑' e, σ.haltMass μ_init e * (if e.1.endState e.2 = s then 1 else 0)
 
 namespace weakTau
 
 variable {sys : LabelledSystem State Label} {μ_init μ : PMF State}
 
-/-- Classical extraction of the fuel from a `weakTau` proof. -/
-noncomputable def witness_fuel (h : weakTau sys μ_init μ) : ℕ :=
-  h.choose_spec.choose
+/-- Classical extraction of the witnessing a.s.-stopping weak scheduler. -/
+noncomputable def witnessScheduler (h : weakTau sys μ_init μ) : WeakScheduler sys :=
+  h.choose
 
-/-- Classical extraction of the underlying `WeakScheduler` from a `weakTau`
-proof, wrapped via `boundedFuel` to guarantee almost-sure termination within
-`witness_fuel` outer steps. The wrapping preserves `run witness_fuel` (by
-`run_boundedFuel_eq`), so `witness_run` still holds. -/
-noncomputable def witness (h : weakTau sys μ_init μ) : WeakScheduler sys :=
-  h.choose.boundedFuel h.witness_fuel
+/-- The witnessing scheduler halts almost surely: its total halting mass is `1`. -/
+theorem witness_halts (h : weakTau sys μ_init μ) :
+    (∑' e, h.witnessScheduler.haltMass μ_init e) = 1 :=
+  h.choose_spec.1
 
-/-- The extracted scheduler, when run from `μ_init` for the extracted fuel,
-reaches `μ`. -/
-theorem witness_run (h : weakTau sys μ_init μ) :
-    μ_init.bind (h.witness.run h.witness_fuel) = μ := by
-  unfold witness
-  -- Replace the boundedFuel run with the original run pointwise via funext.
-  have h_run_eq : ∀ s : State,
-      (h.choose.boundedFuel h.witness_fuel).run h.witness_fuel s
-        = h.choose.run h.witness_fuel s := fun s =>
-    WeakScheduler.run_boundedFuel_eq h.choose h.witness_fuel s
-  rw [show (h.choose.boundedFuel h.witness_fuel).run h.witness_fuel
-        = h.choose.run h.witness_fuel from funext h_run_eq]
-  exact h.choose_spec.choose_spec
+open Classical in
+/-- The target distribution `μ` is the halting pushforward of the witness under
+the last-state map. -/
+theorem witness_pushforward (h : weakTau sys μ_init μ) (s : State) :
+    μ s = ∑' e, h.witnessScheduler.haltMass μ_init e * (if e.1.endState e.2 = s then 1 else 0) :=
+  h.choose_spec.2 s
+
+/-- **Single-step τ-collapse (`g`-integrated).** Running the witnessing internal
+scheduler and integrating any `g` over the halting end-state equals integrating
+`g` against the τ-closure outcome `μ` — the run-to-halt analogue of the
+`bind id`-collapse, and the form the trace-cone induction (M2) consumes. -/
+theorem integrate (h : weakTau sys μ_init μ) (g : State → ENNReal) :
+    (∑' e, h.witnessScheduler.haltMass μ_init e * g (e.1.endState e.2))
+      = ∑' s, μ s * g s := by
+  classical
+  symm
+  calc (∑' s, μ s * g s)
+      = ∑' s, (∑' e, h.witnessScheduler.haltMass μ_init e *
+            (if e.1.endState e.2 = s then 1 else 0)) * g s :=
+        tsum_congr (fun s => by rw [h.witness_pushforward s])
+    _ = ∑' s, ∑' e, h.witnessScheduler.haltMass μ_init e *
+            (if e.1.endState e.2 = s then 1 else 0) * g s :=
+        tsum_congr (fun s => by rw [ENNReal.tsum_mul_right])
+    _ = ∑' e, ∑' s, h.witnessScheduler.haltMass μ_init e *
+            (if e.1.endState e.2 = s then 1 else 0) * g s := ENNReal.tsum_comm
+    _ = ∑' e, h.witnessScheduler.haltMass μ_init e * g (e.1.endState e.2) := by
+        refine tsum_congr (fun e => ?_)
+        rw [tsum_congr (fun s => by ring :
+            ∀ s, h.witnessScheduler.haltMass μ_init e *
+                (if e.1.endState e.2 = s then 1 else 0) * g s
+              = h.witnessScheduler.haltMass μ_init e *
+                ((if e.1.endState e.2 = s then 1 else 0) * g s)),
+          ENNReal.tsum_mul_left]
+        congr 1
+        rw [tsum_eq_single (e.1.endState e.2)
+            (fun s' hs' => by rw [if_neg (fun heq => hs' heq.symm), zero_mul]),
+          if_pos rfl, one_mul]
 
 end weakTau
 
+/-- Reindexing helper for halting-mass sums supported on a single state-indexed
+fiber of terminating executions: if `F` is supported on `{fiber s | s : State}`
+and `fiber` is injective, then `∑' e, F e = ∑' s, F ⟨fiber s, hterm s⟩`. -/
+private theorem weakTau_reindex_fiber
+    {State Label : Type}
+    (fiber : State → AlterSeq State Label)
+    (hterm : ∀ s, (fiber s).trans.Terminates)
+    (hinj : Function.Injective fiber)
+    (F : {e : AlterSeq State Label // e.trans.Terminates} → ENNReal)
+    (hsupp : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+        F e ≠ 0 → ∃ s, fiber s = e.1) :
+    (∑' e, F e) = ∑' s, F ⟨fiber s, hterm s⟩ := by
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (i := fun x =>
+      (⟨fiber (x : State), hterm x⟩ : {e : AlterSeq State Label // e.trans.Terminates}))
+    ?_ ?_ ?_
+  · rintro ⟨a, ha⟩ ⟨b, hb⟩ hab
+    simp only [Subtype.mk.injEq] at hab
+    exact Subtype.ext (hinj hab)
+  · intro e he
+    obtain ⟨s, hs⟩ := hsupp e (Function.mem_support.mp he)
+    have hes : (⟨fiber s, hterm s⟩ : {e : AlterSeq State Label // e.trans.Terminates}) = e :=
+      Subtype.ext hs
+    refine ⟨⟨s, ?_⟩, ?_⟩
+    · change F ⟨fiber s, hterm s⟩ ≠ 0
+      rw [hes]; exact Function.mem_support.mp he
+    · exact Subtype.ext hs
+  · intro x
+    rfl
+
 /-- Reflexivity of `weakTau`: every distribution is weak-τ-related to itself,
-witnessed by the stop-everywhere weak scheduler. -/
+witnessed by the stop-everywhere weak scheduler (it halts immediately, so its
+halting distribution is `μ` placed on the empty executions `⟨·, nil⟩`). -/
 theorem weakTau_refl (ls : LabelledSystem State Label) (μ : PMF State) :
     weakTau ls μ μ := by
-  refine ⟨WeakScheduler.stop ls, 0, ?_⟩
-  show μ.bind _ = μ
-  have heq : (WeakScheduler.stop ls).run 0 = PMF.pure := funext fun _ => rfl
-  rw [heq]
-  exact PMF.bind_pure μ
+  classical
+  set pe : ProbabilisticExecution ls.toSystem := ⟨μ, (WeakScheduler.stop ls).toScheduler⟩ with hpe
+  -- The stop scheduler's one-step kernel vanishes everywhere.
+  have hker : ∀ (e' : AlterSeq State Label) (st : Label × State), pe.kernel e' st = 0 := by
+    intro e' st
+    unfold ProbabilisticExecution.kernel
+    have h0 : ∀ ν : PMF State, pe.scheduler.next e' (some (st.1, ν)) = 0 := by
+      intro ν; exact PMF.pure_apply_of_ne _ _ (by simp)
+    simp only [h0, zero_mul, tsum_zero]
+  -- `probOf` of any non-trivial execution vanishes.
+  have hprob_nonnil : ∀ (e' : AlterSeq State Label) (h : e'.trans.Terminates),
+      e'.trans ≠ Seq.nil → pe.probOf e' h = 0 := by
+    rintro ⟨init', trans'⟩ h hne
+    simp only at h hne ⊢
+    have hnonempty : trans'.toList h ≠ [] := by
+      intro hnil; apply hne
+      have := Stream'.Seq.ofList_toList trans' h
+      rw [hnil, Stream'.Seq.ofList_nil] at this; exact this.symm
+    obtain ⟨previous, last, h_prev, h_split, _, _⟩ :=
+      Stream'.Seq.exists_split_last trans' h hnonempty
+    subst h_split
+    rw [ProbabilisticExecution.probOf_append_singleton _ _ _ h_prev _ h, hker, mul_zero]
+  -- The halting mass is supported on the nil fiber `fiber s = ⟨s, nil⟩`, with value `μ s`.
+  have hfiber_term : ∀ s : State, (⟨s, Seq.nil⟩ : AlterSeq State Label).trans.Terminates :=
+    fun _ => Stream'.Seq.terminates_nil
+  have hfiber_inj :
+      Function.Injective (fun s : State => (⟨s, Seq.nil⟩ : AlterSeq State Label)) := by
+    intro a b hab; exact congrArg AlterSeq.init hab
+  have hnext1 : ∀ e' : AlterSeq State Label, (WeakScheduler.stop ls).next e' none = 1 :=
+    fun _ => PMF.pure_apply_self none
+  have hhalt_fiber : ∀ s : State,
+      (WeakScheduler.stop ls).haltMass μ ⟨⟨s, Seq.nil⟩, hfiber_term s⟩ = μ s := by
+    intro s
+    unfold WeakScheduler.haltMass
+    rw [← hpe]
+    have hp : pe.probOf ⟨s, Seq.nil⟩ Stream'.Seq.terminates_nil = μ s := by
+      rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState]
+    rw [hp, hnext1, mul_one]
+  -- Support condition: any `e` with nonzero halting mass has `nil` trans, so lies on the fiber.
+  have hsupp : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      (WeakScheduler.stop ls).haltMass μ e ≠ 0 →
+      ∃ s, (⟨s, Seq.nil⟩ : AlterSeq State Label) = e.1 := by
+    intro e hne
+    refine ⟨e.1.init, ?_⟩
+    by_contra hcontra
+    apply hne
+    unfold WeakScheduler.haltMass
+    rw [← hpe]
+    have htrans : e.1.trans ≠ Seq.nil := by
+      intro hnil
+      apply hcontra
+      cases e with | mk e' he' => cases e' with | mk i t => simp only at hnil ⊢; rw [hnil]
+    rw [hprob_nonnil e.1 e.2 htrans, zero_mul]
+  refine ⟨WeakScheduler.stop ls, ?_, ?_⟩
+  · rw [weakTau_reindex_fiber (fun s => ⟨s, Seq.nil⟩) hfiber_term hfiber_inj
+      ((WeakScheduler.stop ls).haltMass μ) hsupp]
+    simp only [hhalt_fiber]
+    exact μ.tsum_coe
+  · intro s
+    rw [weakTau_reindex_fiber (fun s' => ⟨s', Seq.nil⟩) hfiber_term hfiber_inj
+      (fun e => (WeakScheduler.stop ls).haltMass μ e *
+        (if e.1.endState e.2 = s then 1 else 0)) ?_]
+    · -- collapse the indicator: endState ⟨s', nil⟩ = s' and `tsum_eq_single s`
+      have hterm_eq : ∀ s' : State,
+          (WeakScheduler.stop ls).haltMass μ ⟨⟨s', Seq.nil⟩, hfiber_term s'⟩ *
+            (if (⟨s', Seq.nil⟩ : AlterSeq State Label).endState (hfiber_term s') = s
+              then 1 else 0)
+          = μ s' * (if s' = s then 1 else 0) := by
+        intro s'
+        rw [hhalt_fiber s', AlterSeq.endState_of_trans_nil _ rfl]
+      rw [tsum_congr hterm_eq, tsum_eq_single s (by
+        intro b hb; rw [if_neg hb, mul_zero])]
+      rw [if_pos rfl, mul_one]
+    · intro e hne
+      refine ⟨e.1.init, ?_⟩
+      by_contra hcontra
+      apply hne
+      have htrans : e.1.trans ≠ Seq.nil := by
+        intro hnil
+        apply hcontra
+        cases e with | mk e' he' => cases e' with | mk i t => simp only at hnil ⊢; rw [hnil]
+      have : (WeakScheduler.stop ls).haltMass μ e = 0 := by
+        unfold WeakScheduler.haltMass
+        rw [← hpe, hprob_nonnil e.1 e.2 htrans, zero_mul]
+      rw [this, zero_mul]
 
 /-- The lifting of `sys.step` from `State → Label → PMF State → Prop` to a
 relation on initial and final distributions, parameterised by a label, *closed
@@ -514,64 +1798,635 @@ theorem weakStep_strong {ls : LabelledSystem State Label}
     hyperStep_pure_of_step h_step, weakTau_refl ls μ⟩
 
 /-- A strong system step at an *internal* label lifts to a `weakTau` from the
-Dirac source: a one-step WeakScheduler emitting `(l, μ)` witnesses
+Dirac source: a one-step WeakScheduler emitting `(l, μ)` then halting witnesses
 `weakTau ls (PMF.pure s) μ`. -/
 theorem weakTau_of_step {ls : LabelledSystem State Label}
     {s : State} {l : Label} {μ : PMF State}
     (h_int : ls.internal l) (h_step : ls.step s l μ) :
     weakTau ls (PMF.pure s) μ := by
   classical
-  -- The single-step WeakScheduler: emit `(l, μ)` deterministically on the
-  -- initial prefix `⟨s, Seq.nil⟩`; halt everywhere else.
   let σ : WeakScheduler ls :=
     { next := fun e' =>
-        if e'.init = s ∧ e'.trans = Seq.nil then PMF.pure (some (l, μ))
-        else PMF.pure none
+        if e'.init = s ∧ e'.trans = Seq.nil then PMF.pure (some (l, μ)) else PMF.pure none
       valid := by
         intro e' n s' h_term h_state l' μ' h_supp
         by_cases h_cond : e'.init = s ∧ e'.trans = Seq.nil
-        · simp only [if_pos h_cond, PMF.mem_support_pure_iff,
-            Option.some.injEq, Prod.mk.injEq] at h_supp
-          obtain ⟨h_l, h_μ⟩ := h_supp
-          subst h_l; subst h_μ
+        · simp only [if_pos h_cond, PMF.mem_support_pure_iff, Option.some.injEq,
+            Prod.mk.injEq] at h_supp
+          obtain ⟨h_l, h_μ⟩ := h_supp; subst h_l; subst h_μ
           have h_init_eq : s' = s := by
             rcases Nat.eq_zero_or_pos n with hn | hn
             · subst hn
               have : e'.stateAt 0 = some e'.init := rfl
-              rw [this, h_cond.1] at h_state
-              exact (Option.some.inj h_state).symm
+              rw [this, h_cond.1] at h_state; exact (Option.some.inj h_state).symm
             · exfalso
               obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hn.ne'
               rw [hk] at h_state
               change (e'.trans.get? k).map Prod.snd = some s' at h_state
-              rw [h_cond.2] at h_state
-              simp at h_state
+              rw [h_cond.2] at h_state; simp at h_state
           rw [h_init_eq]; exact h_step
         · simp only [if_neg h_cond, PMF.mem_support_pure_iff] at h_supp
           exact absurd h_supp (by simp)
       internal_only := by
         intro e' l' μ' h_supp
         by_cases h_cond : e'.init = s ∧ e'.trans = Seq.nil
-        · simp only [if_pos h_cond, PMF.mem_support_pure_iff,
-            Option.some.injEq, Prod.mk.injEq] at h_supp
+        · simp only [if_pos h_cond, PMF.mem_support_pure_iff, Option.some.injEq,
+            Prod.mk.injEq] at h_supp
           rw [h_supp.1]; exact h_int
         · simp only [if_neg h_cond, PMF.mem_support_pure_iff] at h_supp
           exact absurd h_supp (by simp) }
-  refine ⟨σ, 1, ?_⟩
-  -- (PMF.pure s).bind (σ.run 1) = σ.run 1 s = σ.runFromState 1 ⟨s, nil⟩ s.
-  rw [PMF.pure_bind]
-  -- Unfold σ.run, σ.runFromState 1, σ.next ⟨s, nil⟩ = PMF.pure (some (l, μ)).
-  change σ.runFromState 1 ⟨s, Seq.nil⟩ s = μ
-  have h_next : σ.next ⟨s, Seq.nil⟩ = PMF.pure (some (l, μ)) := by
-    change (if (⟨s, Seq.nil⟩ : AlterSeq State Label).init = s ∧
-        (⟨s, Seq.nil⟩ : AlterSeq State Label).trans = Seq.nil
-        then PMF.pure (some (l, μ)) else PMF.pure none) = PMF.pure (some (l, μ))
+  set pe : ProbabilisticExecution ls.toSystem := ⟨PMF.pure s, σ.toScheduler⟩ with hpe
+  -- The scheduler's emission at the empty prefix `⟨s, nil⟩` is `pure (some (l, μ))`.
+  have hnext_nil : σ.next ⟨s, Seq.nil⟩ = PMF.pure (some (l, μ)) := by
+    change (if (s = s ∧ (Seq.nil : Seq (Label × State)) = Seq.nil)
+      then PMF.pure (some (l, μ)) else PMF.pure none) = _
     rw [if_pos ⟨rfl, rfl⟩]
-  change (σ.next ⟨s, Seq.nil⟩).bind _ = μ
-  rw [h_next, PMF.pure_bind]
-  -- The "some (l, μ)" branch: μ.bind (fun s' => σ.runFromState 0 ... s') = μ.bind PMF.pure = μ.
-  -- `runFromState 0 _ s' = PMF.pure s'` by definition.
-  change μ.bind (fun s' => PMF.pure s') = μ
-  exact PMF.bind_pure μ
+  -- The single-transition fiber `⟨s, cons (l, s') nil⟩` terminates.
+  have hcons_term : ∀ s' : State, (Seq.cons (l, s') Seq.nil : Seq (Label × State)).Terminates :=
+    fun _ => Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  -- The one-step kernel at the empty prefix sends `(l, s')` to `μ s'`.
+  have hker_nil : ∀ s' : State, pe.kernel ⟨s, Seq.nil⟩ (l, s') = μ s' := by
+    intro s'
+    unfold ProbabilisticExecution.kernel
+    have hsched : pe.scheduler.next ⟨s, Seq.nil⟩ = PMF.pure (some (l, μ)) := by
+      rw [hpe]; exact hnext_nil
+    simp only [hsched]
+    have hnn : ∀ ν : PMF State,
+        (PMF.pure (some (l, μ)) : PMF (Option (Label × PMF State))) (some ((l, s').1, ν))
+          = if ν = μ then 1 else 0 := by
+      intro ν
+      by_cases h : ν = μ
+      · rw [h, if_pos rfl]; exact PMF.pure_apply_self _
+      · rw [if_neg h]; exact PMF.pure_apply_of_ne _ _ (by simp [h])
+    simp only [hnn]
+    rw [tsum_eq_single μ (by intro b hb; rw [if_neg hb, zero_mul]), if_pos rfl, one_mul]
+  -- `probOf` of the single-transition fiber is `μ s'`.
+  have hprob_fiber : ∀ s' : State,
+      pe.probOf ⟨s, Seq.cons (l, s') Seq.nil⟩ (hcons_term s') = μ s' := by
+    intro s'
+    have happ : (Seq.nil.append (Seq.cons (l, s') Seq.nil) : Seq (Label × State)).Terminates := by
+      rw [Stream'.Seq.nil_append]; exact hcons_term s'
+    have hrw : pe.probOf ⟨s, Seq.cons (l, s') Seq.nil⟩ (hcons_term s')
+        = pe.probOf ⟨s, Seq.nil.append (Seq.cons (l, s') Seq.nil)⟩ happ := by
+      congr 1
+      rw [Stream'.Seq.nil_append]
+    rw [hrw, ProbabilisticExecution.probOf_append_singleton _ _ _ Stream'.Seq.terminates_nil _ happ,
+      ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState, hker_nil]
+    rw [hpe]; change (PMF.pure s) s * μ s' = μ s'
+    rw [PMF.pure_apply_self, one_mul]
+  -- The scheduler emits `⊥` (mass 1) off the active prefix, mass 0 on it.
+  have hnext_none : ∀ e' : AlterSeq State Label,
+      ¬(e'.init = s ∧ e'.trans = Seq.nil) → σ.next e' none = 1 := by
+    intro e' hcond
+    change (if e'.init = s ∧ e'.trans = Seq.nil
+      then PMF.pure (some (l, μ)) else PMF.pure none) none = 1
+    rw [if_neg hcond]; exact PMF.pure_apply_self none
+  have hnext_none_zero : ∀ e' : AlterSeq State Label,
+      (e'.init = s ∧ e'.trans = Seq.nil) → σ.next e' none = 0 := by
+    intro e' hcond
+    change (if e'.init = s ∧ e'.trans = Seq.nil
+      then PMF.pure (some (l, μ)) else PMF.pure none) none = 0
+    rw [if_pos hcond]; exact PMF.pure_apply_of_ne _ _ (by simp)
+  -- A nonzero one-step kernel forces the active-prefix shape.
+  have hker_ne : ∀ (init : State) (previous : Seq (Label × State)) (last : Label × State),
+      pe.kernel ⟨init, previous⟩ last ≠ 0 → (init = s ∧ previous = Seq.nil ∧ last.1 = l) := by
+    intro init previous last hne
+    by_cases hcond : init = s ∧ previous = Seq.nil
+    · refine ⟨hcond.1, hcond.2, ?_⟩
+      by_contra hl
+      apply hne
+      unfold ProbabilisticExecution.kernel
+      have hsched : pe.scheduler.next ⟨init, previous⟩ = PMF.pure (some (l, μ)) := by
+        rw [hpe]
+        change (if init = s ∧ previous = Seq.nil
+          then PMF.pure (some (l, μ)) else PMF.pure none) = _
+        rw [if_pos hcond]
+      simp only [hsched]
+      have hz : ∀ ν : PMF State,
+          (PMF.pure (some (l, μ)) : PMF (Option (Label × PMF State))) (some (last.1, ν)) = 0 :=
+        fun ν => PMF.pure_apply_of_ne _ _ (by simp [hl])
+      simp only [hz, zero_mul, tsum_zero]
+    · exfalso
+      apply hne
+      unfold ProbabilisticExecution.kernel
+      have hsched : pe.scheduler.next ⟨init, previous⟩ = PMF.pure none := by
+        rw [hpe]
+        change (if init = s ∧ previous = Seq.nil
+          then PMF.pure (some (l, μ)) else PMF.pure none) = _
+        rw [if_neg hcond]
+      simp only [hsched]
+      have hz : ∀ ν : PMF State,
+          (PMF.pure none : PMF (Option (Label × PMF State))) (some (last.1, ν)) = 0 :=
+        fun ν => PMF.pure_apply_of_ne _ _ (by simp)
+      simp only [hz, zero_mul, tsum_zero]
+  -- Fiber data for reindexing.
+  have hfiber_term : ∀ s' : State,
+      (⟨s, Seq.cons (l, s') Seq.nil⟩ : AlterSeq State Label).trans.Terminates :=
+    fun s' => hcons_term s'
+  have hfiber_inj :
+      Function.Injective
+        (fun s' : State => (⟨s, Seq.cons (l, s') Seq.nil⟩ : AlterSeq State Label)) := by
+    intro a b hab
+    have htrans := congrArg AlterSeq.trans hab
+    simp only at htrans
+    have hpair := (Stream'.Seq.cons_eq_cons.mp htrans).1
+    exact (Prod.mk.injEq l a l b ▸ hpair).2
+  -- The halting mass on the fiber is `μ s'`.
+  have hhalt_fiber : ∀ s' : State,
+      σ.haltMass (PMF.pure s) ⟨⟨s, Seq.cons (l, s') Seq.nil⟩, hfiber_term s'⟩ = μ s' := by
+    intro s'
+    unfold WeakScheduler.haltMass
+    rw [← hpe, hprob_fiber s']
+    rw [hnext_none ⟨s, Seq.cons (l, s') Seq.nil⟩ (by
+      rintro ⟨_, htr⟩; exact absurd htr (by simp)), mul_one]
+  -- Support condition: nonzero halting mass forces the single-transition fiber.
+  have hsupp : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      σ.haltMass (PMF.pure s) e ≠ 0 →
+      ∃ s', (⟨s, Seq.cons (l, s') Seq.nil⟩ : AlterSeq State Label) = e.1 := by
+    rintro ⟨⟨init', trans'⟩, hterm⟩ hne
+    simp only at hterm hne ⊢
+    -- Split the two factors of `haltMass`.
+    have hprob_ne : pe.probOf ⟨init', trans'⟩ hterm ≠ 0 := by
+      intro h0; apply hne; unfold WeakScheduler.haltMass; rw [← hpe, h0, zero_mul]
+    have hnone_ne : σ.next ⟨init', trans'⟩ none ≠ 0 := by
+      intro h0; apply hne; unfold WeakScheduler.haltMass; rw [← hpe, h0, mul_zero]
+    have hncond : ¬((⟨init', trans'⟩ : AlterSeq State Label).init = s ∧
+        (⟨init', trans'⟩ : AlterSeq State Label).trans = Seq.nil) := by
+      intro hcond; exact hnone_ne (hnext_none_zero _ hcond)
+    -- `trans' ≠ nil`: else `probOf` would be `(pure s) init' = 0` since `init' ≠ s`.
+    have htrans_ne : trans' ≠ Seq.nil := by
+      intro hnil
+      apply hncond
+      refine ⟨?_, hnil⟩
+      by_contra hinit
+      apply hprob_ne
+      have hrw : pe.probOf ⟨init', trans'⟩ hterm
+          = pe.probOf ⟨init', Seq.nil⟩ Stream'.Seq.terminates_nil := by
+        subst hnil; rfl
+      rw [hrw, ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState, hpe]
+      exact PMF.pure_apply_of_ne _ _ hinit
+    -- Peel the last transition.
+    have hnonempty : trans'.toList hterm ≠ [] := by
+      intro hnil; apply htrans_ne
+      have := Stream'.Seq.ofList_toList trans' hterm
+      rw [hnil, Stream'.Seq.ofList_nil] at this; exact this.symm
+    obtain ⟨previous, last, h_prev, h_split, _, _⟩ :=
+      Stream'.Seq.exists_split_last trans' hterm hnonempty
+    -- `probOf = probOf ⟨init', previous⟩ * kernel ⟨init', previous⟩ last`.
+    have hprob_split : pe.probOf ⟨init', trans'⟩ hterm
+        = pe.probOf ⟨init', previous⟩ h_prev * pe.kernel ⟨init', previous⟩ last := by
+      have happ : (previous.append (Seq.cons last Seq.nil)).Terminates := h_split ▸ hterm
+      have hrw : pe.probOf ⟨init', trans'⟩ hterm
+          = pe.probOf ⟨init', previous.append (Seq.cons last Seq.nil)⟩ happ := by
+        exact h_split ▸ rfl
+      rw [hrw, ProbabilisticExecution.probOf_append_singleton _ _ _ h_prev _ happ]
+    have hker_ne' : pe.kernel ⟨init', previous⟩ last ≠ 0 := by
+      intro h0; apply hprob_ne; rw [hprob_split, h0, mul_zero]
+    obtain ⟨hinit_eq, hprev_nil, hlast⟩ := hker_ne _ _ _ hker_ne'
+    -- Reassemble: `trans' = cons (l, last.2) nil`, `init' = s`.
+    refine ⟨last.2, ?_⟩
+    have htrans_eq : trans' = Seq.cons (l, last.2) Seq.nil := by
+      rw [h_split, hprev_nil, Stream'.Seq.nil_append]
+      obtain ⟨l', s'⟩ := last
+      simp only at hlast
+      rw [hlast]
+    rw [hinit_eq] at *
+    exact AlterSeq.mk.injEq .. ▸ ⟨rfl, htrans_eq.symm⟩
+  -- Assemble the `weakTau` witness.
+  refine ⟨σ, ?_, ?_⟩
+  · rw [weakTau_reindex_fiber (fun s' => ⟨s, Seq.cons (l, s') Seq.nil⟩) hfiber_term hfiber_inj
+      (σ.haltMass (PMF.pure s)) hsupp]
+    simp only [hhalt_fiber]
+    exact μ.tsum_coe
+  · intro t
+    rw [weakTau_reindex_fiber (fun s' => ⟨s, Seq.cons (l, s') Seq.nil⟩) hfiber_term hfiber_inj
+      (fun e => σ.haltMass (PMF.pure s) e * (if e.1.endState e.2 = t then 1 else 0)) ?_]
+    · have hterm_eq : ∀ s' : State,
+          σ.haltMass (PMF.pure s) ⟨⟨s, Seq.cons (l, s') Seq.nil⟩, hfiber_term s'⟩ *
+            (if (⟨s, Seq.cons (l, s') Seq.nil⟩ : AlterSeq State Label).endState
+              (hfiber_term s') = t then 1 else 0)
+          = μ s' * (if s' = t then 1 else 0) := by
+        intro s'
+        rw [hhalt_fiber s', AlterSeq.endState_singleton_cons]
+      rw [tsum_congr hterm_eq, tsum_eq_single t (by intro b hb; rw [if_neg hb, mul_zero]),
+        if_pos rfl, mul_one]
+    · intro e hne
+      obtain ⟨s', hs'⟩ := hsupp e (by
+        intro h0; apply hne; rw [h0, zero_mul])
+      exact ⟨s', hs'⟩
+
+/-! ### Helpers for `weakTau` transitivity -/
+
+/-- `AlterSeq` equality from equal components. -/
+private theorem AlterSeq.ext_of {e₁ e₂ : AlterSeq State Label}
+    (hi : e₁.init = e₂.init) (ht : e₁.trans = e₂.trans) : e₁ = e₂ := by
+  cases e₁; cases e₂; simp_all
+
+/-- `endState` only depends on the underlying `AlterSeq` (termination proofs are
+irrelevant). -/
+private theorem AlterSeq.endState_congr {e₁ e₂ : AlterSeq State Label}
+    (heq : e₁ = e₂) (h₁ : e₁.trans.Terminates) (h₂ : e₂.trans.Terminates) :
+    e₁.endState h₁ = e₂.endState h₂ := by
+  subst heq; rfl
+
+/-- The end-state of the `j`-suffix `⟨stateAfter e j, e.trans.drop j⟩` equals the
+end-state of `e`, for any split `j ≤ length` (extends `endState_drop` to the
+boundary case `j = length`). -/
+private theorem WeakScheduler.endState_suf (e : AlterSeq State Label)
+    (hT : e.trans.Terminates) (j : ℕ) (hj : j ≤ e.trans.length hT) :
+    (⟨WeakScheduler.stateAfter e j, e.trans.drop j⟩ : AlterSeq State Label).endState
+        (WeakScheduler.drop_terminates hT j) = e.endState hT := by
+  rcases lt_or_eq_of_le hj with hlt | heq
+  · exact WeakScheduler.endState_drop e hT j hlt
+  · -- `j = length`: the suffix's trans is `nil`, end-state is its init = endState.
+    subst heq
+    have hnil : e.trans.drop (e.trans.length hT) = Seq.nil := by
+      apply Stream'.Seq.ext
+      intro n
+      rw [Stream'.Seq.drop_get?]
+      have hterm : e.trans.TerminatedAt (e.trans.length hT) := Nat.find_spec hT
+      change e.trans.get? (e.trans.length hT) = none at hterm
+      rw [Stream'.Seq.get?_nil]
+      exact Stream'.Seq.terminated_stable e.trans (Nat.le_add_right _ n) hterm
+    rw [AlterSeq.endState_of_trans_nil _ hnil,
+      WeakScheduler.stateAfter_length_eq_endState e hT]
+
+/-- The concatenation of two terminating executions `f₁`, `f₂`: start at
+`f₁.init`, follow `f₁`'s transitions then `f₂`'s (as lists). -/
+private noncomputable def WeakScheduler.concat
+    (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
+    AlterSeq State Label :=
+  ⟨f₁.1.init, Seq.ofList (f₁.1.trans.toList f₁.2 ++ f₂.1.trans.toList f₂.2)⟩
+
+private theorem WeakScheduler.concat_terminates
+    (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
+    (WeakScheduler.concat f₁ f₂).trans.Terminates :=
+  Stream'.Seq.terminates_ofList _
+
+/-- The length of the concatenation is the sum of the two lengths. -/
+private theorem WeakScheduler.length_concat
+    (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
+    (WeakScheduler.concat f₁ f₂).trans.length (WeakScheduler.concat_terminates f₁ f₂)
+      = f₁.1.trans.length f₁.2 + f₂.1.trans.length f₂.2 := by
+  unfold WeakScheduler.concat
+  rw [length_ofList, List.length_append, Stream'.Seq.length_toList,
+    Stream'.Seq.length_toList]
+
+/-- The `|f₁|`-prefix of `concat f₁ f₂` recovers `f₁`'s transition sequence. -/
+private theorem WeakScheduler.take_concat
+    (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
+    Seq.ofList (Seq.take (f₁.1.trans.length f₁.2) (WeakScheduler.concat f₁ f₂).trans)
+      = f₁.1.trans := by
+  unfold WeakScheduler.concat
+  rw [take_ofList]
+  rw [show f₁.1.trans.length f₁.2 = (f₁.1.trans.toList f₁.2).length from
+    (Stream'.Seq.length_toList _ _).symm]
+  rw [List.take_left, Stream'.Seq.ofList_toList]
+
+/-- The `|f₁|`-suffix of `concat f₁ f₂` recovers `f₂`'s transition sequence. -/
+private theorem WeakScheduler.drop_concat
+    (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
+    (WeakScheduler.concat f₁ f₂).trans.drop (f₁.1.trans.length f₁.2) = f₂.1.trans := by
+  unfold WeakScheduler.concat
+  rw [drop_ofList]
+  rw [show f₁.1.trans.length f₁.2 = (f₁.1.trans.toList f₁.2).length from
+    (Stream'.Seq.length_toList _ _).symm]
+  rw [List.drop_left, Stream'.Seq.ofList_toList]
+
+/-- `stateAfter (concat f₁ f₂) |f₁|` is `f₁`'s end-state. -/
+private theorem WeakScheduler.stateAfter_concat
+    (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
+    WeakScheduler.stateAfter (WeakScheduler.concat f₁ f₂) (f₁.1.trans.length f₁.2)
+      = f₁.1.endState f₁.2 := by
+  -- `stateAt (concat) |f₁| = stateAt f₁ |f₁|`, then reduce to `stateAfter f₁ |f₁|`.
+  have hinit : (WeakScheduler.concat f₁ f₂).init = f₁.1.init := rfl
+  have hstateAt : (WeakScheduler.concat f₁ f₂).stateAt (f₁.1.trans.length f₁.2)
+      = f₁.1.stateAt (f₁.1.trans.length f₁.2) := by
+    set n := f₁.1.trans.length f₁.2 with hn
+    cases hn0 : n with
+    | zero => simp only [AlterSeq.stateAt, hinit]
+    | succ m =>
+      simp only [AlterSeq.stateAt]
+      congr 1
+      -- `(concat).trans.get? m = f₁.trans.get? m` for `m < |f₁|`.
+      have hmlt : m < (f₁.1.trans.toList f₁.2).length := by
+        rw [Stream'.Seq.length_toList, ← hn, hn0]; exact Nat.lt_succ_self m
+      unfold WeakScheduler.concat
+      rw [Stream'.Seq.ofList_get?, List.getElem?_append_left hmlt,
+        ← Stream'.Seq.ofList_get?, Stream'.Seq.ofList_toList]
+  unfold WeakScheduler.stateAfter
+  rw [hstateAt, hinit]
+  exact WeakScheduler.stateAfter_length_eq_endState f₁.1 f₁.2
+
+/-- `stateAfter` only depends on the underlying `AlterSeq`. -/
+private theorem WeakScheduler.stateAfter_congr {e₁ e₂ : AlterSeq State Label}
+    (heq : e₁ = e₂) (j : ℕ) : WeakScheduler.stateAfter e₁ j = WeakScheduler.stateAfter e₂ j := by
+  rw [heq]
+
+/-- `toList` only depends on the underlying `Seq` (termination proofs irrelevant). -/
+private theorem WeakScheduler.toList_congr_eq {γ : Type} {s₁ s₂ : Seq γ} (heq : s₁ = s₂)
+    (h₁ : s₁.Terminates) (h₂ : s₂.Terminates) : s₁.toList h₁ = s₂.toList h₂ := by
+  subst heq; rfl
+
+/-- `Seq.take j s` is the `List.take j` of `s.toList`. -/
+private theorem WeakScheduler.take_eq_toList_take {γ : Type} (s : Seq γ) (h : s.Terminates)
+    (j : ℕ) : Stream'.Seq.take j s = (s.toList h).take j := by
+  conv_lhs => rw [← Stream'.Seq.ofList_toList s h]
+  rw [take_ofList]
+
+/-- `(s.drop j).toList` is the `List.drop j` of `s.toList`. -/
+private theorem WeakScheduler.drop_toList_eq {γ : Type} (s : Seq γ) (h : s.Terminates) (j : ℕ)
+    (hd : (s.drop j).Terminates) : (s.drop j).toList hd = (s.toList h).drop j := by
+  have key : s.drop j = Seq.ofList ((s.toList h).drop j) := by
+    conv_lhs => rw [← Stream'.Seq.ofList_toList s h]
+    rw [drop_ofList]
+  rw [WeakScheduler.toList_congr_eq key hd (Stream'.Seq.terminates_ofList _),
+    Stream'.Seq.toList_ofList]
+
+/-- **Split-then-concatenate is the identity.** Concatenating the `j`-prefix and
+`j`-suffix of a terminating execution `e` recovers `e` (`j ≤ length`). -/
+private theorem WeakScheduler.concat_split (e : {e : AlterSeq State Label // e.trans.Terminates})
+    (j : ℕ) :
+    WeakScheduler.concat
+        ⟨⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩, Stream'.Seq.terminates_ofList _⟩
+        ⟨⟨WeakScheduler.stateAfter e.1 j, e.1.trans.drop j⟩,
+          WeakScheduler.drop_terminates e.2 j⟩
+      = e.1 := by
+  unfold WeakScheduler.concat
+  -- the underlying trans is `ofList (take j ++ (drop j).toList) = e.trans`.
+  have hlist : (⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩
+        : AlterSeq State Label).trans.toList (Stream'.Seq.terminates_ofList _)
+      ++ (⟨WeakScheduler.stateAfter e.1 j, e.1.trans.drop j⟩ : AlterSeq State Label).trans.toList
+          (WeakScheduler.drop_terminates e.2 j)
+      = e.1.trans.toList e.2 := by
+    change (Seq.ofList (Seq.take j e.1.trans)).toList (Stream'.Seq.terminates_ofList _)
+        ++ (e.1.trans.drop j).toList (WeakScheduler.drop_terminates e.2 j)
+      = e.1.trans.toList e.2
+    rw [Stream'.Seq.toList_ofList,
+      WeakScheduler.take_eq_toList_take e.1.trans e.2 j,
+      WeakScheduler.drop_toList_eq e.1.trans e.2 j (WeakScheduler.drop_terminates e.2 j),
+      List.take_append_drop]
+  -- assemble the `AlterSeq` equality
+  change (⟨e.1.init, Seq.ofList _⟩ : AlterSeq State Label) = e.1
+  rw [hlist]
+  obtain ⟨ev, eh⟩ := e
+  simp only
+  rw [Stream'.Seq.ofList_toList]
+
+/-- The prefix `pre e j` has length exactly `j` (for `j ≤ length`). -/
+private theorem WeakScheduler.length_pre (e : {e : AlterSeq State Label // e.trans.Terminates})
+    (j : ℕ) (hj : j ≤ e.1.trans.length e.2) :
+    (Seq.ofList (Seq.take j e.1.trans)).length (Stream'.Seq.terminates_ofList _) = j := by
+  rw [length_ofList, WeakScheduler.take_eq_toList_take e.1.trans e.2 j,
+    List.length_take, Stream'.Seq.length_toList]
+  omega
+
+/-- **Master identity** for `weakTau` transitivity: integrating any `g` against
+the halting end-state of `bind σ₁ σ₂` (run from `a`) equals integrating `g`
+against `c`. Both conjuncts of `weakTau sys a c` are special cases. -/
+private theorem master_identity {sys : LabelledSystem State Label} {a b c : PMF State}
+    (h₁ : weakTau sys a b) (h₂ : weakTau sys b c) (g : State → ENNReal) :
+    (∑' e, (WeakScheduler.bind h₁.witnessScheduler (fun _ => h₂.witnessScheduler)).haltMass a e
+        * g (e.1.endState e.2))
+      = ∑' s', c s' * g s' := by
+  classical
+  set σ₁ := h₁.witnessScheduler with hσ₁
+  set σ₂ := h₂.witnessScheduler with hσ₂
+  -- Off-diagonal vanishing: `σ₂` from a Dirac at `s` ignores executions not starting at `s`.
+  have hoff : ∀ (s : State) (f₂ : {e : AlterSeq State Label // e.trans.Terminates}),
+      f₂.1.init ≠ s → σ₂.haltMass (PMF.pure s) f₂ = 0 := by
+    intro s f₂ hne
+    unfold WeakScheduler.haltMass
+    rw [ProbabilisticExecution.probOf_init_factor σ₂.toScheduler (PMF.pure s) f₂.1 f₂.2,
+      PMF.pure_apply_of_ne _ _ hne, zero_mul, zero_mul]
+  -- **Step 3 (analytic collapse).** The pair-sum collapses to `∑' s', c s' * g s'`.
+  have step3 :
+      (∑' p : {e : AlterSeq State Label // e.trans.Terminates} ×
+          {e : AlterSeq State Label // e.trans.Terminates},
+          σ₁.haltMass a p.1 * σ₂.haltMass (PMF.pure (p.1.1.endState p.1.2)) p.2
+            * g (p.2.1.endState p.2.2))
+        = ∑' s', c s' * g s' := by
+    rw [ENNReal.tsum_prod']
+    -- inner sum over `f₂` factors out `σ₁.haltMass a f₁`
+    have hinner : ∀ f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+        (∑' f₂, σ₁.haltMass a f₁ * σ₂.haltMass (PMF.pure (f₁.1.endState f₁.2)) f₂
+            * g (f₂.1.endState f₂.2))
+          = σ₁.haltMass a f₁
+              * (∑' f₂, σ₂.haltMass (PMF.pure (f₁.1.endState f₁.2)) f₂
+                  * g (f₂.1.endState f₂.2)) := by
+      intro f₁
+      rw [← ENNReal.tsum_mul_left]
+      exact tsum_congr (fun f₂ => by ring)
+    rw [tsum_congr hinner]
+    -- `weakTau.integrate h₁` with test `G s := ∑' f₂, σ₂.haltMass (pure s) f₂ * g (f₂.end)`
+    have hint1 := h₁.integrate
+      (fun s => ∑' f₂, σ₂.haltMass (PMF.pure s) f₂ * g (f₂.1.endState f₂.2))
+    rw [← hσ₁] at hint1
+    rw [hint1]
+    -- now `∑' s, b s * G s`; commute and use `haltMass_init_mix` + `integrate h₂`
+    have hstep : ∀ s, b s * (∑' f₂, σ₂.haltMass (PMF.pure s) f₂ * g (f₂.1.endState f₂.2))
+        = ∑' f₂, b s * σ₂.haltMass (PMF.pure s) f₂ * g (f₂.1.endState f₂.2) := by
+      intro s
+      rw [← ENNReal.tsum_mul_left]
+      exact tsum_congr (fun f₂ => by ring)
+    rw [tsum_congr hstep, ENNReal.tsum_comm]
+    -- fold the source-mixture over `b` back into `σ₂.haltMass b`
+    have hmix : ∀ f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+        (∑' s, b s * σ₂.haltMass (PMF.pure s) f₂ * g (f₂.1.endState f₂.2))
+          = σ₂.haltMass b f₂ * g (f₂.1.endState f₂.2) := by
+      intro f₂
+      rw [ENNReal.tsum_mul_right, ← WeakScheduler.haltMass_init_mix σ₂ b f₂]
+    rw [tsum_congr hmix]
+    -- `weakTau.integrate h₂` with test `g`
+    have hint2 := h₂.integrate g
+    rw [← hσ₂] at hint2
+    exact hint2
+  rw [← step3]
+  -- **Steps 1+2.** Align `g`, convert each `Finset.range` sum to a capped `tsum`,
+  -- combine into a single `tsum` over `{e//T} × ℕ`, then reindex by the bijection
+  -- `(f₁, f₂) ↦ (concat f₁ f₂, |f₁|)`.
+  simp_rw [WeakScheduler.bind_haltMass σ₁ (fun _ => σ₂) a, Finset.sum_mul]
+  -- Step 1: replace `g (e.endState)` by `g ((suf e i).endState)` within each summand.
+  rw [show (∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+      ∑ i ∈ Finset.range (e.1.trans.length e.2 + 1),
+        σ₁.haltMass a ⟨⟨e.1.init, Seq.ofList (Seq.take i e.1.trans)⟩,
+            Stream'.Seq.terminates_ofList _⟩ *
+          σ₂.haltMass (PMF.pure (WeakScheduler.stateAfter e.1 i))
+            ⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+              WeakScheduler.drop_terminates e.2 i⟩ *
+          g (e.1.endState e.2))
+    = ∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+        ∑ i ∈ Finset.range (e.1.trans.length e.2 + 1),
+          σ₁.haltMass a ⟨⟨e.1.init, Seq.ofList (Seq.take i e.1.trans)⟩,
+              Stream'.Seq.terminates_ofList _⟩ *
+            σ₂.haltMass (PMF.pure (WeakScheduler.stateAfter e.1 i))
+              ⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+                WeakScheduler.drop_terminates e.2 i⟩ *
+            g ((⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+                WeakScheduler.drop_terminates e.2 i⟩ :
+                {e : AlterSeq State Label // e.trans.Terminates}).1.endState
+                (WeakScheduler.drop_terminates e.2 i)) from
+    tsum_congr fun e => Finset.sum_congr rfl fun i hi => by
+      rw [Finset.mem_range, Nat.lt_succ_iff] at hi
+      rw [WeakScheduler.endState_suf e.1 e.2 i hi]]
+  -- Step 2a: turn each `Finset.range` sum into a capped `tsum`.
+  rw [show (∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+      ∑ i ∈ Finset.range (e.1.trans.length e.2 + 1),
+        σ₁.haltMass a ⟨⟨e.1.init, Seq.ofList (Seq.take i e.1.trans)⟩,
+            Stream'.Seq.terminates_ofList _⟩ *
+          σ₂.haltMass (PMF.pure (WeakScheduler.stateAfter e.1 i))
+            ⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+              WeakScheduler.drop_terminates e.2 i⟩ *
+          g ((⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+              WeakScheduler.drop_terminates e.2 i⟩ :
+              {e : AlterSeq State Label // e.trans.Terminates}).1.endState
+              (WeakScheduler.drop_terminates e.2 i)))
+    = ∑' e : {e : AlterSeq State Label // e.trans.Terminates}, ∑' i : ℕ,
+        (if i ≤ e.1.trans.length e.2 then
+          σ₁.haltMass a ⟨⟨e.1.init, Seq.ofList (Seq.take i e.1.trans)⟩,
+              Stream'.Seq.terminates_ofList _⟩ *
+            σ₂.haltMass (PMF.pure (WeakScheduler.stateAfter e.1 i))
+              ⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+                WeakScheduler.drop_terminates e.2 i⟩ *
+            g ((⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+                WeakScheduler.drop_terminates e.2 i⟩ :
+                {e : AlterSeq State Label // e.trans.Terminates}).1.endState
+                (WeakScheduler.drop_terminates e.2 i))
+          else 0) from
+    tsum_congr fun e => by
+      rw [tsum_eq_sum (s := Finset.range (e.1.trans.length e.2 + 1)) (fun i hi => by
+        rw [Finset.mem_range, Nat.lt_succ_iff] at hi; rw [if_neg hi])]
+      exact (Finset.sum_congr rfl (fun i hi => by
+        rw [Finset.mem_range, Nat.lt_succ_iff] at hi; rw [if_pos hi])).symm]
+  -- Step 2b: combine into a single `tsum` over `{e//T} × ℕ`.
+  rw [← ENNReal.tsum_prod (f := fun (e : {e : AlterSeq State Label // e.trans.Terminates})
+      (i : ℕ) =>
+      (if i ≤ e.1.trans.length e.2 then
+        σ₁.haltMass a ⟨⟨e.1.init, Seq.ofList (Seq.take i e.1.trans)⟩,
+            Stream'.Seq.terminates_ofList _⟩ *
+          σ₂.haltMass (PMF.pure (WeakScheduler.stateAfter e.1 i))
+            ⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+              WeakScheduler.drop_terminates e.2 i⟩ *
+          g ((⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+              WeakScheduler.drop_terminates e.2 i⟩ :
+              {e : AlterSeq State Label // e.trans.Terminates}).1.endState
+              (WeakScheduler.drop_terminates e.2 i))
+        else 0))]
+  -- Step 2c: reindex by the bijection `(f₁, f₂) ↦ (concat f₁ f₂, |f₁|)`.
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (fun p => (⟨WeakScheduler.concat p.1.1 p.1.2, WeakScheduler.concat_terminates p.1.1 p.1.2⟩,
+      p.1.1.1.trans.length p.1.1.2)) ?_ ?_ ?_
+  · -- hinj : injective on the support of the pair-summand
+    rintro ⟨⟨f₁, f₂⟩, hp⟩ ⟨⟨f₁', f₂'⟩, hp'⟩ hii
+    simp only [Function.mem_support, ne_eq] at hp hp'
+    -- composability on both sides
+    have hc : f₂.1.init = f₁.1.endState f₁.2 := by
+      by_contra hne
+      exact hp (by rw [hoff (f₁.1.endState f₁.2) f₂ hne, mul_zero, zero_mul])
+    have hc' : f₂'.1.init = f₁'.1.endState f₁'.2 := by
+      by_contra hne
+      exact hp' (by rw [hoff (f₁'.1.endState f₁'.2) f₂' hne, mul_zero, zero_mul])
+    -- unpack the `i`-equality into equal concats and equal `f₁`-lengths
+    simp only [Prod.mk.injEq] at hii
+    obtain ⟨hconcat, hleneq⟩ := hii
+    have hcc : WeakScheduler.concat f₁ f₂ = WeakScheduler.concat f₁' f₂' :=
+      Subtype.ext_iff.mp hconcat
+    -- recover `f₁ = f₁'`
+    have hf₁ : f₁ = f₁' := by
+      apply Subtype.ext
+      have hinit : f₁.1.init = f₁'.1.init := by
+        have : (WeakScheduler.concat f₁ f₂).init = (WeakScheduler.concat f₁' f₂').init := by
+          rw [hcc]
+        exact this
+      have htrans : f₁.1.trans = f₁'.1.trans := by
+        rw [← WeakScheduler.take_concat f₁ f₂, ← WeakScheduler.take_concat f₁' f₂',
+          hleneq, hcc]
+      exact AlterSeq.ext_of hinit htrans
+    -- recover `f₂ = f₂'`
+    have hf₂ : f₂ = f₂' := by
+      apply Subtype.ext
+      have htrans : f₂.1.trans = f₂'.1.trans := by
+        rw [← WeakScheduler.drop_concat f₁ f₂, ← WeakScheduler.drop_concat f₁' f₂',
+          hleneq, hcc]
+      have hinit : f₂.1.init = f₂'.1.init := by
+        rw [hc, hc', ← hf₁]
+      exact AlterSeq.ext_of hinit htrans
+    simp only [hf₁, hf₂]
+  · -- hf : support ⊆ range i
+    rintro ⟨e, j⟩ hq
+    simp only [Function.mem_support, ne_eq] at hq
+    -- the cap must hold (else the summand is `0`)
+    have hjle : j ≤ e.1.trans.length e.2 := by
+      by_contra hlt
+      exact hq (if_neg hlt)
+    rw [if_pos hjle] at hq
+    -- the preimage pair: the `j`-prefix and `j`-suffix of `e`
+    set pre : {e : AlterSeq State Label // e.trans.Terminates} :=
+      ⟨⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩, Stream'.Seq.terminates_ofList _⟩ with hpredef
+    set suf : {e : AlterSeq State Label // e.trans.Terminates} :=
+      ⟨⟨WeakScheduler.stateAfter e.1 j, e.1.trans.drop j⟩,
+        WeakScheduler.drop_terminates e.2 j⟩ with hsufdef
+    -- `concat pre suf = e` and `|pre| = j`, so `i (pre, suf) = (e, j)`.
+    have hcs : WeakScheduler.concat pre suf = e.1 := WeakScheduler.concat_split e j
+    have hlen : pre.1.trans.length pre.2 = j := WeakScheduler.length_pre e j hjle
+    -- `pre.endState = stateAfter e j` (via `stateAfter_concat` along `hcs`, `hlen`)
+    have hpreend : pre.1.endState pre.2 = WeakScheduler.stateAfter e.1 j := by
+      rw [← WeakScheduler.stateAfter_concat pre suf, hlen,
+        WeakScheduler.stateAfter_congr hcs j]
+    refine ⟨⟨(pre, suf), ?_⟩, ?_⟩
+    · -- membership in `support pairSummand`
+      simp only [Function.mem_support, ne_eq]
+      rw [hpreend]
+      exact hq
+    · -- `i (pre, suf) = (e, j)`
+      apply Prod.ext
+      · exact Subtype.ext hcs
+      · exact hlen
+  · -- hfg : f (i x) = g x
+    rintro ⟨⟨f₁, f₂⟩, hx⟩
+    simp only [Function.mem_support, ne_eq] at hx
+    -- composability: `f₂.init = f₁.endState` (else off-diagonal vanishes)
+    have hcomp : f₂.1.init = f₁.1.endState f₁.2 := by
+      by_contra hne
+      exact hx (by
+        rw [hoff (f₁.1.endState f₁.2) f₂ hne, mul_zero, zero_mul])
+    -- the cap condition holds
+    have hcap : f₁.1.trans.length f₁.2
+        ≤ (WeakScheduler.concat f₁ f₂).trans.length (WeakScheduler.concat_terminates f₁ f₂) := by
+      rw [WeakScheduler.length_concat]; exact Nat.le_add_right _ _
+    simp only
+    rw [if_pos hcap, WeakScheduler.stateAfter_concat]
+    -- `pre (concat) |f₁|` has underlying `AlterSeq` equal to `f₁`
+    have hpre : (⟨(WeakScheduler.concat f₁ f₂).init,
+          Seq.ofList (Seq.take (f₁.1.trans.length f₁.2)
+            (WeakScheduler.concat f₁ f₂).trans)⟩ : AlterSeq State Label) = f₁.1 := by
+      rw [WeakScheduler.take_concat]
+      rfl
+    -- the post-rewrite suffix has underlying `AlterSeq` equal to `f₂`
+    have hsuf : (⟨f₁.1.endState f₁.2,
+          (WeakScheduler.concat f₁ f₂).trans.drop (f₁.1.trans.length f₁.2)⟩
+          : AlterSeq State Label) = f₂.1 := by
+      rw [WeakScheduler.drop_concat, ← hcomp]
+    rw [WeakScheduler.haltMass_congr_eq σ₁ a hpre,
+      WeakScheduler.haltMass_congr_eq σ₂ (PMF.pure (f₁.1.endState f₁.2)) hsuf]
+    congr 1
+    -- the `g`-argument: end-state of the suffix equals `f₂`'s end-state
+    rw [AlterSeq.endState_congr hsuf _ f₂.2]
+
+/-- Transitivity of `weakTau` (via `WeakScheduler.bind` and `bind_haltMass`). -/
+theorem weakTau_trans {sys : LabelledSystem State Label} {a b c : PMF State}
+    (h₁ : weakTau sys a b) (h₂ : weakTau sys b c) : weakTau sys a c := by
+  classical
+  set σ₁ := h₁.witnessScheduler with hσ₁
+  set σ₂ := h₂.witnessScheduler with hσ₂
+  refine ⟨WeakScheduler.bind σ₁ (fun _ => σ₂), ?_, ?_⟩
+  · -- conjunct 1: total halting mass is 1
+    have hm := master_identity h₁ h₂ (fun _ => 1)
+    simp only [mul_one] at hm
+    rw [hm, c.tsum_coe]
+  · -- conjunct 2: pushforward to `c`
+    intro s
+    have hm := master_identity h₁ h₂ (fun s' => if s' = s then 1 else 0)
+    rw [hm, tsum_eq_single s (fun s' hs' => by rw [if_neg hs', mul_zero]), if_pos rfl, mul_one]
 
 end PLTS
