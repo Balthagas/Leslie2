@@ -941,6 +941,122 @@ theorem extStep_pushforward (sys : LabelledSystem State Label)
   rw [hrhs, ENNReal.tsum_comm]
 
 open Classical in
+/-- **Shape of `extStep`'s halting executions from a Dirac source.** If
+`extStep`'s halting mass from `PMF.pure r` at `E` is nonzero, then either
+`r ∉ ν.support` and `E` is the empty execution `⟨r, nil⟩` (immediate halt), or
+`r ∈ ν.support` and `E` is the single external transition `⟨r, cons (l, s') nil⟩`. -/
+theorem extStep_haltMass_ne_zero (sys : LabelledSystem State Label)
+    (ν : PMF State) (l : Label) (κ : State → PMF (PMF State))
+    (hκ : ∀ s ∈ ν.support, ∀ μ ∈ (κ s).support, sys.step s l μ) (r : State)
+    (E : {e : AlterSeq State Label // e.trans.Terminates})
+    (hne : (Scheduler.extStep sys ν l κ hκ).haltMass (PMF.pure r) E ≠ 0) :
+    (r ∉ ν.support ∧ E.1 = ⟨r, Seq.nil⟩) ∨
+      (r ∈ ν.support ∧ ∃ s' : State, E.1 = ⟨r, Seq.cons (l, s') Seq.nil⟩) := by
+  classical
+  set σ := Scheduler.extStep sys ν l κ hκ with hσ
+  set pe : ProbabilisticExecution sys.toSystem := ⟨PMF.pure r, σ⟩ with hpe
+  -- `next` emits `none` with mass `1` on any non-(active-empty) prefix.
+  have hnext_none_one : ∀ e' : AlterSeq State Label,
+      ¬(e'.trans = Seq.nil ∧ e'.init ∈ ν.support) → σ.next e' none = 1 := by
+    intro e' hcond
+    change (if e'.trans = Seq.nil ∧ e'.init ∈ ν.support
+      then (κ e'.init).map (fun μ => some (l, μ)) else PMF.pure none) none = 1
+    rw [if_neg hcond]; exact PMF.pure_apply_self none
+  have hnext_none_zero : ∀ e' : AlterSeq State Label,
+      (e'.trans = Seq.nil ∧ e'.init ∈ ν.support) → σ.next e' none = 0 := by
+    intro e' hcond
+    change (if e'.trans = Seq.nil ∧ e'.init ∈ ν.support
+      then (κ e'.init).map (fun μ => some (l, μ)) else PMF.pure none) none = 0
+    rw [if_pos hcond, PMF.map_apply]
+    simp only [reduceCtorEq, if_false, tsum_zero]
+  -- A nonzero one-step kernel forces the active-prefix shape.
+  have hker_ne : ∀ (init : State) (previous : Seq (Label × State)) (last : Label × State),
+      pe.kernel ⟨init, previous⟩ last ≠ 0 →
+      (init ∈ ν.support ∧ previous = Seq.nil ∧ last.1 = l) := by
+    intro init previous last hne'
+    by_cases hcond : previous = Seq.nil ∧ init ∈ ν.support
+    · refine ⟨hcond.2, hcond.1, ?_⟩
+      by_contra hl
+      apply hne'
+      unfold ProbabilisticExecution.kernel
+      have hsched : pe.scheduler.next ⟨init, previous⟩ = (κ init).map (fun μ => some (l, μ)) := by
+        change (if previous = Seq.nil ∧ init ∈ ν.support
+          then (κ init).map (fun μ => some (l, μ)) else PMF.pure none) = _
+        rw [if_pos hcond]
+      simp only [hsched]
+      have hz : ∀ μ : PMF State,
+          ((κ init).map (fun μ => some (l, μ))) (some (last.1, μ)) = 0 := by
+        intro μ
+        rw [PMF.map_apply]
+        refine ENNReal.tsum_eq_zero.mpr (fun a => ?_)
+        rw [if_neg]
+        simp only [Option.some.injEq, Prod.mk.injEq]
+        rintro ⟨h_eq, _⟩; exact hl h_eq
+      simp only [hz, zero_mul, tsum_zero]
+    · exfalso
+      apply hne'
+      unfold ProbabilisticExecution.kernel
+      have hsched : pe.scheduler.next ⟨init, previous⟩ = PMF.pure none := by
+        change (if previous = Seq.nil ∧ init ∈ ν.support
+          then (κ init).map (fun μ => some (l, μ)) else PMF.pure none) = _
+        rw [if_neg hcond]
+      simp only [hsched]
+      have hz : ∀ μ : PMF State,
+          (PMF.pure none : PMF (Option (Label × PMF State))) (some (last.1, μ)) = 0 :=
+        fun μ => PMF.pure_apply_of_ne _ _ (by simp)
+      simp only [hz, zero_mul, tsum_zero]
+  -- Unpack `E`.
+  obtain ⟨⟨init', trans'⟩, hterm⟩ := E
+  simp only at hterm hne ⊢
+  have hprob_ne : pe.probOf ⟨init', trans'⟩ hterm ≠ 0 := by
+    intro h0; apply hne
+    unfold Scheduler.haltMass; rw [← hpe, h0, zero_mul]
+  have hnone_ne : σ.next ⟨init', trans'⟩ none ≠ 0 := by
+    intro h0; apply hne
+    unfold Scheduler.haltMass; rw [← hpe, h0, mul_zero]
+  -- `init' = r` (else `probOf` from `pure r` vanishes).
+  have hinit_r : init' = r := by
+    by_contra hne_r
+    apply hprob_ne
+    rw [ProbabilisticExecution.probOf_init_factor σ (PMF.pure r) ⟨init', trans'⟩ hterm]
+    rw [show (⟨init', trans'⟩ : AlterSeq State Label).init = init' from rfl,
+      PMF.pure_apply_of_ne _ _ hne_r, zero_mul]
+  subst hinit_r
+  have hncond : ¬((⟨init', trans'⟩ : AlterSeq State Label).trans = Seq.nil ∧
+      (⟨init', trans'⟩ : AlterSeq State Label).init ∈ ν.support) :=
+    fun hcond => hnone_ne (hnext_none_zero _ hcond)
+  by_cases htrans_nil : trans' = Seq.nil
+  · -- empty execution: `r ∉ ν.support`.
+    left
+    have hr_notin : init' ∉ ν.support := by
+      intro hin; exact hncond ⟨htrans_nil, hin⟩
+    exact ⟨hr_notin, AlterSeq.mk.injEq .. ▸ ⟨rfl, htrans_nil⟩⟩
+  · -- nonempty: single external transition; `r ∈ ν.support`.
+    right
+    have hnonempty : trans'.toList hterm ≠ [] := by
+      intro hnil; apply htrans_nil
+      have := Stream'.Seq.ofList_toList trans' hterm
+      rw [hnil, Stream'.Seq.ofList_nil] at this; exact this.symm
+    obtain ⟨previous, last, h_prev, h_split, _, _⟩ :=
+      Stream'.Seq.exists_split_last trans' hterm hnonempty
+    have hprob_split : pe.probOf ⟨init', trans'⟩ hterm
+        = pe.probOf ⟨init', previous⟩ h_prev * pe.kernel ⟨init', previous⟩ last := by
+      have happ : (previous.append (Seq.cons last Seq.nil)).Terminates := h_split ▸ hterm
+      have hrw : pe.probOf ⟨init', trans'⟩ hterm
+          = pe.probOf ⟨init', previous.append (Seq.cons last Seq.nil)⟩ happ := h_split ▸ rfl
+      rw [hrw, ProbabilisticExecution.probOf_append_singleton _ _ _ h_prev _ happ]
+    have hker_ne' : pe.kernel ⟨init', previous⟩ last ≠ 0 :=
+      fun h0 => hprob_ne (by rw [hprob_split, h0, mul_zero])
+    obtain ⟨hinit_supp, hprev_nil, hlast⟩ := hker_ne _ _ _ hker_ne'
+    refine ⟨hinit_supp, last.2, ?_⟩
+    have htrans_eq : trans' = Seq.cons (l, last.2) Seq.nil := by
+      rw [h_split, hprev_nil, Stream'.Seq.nil_append]
+      obtain ⟨l', s'⟩ := last
+      simp only at hlast
+      rw [hlast]
+    exact AlterSeq.mk.injEq .. ▸ ⟨rfl, htrans_eq⟩
+
+open Classical in
 /-- The per-weak-step witness `sys`-scheduler realizing a `sys^w` step
 `s -[l]→ μ`: the `weakTau` witness if `l` internal; else the external chain
 `weakTau-pre ; one hyperStep l ; weakTau-post` composed with `Scheduler.bind`. -/
@@ -1079,102 +1195,7 @@ theorem Scheduler.weakStepWitnessTotal_eq (sys : LabelledSystem State Label)
     Scheduler.weakStepWitnessTotal sys s l μ = Scheduler.weakStepWitness sys s l μ h := by
   unfold Scheduler.weakStepWitnessTotal; rw [dif_pos h]
 
-open Classical in
-/-- Un-normalized **trace-cone belief weight** over `sys^w`-histories: the
-`probOf`-mass of terminating, tight `sys^w`-histories whose external trace is
-`τ`. (Stutter-invariant: conditions on the external trace, not the full
-weak-step label list.) -/
-noncomputable def ProbabilisticExecution.beliefExpandW {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem) (τ : Seq Label)
-    (E : AlterSeq State Label) : ENNReal :=
-  if h : E.trans.Terminates ∧ sys^w.trace E = τ ∧ sys^w.IsTight E then
-    pe'.probOf E h.1
-  else 0
-
-/-- The trace-cone belief weight sums to `≤ 1` — exactly `sys^w.traceProb pe' τ`. -/
-theorem ProbabilisticExecution.beliefExpandW_tsum_le_one {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem) (τ : Seq Label) :
-    (∑' E : AlterSeq State Label, pe'.beliefExpandW τ E) ≤ 1 := by
-  classical
-  set P : AlterSeq State Label → Prop := fun E =>
-    E.trans.Terminates ∧ sys^w.trace E = τ ∧ sys^w.IsTight E with hP
-  have heq : (∑' E : AlterSeq State Label, pe'.beliefExpandW τ E)
-      = sys^w.traceProb pe' τ := by
-    rw [LabelledSystem.traceProb]
-    -- Rewrite the subtype-sum summand `probOf ↑e _` as `beliefExpandW ↑e` (dif_pos via e.2).
-    have hsub : (∑' e : {e : AlterSeq State Label // P e}, pe'.probOf e.1 e.2.1)
-        = ∑' e : {e : AlterSeq State Label // P e}, pe'.beliefExpandW τ e.1 := by
-      refine tsum_congr (fun e => ?_)
-      rw [ProbabilisticExecution.beliefExpandW, dif_pos e.2]
-    rw [hsub]
-    -- `∑' e : ↥{P}, beliefExpandW e.1 = ∑' E, indicator E = ∑' E, beliefExpandW E`.
-    have hts : (∑' e : {e : AlterSeq State Label // P e}, pe'.beliefExpandW τ e.1)
-        = ∑' E : AlterSeq State Label,
-            ({E : AlterSeq State Label | P E}).indicator (pe'.beliefExpandW τ) E :=
-      tsum_subtype {E : AlterSeq State Label | P E} (pe'.beliefExpandW τ)
-    rw [hts]
-    refine (tsum_congr (fun E => ?_)).symm
-    by_cases hc : P E
-    · exact Set.indicator_of_mem (s := {E : AlterSeq State Label | P E}) hc _
-    · rw [Set.indicator_of_notMem (s := {E : AlterSeq State Label | P E}) hc,
-        ProbabilisticExecution.beliefExpandW, dif_neg hc]
-  rw [heq]
-  exact sys^w.traceProb_le_one pe' τ
-
-/-- Hence the normalizer is finite. -/
-theorem ProbabilisticExecution.beliefExpandW_tsum_ne_top {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem) (τ : Seq Label) :
-    (∑' E : AlterSeq State Label, pe'.beliefExpandW τ E) ≠ ⊤ :=
-  (lt_of_le_of_lt (pe'.beliefExpandW_tsum_le_one τ) ENNReal.one_lt_top).ne
-
-open Classical in
-/-- The normalized **trace-cone belief** PMF (fallback `pure ⟨sys.init, nil⟩` when
-the weight is `0`). -/
-noncomputable def ProbabilisticExecution.beliefExpand {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem) (τ : Seq Label) :
-    PMF (AlterSeq State Label) :=
-  if h0 : (∑' E, pe'.beliefExpandW τ E) ≠ 0 then
-    PMF.normalize (pe'.beliefExpandW τ) h0 (pe'.beliefExpandW_tsum_ne_top τ)
-  else
-    PMF.pure (⟨sys.toSystem.init, Seq.nil⟩ : AlterSeq State Label)
-
-open Classical in
-/-- The post-τ-closure witness of the weak step `s_prev →[a] μ` (external `a`),
-as a `sys`-scheduler; `haltNow` when there is no such external weak step. (Used by
-`expand` to realize the carried-over post-τ-closure of the just-completed external
-weak step.) -/
-noncomputable def Scheduler.postTauWitness (sys : LabelledSystem State Label)
-    (s_prev : State) (a : Label) (μ : PMF State) : Scheduler sys.toSystem :=
-  if h : (¬ sys.internal a) ∧ sys^w.step s_prev a μ then
-    ((h.2.resolve_left (fun hl => h.1 hl.1)).2).weakTau_post.witnessScheduler.toScheduler
-  else Scheduler.haltNow sys
-
-/-- At a `sys^w`-history `E`, draw the next weak step `(l, μ) ∼ pe'.scheduler.next E`
-and run its total witness from state `s`. The validity is recovered at the support:
-on a real emission `(l, μ)`, the per-step total witness is a valid `sys`-scheduler. -/
-noncomputable def Scheduler.nextSegment (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem) (E : AlterSeq State Label) (s : State) :
-    Scheduler sys.toSystem where
-  next e' := (pe'.scheduler.next E).bind (fun opt =>
-    match opt with
-    | none => PMF.pure none
-    | some (l, μ) => (Scheduler.weakStepWitnessTotal sys s l μ).next e')
-  valid := by
-    intro e' n s' hterm hstate l' μ' h_supp
-    rw [PMF.mem_support_bind_iff] at h_supp
-    obtain ⟨opt, _, h_supp⟩ := h_supp
-    cases opt with
-    | none =>
-      change some (l', μ') ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
-      rw [PMF.support_pure, Set.mem_singleton_iff] at h_supp
-      exact absurd h_supp (by simp)
-    | some lμ =>
-      obtain ⟨l, μ⟩ := lμ
-      change some (l', μ') ∈
-        ((Scheduler.weakStepWitnessTotal sys s l μ).next e').support at h_supp
-      exact (Scheduler.weakStepWitnessTotal sys s l μ).valid e' n s' hterm hstate l' μ' h_supp
-
-/-! #### `internalSuffix`: the maximal all-internal tail of an execution -/
+/-! #### Generic suffix / endState helpers -/
 
 /-- `endState e` is the `.2` of the last transition of `e` (or `e.init` if there
 are none), read off `e.trans.toList`. -/
@@ -1265,6 +1286,587 @@ theorem AlterSeq.endState_drop_suffix (e : AlterSeq State Label) (h : e.trans.Te
     | none => rw [List.getLast?_eq_none_iff] at hgl; rw [hgl] at hcond; simp at hcond
     | some p => rfl
 
+/-! ### State-anchored belief (refactor) -/
+
+open Classical in
+/-- Un-normalized **trace-cone belief weight** over `sys^w`-histories: the
+`probOf`-mass of terminating, tight `sys^w`-histories whose external trace is
+`τ`. (Stutter-invariant: conditions on the external trace, not the full
+weak-step label list.) -/
+noncomputable def ProbabilisticExecution.beliefExpandW {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (τ : Seq Label)
+    (E : AlterSeq State Label) : ENNReal :=
+  if h : E.trans.Terminates ∧ sys^w.trace E = τ ∧ sys^w.IsTight E then
+    pe'.probOf E h.1
+  else 0
+
+/-- The trace-cone belief weight sums to `≤ 1` — exactly `sys^w.traceProb pe' τ`. -/
+theorem ProbabilisticExecution.beliefExpandW_tsum_le_one {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (τ : Seq Label) :
+    (∑' E : AlterSeq State Label, pe'.beliefExpandW τ E) ≤ 1 := by
+  classical
+  set P : AlterSeq State Label → Prop := fun E =>
+    E.trans.Terminates ∧ sys^w.trace E = τ ∧ sys^w.IsTight E with hP
+  have heq : (∑' E : AlterSeq State Label, pe'.beliefExpandW τ E)
+      = sys^w.traceProb pe' τ := by
+    rw [LabelledSystem.traceProb]
+    -- Rewrite the subtype-sum summand `probOf ↑e _` as `beliefExpandW ↑e` (dif_pos via e.2).
+    have hsub : (∑' e : {e : AlterSeq State Label // P e}, pe'.probOf e.1 e.2.1)
+        = ∑' e : {e : AlterSeq State Label // P e}, pe'.beliefExpandW τ e.1 := by
+      refine tsum_congr (fun e => ?_)
+      rw [ProbabilisticExecution.beliefExpandW, dif_pos e.2]
+    rw [hsub]
+    -- `∑' e : ↥{P}, beliefExpandW e.1 = ∑' E, indicator E = ∑' E, beliefExpandW E`.
+    have hts : (∑' e : {e : AlterSeq State Label // P e}, pe'.beliefExpandW τ e.1)
+        = ∑' E : AlterSeq State Label,
+            ({E : AlterSeq State Label | P E}).indicator (pe'.beliefExpandW τ) E :=
+      tsum_subtype {E : AlterSeq State Label | P E} (pe'.beliefExpandW τ)
+    rw [hts]
+    refine (tsum_congr (fun E => ?_)).symm
+    by_cases hc : P E
+    · exact Set.indicator_of_mem (s := {E : AlterSeq State Label | P E}) hc _
+    · rw [Set.indicator_of_notMem (s := {E : AlterSeq State Label | P E}) hc,
+        ProbabilisticExecution.beliefExpandW, dif_neg hc]
+  rw [heq]
+  exact sys^w.traceProb_le_one pe' τ
+
+/-- Hence the normalizer is finite. -/
+theorem ProbabilisticExecution.beliefExpandW_tsum_ne_top {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (τ : Seq Label) :
+    (∑' E : AlterSeq State Label, pe'.beliefExpandW τ E) ≠ ⊤ :=
+  (lt_of_le_of_lt (pe'.beliefExpandW_tsum_le_one τ) ENNReal.one_lt_top).ne
+
+open Classical in
+/-- The normalized **trace-cone belief** PMF (fallback `pure ⟨sys.init, nil⟩` when
+the weight is `0`). -/
+noncomputable def ProbabilisticExecution.beliefExpand {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (τ : Seq Label) :
+    PMF (AlterSeq State Label) :=
+  if h0 : (∑' E, pe'.beliefExpandW τ E) ≠ 0 then
+    PMF.normalize (pe'.beliefExpandW τ) h0 (pe'.beliefExpandW_tsum_ne_top τ)
+  else
+    PMF.pure (⟨sys.toSystem.init, Seq.nil⟩ : AlterSeq State Label)
+
+/-- Public version of `LabelledSystem.map_ofList`: `Seq.map f (ofList L) = ofList (L.map f)`. -/
+private theorem Seq.map_ofList_pub {α β : Type} (f : α → β) (L : List α) :
+    (Seq.ofList L).map f = Seq.ofList (L.map f) := by
+  induction L with
+  | nil => rw [Stream'.Seq.ofList_nil, Stream'.Seq.map_nil, List.map_nil, Stream'.Seq.ofList_nil]
+  | cons a L ih =>
+    rw [Stream'.Seq.ofList_cons, Stream'.Seq.map_cons, List.map_cons, Stream'.Seq.ofList_cons, ih]
+
+/-- Public version: `Seq.take j (ofList L) = L.take j`. -/
+private theorem Seq.take_ofList_pub {α : Type} (L : List α) (j : ℕ) :
+    Seq.take j (Seq.ofList L) = L.take j := by
+  induction L generalizing j with
+  | nil => cases j <;> simp [Stream'.Seq.ofList_nil, Stream'.Seq.take]
+  | cons a L ih =>
+    cases j with
+    | zero => simp [Stream'.Seq.take]
+    | succ n =>
+      rw [Stream'.Seq.ofList_cons, Stream'.Seq.take_succ_cons, List.take_succ_cons, ih]
+
+open scoped Classical in
+/-- Filtering `ofList L` by a predicate that fails everywhere on `L` yields `nil`. -/
+private theorem Seq.filter_ofList_eq_nil_pub {α : Type} (p : α → Prop)
+    (L : List α) (h : ∀ x ∈ L, ¬ p x) : (Seq.ofList L).filter p = Seq.nil := by
+  induction L with
+  | nil => rw [Stream'.Seq.ofList_nil, Stream'.Seq.filter_nil]
+  | cons a L ih =>
+    rw [Stream'.Seq.ofList_cons, Stream'.Seq.filter_cons_neg a _ (h a (List.mem_cons_self ..))]
+    exact ih (fun x hx => h x (List.mem_cons_of_mem a hx))
+
+/-- A nonzero one-step kernel of a `WeakScheduler` forces the emitted label to be
+internal. -/
+private theorem WeakScheduler.kernel_ne_zero_internal {State Label : Type}
+    {sys : LabelledSystem State Label} (σ : WeakScheduler sys)
+    (e : AlterSeq State Label) (l : Label) (s' : State)
+    (hne : (⟨PMF.pure e.init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).kernel
+        e (l, s') ≠ 0) :
+    sys.internal l := by
+  classical
+  -- `kernel e (l,s') = ∑' μ, next e (some (l,μ)) * μ s'`; nonzero ⟹ some `(l,μ)` in support.
+  unfold ProbabilisticExecution.kernel at hne
+  by_contra h_ext
+  apply hne
+  refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
+  by_cases hsupp : some (l, μ) ∈ (σ.next e).support
+  · exact absurd (σ.internal_only e l μ hsupp) h_ext
+  · rw [PMF.mem_support_iff, not_not] at hsupp
+    change σ.toScheduler.next e (some (l, μ)) * μ s' = 0
+    rw [show σ.toScheduler.next e (some (l, μ)) = σ.next e (some (l, μ)) from rfl, hsupp, zero_mul]
+
+/-- **Every positive-probability execution of a `WeakScheduler` has an all-internal
+label list** (so its trace is empty): each one-step kernel along the path is
+nonzero, and `WeakScheduler`s only emit internal labels. -/
+private theorem WeakScheduler.probOf_all_internal {State Label : Type}
+    {sys : LabelledSystem State Label} (σ : WeakScheduler sys) (μ_init : PMF State)
+    (e : AlterSeq State Label) (h : e.trans.Terminates)
+    (hpos : (⟨μ_init, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf e h ≠ 0) :
+    ∀ p ∈ e.trans.toList h, sys.internal p.1 := by
+  classical
+  set pe : ProbabilisticExecution sys.toSystem := ⟨PMF.pure e.init, σ.toScheduler⟩ with hpe
+  -- Reduce to the Dirac source (kernels are source-independent).
+  have hpos' : pe.probOf e h ≠ 0 := by
+    rw [hpe]
+    intro h0
+    apply hpos
+    rw [ProbabilisticExecution.probOf_init_factor σ.toScheduler μ_init e h, h0, mul_zero]
+  -- Induct on the transition list (reverse recursion).
+  -- Generalize over the (terminating) trans sequence by working on its toList.
+  have key : ∀ (L : List (Label × State)) (s₀ : State)
+      (hL : (Seq.ofList L : Seq (Label × State)).Terminates),
+      (⟨PMF.pure s₀, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf
+          ⟨s₀, Seq.ofList L⟩ hL ≠ 0 →
+      ∀ p ∈ L, sys.internal p.1 := by
+    intro L
+    induction L using List.reverseRecOn with
+    | nil => intro s₀ hL _ p hp; simp at hp
+    | append_singleton rest last ih =>
+      intro s₀ hL hposL p hp
+      have hrest : (Seq.ofList rest : Seq (Label × State)).Terminates :=
+        Stream'.Seq.terminates_ofList rest
+      have heq : (Seq.ofList (rest ++ [last]) : Seq (Label × State))
+          = (Seq.ofList rest).append (Seq.cons last Seq.nil) := by
+        rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+      have happ : ((Seq.ofList rest).append (Seq.cons last Seq.nil)
+          : Seq (Label × State)).Terminates := heq ▸ hL
+      -- factor probOf at the last transition
+      have hfac : (⟨PMF.pure s₀, σ.toScheduler⟩
+            : ProbabilisticExecution sys.toSystem).probOf ⟨s₀, Seq.ofList (rest ++ [last])⟩ hL
+          = (⟨PMF.pure s₀, σ.toScheduler⟩
+              : ProbabilisticExecution sys.toSystem).probOf ⟨s₀, Seq.ofList rest⟩ hrest
+            * (⟨PMF.pure s₀, σ.toScheduler⟩
+                : ProbabilisticExecution sys.toSystem).kernel ⟨s₀, Seq.ofList rest⟩ last := by
+        have hrw : (⟨PMF.pure s₀, σ.toScheduler⟩
+              : ProbabilisticExecution sys.toSystem).probOf ⟨s₀, Seq.ofList (rest ++ [last])⟩ hL
+            = (⟨PMF.pure s₀, σ.toScheduler⟩
+                : ProbabilisticExecution sys.toSystem).probOf
+                  ⟨s₀, (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩ happ := by
+          congr 1
+          exact AlterSeq.mk.injEq .. ▸ ⟨rfl, heq⟩
+        rw [hrw, ProbabilisticExecution.probOf_append_singleton _ s₀ (Seq.ofList rest) hrest
+          last happ]
+      rw [hfac] at hposL
+      have hprev_ne : (⟨PMF.pure s₀, σ.toScheduler⟩
+          : ProbabilisticExecution sys.toSystem).probOf ⟨s₀, Seq.ofList rest⟩ hrest ≠ 0 :=
+        fun h0 => hposL (by rw [h0, zero_mul])
+      have hker_ne : (⟨PMF.pure s₀, σ.toScheduler⟩
+          : ProbabilisticExecution sys.toSystem).kernel ⟨s₀, Seq.ofList rest⟩ last ≠ 0 :=
+        fun h0 => hposL (by rw [h0, mul_zero])
+      rcases List.mem_append.mp hp with hp_rest | hp_last
+      · exact ih s₀ hrest hprev_ne p hp_rest
+      · -- `p = last`; its label is internal via `kernel_ne_zero_internal`.
+        rw [List.mem_singleton] at hp_last
+        subst hp_last
+        have : (⟨s₀, Seq.ofList rest⟩ : AlterSeq State Label).init = s₀ := rfl
+        exact WeakScheduler.kernel_ne_zero_internal σ ⟨s₀, Seq.ofList rest⟩ p.1 p.2
+          (by rw [this]; exact hker_ne)
+  -- Apply `key` to `e.trans.toList h`.
+  have he_eq : (⟨e.init, Seq.ofList (e.trans.toList h)⟩ : AlterSeq State Label) = e := by
+    congr 1; exact Stream'.Seq.ofList_toList e.trans h
+  have hterm' : (Seq.ofList (e.trans.toList h) : Seq (Label × State)).Terminates := by
+    rw [Stream'.Seq.ofList_toList e.trans h]; exact h
+  have hpos'' : (⟨PMF.pure e.init, σ.toScheduler⟩
+      : ProbabilisticExecution sys.toSystem).probOf
+        ⟨e.init, Seq.ofList (e.trans.toList h)⟩ hterm' ≠ 0 := by
+    have : (⟨e.init, Seq.ofList (e.trans.toList h)⟩ : AlterSeq State Label) = e := he_eq
+    rw [show (⟨PMF.pure e.init, σ.toScheduler⟩
+        : ProbabilisticExecution sys.toSystem).probOf
+          ⟨e.init, Seq.ofList (e.trans.toList h)⟩ hterm'
+        = pe.probOf e h from by rw [hpe]; congr 1]
+    exact hpos'
+  exact key (e.trans.toList h) e.init hterm' hpos''
+
+open Classical in
+/-- **The witness's halting mass at a single execution is bounded by the target
+distribution at its end-state.** A single summand of `weakTau.witness_pushforward`. -/
+private theorem weakTau.witness_haltMass_le {State Label : Type}
+    {sys : LabelledSystem State Label} {μ_init μ : PMF State} (h : weakTau sys μ_init μ)
+    (e : {e : AlterSeq State Label // e.trans.Terminates}) :
+    h.witnessScheduler.haltMass μ_init e ≤ μ (e.1.endState e.2) := by
+  classical
+  rw [h.witness_pushforward (e.1.endState e.2)]
+  refine le_trans ?_ (ENNReal.le_tsum e)
+  rw [if_pos rfl, mul_one]
+
+/-- **End-state of a `j`-prefix.** The end-state of the prefix
+`⟨e.init, ofList (take j e.trans)⟩` is the state of `e` after `j` transitions,
+`(e.stateAt j).getD e.init`, for `j ≤ length`. -/
+private theorem AlterSeq.endState_take_prefix {State Label : Type}
+    (e : AlterSeq State Label) (h : e.trans.Terminates) (j : ℕ) (hj : j ≤ e.trans.length h) :
+    (⟨e.init, Seq.ofList (Seq.take j e.trans)⟩ : AlterSeq State Label).endState
+        (Stream'.Seq.terminates_ofList _)
+      = (e.stateAt j).getD e.init := by
+  classical
+  rw [AlterSeq.endState_eq_getLast? _ (Stream'.Seq.terminates_ofList _)]
+  -- `(ofList (take j)).toList = take j`, and `take j = (toList).take j`.
+  rw [show (⟨e.init, Seq.ofList (Seq.take j e.trans)⟩ : AlterSeq State Label).trans.toList
+        (Stream'.Seq.terminates_ofList _) = Seq.take j e.trans from by
+    change (Seq.ofList (Seq.take j e.trans)).toList (Stream'.Seq.terminates_ofList _)
+      = Seq.take j e.trans
+    rw [Stream'.Seq.toList_ofList]]
+  have htake_list : Seq.take j e.trans = (e.trans.toList h).take j := by
+    conv_lhs => rw [← Stream'.Seq.ofList_toList e.trans h]
+    rw [Seq.take_ofList_pub]
+  rw [htake_list, List.getLast?_take]
+  have hlenT : (e.trans.toList h).length = e.trans.length h := Stream'.Seq.length_toList e.trans h
+  cases j with
+  | zero => simp only []; rfl
+  | succ n =>
+    rw [if_neg (Nat.succ_ne_zero n)]
+    have hlt : n < (e.trans.toList h).length := by rw [hlenT]; omega
+    have hsome : (e.trans.toList h)[n]? = e.trans.get? n := Stream'.Seq.getElem?_toList e.trans h n
+    have hne : (e.trans.toList h)[n]?.isSome := by
+      rw [List.getElem?_eq_getElem hlt]; exact Option.isSome_some
+    rw [Nat.add_sub_cancel, Option.or_of_isSome hne, hsome]
+    change (e.trans.get? n).elim e.init Prod.snd = ((e.trans.get? n).map Prod.snd).getD e.init
+    cases hg : e.trans.get? n with
+    | none => rw [List.getElem?_eq_getElem hlt] at hsome; rw [hg] at hsome; simp at hsome
+    | some p => simp
+
+open Classical in
+/-- **`extLabMass` as a sum over the tight trace-`τ` cone** (`g`-weighted analogue
+of `traceProb_eq_labProb_sum` collapsed to a single subtype sum): the external
+level mass `extLabMass τ g` equals the `tsum` of `probOf · g(endState)` over the
+terminating, trace-`τ`, tight executions. Mirrors the bijection in
+`traceProb_eq_labProb_sum` (with the `g`-weight carried through). -/
+theorem LabelledSystem.extLabMass_eq_tight_tsum {State Label : Type}
+    (ls : LabelledSystem State Label) (pe : ProbabilisticExecution ls.toSystem)
+    (extLabs : List Label) (g : State → ENNReal) :
+    ls.extLabMass pe extLabs g
+      = ∑' e : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.ofList extLabs ∧ ls.IsTight e},
+          pe.probOf e.1 e.2.1 * g (e.1.endState e.2.1) := by
+  classical
+  unfold LabelledSystem.extLabMass ProbabilisticExecution.labMass
+  -- Step 1: push the `if` inside the inner `tsum`.
+  rw [show (∑' labs : List Label,
+        (if ls.traceTightLabs (Seq.ofList extLabs) labs then
+          ∑' e : AlterSeq State Label,
+            dite (e.trans.Terminates ∧ e.trans.map Prod.fst = Seq.ofList labs)
+              (fun h => pe.probOf e h.1 * g (e.endState h.1)) (fun _ => 0)
+        else 0))
+      = ∑' labs : List Label, ∑' e : AlterSeq State Label,
+          (if ls.traceTightLabs (Seq.ofList extLabs) labs then
+            dite (e.trans.Terminates ∧ e.trans.map Prod.fst = Seq.ofList labs)
+              (fun h => pe.probOf e h.1 * g (e.endState h.1)) (fun _ => 0)
+          else 0) from by
+    refine tsum_congr fun labs => ?_
+    by_cases hc : ls.traceTightLabs (Seq.ofList extLabs) labs
+    · simp only [if_pos hc]
+    · simp only [if_neg hc, tsum_zero]]
+  rw [← ENNReal.tsum_prod' (f := fun p : List Label × AlterSeq State Label =>
+      if ls.traceTightLabs (Seq.ofList extLabs) p.1 then
+        dite (p.2.trans.Terminates ∧ Seq.map Prod.fst p.2.trans = (↑p.1 : Seq Label))
+          (fun h => pe.probOf p.2 h.1 * g (p.2.endState h.1)) (fun _ => 0)
+      else 0)]
+  set G : List Label × AlterSeq State Label → ENNReal := fun p =>
+      if ls.traceTightLabs (Seq.ofList extLabs) p.1 then
+        dite (p.2.trans.Terminates ∧ Seq.map Prod.fst p.2.trans = (↑p.1 : Seq Label))
+          (fun h => pe.probOf p.2 h.1 * g (p.2.endState h.1)) (fun _ => 0)
+      else 0 with hG_def
+  -- The subtype RHS summand.
+  set H : {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = Seq.ofList extLabs ∧ ls.IsTight e} → ENNReal :=
+    fun e => pe.probOf e.1 e.2.1 * g (e.1.endState e.2.1) with hH_def
+  have G_supp : ∀ p : List Label × AlterSeq State Label, G p ≠ 0 →
+      ls.traceTightLabs (Seq.ofList extLabs) p.1 ∧
+        ∃ hT : p.2.trans.Terminates, Seq.map Prod.fst p.2.trans = (↑p.1 : Seq Label) := by
+    intro p hp
+    rw [hG_def] at hp
+    simp only at hp
+    by_cases hc : ls.traceTightLabs (Seq.ofList extLabs) p.1
+    · rw [if_pos hc] at hp
+      by_cases hd : p.2.trans.Terminates ∧ Seq.map Prod.fst p.2.trans = (↑p.1 : Seq Label)
+      · exact ⟨hc, hd.1, hd.2⟩
+      · rw [dif_neg hd] at hp; exact absurd rfl hp
+    · rw [if_neg hc] at hp; exact absurd rfl hp
+  -- Forward map: a tight trace-`τ` execution `e` produces the pair `(labs_e, e)`.
+  refine (tsum_eq_tsum_of_ne_zero_bij
+    (f := G) (g := H)
+    (i := fun p => ((((p : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.ofList extLabs ∧ ls.IsTight e}).1.trans.toList
+            (p : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.ofList extLabs ∧ ls.IsTight e}).2.1).map Prod.fst,
+        (p : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ ls.trace e = Seq.ofList extLabs ∧ ls.IsTight e}).1)))
+    ?hinj ?hf ?hfg)
+  case hinj =>
+    rintro ⟨⟨e₁, h₁⟩, hp₁⟩ ⟨⟨e₂, h₂⟩, hp₂⟩ heq
+    have h2 : e₁ = e₂ := (Prod.ext_iff.mp heq).2
+    exact Subtype.ext (Subtype.ext h2)
+  case hf =>
+    rintro p hp
+    obtain ⟨hc, hT, hmap⟩ := G_supp p hp
+    -- recover trace/tight from `traceTightLabs`.
+    have h_p1 : p.1 = (p.2.trans.toList hT).map Prod.fst := by
+      apply Stream'.Seq.ofList_injective
+      rw [← Seq.map_ofList_pub, Stream'.Seq.ofList_toList p.2.trans hT, hmap]
+    have htt := (ls.tight_iff (Seq.ofList extLabs) p.2 hT).mpr (h_p1 ▸ hc)
+    refine ⟨⟨⟨p.2, hT, htt.1, htt.2⟩, ?_⟩, ?_⟩
+    · -- the subtype element is in `support H`.
+      change pe.probOf p.2 hT * g (p.2.endState hT) ≠ 0
+      intro h0
+      apply hp
+      rw [hG_def]; simp only
+      rw [if_pos hc, dif_pos ⟨hT, hmap⟩, h0]
+    · -- `i` of it is `p`.
+      simp only
+      exact Prod.ext h_p1.symm rfl
+  case hfg =>
+    rintro ⟨⟨e, hT, htr, hti⟩, hne⟩
+    set labs := (e.trans.toList hT).map Prod.fst with hlabs
+    have h_tt : ls.traceTightLabs (Seq.ofList extLabs) labs :=
+      (ls.tight_iff (Seq.ofList extLabs) e hT).mp ⟨htr, hti⟩
+    have h_map : Seq.map Prod.fst e.trans = (↑labs : Seq Label) := by
+      rw [hlabs, ← Seq.map_ofList_pub, Stream'.Seq.ofList_toList e.trans hT]
+    change G (labs, e) = H ⟨e, hT, htr, hti⟩
+    rw [hG_def, hH_def]; simp only
+    rw [if_pos h_tt, dif_pos ⟨hT, h_map⟩]
+
+open Classical in
+/-- **Segment bridge (`extLabMass ↔ haltMass`).** For the reassociated segment
+witness "τ-closure `σ_τ : weakTau (pure s) ν`, then one external `hyperStep ν l ν'`,
+then halt", the external level mass at trace `[l]` integrated against `g` equals the
+post-hyperStep distribution's `g`-expectation `∑ t, ν' t * g t`. (The witness halts
+right after `l`, so its trace-cone-`[l]` mass = its haltMass-integral; the latter
+collapses by `bind_compose_integrate` + `weakTau.integrate` + `extStep_pushforward`
++ `hyperStep.post_eq_bind`.) -/
+theorem extLabMass_segment_bridge {State Label : Type} (sys : LabelledSystem State Label)
+    (s : State) (ν ν' : PMF State) (l : Label)
+    (h_τ : weakTau sys (PMF.pure s) ν) (h_hyper : hyperStep sys ν l ν')
+    (h_ext : ¬ sys.internal l) (g : State → ENNReal) :
+    sys.extLabMass ⟨PMF.pure s,
+        Scheduler.bind h_τ.witnessScheduler.toScheduler
+          (fun _ => Scheduler.extStep sys ν l h_hyper.kernel h_hyper.kernel_step)⟩ [l] g
+      = ∑' t : State, ν' t * g t := by
+  classical
+  set σ_τ := h_τ.witnessScheduler.toScheduler with hσ_τ
+  set σext := Scheduler.extStep sys ν l h_hyper.kernel h_hyper.kernel_step with hσext
+  set ρ := Scheduler.bind σ_τ (fun _ => σext) with hρ
+  -- Part B (general `g'`): the haltMass-integral collapses to the post-hyperStep
+  -- `g'`-expectation. (Same combinator chain as `weakStepWitness_pushforward`'s
+  -- external branch, with no trailing post-τ.)
+  have hpush : ∀ g' : State → ENNReal,
+      (∑' e, ρ.haltMass (PMF.pure s) e * g' (e.1.endState e.2)) = ∑' t : State, ν' t * g' t := by
+    intro g'
+    rw [hρ]
+    rw [Scheduler.bind_compose_integrate σ_τ (fun _ => σext) (PMF.pure s) g']
+    set POST : State → ENNReal := fun r =>
+      ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+        σext.haltMass (PMF.pure r) f₂ * g' (f₂.1.endState f₂.2) with hPOST
+    have hτint := h_τ.integrate POST
+    rw [show (∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+          σ_τ.haltMass (PMF.pure s) f₁ *
+            ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+              σext.haltMass (PMF.pure (f₁.1.endState f₁.2)) f₂ * g' (f₂.1.endState f₂.2))
+        = ∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+            h_τ.witnessScheduler.haltMass (PMF.pure s) f₁ * POST (f₁.1.endState f₁.2) from rfl,
+      hτint]
+    have hpull : ∀ r : State, ν r * POST r
+        = ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+            ν r * σext.haltMass (PMF.pure r) f₂ * g' (f₂.1.endState f₂.2) := by
+      intro r
+      rw [hPOST, ← ENNReal.tsum_mul_left]
+      exact tsum_congr (fun f₂ => by ring)
+    rw [tsum_congr hpull, ENNReal.tsum_comm]
+    have hmix : ∀ f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+        (∑' r : State, ν r * σext.haltMass (PMF.pure r) f₂ * g' (f₂.1.endState f₂.2))
+          = σext.haltMass ν f₂ * g' (f₂.1.endState f₂.2) := by
+      intro f₂
+      rw [ENNReal.tsum_mul_right, ← Scheduler.haltMass_init_mix σext ν f₂]
+    rw [tsum_congr hmix]
+    rw [hσext, extStep_pushforward sys ν l h_hyper.kernel h_hyper.kernel_step g',
+      ← h_hyper.post_eq_bind]
+  -- The total halting mass of `ρ` is `1` (the `g' = 1` slice).
+  have htotal : (∑' e, ρ.haltMass (PMF.pure s) e) = 1 := by
+    have := hpush (fun _ => 1); simp only [mul_one] at this; rw [this, PMF.tsum_coe]
+  -- The trace-cone condition predicate.
+  set cond : {e : AlterSeq State Label // e.trans.Terminates} → Prop :=
+    fun e => sys.trace e.1 = Seq.ofList [l] ∧ sys.IsTight e.1 with hcond
+  -- termwise: `haltMass ≤ probOf`.
+  have hle : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      ρ.haltMass (PMF.pure s) e
+        ≤ (⟨PMF.pure s, ρ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2 := by
+    intro e
+    unfold Scheduler.haltMass
+    calc (⟨PMF.pure s, ρ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2 * ρ.next e.1 none
+        ≤ (⟨PMF.pure s, ρ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2 * 1 := by
+          gcongr; exact PMF.coe_le_one _ _
+      _ = (⟨PMF.pure s, ρ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2 := mul_one _
+  -- Fact (i): every halting execution of `ρ` is a tight trace-`[l]` execution.
+  have hfacti : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      ρ.haltMass (PMF.pure s) e ≠ 0 → cond e := by
+    intro e hne
+    rw [hρ, Scheduler.bind_haltMass σ_τ (fun _ => σext) (PMF.pure s) e] at hne
+    -- Extract a nonzero summand `j ≤ length`.
+    obtain ⟨j, hj_mem, hj_ne⟩ := Finset.exists_ne_zero_of_sum_ne_zero hne
+    rw [Finset.mem_range, Nat.lt_succ_iff] at hj_mem
+    set r := (e.1.stateAt j).getD e.1.init with hr
+    -- Recast the summand via defeq: the private `stateAfter`/`drop_terminates` are
+    -- defeq to `r` and `drop_terminates_pub`.
+    have hj_ne' : σ_τ.haltMass (PMF.pure s)
+          ⟨⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩, Stream'.Seq.terminates_ofList _⟩
+        * σext.haltMass (PMF.pure r)
+            ⟨⟨r, e.1.trans.drop j⟩, Stream'.Seq.drop_terminates_pub e.2 j⟩ ≠ 0 := hj_ne
+    have hpre_ne : σ_τ.haltMass (PMF.pure s)
+        ⟨⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩, Stream'.Seq.terminates_ofList _⟩ ≠ 0 :=
+      fun h0 => hj_ne' (by rw [h0, zero_mul])
+    have hext_ne : σext.haltMass (PMF.pure r)
+        ⟨⟨r, e.1.trans.drop j⟩, Stream'.Seq.drop_terminates_pub e.2 j⟩ ≠ 0 :=
+      fun h0 => hj_ne' (by rw [h0, mul_zero])
+    -- The prefix `⟨e.init, ofList (take j)⟩`; the σ_τ-bound gives its end-state in `ν.support`.
+    set pre : {e : AlterSeq State Label // e.trans.Terminates} :=
+      ⟨⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩, Stream'.Seq.terminates_ofList _⟩ with hpre
+    have hq_supp : pre.1.endState pre.2 ∈ ν.support := by
+      rw [PMF.mem_support_iff]
+      intro hq0
+      apply hpre_ne
+      have hbd := h_τ.witness_haltMass_le pre
+      rw [hσ_τ]; rw [hq0] at hbd; exact le_antisymm hbd bot_le
+    -- `e.trans.toList = take j ++ (drop j).toList` (public Seq facts).
+    have htake : Seq.take j e.1.trans = (e.1.trans.toList e.2).take j := by
+      conv_lhs => rw [← Stream'.Seq.ofList_toList e.1.trans e.2]
+      rw [Seq.take_ofList_pub]
+    have hdrop : (e.1.trans.drop j).toList (Stream'.Seq.drop_terminates_pub e.2 j)
+        = (e.1.trans.toList e.2).drop j :=
+      Stream'.Seq.drop_toList_eq_pub e.1.trans e.2 j (Stream'.Seq.drop_terminates_pub e.2 j)
+    -- Case on the shape of `extStep`'s halting suffix.
+    rcases extStep_haltMass_ne_zero sys ν l h_hyper.kernel h_hyper.kernel_step r
+        ⟨⟨r, e.1.trans.drop j⟩, Stream'.Seq.drop_terminates_pub e.2 j⟩ hext_ne with
+      ⟨hr_notin, hEnil⟩ | ⟨hr_in, s', hEcons⟩
+    · -- Empty case is impossible: `pre.endState = r ∈ ν.support` contradicts `r ∉ ν.support`.
+      exfalso
+      have hr_end : pre.1.endState pre.2 = r :=
+        AlterSeq.endState_take_prefix e.1 e.2 j hj_mem
+      rw [hr_end] at hq_supp
+      exact hr_notin hq_supp
+    · -- External case: `drop j = cons (l, s') nil`, `r ∈ ν.support`, prefix all internal.
+      have hdrop_cons : e.1.trans.drop j = Seq.cons (l, s') Seq.nil :=
+        (AlterSeq.mk.injEq .. ▸ hEcons).2
+      -- `(drop j).toList = [(l, s')]`.
+      have hdroplist : (e.1.trans.toList e.2).drop j = [(l, s')] := by
+        rw [← hdrop]
+        rw [Stream'.Seq.toList_congr_pub hdrop_cons (Stream'.Seq.drop_terminates_pub e.2 j)
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil),
+          Stream'.Seq.toList_cons, Stream'.Seq.toList_nil]
+      -- The label list of `e`: `(take j).map fst ++ [l]`.
+      have hlabs_eq : (e.1.trans.toList e.2).map Prod.fst
+          = ((e.1.trans.toList e.2).take j).map Prod.fst ++ [l] := by
+        conv_lhs => rw [← List.take_append_drop j (e.1.trans.toList e.2)]
+        rw [List.map_append, hdroplist, List.map_cons, List.map_nil]
+      -- All labels of the `take j` prefix are internal.
+      have hpre_int : ∀ p ∈ ((e.1.trans.toList e.2).take j).map Prod.fst, ¬ ¬ sys.internal p := by
+        have hpre_prob : (⟨PMF.pure s, h_τ.witnessScheduler.toScheduler⟩
+            : ProbabilisticExecution sys.toSystem).probOf
+            ⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩
+            (Stream'.Seq.terminates_ofList _) ≠ 0 := by
+          intro h0
+          apply hpre_ne
+          change h_τ.witnessScheduler.toScheduler.haltMass (PMF.pure s) pre = 0
+          unfold Scheduler.haltMass
+          rw [hpre]; simp only; rw [h0, zero_mul]
+        have hpre_all := WeakScheduler.probOf_all_internal h_τ.witnessScheduler (PMF.pure s)
+          ⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩ (Stream'.Seq.terminates_ofList _)
+          hpre_prob
+        have htoL : (⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩
+            : AlterSeq State Label).trans.toList (Stream'.Seq.terminates_ofList _)
+            = (e.1.trans.toList e.2).take j := by
+          change (Seq.ofList (Seq.take j e.1.trans)).toList (Stream'.Seq.terminates_ofList _)
+            = (e.1.trans.toList e.2).take j
+          rw [Stream'.Seq.toList_ofList, htake]
+        rw [htoL] at hpre_all
+        intro lab hlab
+        rw [List.mem_map] at hlab
+        obtain ⟨p, hp_mem, hp_eq⟩ := hlab
+        rw [← hp_eq]; exact not_not.mpr (hpre_all p hp_mem)
+      -- `traceTightLabs (ofList [l]) (labs)`, then `tight_iff`.
+      have h_tt : sys.traceTightLabs (Seq.ofList [l]) ((e.1.trans.toList e.2).map Prod.fst) := by
+        rw [hlabs_eq]
+        refine ⟨?_, ?_⟩
+        · rw [Stream'.Seq.ofList_append,
+            Stream'.Seq.filter_append _ _ _ (Stream'.Seq.terminates_ofList _),
+            Seq.filter_ofList_eq_nil_pub (fun l => ¬ sys.internal l) _ hpre_int,
+            Stream'.Seq.nil_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil,
+            Stream'.Seq.filter_cons_pos l _ h_ext, Stream'.Seq.filter_nil]
+        · intro last hlast
+          rw [List.getLast?_append_of_ne_nil _ (by simp), List.getLast?_singleton] at hlast
+          rw [Option.some.injEq] at hlast; rw [← hlast]; exact h_ext
+      have htight := (sys.tight_iff (Seq.ofList [l]) e.1 e.2).mpr h_tt
+      exact ⟨htight.1, htight.2⟩
+  -- Reindex any `haltMass`-weighted sum from all-terminating executions onto the
+  -- tight trace-`[l]` cone `T` (the off-`T` halting mass is zero, by `hfacti`).
+  have hreindex : ∀ g' : State → ENNReal,
+      (∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+          ρ.haltMass (PMF.pure s) e * g' (e.1.endState e.2))
+        = ∑' e : {e : AlterSeq State Label //
+            e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e},
+            ρ.haltMass (PMF.pure s) ⟨e.1, e.2.1⟩ * g' (e.1.endState e.2.1) := by
+    intro g'
+    refine tsum_eq_tsum_of_ne_zero_bij
+      (i := fun p => (⟨(p : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e}).1,
+            (p : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e}).2.1⟩
+        : {e : AlterSeq State Label // e.trans.Terminates})) ?_ ?_ ?_
+    · rintro ⟨⟨e₁, h₁⟩, hp₁⟩ ⟨⟨e₂, h₂⟩, hp₂⟩ heq
+      have : e₁ = e₂ := congrArg Subtype.val heq
+      exact Subtype.ext (Subtype.ext this)
+    · rintro ⟨e, hterm⟩ hmem
+      have hhalt_ne : ρ.haltMass (PMF.pure s) ⟨e, hterm⟩ ≠ 0 := by
+        intro h0; rw [Function.mem_support] at hmem; rw [h0, zero_mul] at hmem; exact hmem rfl
+      obtain ⟨htr, hti⟩ := hfacti ⟨e, hterm⟩ hhalt_ne
+      exact ⟨⟨⟨e, hterm, htr, hti⟩, hmem⟩, rfl⟩
+    · rintro ⟨⟨e, hterm, htr, hti⟩, hp⟩; rfl
+  -- Fact (ii'): on `T`, `haltMass = probOf` (mass-cancellation with `g' = 1`).
+  have hfactii : ∀ e : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e},
+      ρ.haltMass (PMF.pure s) ⟨e.1, e.2.1⟩
+        = (⟨PMF.pure s, ρ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1 := by
+    set aT : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e} → ENNReal := fun e =>
+      (⟨PMF.pure s, ρ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1 with haT
+    set bT : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e} → ENNReal := fun e =>
+      ρ.haltMass (PMF.pure s) ⟨e.1, e.2.1⟩ with hbT
+    have hble : ∀ e, bT e ≤ aT e := fun e => hle ⟨e.1, e.2.1⟩
+    have hsumb : (∑' e, bT e) = 1 := by
+      have := hreindex (fun _ => 1)
+      simp only [mul_one] at this
+      rw [hbT, ← this, htotal]
+    have hsuma_le : (∑' e, aT e) ≤ 1 := by
+      have hkey : (∑' e, aT e) = sys.extLabMass ⟨PMF.pure s, ρ⟩ [l] (fun _ => 1) := by
+        rw [sys.extLabMass_eq_tight_tsum ⟨PMF.pure s, ρ⟩ [l] (fun _ => 1)]
+        refine tsum_congr (fun e => ?_); rw [haT, mul_one]
+      rw [hkey, ← sys.traceProb_eq_extLabMass ⟨PMF.pure s, ρ⟩ [l]]
+      exact sys.traceProb_le_one ⟨PMF.pure s, ρ⟩ (Seq.ofList [l])
+    have hsumb_ne : (∑' e, bT e) ≠ ⊤ := by rw [hsumb]; exact ENNReal.one_ne_top
+    have hba : (∑' e, bT e) ≤ ∑' e, aT e := ENNReal.tsum_le_tsum hble
+    have hsum_eq : (∑' e, bT e) = ∑' e, aT e :=
+      le_antisymm hba (by rw [hsumb]; exact hsuma_le)
+    -- Cancellation via `tsum_lt_tsum`: strict inequality at any `e` would contradict equality.
+    intro e
+    by_contra hne_e
+    have hlt : bT e < aT e := lt_of_le_of_ne (hble e) hne_e
+    have := ENNReal.tsum_lt_tsum (i := e) hsumb_ne hble hlt
+    rw [hsum_eq] at this
+    exact (lt_irrefl _ this)
+  -- Assemble Part A.
+  rw [sys.extLabMass_eq_tight_tsum ⟨PMF.pure s, ρ⟩ [l] g]
+  rw [show (∑' e : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e},
+        (⟨PMF.pure s, ρ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1
+          * g (e.1.endState e.2.1))
+      = ∑' e : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e},
+          ρ.haltMass (PMF.pure s) ⟨e.1, e.2.1⟩ * g (e.1.endState e.2.1) from
+    tsum_congr (fun e => by rw [hfactii e])]
+  rw [← hreindex g]
+  exact hpush g
+
+/-! #### `internalSuffix`: the maximal all-internal tail of an execution -/
+
 open Classical in
 /-- The maximal all-internal tail of `e`: the sub-execution starting right after
 `e`'s last *external* transition (or all of `e` if there is none). With `m` the
@@ -1323,6 +1925,158 @@ noncomputable def ProbabilisticExecution.lastMuBelief
   else PMF.pure (PMF.pure E.init)
 
 open Classical in
+/-- The **hyperStep boundary** `ν'` of the external weak step `s_prev -[a]→ μ`:
+the post-distribution of the `hyperStep` inside the weak step's witness (the hidden
+state distribution right after the observable `a`-transition, BEFORE the post-τ-closure).
+Total: junk `PMF.pure s_prev` when there is no such external weak step. -/
+noncomputable def LabelledSystem.hyperBoundary (sys : LabelledSystem State Label)
+    (s_prev : State) (a : Label) (μ : PMF State) : PMF State :=
+  if h : ¬ sys.internal a ∧ sys^w.step s_prev a μ then
+    ((h.2.resolve_left (fun hl => h.1 hl.1)).2 : weakStep sys (PMF.pure s_prev) a μ).postDist
+  else PMF.pure s_prev
+
+open Classical in
+/-- The posterior probability that the **hyperStep boundary** of `E`'s last weak step
+samples to the concrete state `s`. For a nonempty terminating `E` with last transition
+`(a, _)` from penult-history `E'`, this marginalizes the last-step distribution `μ`
+(via `lastMuBelief`) against `(hyperBoundary E'.endState a μ) s`. For empty/non-terminating
+`E`, the boundary is the initial state, so it is `if E.init = s then 1 else 0`. -/
+noncomputable def ProbabilisticExecution.boundaryMarginal {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E : AlterSeq State Label) (s : State) :
+    ENNReal :=
+  if hT : E.trans.Terminates then
+    if hne : E.trans.toList hT ≠ [] then
+      let spl := Stream'.Seq.exists_split_last E.trans hT hne
+      let E' : AlterSeq State Label := ⟨E.init, spl.choose⟩
+      let a := spl.choose_spec.choose.1
+      ∑' μ : PMF State, pe'.lastMuBelief E μ *
+        (sys.hyperBoundary (E'.endState spl.choose_spec.choose_spec.choose) a μ) s
+    else (if E.init = s then 1 else 0)
+  else (if E.init = s then 1 else 0)
+
+/-- The boundary marginal is a (sub)probability: `boundaryMarginal E s ≤ 1`. In the
+nonempty branch the inner tsum is bounded by `∑' μ, lastMuBelief E μ * 1 = 1` since
+`lastMuBelief E` is a PMF and `(hyperBoundary …) s ≤ 1`; the empty/non-terminating
+branches are `0` or `1`. -/
+theorem ProbabilisticExecution.boundaryMarginal_le_one {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E : AlterSeq State Label) (s : State) :
+    pe'.boundaryMarginal E s ≤ 1 := by
+  classical
+  unfold ProbabilisticExecution.boundaryMarginal
+  split_ifs with hT hne
+  · -- Nonempty terminating branch: bound the inner tsum by the PMF total mass.
+    calc (∑' μ : PMF State, pe'.lastMuBelief E μ *
+            (sys.hyperBoundary
+              ((⟨E.init, (Stream'.Seq.exists_split_last E.trans hT hne).choose⟩ :
+                  AlterSeq State Label).endState
+                (Stream'.Seq.exists_split_last E.trans hT hne).choose_spec.choose_spec.choose)
+              (Stream'.Seq.exists_split_last E.trans hT hne).choose_spec.choose.1 μ) s)
+          ≤ ∑' μ : PMF State, pe'.lastMuBelief E μ :=
+            ENNReal.tsum_le_tsum (fun μ => mul_le_of_le_one_right' (PMF.coe_le_one _ s))
+      _ = 1 := PMF.tsum_coe (pe'.lastMuBelief E)
+  all_goals simp
+
+open Classical in
+/-- Un-normalized **ρ-anchored** belief weight (corrected): a tight `sys^w`-history `E`
+with external trace `extLabs`, weighted by the posterior prob its hidden hyperStep
+boundary samples to the concrete state `s` (`boundaryMarginal`). This anchors on the
+hyperStep boundary `ν'` (where concrete tight executions cut), not on `E.endState = μ`. -/
+noncomputable def ProbabilisticExecution.beliefExpandAtW {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (extLabs : List Label) (s : State)
+    (E : AlterSeq State Label) : ENNReal :=
+  if h : E.trans.Terminates ∧ sys^w.trace E = Seq.ofList extLabs ∧ sys^w.IsTight E then
+    pe'.probOf E h.1 * pe'.boundaryMarginal E s
+  else 0
+
+/-- The ρ-anchored belief weight has finite total mass (`≤ 1`): dropping the boundary
+marginal (which is `≤ 1`) bounds it by the un-anchored trace-cone weight, whose tsum
+is exactly `sys^w.traceProb pe' (Seq.ofList extLabs) ≤ 1`. -/
+theorem ProbabilisticExecution.beliefExpandAtW_tsum_le_one {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (extLabs : List Label) (s : State) :
+    (∑' E, pe'.beliefExpandAtW extLabs s E) ≤ 1 := by
+  classical
+  -- Bound by the un-anchored trace-cone weight (`dite` on the trace-cone predicate).
+  set ub : AlterSeq State Label → ENNReal := fun E =>
+    dite (E.trans.Terminates ∧ sys^w.trace E = Seq.ofList extLabs ∧ sys^w.IsTight E)
+      (fun h => pe'.probOf E h.1) (fun _ => 0) with hub
+  refine le_trans (ENNReal.tsum_le_tsum (g := ub) (fun E => ?_)) ?_
+  · show pe'.beliefExpandAtW extLabs s E ≤ ub E
+    rw [hub]
+    unfold ProbabilisticExecution.beliefExpandAtW
+    by_cases hP : E.trans.Terminates ∧ sys^w.trace E = Seq.ofList extLabs ∧ sys^w.IsTight E
+    · simp only [dif_pos hP]
+      exact mul_le_of_le_one_right' (pe'.boundaryMarginal_le_one E s)
+    · simp only [dif_neg hP, le_refl]
+  · -- The un-anchored tsum is the `traceProb` of the trace-cone, hence `≤ 1`.
+    set S : Set (AlterSeq State Label) := {e : AlterSeq State Label |
+        e.trans.Terminates ∧ sys^w.trace e = Seq.ofList extLabs ∧ sys^w.IsTight e} with hS
+    have hrw : (∑' E : AlterSeq State Label, ub E)
+        = sys^w.traceProb pe' (Seq.ofList extLabs) := by
+      unfold LabelledSystem.traceProb
+      -- Reindex the subtype `traceProb` sum to a full sum via `tsum_subtype`/`Set.indicator`.
+      rw [show (∑' e : {e : AlterSeq State Label //
+            e.trans.Terminates ∧ sys^w.trace e = Seq.ofList extLabs ∧ sys^w.IsTight e},
+              pe'.probOf e.1 e.2.1)
+          = ∑' e : S, ub e.1 from
+        tsum_congr (fun e => by rw [hub]; simp only [dif_pos e.2])]
+      rw [tsum_subtype S ub]
+      refine tsum_congr (fun E => ?_)
+      by_cases hP : E ∈ S
+      · rw [Set.indicator_of_mem hP]
+      · rw [Set.indicator_of_notMem hP, hub]
+        simp only []
+        rw [dif_neg (by rw [hS] at hP; exact hP)]
+    rw [hrw]
+    exact sys^w.traceProb_le_one pe' (Seq.ofList extLabs)
+
+/-- The ρ-anchored belief normalizer is finite (`≠ ⊤`), from `≤ 1`. -/
+theorem ProbabilisticExecution.beliefExpandAtW_tsum_ne_top {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (extLabs : List Label) (s : State) :
+    (∑' E, pe'.beliefExpandAtW extLabs s E) ≠ ⊤ :=
+  (lt_of_le_of_lt (pe'.beliefExpandAtW_tsum_le_one extLabs s) ENNReal.one_lt_top).ne
+
+open Classical in
+/-- **ρ-anchored expansion belief.** Posterior over `sys^w`-histories with external
+trace `extLabs` whose hidden hyperStep boundary samples to the concrete state `s`;
+falls back to the Dirac at the trivial history `⟨s, nil⟩` when the normalizer vanishes. -/
+noncomputable def ProbabilisticExecution.beliefExpandAt {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (extLabs : List Label) (s : State) :
+    PMF (AlterSeq State Label) :=
+  if h0 : (∑' E, pe'.beliefExpandAtW extLabs s E) ≠ 0 then
+    PMF.normalize (pe'.beliefExpandAtW extLabs s) h0 (pe'.beliefExpandAtW_tsum_ne_top extLabs s)
+  else PMF.pure (⟨s, Seq.nil⟩ : AlterSeq State Label)
+
+open Classical in
+/-- **Per-weak-step belief-averaging (the soundness experiment).** Averaged over the
+ρ-anchored belief weight, "draw the next weak step from `pe'.scheduler.next E` and
+integrate `g` over the witness's halting from the concrete state `s`" equals "draw the
+next weak step and take its result-distribution `g`-expectation `∑ t, μ t * g t`".
+(Reverted to a stub: to be re-proven for the corrected `boundaryMarginal`-anchored
+belief, where the anchoring is on the hyperStep boundary `ν'`.) -/
+theorem ProbabilisticExecution.expand_step_belief_averaging
+    {State Label : Type} (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (extLabs : List Label) (s : State)
+    (g : State → ENNReal) :
+    (∑' E : AlterSeq State Label, pe'.beliefExpandAtW extLabs s E *
+        (∑' lω : Label × PMF State, pe'.scheduler.next E (some lω) *
+          (∑' e, (Scheduler.weakStepWitnessTotal sys s lω.1 lω.2).haltMass (PMF.pure s) e
+                    * g (e.1.endState e.2))))
+      = ∑' E : AlterSeq State Label, pe'.beliefExpandAtW extLabs s E *
+        (∑' lω : Label × PMF State, pe'.scheduler.next E (some lω) *
+          (∑' t : State, lω.2 t * g t)) := by sorry
+
+open Classical in
+/-- The post-τ-closure witness of the weak step `s_prev →[a] μ` (external `a`),
+as a `sys`-scheduler; `haltNow` when there is no such external weak step. (Used by
+`expand` to realize the carried-over post-τ-closure of the just-completed external
+weak step.) -/
+noncomputable def Scheduler.postTauWitness (sys : LabelledSystem State Label)
+    (s_prev : State) (a : Label) (μ : PMF State) : Scheduler sys.toSystem :=
+  if h : (¬ sys.internal a) ∧ sys^w.step s_prev a μ then
+    ((h.2.resolve_left (fun hl => h.1 hl.1)).2).weakTau_post.witnessScheduler.toScheduler
+  else Scheduler.haltNow sys
+
+open Classical in
 /-- The carried-over post-τ-closure witness for a `sys^w`-history `E` with last
 emitted distribution `μ_k`: the post-τ-closure of `E`'s last *external* weak step
 `(a)` from its preceding history `E'`'s end-state, with distribution `μ_k`.
@@ -1340,6 +2094,36 @@ noncomputable def Scheduler.expandPostScheduler (sys : LabelledSystem State Labe
     else Scheduler.haltNow sys
   else Scheduler.haltNow sys
 
+open Classical in
+/-- Anchored successor segment: at the concrete boundary state `s`, re-sample a
+`sys^w`-history `E'` ending at `s` (state-anchored belief `beliefExpandAt`), draw the
+next weak step from `pe'.scheduler.next E'` — valid from `s` since `E'.endState = s` —
+and run its total witness. -/
+noncomputable def Scheduler.anchoredNextSegment (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (extLabs : List Label) (s : State) :
+    Scheduler sys.toSystem where
+  next e' := (pe'.beliefExpandAt extLabs s).bind (fun E' =>
+    (pe'.scheduler.next E').bind (fun opt =>
+      match opt with
+      | none => PMF.pure none
+      | some (l, μ) => (Scheduler.weakStepWitnessTotal sys s l μ).next e'))
+  valid := by
+    intro e' n s' hterm hstate l' μ' h_supp
+    rw [PMF.mem_support_bind_iff] at h_supp
+    obtain ⟨E', _, h_supp⟩ := h_supp
+    rw [PMF.mem_support_bind_iff] at h_supp
+    obtain ⟨opt, _, h_supp⟩ := h_supp
+    cases opt with
+    | none =>
+      change some (l', μ') ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
+      rw [PMF.support_pure, Set.mem_singleton_iff] at h_supp
+      exact absurd h_supp (by simp)
+    | some lμ =>
+      obtain ⟨l, μ⟩ := lμ
+      change some (l', μ') ∈
+        ((Scheduler.weakStepWitnessTotal sys s l μ).next e').support at h_supp
+      exact (Scheduler.weakStepWitnessTotal sys s l μ).valid e' n s' hterm hstate l' μ' h_supp
+
 /-- **The expand scheduler** (M2 witness). Simulates `pe'`
 over `sys^w` by a `sys`-scheduler that, at each `sys`-history, runs the
 witnessing chain of `pe'`'s current weak step: a run-to-halt `weakTau` τ-closure,
@@ -1354,7 +2138,10 @@ noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
       (pe'.beliefExpand (sys.trace e)).bind (fun E =>
         (pe'.lastMuBelief E).bind (fun μ_k =>
           (Scheduler.bind (Scheduler.expandPostScheduler sys E μ_k)
-            (Scheduler.nextSegment sys pe' E)).next (sys.internalSuffix e)))
+            (Scheduler.anchoredNextSegment sys pe' ((sys.trace e).toList
+              (Stream'.Seq.terminates_map_iff.mpr
+                (Stream'.Seq.terminates_filter _ _ h_term))))).next
+              (sys.internalSuffix e)))
     else PMF.pure none
   valid := by
     classical
@@ -1389,7 +2176,10 @@ noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
           (pe'.beliefExpand (sys.trace e)).bind (fun E =>
             (pe'.lastMuBelief E).bind (fun μ_k =>
               (Scheduler.bind (Scheduler.expandPostScheduler sys E μ_k)
-                (Scheduler.nextSegment sys pe' E)).next (sys.internalSuffix e)))
+                (Scheduler.anchoredNextSegment sys pe' ((sys.trace e).toList
+                  (Stream'.Seq.terminates_map_iff.mpr
+                    (Stream'.Seq.terminates_filter _ _ h_term'))))).next
+                  (sys.internalSuffix e)))
         else PMF.pure none).support at h_supp
     rw [dif_pos h_term] at h_supp
     rw [PMF.mem_support_bind_iff] at h_supp
@@ -1402,7 +2192,10 @@ noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
       exact Stream'.Seq.drop_terminates_pub h_term _
     -- Apply validity of the (valid) bound scheduler at the canonical end of `internalSuffix e`.
     set σ : Scheduler sys.toSystem :=
-      Scheduler.bind (Scheduler.expandPostScheduler sys E μ_k) (Scheduler.nextSegment sys pe' E)
+      Scheduler.bind (Scheduler.expandPostScheduler sys E μ_k)
+        (Scheduler.anchoredNextSegment sys pe' ((sys.trace e).toList
+          (Stream'.Seq.terminates_map_iff.mpr
+            (Stream'.Seq.terminates_filter _ _ h_term))))
       with hσ
     have hvalid := σ.valid (sys.internalSuffix e) (Nat.find h'')
       ((sys.internalSuffix e).endState h'') (Nat.find_spec h'')
@@ -1421,6 +2214,321 @@ theorem expand_traceProb_eq (sys : LabelledSystem State Label)
     sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ τ
       = sys^w.traceProb pe' τ :=
   sorry
+
+/-- A non-terminating (infinite) trace is achieved with probability `0`: no finite
+execution has an infinite trace. -/
+theorem LabelledSystem.traceProb_eq_zero_of_not_terminates
+    (ls : LabelledSystem State Label) (pe : ProbabilisticExecution ls.toSystem)
+    (τ : Seq Label) (hτ : ¬ τ.Terminates) :
+    ls.traceProb pe τ = 0 := by
+  unfold LabelledSystem.traceProb
+  have : IsEmpty {e : AlterSeq State Label //
+      e.trans.Terminates ∧ ls.trace e = τ ∧ ls.IsTight e} := by
+    refine ⟨fun e => hτ ?_⟩
+    rw [← e.2.2.1, LabelledSystem.trace,
+      Stream'.Seq.terminates_map_iff]
+    exact Stream'.Seq.terminates_filter _ _ e.2.1
+  exact tsum_empty
+
+/-- Under `hExt` (`pe'` schedules only external labels), the one-step kernel of
+`pe'` at an internal label is `0`: every `some (l, μ)` with `l` internal is
+outside the scheduler support, so contributes `0`. -/
+theorem ProbabilisticExecution.kernel_eq_zero_of_internal {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (E : AlterSeq State Label) (l : Label) (s' : State) (hl : sys.internal l) :
+    pe'.kernel E (l, s') = 0 := by
+  unfold ProbabilisticExecution.kernel
+  have hzero : ∀ μ : PMF State, pe'.scheduler.next E (some (l, μ)) = 0 := by
+    intro μ
+    apply (PMF.apply_eq_zero_iff _ _).mpr
+    intro hmem
+    exact hExt E l μ hmem hl
+  simp only [hzero, zero_mul, tsum_zero]
+
+/-- Under `hExt`, any `pe'`-execution built from a transition list `L` (as
+`⟨s₀, Seq.ofList L⟩`) whose label list contains an internal label has
+`probOf = 0`: the cons-end recursion multiplies in the (zero) one-step kernel at
+the internal transition. -/
+theorem ProbabilisticExecution.probOf_ofList_eq_zero_of_internal_mem {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (s₀ : State) (L : List (Label × State))
+    (h : (Seq.ofList L : Seq (Label × State)).Terminates)
+    (hmem : ∃ p ∈ L, sys.internal p.1) :
+    pe'.probOf ⟨s₀, Seq.ofList L⟩ h = 0 := by
+  classical
+  induction L using List.reverseRecOn with
+  | nil => simp at hmem
+  | append_singleton rest last ih =>
+    -- Factor off the last transition via `probOf_append_singleton`.
+    have hrest : (Seq.ofList rest : Seq (Label × State)).Terminates :=
+      Stream'.Seq.terminates_ofList rest
+    have hseq : (Seq.ofList (rest ++ [last]) : Seq (Label × State))
+        = (Seq.ofList rest).append (Seq.cons last Seq.nil) := by
+      rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+    have happ : ((Seq.ofList rest).append (Seq.cons last Seq.nil)
+        : Seq (Label × State)).Terminates := by rw [← hseq]; exact h
+    -- Transport `probOf` through `hseq` (proof-irrelevant in the termination proof).
+    have htrans : pe'.probOf ⟨s₀, Seq.ofList (rest ++ [last])⟩ h
+        = pe'.probOf ⟨s₀, (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩ happ := by
+      have key : ∀ (sq : Seq (Label × State)) (hsq : sq.Terminates),
+          sq = (Seq.ofList rest).append (Seq.cons last Seq.nil) →
+          pe'.probOf ⟨s₀, sq⟩ hsq
+            = pe'.probOf ⟨s₀, (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩ happ := by
+        rintro sq hsq rfl; rfl
+      exact key _ h hseq
+    have hfact :
+        pe'.probOf ⟨s₀, Seq.ofList (rest ++ [last])⟩ h
+          = pe'.probOf ⟨s₀, Seq.ofList rest⟩ hrest *
+              pe'.kernel ⟨s₀, Seq.ofList rest⟩ last := by
+      rw [htrans]
+      exact pe'.probOf_append_singleton s₀ (Seq.ofList rest) hrest last happ
+    rw [hfact]
+    rcases hmem with ⟨p, hp_mem, hp_int⟩
+    rw [List.mem_append] at hp_mem
+    rcases hp_mem with hp_rest | hp_last
+    · -- Internal label sits in `rest`: the prefix `probOf` is `0`.
+      rw [ih hrest ⟨p, hp_rest, hp_int⟩, zero_mul]
+    · -- Internal label is the last transition: the kernel factor is `0`.
+      rw [List.mem_singleton] at hp_last
+      subst hp_last
+      rw [pe'.kernel_eq_zero_of_internal hExt ⟨s₀, Seq.ofList rest⟩ p.1 p.2 hp_int, mul_zero]
+
+/-- Under `hExt`, `pe'`'s level mass at any label list containing an internal
+label is `0`: every contributing execution has `probOf = 0`
+(`probOf_ofList_eq_zero_of_internal_mem`). -/
+theorem ProbabilisticExecution.labMass_eq_zero_of_internal_mem {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (labs : List Label) (g : State → ENNReal) (hint : ∃ l ∈ labs, sys.internal l) :
+    pe'.labMass labs g = 0 := by
+  classical
+  obtain ⟨l, hl_mem, hl_int⟩ := hint
+  unfold ProbabilisticExecution.labMass
+  rw [ENNReal.tsum_eq_zero]
+  intro e
+  by_cases hc : e.trans.Terminates ∧ e.trans.map Prod.fst = Seq.ofList labs
+  · rw [dif_pos hc]
+    -- The label list of `e` is `labs`, which contains the internal label `l`.
+    have hlabs : (e.trans.toList hc.1).map Prod.fst = labs := by
+      apply Stream'.Seq.ofList_injective
+      have e1 : (Seq.ofList (e.trans.toList hc.1) : Seq (Label × State)).map Prod.fst
+          = Seq.ofList ((e.trans.toList hc.1).map Prod.fst) := by
+        induction (e.trans.toList hc.1) with
+        | nil => rw [Stream'.Seq.ofList_nil, Stream'.Seq.map_nil, List.map_nil,
+            Stream'.Seq.ofList_nil]
+        | cons a l ih => rw [Stream'.Seq.ofList_cons, Stream'.Seq.map_cons, List.map_cons,
+            Stream'.Seq.ofList_cons, ih]
+      rw [← e1, Stream'.Seq.ofList_toList e.trans hc.1]
+      exact hc.2
+    -- Transport `probOf e` to the `ofList`-form to apply the zero lemma.
+    have hreassemble : (⟨e.init, Seq.ofList (e.trans.toList hc.1)⟩ : AlterSeq State Label) = e :=
+      congrArg₂ AlterSeq.mk rfl (Stream'.Seq.ofList_toList e.trans hc.1)
+    have hterm : (Seq.ofList (e.trans.toList hc.1) : Seq (Label × State)).Terminates :=
+      Stream'.Seq.terminates_ofList _
+    have hprob : pe'.probOf e hc.1
+        = pe'.probOf ⟨e.init, Seq.ofList (e.trans.toList hc.1)⟩ hterm := by
+      have key : ∀ (E : AlterSeq State Label) (hE : E.trans.Terminates),
+          E = (⟨e.init, Seq.ofList (e.trans.toList hc.1)⟩ : AlterSeq State Label) →
+          pe'.probOf E hE
+            = pe'.probOf ⟨e.init, Seq.ofList (e.trans.toList hc.1)⟩ hterm := by
+        rintro E hE rfl; rfl
+      exact key e hc.1 hreassemble.symm
+    -- Find the transition carrying the internal label `l`.
+    have hwitness : ∃ p ∈ e.trans.toList hc.1, sys.internal p.1 := by
+      have hmem' : l ∈ (e.trans.toList hc.1).map Prod.fst := hlabs.symm ▸ hl_mem
+      obtain ⟨p, hp_mem, hp_eq⟩ := List.mem_map.mp hmem'
+      exact ⟨p, hp_mem, hp_eq.symm ▸ hl_int⟩
+    rw [hprob,
+      pe'.probOf_ofList_eq_zero_of_internal_mem hExt e.init (e.trans.toList hc.1) hterm hwitness,
+      zero_mul]
+  · rw [dif_neg hc]
+
+/-- Under `hExt` (`pe'` schedules only external labels), `pe'` takes no internal
+transitions, so its external-trace level mass `extLabMass` collapses to the plain
+label-list level mass `labMass`. -/
+theorem ProbabilisticExecution.extLabMass_eq_labMass_noInternal {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (extLabs : List Label) (g : State → ENNReal) :
+    sys^w.extLabMass pe' extLabs g = pe'.labMass extLabs g := by
+  classical
+  unfold LabelledSystem.extLabMass
+  -- Per-`labs` equality: the trace-tight selector agrees with `labs = extLabs`,
+  -- except possibly on label lists with an internal label, where `labMass = 0`.
+  have hcongr : ∀ labs : List Label,
+      (if sys^w.traceTightLabs (Seq.ofList extLabs) labs then pe'.labMass labs g else 0)
+        = (if labs = extLabs then pe'.labMass labs g else 0) := by
+    intro labs
+    by_cases hext : ∀ l ∈ labs, ¬ sys.internal l
+    · -- All-external `labs`: the trace-tight selector is exactly `labs = extLabs`.
+      have hfilter : (Seq.ofList labs).filter (fun l => ¬ (sys^w).internal l)
+          = Seq.ofList labs := by
+        rw [ofList_filter_helper]
+        congr 1
+        rw [List.filter_eq_self]
+        intro l hl
+        simpa [LabelledSystem.weakClosure] using hext l hl
+      have hiff : sys^w.traceTightLabs (Seq.ofList extLabs) labs ↔ labs = extLabs := by
+        unfold LabelledSystem.traceTightLabs
+        rw [hfilter]
+        constructor
+        · rintro ⟨h1, _⟩
+          exact Stream'.Seq.ofList_injective h1
+        · rintro rfl
+          refine ⟨rfl, ?_⟩
+          intro l hl
+          have hmem : l ∈ labs := List.mem_of_getLast? hl
+          simpa [LabelledSystem.weakClosure] using hext l hmem
+      by_cases heq : labs = extLabs
+      · rw [if_pos (hiff.mpr heq), if_pos heq]
+      · rw [if_neg (fun h => heq (hiff.mp h)), if_neg heq]
+    · -- `labs` has an internal label: `labMass labs g = 0`, so both sides vanish.
+      simp only [not_forall, not_not] at hext
+      obtain ⟨l, hl_mem, hl_int⟩ := hext
+      have hzero : pe'.labMass labs g = 0 :=
+        pe'.labMass_eq_zero_of_internal_mem hExt labs g ⟨l, hl_mem, hl_int⟩
+      rw [hzero]
+      simp
+  rw [tsum_congr hcongr]
+  rw [tsum_eq_single extLabs (fun b hb => if_neg hb), if_pos rfl]
+
+/-- **State-anchored belief normalizer cancellation** (mirror of
+`beliefTC_normalize_cancel`). Multiplying the (possibly un-normalized)
+`beliefExpandAt`-expectation by its normalizer recovers the un-normalized
+`beliefExpandAtW`-weighted sum; covers the `Z = 0` fallback too. -/
+theorem ProbabilisticExecution.beliefExpandAt_normalize_cancel
+    {State Label : Type} {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (extLabs : List Label) (s : State)
+    (w : AlterSeq State Label → ENNReal) :
+    (∑' E, pe'.beliefExpandAtW extLabs s E) *
+        (∑' E, pe'.beliefExpandAt extLabs s E * w E)
+      = ∑' E, pe'.beliefExpandAtW extLabs s E * w E := by
+  classical
+  by_cases hZ : (∑' E, pe'.beliefExpandAtW extLabs s E) = 0
+  · rw [hZ, zero_mul]
+    have hz : ∀ E, pe'.beliefExpandAtW extLabs s E = 0 := ENNReal.tsum_eq_zero.mp hZ
+    exact (ENNReal.tsum_eq_zero.mpr (fun E => by rw [hz E, zero_mul])).symm
+  · have hZtop : (∑' E, pe'.beliefExpandAtW extLabs s E) ≠ ⊤ :=
+      pe'.beliefExpandAtW_tsum_ne_top extLabs s
+    have hbel : ∀ E, pe'.beliefExpandAt extLabs s E
+        = pe'.beliefExpandAtW extLabs s E * (∑' E', pe'.beliefExpandAtW extLabs s E')⁻¹ := by
+      intro E
+      unfold ProbabilisticExecution.beliefExpandAt
+      rw [dif_pos hZ, PMF.normalize_apply]
+    rw [show (∑' E, pe'.beliefExpandAt extLabs s E * w E)
+          = ∑' E, (pe'.beliefExpandAtW extLabs s E *
+              (∑' E', pe'.beliefExpandAtW extLabs s E')⁻¹) * w E from
+        tsum_congr (fun E => by rw [hbel E]),
+      ← ENNReal.tsum_mul_left]
+    refine tsum_congr (fun E => ?_)
+    rw [show (∑' E', pe'.beliefExpandAtW extLabs s E') *
+          (pe'.beliefExpandAtW extLabs s E *
+            (∑' E', pe'.beliefExpandAtW extLabs s E')⁻¹ * w E)
+          = ((∑' E', pe'.beliefExpandAtW extLabs s E') *
+              (∑' E', pe'.beliefExpandAtW extLabs s E')⁻¹) *
+            (pe'.beliefExpandAtW extLabs s E * w E) by ring,
+      ENNReal.mul_inv_cancel hZ hZtop, one_mul]
+
+/-- **External-append recursion for the `expand` construction (`g = 1` slice), the
+crux step of `expand_extLabMass_eq_noInternal`.** Given the inductive hypothesis at
+`labs`, the `g = 1` external level masses agree after appending one external label
+`l`. The increment unfolds the `expand` scheduler at the `(k+1)`-th external label
+into the reassociated segment `bind (post-τ) (anchoredNextSegment)`, applies the
+step-3 segment bridge `extLabMass_segment_bridge` and the step-1 belief-averaging
+`expand_step_belief_averaging`, with `beliefExpandAt_normalize_cancel` cancelling the
+belief normalizer — exactly mirroring how `lower_labProb_eq_aux`'s step chains
+`labMass_step → lower_kernel_g_sum → IH → beliefTC_normalize_cancel`. -/
+theorem expand_extLabMass_step (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init)
+    (labs : List Label) (l : Label)
+    (ih : sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ labs
+            (fun _ => 1)
+          = pe'.labMass labs (fun _ => 1)) :
+    sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (labs ++ [l])
+        (fun _ => 1)
+      = pe'.labMass (labs ++ [l]) (fun _ => 1) := by
+  classical
+  -- **RHS reduction (proven).** At `g = 1`, the appended-step level mass collapses:
+  -- the inner one-step kernel `g`-expectation `∑' s', kernel E (l, s')` is exactly the
+  -- total scheduler emission `∑' μ, next E (some (l, μ))` (each `μ` is a PMF, mass 1).
+  have hk : ∀ E : AlterSeq State Label,
+      (∑' s' : State, pe'.kernel E (l, s') * 1)
+        = ∑' μ : PMF State, pe'.scheduler.next E (some (l, μ)) := by
+    intro E
+    simp only [mul_one]
+    change (∑' s' : State, ∑' μ : PMF State, pe'.scheduler.next E (some (l, μ)) * μ s') = _
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun μ => ?_)
+    rw [ENNReal.tsum_mul_left, μ.tsum_coe, mul_one]
+  have hRHS : pe'.labMass (labs ++ [l]) (fun _ => 1)
+      = ∑' E : AlterSeq State Label,
+          dite (E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label))
+            (fun h => pe'.probOf E h.1 * ∑' μ : PMF State, pe'.scheduler.next E (some (l, μ)))
+            (fun _ => 0) := by
+    rw [pe'.labMass_step labs l (fun _ => 1)]
+    refine tsum_congr (fun E => ?_)
+    by_cases hc : E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label)
+    · rw [dif_pos hc, dif_pos hc, hk E]
+    · rw [dif_neg hc, dif_neg hc]
+  rw [hRHS]
+  -- **Remaining gap (LHS external-boundary composition).** The proven RHS form is the
+  -- sum over `sys^w`-histories `E` with label list `labs` of `pe'.probOf E` times the
+  -- total scheduler emission of the `(k+1)`-th external label `l`. What remains is to
+  -- show the *expand* construction's external level mass at `labs ++ [l]` equals this.
+  -- This requires the external-boundary concatenation property of `extLabMass` for the
+  -- `expand` scheduler — namely that a tight `(labs ++ [l])`-trace execution factors at
+  -- its last external label into a tight `labs`-trace prefix (governed by the IH) and a
+  -- one-segment successor (governed by `extLabMass_segment_bridge` after reassociating
+  -- the carried post-τ `expandPostScheduler` with the next weak step's pre-τ via
+  -- `weakTau_trans`), with the state-anchored belief averaged by
+  -- `expand_step_belief_averaging` and the belief normalizer cancelled by
+  -- `beliefExpandAt_normalize_cancel`. This concatenation/disintegration lemma for the
+  -- expand kernel at the external boundary is the genuinely missing infrastructure (it
+  -- is not a direct reuse of an existing lemma) and is the sole remaining `sorry`.
+  sorry
+
+/-- **Core trace invariant (no internal weak steps), TO BE PROVEN.** Under the
+assumption that `pe'` schedules only external weak steps, the expanded `sys`-execution
+and `pe'` assign the same total `probOf`-mass to every finite external trace `extLabs`
+(the `g = 1` external level mass). To be re-established via the state-anchored
+`expand` construction (the `pe'` side reduces to `pe'.labMass` by
+`extLabMass_eq_labMass_noInternal`). -/
+theorem expand_extLabMass_eq_noInternal (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (extLabs : List Label) :
+    sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ extLabs (fun _ => 1)
+      = sys^w.extLabMass pe' extLabs (fun _ => 1) := by
+  classical
+  rw [pe'.extLabMass_eq_labMass_noInternal hExt extLabs (fun _ => 1)]
+  induction extLabs using List.reverseRecOn with
+  | nil =>
+      rw [sys.extLabMass_nil _ (fun _ => 1), pe'.labMass_nil (fun _ => 1), h_init]
+      simp [LabelledSystem.weakClosure]
+  | append_singleton labs l ih =>
+      exact expand_extLabMass_step sys pe' hExt h_init labs l ih
+
+/-- Trace-distribution preservation for `expand` UNDER the no-internal-weak-steps
+assumption (Phase 1). Reduces to `expand_extLabMass_eq_noInternal` for finite
+traces; both sides are `0` for infinite traces. -/
+theorem expand_traceProb_eq_noInternal (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (τ : Seq Label) :
+    sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ τ
+      = sys^w.traceProb pe' τ := by
+  by_cases hτ : τ.Terminates
+  · obtain ⟨L, hL⟩ : ∃ L, τ = Seq.ofList L :=
+      ⟨τ.toList hτ, (Stream'.Seq.ofList_toList τ hτ).symm⟩
+    subst hL
+    rw [sys.traceProb_eq_extLabMass _ L, sys^w.traceProb_eq_extLabMass pe' L]
+    exact expand_extLabMass_eq_noInternal sys pe' hExt h_init L
+  · rw [sys.traceProb_eq_zero_of_not_terminates _ τ hτ,
+        sys^w.traceProb_eq_zero_of_not_terminates pe' τ hτ]
 
 /-- **Expansion existence (the M2 core).** Every probabilistic execution of
 `sys^w` from the Dirac initial state is matched, trace-distribution-wise, by a
