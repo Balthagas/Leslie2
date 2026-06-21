@@ -2847,6 +2847,442 @@ noncomputable def Scheduler.expandSeg (sys : LabelledSystem State Label)
     exact (Scheduler.bind (Scheduler.expandPostScheduler sys E μ_k)
       (Scheduler.anchoredNextSegment sys pe' labs)).valid h n s h_term_n h_state_n l μ h_supp
 
+/-- **Helper 1 — the KEY kernel identity.** For a terminating `e''` with external
+trace `ofList labs`, the `expand` scheduler's next-step distribution at `e''` coincides
+with the `expandSeg sys pe' labs s₀` scheduler's next-step distribution at the all-internal
+suffix `internalSuffix e''`. Both draw `beliefExpandAt labs (e''.endState)` (the trace-list
+argument is `(sys.trace e'').toList = labs` since `trace e'' = ofList labs`, and the
+end-state is shared because `internalSuffix` preserves the end state), then the same
+`lastMuBelief`/`expandPostScheduler`/`anchoredNextSegment` bind run at `internalSuffix e''`.
+The boundary state `s₀` of `expandSeg` is irrelevant because `internalSuffix e''` terminates,
+so the `dite` in `expandSeg.next` picks `(internalSuffix e'').endState = e''.endState`. -/
+theorem Scheduler.expand_next_eq_expandSeg_next (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (labs : List Label) (s₀ : State)
+    (e'' : AlterSeq State Label) (h_term : e''.trans.Terminates)
+    (h_trace : sys.trace e'' = Seq.ofList labs) :
+    (Scheduler.expand sys pe').next e''
+      = (Scheduler.expandSeg sys pe' labs s₀).next (sys.internalSuffix e'') := by
+  classical
+  have h'' : (sys.internalSuffix e'').trans.Terminates := by
+    rw [LabelledSystem.internalSuffix, dif_pos h_term]
+    exact Stream'.Seq.drop_terminates_pub h_term _
+  -- The trace-list argument of `expand` matches `labs`.
+  have h_toList : ∀ (hT : (sys.trace e'').Terminates), (sys.trace e'').toList hT = labs := by
+    intro hT
+    rw [show (sys.trace e'').toList hT = (Seq.ofList labs).toList (h_trace ▸ hT) from by
+        congr 1, Stream'.Seq.toList_ofList]
+  -- The end-state argument of `expand` matches `expandSeg`'s.
+  have h_end : e''.endState h_term = (sys.internalSuffix e'').endState h'' :=
+    (sys.internalSuffix_endState e'' h_term h'').symm
+  simp only [Scheduler.expand, Scheduler.expandSeg, dif_pos h_term, dif_pos h'']
+  rw [h_toList, h_end]
+
+/-- **Kernel corollary of Helper 1.** The one-step kernel of `⟨_, expand sys pe'⟩` at a
+terminating trace-`labs` history `e''` equals the kernel of `⟨_, expandSeg sys pe' labs s₀⟩`
+at the all-internal suffix `internalSuffix e''`. Immediate from `expand_next_eq_expandSeg_next`
+(the kernel depends on the scheduler only through `next`). -/
+theorem ProbabilisticExecution.expand_kernel_eq_expandSeg_kernel (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (init₀ : PMF State)
+    (labs : List Label) (s₀ : State)
+    (e'' : AlterSeq State Label) (h_term : e''.trans.Terminates)
+    (h_trace : sys.trace e'' = Seq.ofList labs) (step : Label × State) :
+    (⟨init₀, Scheduler.expand sys pe'⟩ : ProbabilisticExecution sys.toSystem).kernel e'' step
+      = (⟨PMF.pure s₀, Scheduler.expandSeg sys pe' labs s₀⟩
+          : ProbabilisticExecution sys.toSystem).kernel (sys.internalSuffix e'') step := by
+  unfold ProbabilisticExecution.kernel
+  rw [show (⟨init₀, Scheduler.expand sys pe'⟩
+        : ProbabilisticExecution sys.toSystem).scheduler = Scheduler.expand sys pe' from rfl,
+      show (⟨PMF.pure s₀, Scheduler.expandSeg sys pe' labs s₀⟩
+        : ProbabilisticExecution sys.toSystem).scheduler = Scheduler.expandSeg sys pe' labs s₀
+        from rfl,
+      Scheduler.expand_next_eq_expandSeg_next sys pe' labs s₀ e'' h_term h_trace]
+
+/-- **Helper 2 — `internalSuffix` of a prefix⊕internal-suffix.** If `preList` ends with an
+external transition (or is empty) and every transition of `segList` is internal, then the
+maximal all-internal suffix of `⟨s₀, ofList (preList ++ segList)⟩` is exactly `⟨s', ofList
+segList⟩`, where `s' = (⟨s₀, ofList preList⟩).endState` is the state reached after `preList`.
+The trailing-internal run of `(preList ++ segList).reverse` is `segList.reverse`, so the
+split index `m = |preList|`. -/
+theorem LabelledSystem.internalSuffix_append_internal (sys : LabelledSystem State Label)
+    (s₀ : State) (preList segList : List (Label × State))
+    (hpre : ∀ p, preList.getLast? = some p → ¬ sys.internal p.1)
+    (hseg : ∀ p ∈ segList, sys.internal p.1) :
+    sys.internalSuffix ⟨s₀, Seq.ofList (preList ++ segList)⟩
+      = ⟨(⟨s₀, Seq.ofList preList⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_ofList _), Seq.ofList segList⟩ := by
+  classical
+  set e'' : AlterSeq State Label := ⟨s₀, Seq.ofList (preList ++ segList)⟩ with he''
+  have hT : e''.trans.Terminates := Stream'.Seq.terminates_ofList _
+  -- The `toList` of `e''.trans` is `preList ++ segList`.
+  have hL : e''.trans.toList hT = preList ++ segList := Stream'.Seq.toList_ofList _
+  -- Compute the trailing-internal run length: `|segList|`.
+  have htw : ((preList ++ segList).reverse.takeWhile
+      (fun p => decide (sys.internal p.1))).length = segList.length := by
+    rw [List.reverse_append]
+    rw [List.takeWhile_append_of_pos (l₁ := segList.reverse) (l₂ := preList.reverse) ?_]
+    · -- `takeWhile internal preList.reverse = []` (head is `preList`'s last, external).
+      rw [show (preList.reverse.takeWhile (fun p => decide (sys.internal p.1))) = [] from ?_]
+      · rw [List.append_nil, List.length_reverse]
+      · cases hpr : preList.reverse with
+        | nil => rfl
+        | cons hd tl =>
+          rw [List.takeWhile_cons_of_neg]
+          have hgl : preList.getLast? = some hd := by
+            rw [List.getLast?_eq_head?_reverse, hpr]; rfl
+          simpa using hpre hd hgl
+    · intro p hp
+      rw [List.mem_reverse] at hp
+      simpa using hseg p hp
+  -- The split index `m = |preList|`.
+  have hm : (e''.trans.toList hT).length
+      - ((e''.trans.toList hT).reverse.takeWhile (fun p => decide (sys.internal p.1))).length
+      = preList.length := by
+    rw [hL, htw, List.length_append, Nat.add_sub_cancel]
+  -- The dropped tail is `ofList segList`.
+  have hdrop : e''.trans.drop preList.length = Seq.ofList segList := by
+    rw [he'', Stream'.Seq.drop_ofList_pub, List.drop_append_of_le_length (le_refl _),
+      List.drop_length, List.nil_append]
+  -- The split state is the end-state of the `preList` prefix.
+  have hstate : (e''.stateAt preList.length).getD e''.init
+      = (⟨s₀, Seq.ofList preList⟩ : AlterSeq State Label).endState
+          (Stream'.Seq.terminates_ofList _) := by
+    rw [AlterSeq.endState_eq_getLast? (⟨s₀, Seq.ofList preList⟩ : AlterSeq State Label)
+          (Stream'.Seq.terminates_ofList _),
+        Stream'.Seq.toList_ofList]
+    rcases Nat.eq_zero_or_pos preList.length with h0 | hpos
+    · rw [h0]
+      have hpnil : preList = [] := List.length_eq_zero_iff.mp h0
+      rw [hpnil]
+      simp only [List.getLast?_nil, Option.elim_none]
+      rw [he'']; rfl
+    · -- `stateAt |preList| = (trans.get? (|preList|-1)).map Prod.snd`
+      obtain ⟨k, hk⟩ : ∃ k, preList.length = k + 1 := Nat.exists_eq_succ_of_ne_zero (by omega)
+      rw [hk]
+      change (((e''.trans.get? k).map Prod.snd).getD e''.init) = _
+      have he_get : e''.trans.get? k = (Seq.ofList (preList ++ segList)).get? k := rfl
+      rw [he_get, Stream'.Seq.ofList_get?, List.getElem?_append_left (by omega)]
+      rw [List.getLast?_eq_getElem?, show preList.length - 1 = k by omega]
+      have hk_lt : k < preList.length := by omega
+      rw [List.getElem?_eq_getElem hk_lt]
+      rfl
+  -- Unfold `internalSuffix`, rewrite `m`, and assemble.
+  rw [LabelledSystem.internalSuffix, dif_pos hT]
+  simp only []
+  rw [hm, hdrop, hstate]
+
+/-- **End-peel for `pathWeight`** (the defining cons-end recursion, extracted as a lemma):
+`pathWeight base (rest ++ [last]) = pathWeight base rest * kernel ⟨base.init, base.trans ++
+ofList rest⟩ last`. -/
+theorem ProbabilisticExecution.pathWeight_concat {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (base : AlterSeq State Label) (rest : List (Label × State)) (last : Label × State) :
+    pe.pathWeight base (rest ++ [last])
+      = pe.pathWeight base rest
+        * pe.kernel ⟨base.init, base.trans.append (Seq.ofList rest)⟩ last := by
+  unfold ProbabilisticExecution.pathWeight
+  rw [List.reverseRecOn_concat]
+
+/-- **`pathWeight` splits along list concatenation.** From the empty base at `s₀`, the
+path weight of `preList ++ segList` factors into the path weight of `preList` times the
+path weight of `segList` evaluated from the base `⟨s₀, ofList preList⟩`. End-recursive
+on `segList`. -/
+theorem ProbabilisticExecution.pathWeight_append {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (s₀ : State) (preList segList : List (Label × State)) :
+    pe.pathWeight ⟨s₀, Seq.nil⟩ (preList ++ segList)
+      = pe.pathWeight ⟨s₀, Seq.nil⟩ preList
+        * pe.pathWeight ⟨s₀, Seq.ofList preList⟩ segList := by
+  induction segList using List.reverseRecOn with
+  | nil =>
+    simp only [List.append_nil]
+    rw [show pe.pathWeight ⟨s₀, Seq.ofList preList⟩ [] = 1 from by
+          unfold ProbabilisticExecution.pathWeight; rw [List.reverseRecOn_nil], mul_one]
+  | append_singleton rest last ih =>
+    rw [show preList ++ (rest ++ [last]) = (preList ++ rest) ++ [last] by
+          rw [List.append_assoc]]
+    rw [pe.pathWeight_concat ⟨s₀, Seq.nil⟩ (preList ++ rest) last,
+        pe.pathWeight_concat ⟨s₀, Seq.ofList preList⟩ rest last, ih]
+    simp only [Stream'.Seq.nil_append]
+    rw [← Stream'.Seq.ofList_append]
+    ring
+
+/-- **`pathWeight` agrees across executions when kernels agree.** If `pe` from base
+`⟨s₀, ofList preList⟩` and `pe'` from base `⟨s₀', nil⟩` have the same one-step kernel at
+every position along `segList`, their `pathWeight`s along `segList` coincide. The kernel
+hypothesis is only required for `pref ++ [step] <+: segList` (the positions actually
+visited). -/
+theorem ProbabilisticExecution.pathWeight_congr_of_kernel_eq {State Label : Type}
+    {sys : System State Label} (pe pe' : ProbabilisticExecution sys)
+    (s₀ s₀' : State) (preList segList : List (Label × State))
+    (hker : ∀ (pref : List (Label × State)) (step : Label × State),
+      pref ++ [step] <+: segList →
+      pe.kernel ⟨s₀, Seq.ofList (preList ++ pref)⟩ step
+        = pe'.kernel ⟨s₀', Seq.ofList pref⟩ step) :
+    pe.pathWeight ⟨s₀, Seq.ofList preList⟩ segList
+      = pe'.pathWeight ⟨s₀', Seq.nil⟩ segList := by
+  induction segList using List.reverseRecOn with
+  | nil =>
+    unfold ProbabilisticExecution.pathWeight
+    rw [List.reverseRecOn_nil, List.reverseRecOn_nil]
+  | append_singleton rest last ih =>
+    rw [pe.pathWeight_concat ⟨s₀, Seq.ofList preList⟩ rest last,
+        pe'.pathWeight_concat ⟨s₀', Seq.nil⟩ rest last]
+    rw [ih (fun pref step hp => hker pref step
+      (hp.trans (List.prefix_append rest [last])))]
+    -- match the two trailing kernels
+    have hk := hker rest last (List.prefix_refl _)
+    simp only [Stream'.Seq.nil_append]
+    rw [← Stream'.Seq.ofList_append, hk]
+
+/-- **Helper 3 — `probOf` concatenation factorization (kernel-agreement form).**
+If `pe` and `pe'` agree on the one-step kernel at every position along `segList`
+(`pe.kernel ⟨s₀, ofList (preList ++ pref)⟩ step = pe'.kernel ⟨s₀', ofList pref⟩ step` for
+every `pref ++ [step] <+: segList`, where `s₀'` is the end-state of `⟨s₀, ofList preList⟩`)
+and `pe'.init s₀' = 1`, then the `probOf` of the concatenated path factors as the prefix
+`probOf` times the segment `probOf` from `s₀'`. Combines `probOf_eq_pathWeight`,
+`pathWeight_append`, and `pathWeight_congr_of_kernel_eq`. -/
+theorem ProbabilisticExecution.probOf_append_of_kernel_eq {State Label : Type}
+    {sys : System State Label} (pe pe' : ProbabilisticExecution sys)
+    (s₀ s₀' : State) (preList segList : List (Label × State))
+    (hinit' : pe'.init s₀' = 1)
+    (hker : ∀ (pref : List (Label × State)) (step : Label × State),
+      pref ++ [step] <+: segList →
+      pe.kernel ⟨s₀, Seq.ofList (preList ++ pref)⟩ step
+        = pe'.kernel ⟨s₀', Seq.ofList pref⟩ step) :
+    pe.probOf ⟨s₀, Seq.ofList (preList ++ segList)⟩
+        (Stream'.Seq.terminates_ofList _)
+      = pe.probOf ⟨s₀, Seq.ofList preList⟩ (Stream'.Seq.terminates_ofList _)
+        * pe'.probOf ⟨s₀', Seq.ofList segList⟩ (Stream'.Seq.terminates_ofList _) := by
+  rw [pe.probOf_eq_pathWeight s₀ (preList ++ segList) (Stream'.Seq.terminates_ofList _),
+      pe.probOf_eq_pathWeight s₀ preList (Stream'.Seq.terminates_ofList _),
+      pe'.probOf_eq_pathWeight s₀' segList (Stream'.Seq.terminates_ofList _),
+      pe.pathWeight_append s₀ preList segList,
+      pe.pathWeight_congr_of_kernel_eq pe' s₀ s₀' preList segList hker]
+  rw [show pe.init s₀ * (pe.pathWeight ⟨s₀, Seq.nil⟩ preList
+          * pe'.pathWeight ⟨s₀', Seq.nil⟩ segList)
+        = (pe.init s₀ * pe.pathWeight ⟨s₀, Seq.nil⟩ preList)
+          * (pe'.init s₀' * pe'.pathWeight ⟨s₀', Seq.nil⟩ segList) by
+      rw [hinit', one_mul]; ring]
+
+/-- **Appending all-internal transitions leaves the trace unchanged.** -/
+theorem LabelledSystem.trace_append_internal (sys : LabelledSystem State Label)
+    (s₀ : State) (preList pref : List (Label × State))
+    (hpref : ∀ p ∈ pref, sys.internal p.1) :
+    sys.trace ⟨s₀, Seq.ofList (preList ++ pref)⟩ = sys.trace ⟨s₀, Seq.ofList preList⟩ := by
+  classical
+  unfold LabelledSystem.trace
+  rw [Stream'.Seq.ofList_append,
+      Stream'.Seq.filter_append _ _ _ (Stream'.Seq.terminates_ofList _)]
+  -- the `pref` part filters to `nil` (all internal)
+  rw [show (Seq.ofList pref).filter (fun p => ¬ sys.internal p.1) = Seq.nil from ?_,
+      Stream'.Seq.append_nil]
+  -- `filter (¬internal) (ofList pref) = nil` since every element is internal
+  induction pref with
+  | nil => rw [Stream'.Seq.ofList_nil, Stream'.Seq.filter_nil]
+  | cons a t ih =>
+    rw [Stream'.Seq.ofList_cons,
+        Stream'.Seq.filter_cons_neg a _ (by simpa using hpref a (by simp))]
+    exact ih (fun p hp => hpref p (List.mem_cons_of_mem a hp))
+
+/-- **Combining factorization (Helpers 1+2+3 assembled) for the `expand`/`expandSeg`
+setting.** For a tight trace-`labs` prefix `⟨sys.init, ofList preList⟩` (ending external if
+nonempty, end-state `s'`) and a segment list `segList` all of whose proper prefixes are
+all-internal, the `probOf` of the `expand`-execution `⟨sys.init, ofList (preList ++
+segList)⟩` factors as the prefix `probOf` times the `expandSeg`-execution `probOf` of
+`⟨s', ofList segList⟩` from `s'`. The kernel-agreement hypothesis of `probOf_append_of_kernel_eq`
+is discharged by the kernel corollary of Helper 1 (`expand_kernel_eq_expandSeg_kernel`) at
+each internal prefix, with `internalSuffix` resolved by Helper 2
+(`internalSuffix_append_internal`); the running trace stays `labs` by `trace_append_internal`. -/
+theorem expand_probOf_append_factor (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (labs : List Label)
+    (preList segList : List (Label × State))
+    (htrace_pre : sys.trace ⟨sys.toSystem.init, Seq.ofList preList⟩ = Seq.ofList labs)
+    (hpre_ext : ∀ p, preList.getLast? = some p → ¬ sys.internal p.1)
+    (hseg_int : ∀ pref step, pref ++ [step] <+: segList → ∀ p ∈ pref, sys.internal p.1) :
+    (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+        : ProbabilisticExecution sys.toSystem).probOf
+        ⟨sys.toSystem.init, Seq.ofList (preList ++ segList)⟩ (Stream'.Seq.terminates_ofList _)
+      = (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+          : ProbabilisticExecution sys.toSystem).probOf
+          ⟨sys.toSystem.init, Seq.ofList preList⟩ (Stream'.Seq.terminates_ofList _)
+        * (⟨PMF.pure ((⟨sys.toSystem.init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_ofList _)),
+            Scheduler.expandSeg sys pe' labs
+              ((⟨sys.toSystem.init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+                (Stream'.Seq.terminates_ofList _))⟩
+            : ProbabilisticExecution sys.toSystem).probOf
+            ⟨(⟨sys.toSystem.init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_ofList _), Seq.ofList segList⟩
+            (Stream'.Seq.terminates_ofList _) := by
+  classical
+  set s' := (⟨sys.toSystem.init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+    (Stream'.Seq.terminates_ofList _) with hs'
+  refine ProbabilisticExecution.probOf_append_of_kernel_eq
+    (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩)
+    (⟨PMF.pure s', Scheduler.expandSeg sys pe' labs s'⟩)
+    sys.toSystem.init s' preList segList ?_ ?_
+  · -- `pe'.init s' = 1`
+    change (PMF.pure s') s' = 1
+    simp
+  · -- kernel agreement at each visited prefix
+    intro pref step hp
+    -- every element of `pref` is internal
+    have hpref_int : ∀ p ∈ pref, sys.internal p.1 := hseg_int pref step hp
+    -- running trace of the prefix-extension stays `labs`
+    have htrace : sys.trace ⟨sys.toSystem.init, Seq.ofList (preList ++ pref)⟩
+        = Seq.ofList labs := by
+      rw [sys.trace_append_internal sys.toSystem.init preList pref hpref_int, htrace_pre]
+    -- Helper 1 kernel corollary
+    rw [ProbabilisticExecution.expand_kernel_eq_expandSeg_kernel
+            sys pe' (PMF.pure sys.toSystem.init) labs s'
+            ⟨sys.toSystem.init, Seq.ofList (preList ++ pref)⟩
+            (Stream'.Seq.terminates_ofList _) htrace step]
+    -- Helper 2: identify the internal suffix
+    rw [sys.internalSuffix_append_internal sys.toSystem.init preList pref hpre_ext hpref_int]
+
+/-- **A tight execution ends with an external transition.** (`IsTight`'s content via
+`tight_iff`.) Supplies the `hpre_ext` hypothesis of `expand_probOf_append_factor`. -/
+theorem LabelledSystem.tight_getLast_external (sys : LabelledSystem State Label)
+    (e : AlterSeq State Label) (h : e.trans.Terminates) (htight : sys.IsTight e)
+    (p : Label × State) (hp : (e.trans.toList h).getLast? = some p) :
+    ¬ sys.internal p.1 := by
+  have htt := ((sys.tight_iff (sys.trace e) e h).mp ⟨rfl, htight⟩).2
+  exact htt p.1 (by rw [List.getLast?_map, hp]; rfl)
+
+/-- `Seq.filter` of `Seq.ofList` is `Seq.ofList` of the `List.filter`. -/
+theorem Stream'.Seq.filter_ofList_pub {α : Type} (p : α → Prop) [DecidablePred p]
+    (L : List α) :
+    (Seq.ofList L).filter p = Seq.ofList (L.filter (fun a => decide (p a))) := by
+  induction L with
+  | nil => rw [Seq.ofList_nil, Seq.filter_nil, List.filter_nil, Seq.ofList_nil]
+  | cons a t ih =>
+    rw [Seq.ofList_cons, List.filter_cons]
+    by_cases hp : p a
+    · rw [Seq.filter_cons_pos a _ hp, if_pos (by simpa using hp), Seq.ofList_cons, ih]
+    · rw [Seq.filter_cons_neg a _ hp, if_neg (by simpa using hp), ih]
+
+/-- **A tight trace-`[l]` execution has all-internal transitions except its last.** Its
+transition label list contains exactly one external label, which (by tightness) is the
+last; so every position strictly before the end is internal. For any `pref ++ [step] <+:
+seg.trans.toList`, all of `pref` is internal — exactly the `hseg_int` hypothesis of
+`expand_probOf_append_factor`. -/
+theorem LabelledSystem.tight_singleton_prefix_internal (sys : LabelledSystem State Label)
+    (seg : AlterSeq State Label) (h : seg.trans.Terminates) (l : Label)
+    (htrace : sys.trace seg = Seq.ofList [l]) (htight : sys.IsTight seg)
+    (pref : List (Label × State)) (step : Label × State)
+    (hpf : pref ++ [step] <+: seg.trans.toList h) (q : Label × State) (hq : q ∈ pref) :
+    sys.internal q.1 := by
+  classical
+  set Ltr := seg.trans.toList h with hLtr
+  set L := Ltr.map Prod.fst with hL
+  -- `L.filter (¬internal) = [l]` (exactly one external), from `traceTightLabs`.
+  have htt1 : (Seq.ofList L).filter (fun a => ¬ sys.internal a) = Seq.ofList [l] :=
+    ((sys.tight_iff (Seq.ofList [l]) seg h).mp ⟨htrace, htight⟩).1
+  have hfilt : L.filter (fun a => decide (¬ sys.internal a)) = [l] := by
+    rw [Stream'.Seq.filter_ofList_pub] at htt1
+    exact Stream'.Seq.ofList_injective htt1
+  -- The last element of `Ltr` is external (tightness).
+  by_contra hext
+  -- `pref.map fst ++ [step.1]` is a prefix of `L`, with an external in `pref`.
+  have hpfL : (pref.map Prod.fst) ++ [step.1] <+: L := by
+    rw [hL]
+    have := List.IsPrefix.map (f := Prod.fst) hpf
+    rwa [List.map_append, List.map_singleton] at this
+  obtain ⟨rest', hrest'⟩ := hpfL
+  -- `L = pref.map fst ++ [step.1] ++ rest'`.
+  have hLsplit : L = (pref.map Prod.fst) ++ ([step.1] ++ rest') := by
+    rw [← hrest', List.append_assoc]
+  -- The filter splits; `pref.map fst` contributes ≥ 1 external (`q.1`), the tail ≥ 1
+  -- (the external last element of `L`). So total length ≥ 2, contradicting `= [l]`.
+  have hlen1 : (L.filter (fun a => decide (¬ sys.internal a))).length = 1 := by
+    rw [hfilt]; rfl
+  rw [hLsplit, List.filter_append, List.length_append] at hlen1
+  -- `pref.map fst` has at least one external (`q.1`).
+  have hq1 : q.1 ∈ pref.map Prod.fst := List.mem_map_of_mem hq
+  have hpref_ge : 1 ≤ ((pref.map Prod.fst).filter (fun a => decide (¬ sys.internal a))).length := by
+    refine List.length_pos_iff.mpr ?_
+    intro hnil
+    have : q.1 ∉ (pref.map Prod.fst).filter (fun a => decide (¬ sys.internal a)) := by
+      rw [hnil]; exact List.not_mem_nil
+    exact this (List.mem_filter.mpr ⟨hq1, by simpa using hext⟩)
+  -- The tail `[step.1] ++ rest'` has at least one external: the last element of `L`.
+  have hnonempty : L ≠ [] := by
+    rw [hLsplit]; intro hc
+    exact absurd (List.append_eq_nil_iff.mp hc).2 (by simp)
+  have hLlast : ∃ ll, L.getLast? = some ll ∧ ¬ sys.internal ll := by
+    refine ⟨L.getLast hnonempty, List.getLast?_eq_some_getLast hnonempty, ?_⟩
+    have htt2 := ((sys.tight_iff (sys.trace seg) seg h).mp ⟨rfl, htight⟩).2
+    exact htt2 (L.getLast hnonempty) (List.getLast?_eq_some_getLast hnonempty)
+  obtain ⟨ll, hll_last, hll_ext⟩ := hLlast
+  -- `ll` is in the tail `[step.1] ++ rest'` (it's the last element of the nonempty tail).
+  have htail_ge : 1 ≤ (([step.1] ++ rest').filter (fun a => decide (¬ sys.internal a))).length := by
+    refine List.length_pos_iff.mpr ?_
+    intro hnil
+    have hll_mem : ll ∈ ([step.1] ++ rest') := by
+      have htail_last : ([step.1] ++ rest').getLast? = some ll := by
+        have : L.getLast? = ([step.1] ++ rest').getLast? := by
+          rw [hLsplit, List.getLast?_append_of_ne_nil _ (by simp)]
+        rw [← this, hll_last]
+      exact List.mem_of_getLast? htail_last
+    have : ll ∉ ([step.1] ++ rest').filter (fun a => decide (¬ sys.internal a)) := by
+      rw [hnil]; exact List.not_mem_nil
+    exact this (List.mem_filter.mpr ⟨hll_mem, by simpa using hll_ext⟩)
+  omega
+
+/-- **Trace of an append** (the trace ignores states; it depends only on the transition
+sequence). -/
+theorem LabelledSystem.trace_append (sys : LabelledSystem State Label)
+    (s s' : State) (A B : Seq (Label × State)) (hA : A.Terminates) :
+    sys.trace ⟨s, A.append B⟩ = (sys.trace ⟨s, A⟩).append (sys.trace ⟨s', B⟩) := by
+  unfold LabelledSystem.trace
+  rw [Stream'.Seq.filter_append _ _ _ hA, Stream'.Seq.map_append]
+
+/-- **The concatenation of two tight executions, the second nonempty and tight, is tight.**
+The last transition of `⟨s, A.append B⟩` is `B`'s last, external by `B`'s tightness. -/
+theorem LabelledSystem.isTight_append (sys : LabelledSystem State Label)
+    (s : State) (A B : Seq (Label × State)) (hA : A.Terminates) (hB : B.Terminates)
+    (hB_ne : B.toList hB ≠ []) (hB_tight : sys.IsTight ⟨s, B⟩) :
+    sys.IsTight ⟨s, A.append B⟩ := by
+  classical
+  have hAB : (A.append B).Terminates :=
+    ⟨Nat.find hA + Nat.find hB, Stream'.Seq.terminatedAt_append_find hA (Nat.find_spec hB)⟩
+  have hAB_list : (⟨s, A.append B⟩ : AlterSeq State Label).trans.toList hAB
+      = A.toList hA ++ B.toList hB := Stream'.Seq.toList_append A B hA hB hAB
+  obtain ⟨bl, hbl⟩ : ∃ bl, (B.toList hB).getLast? = some bl := by
+    cases hb : (B.toList hB).getLast? with
+    | none => exact absurd (List.getLast?_eq_none_iff.mp hb) hB_ne
+    | some bl => exact ⟨bl, rfl⟩
+  have hbl_ext : ¬ sys.internal bl.1 :=
+    sys.tight_getLast_external ⟨s, B⟩ hB hB_tight bl hbl
+  have key := sys.tight_iff (sys.trace ⟨s, A.append B⟩) ⟨s, A.append B⟩ hAB
+  refine (key.mpr ⟨?_, ?_⟩).2
+  · show Seq.filter _ (↑(((⟨s, A.append B⟩ : AlterSeq State Label).trans.toList hAB).map Prod.fst))
+        = sys.trace ⟨s, A.append B⟩
+    rw [← Seq.map_ofList_pub, Stream'.Seq.ofList_toList]
+    unfold LabelledSystem.trace
+    rw [Stream'.Seq.filter_map]
+    rfl
+  · intro lab hlab
+    rw [hAB_list, List.getLast?_map, List.getLast?_append_of_ne_nil _ hB_ne, hbl] at hlab
+    rw [← Option.some.inj hlab]; exact hbl_ext
+
+/-- **The end-state of an append is the end-state of its (nonempty) suffix.** -/
+theorem AlterSeq.endState_append
+    (s s' : State) (A B : Seq (Label × State)) (hA : A.Terminates) (hB : B.Terminates)
+    (hB_ne : B.toList hB ≠ []) (hAB : (A.append B).Terminates) :
+    (⟨s, A.append B⟩ : AlterSeq State Label).endState hAB
+      = (⟨s', B⟩ : AlterSeq State Label).endState hB := by
+  rw [AlterSeq.endState_eq_getLast? _ hAB, AlterSeq.endState_eq_getLast? _ hB]
+  have hAB_list : (⟨s, A.append B⟩ : AlterSeq State Label).trans.toList hAB
+      = A.toList hA ++ B.toList hB := Stream'.Seq.toList_append A B hA hB hAB
+  rw [hAB_list, List.getLast?_append_of_ne_nil _ hB_ne]
+  -- `B`'s last is `some bl`, so the `.elim … init …` default (differing `init`s) is unused.
+  obtain ⟨bl, hbl⟩ : ∃ bl, (B.toList hB).getLast? = some bl := by
+    cases hb : (B.toList hB).getLast? with
+    | none => exact absurd (List.getLast?_eq_none_iff.mp hb) hB_ne
+    | some bl => exact ⟨bl, rfl⟩
+  rw [hbl]; rfl
+
 /-! #### **(I) External-boundary disintegration of `expand`'s level mass (the hard part).**
 
 Appending one external label `l`, the `expand` construction's tight trace-`(labs++[l])`
@@ -2945,6 +3381,67 @@ theorem expand_extLabMass_eq_segSum (sys : LabelledSystem State Label)
             * sys.extLabMass
                 ⟨PMF.pure (e_pre.1.endState e_pre.2.1),
                   Scheduler.expandSeg sys pe' labs (e_pre.1.endState e_pre.2.1)⟩ [l] g := by
+  classical
+  set D : ProbabilisticExecution sys.toSystem :=
+    ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ with hD
+  -- LHS as a tight trace-`(labs++[l])` cone sum.
+  rw [sys.extLabMass_eq_tight_tsum D (labs ++ [l]) g]
+  -- RHS: rewrite each inner `extLabMass` as a tight trace-`[l]` cone sum, then flatten.
+  rw [show (∑' e_pre : {e : AlterSeq State Label //
+              e.trans.Terminates ∧ sys.trace e = Seq.ofList labs ∧ sys.IsTight e},
+            D.probOf e_pre.1 e_pre.2.1
+              * sys.extLabMass
+                  ⟨PMF.pure (e_pre.1.endState e_pre.2.1),
+                    Scheduler.expandSeg sys pe' labs (e_pre.1.endState e_pre.2.1)⟩ [l] g)
+          = ∑' e_pre : {e : AlterSeq State Label //
+              e.trans.Terminates ∧ sys.trace e = Seq.ofList labs ∧ sys.IsTight e},
+            ∑' seg : {e : AlterSeq State Label //
+                e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e},
+              D.probOf e_pre.1 e_pre.2.1
+                * ((⟨PMF.pure (e_pre.1.endState e_pre.2.1),
+                      Scheduler.expandSeg sys pe' labs (e_pre.1.endState e_pre.2.1)⟩
+                      : ProbabilisticExecution sys.toSystem).probOf seg.1 seg.2.1
+                  * g (seg.1.endState seg.2.1)) from by
+        refine tsum_congr (fun e_pre => ?_)
+        rw [sys.extLabMass_eq_tight_tsum
+              ⟨PMF.pure (e_pre.1.endState e_pre.2.1),
+                Scheduler.expandSeg sys pe' labs (e_pre.1.endState e_pre.2.1)⟩ [l] g,
+            ENNReal.tsum_mul_left]]
+  -- Flatten the RHS double sum to a single sigma sum.
+  rw [← ENNReal.tsum_sigma' (β := fun _ : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys.trace e = Seq.ofList labs ∧ sys.IsTight e} =>
+        {e : AlterSeq State Label //
+            e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e})
+      (fun p =>
+          D.probOf p.1.1 p.1.2.1
+            * ((⟨PMF.pure (p.1.1.endState p.1.2.1),
+                  Scheduler.expandSeg sys pe' labs (p.1.1.endState p.1.2.1)⟩
+                  : ProbabilisticExecution sys.toSystem).probOf p.2.1 p.2.2.1
+              * g (p.2.1.endState p.2.2.1)))]
+  -- **(Helper 4) — the tight-cone prefix/segment bijection (residual).**
+  -- Reindex the tight trace-`(labs++[l])` cone of `D` by the prefix/segment split
+  -- `e ↔ ⟨e_pre, seg⟩` via `tsum_eq_tsum_of_ne_zero_bij` with forward map
+  -- `i ⟨e_pre, seg⟩ := ⟨e_pre.init, e_pre.trans.append seg.trans⟩`.
+  --
+  -- ALL the mathematical content is now available as proven helpers:
+  --  * `expand_probOf_append_factor` : the `probOf` factorization
+  --      `D.probOf (i p) = D.probOf e_pre · (⟨s', expandSeg labs s'⟩).probOf seg`
+  --      (with `s' = e_pre.endState`), discharging the `hfg` summand-equality obligation
+  --      once `e_pre.init = sys.init` and `seg.init = s'` are extracted from the support
+  --      hypothesis (`probOf_le_init` + `PMF.pure_apply`).
+  --  * `LabelledSystem.trace_append` / `LabelledSystem.isTight_append` /
+  --    `AlterSeq.endState_append` : the forward map lands in the tight trace-`(labs++[l])`
+  --      cone and `(i p).endState = seg.endState` (so the `g`-weights match).
+  --  * `LabelledSystem.tight_getLast_external` (→ `hpre_ext`) and
+  --    `LabelledSystem.tight_singleton_prefix_internal` (→ `hseg_int`) supply the
+  --      combinatorial hypotheses of `expand_probOf_append_factor`.
+  --
+  -- REMAINING: (1) injectivity of `i` (distinct ⟨e_pre, seg⟩ give distinct appends — the
+  -- `|labs|`-th external transition is the unique cut point, a `tight_trace_prefix_eq`-style
+  -- argument); (2) `support f ⊆ range i` (surjectivity: every nonzero tight
+  -- trace-`(labs++[l])` `e` splits at its `|labs|`-th external transition into a tight
+  -- trace-`labs` prefix and a tight trace-`[l]` segment) — the index-split bookkeeping, the
+  -- last template-heavy piece.
   sorry
 
 theorem expand_extLabMass_disintegrate (sys : LabelledSystem State Label)
