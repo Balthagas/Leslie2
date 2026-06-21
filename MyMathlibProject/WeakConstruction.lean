@@ -3022,9 +3022,27 @@ theorem ProbabilisticExecution.probOf_mul_lastMuBelief_append {State Label : Typ
           (pe'.scheduler.next ⟨s₀, sq⟩ (some (a, μ)) * μ sk) *
             (∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk)⁻¹
         else (PMF.pure (PMF.pure s₀) : PMF (PMF State)) μ) := by
-    have _resolved := And.intro (hlast1 hne) (And.intro (hlast2 hne) (hprev_seq hne))
-    sorry
-
+    -- Restate the resolved `exists_split_last` data with the *internal* subject
+    -- `(⟨s₀, sq.append …⟩ : AlterSeq).trans` (defeq to `sq.append …`, but syntactically the
+    -- form that `lastMuBelief`'s unfolding produces), so the rewrites fire under the `dite`.
+    have kp : (Stream'.Seq.exists_split_last
+        ((⟨s₀, sq.append (Seq.cons (a, sk) Seq.nil)⟩ : AlterSeq State Label).trans)
+        h_app hne).choose = sq := hprev_seq hne
+    have kl : (Stream'.Seq.exists_split_last
+        ((⟨s₀, sq.append (Seq.cons (a, sk) Seq.nil)⟩ : AlterSeq State Label).trans)
+        h_app hne).choose_spec.choose = (a, sk) := hlast hne
+    unfold ProbabilisticExecution.lastMuBelief
+    rw [dif_pos h_app, dif_pos hne]
+    -- Rewrite the chosen `last = (a, sk)` BEFORE the chosen `prev = sq`: the `prev`-rewrite
+    -- would dependently recast the `last`-term's `exists_split_last` instance and prevent the
+    -- `last`-rewrite from firing.
+    simp only [kl]
+    simp only [kp]
+    -- Now both sides are the `dite` on the same normalizer; the `then` branch is
+    -- `PMF.normalize w h0 _ μ` for `w μ = next ⟨s₀, sq⟩ (some (a, μ)) * μ sk`.
+    split_ifs with h0
+    · rw [PMF.normalize_apply]
+    · rfl
   rw [hlmb, hprobE]
   -- The last-step kernel is the normalizer.
   have hker : pe'.kernel ⟨s₀, sq⟩ (a, sk)
@@ -3050,6 +3068,59 @@ theorem ProbabilisticExecution.probOf_mul_lastMuBelief_append {State Label : Typ
     have hsummand : pe'.scheduler.next ⟨s₀, sq⟩ (some (a, μ)) * μ sk = 0 :=
       (ENNReal.tsum_eq_zero.mp h0) μ
     rw [hsummand, mul_zero]
+
+open Classical in
+/-- **`boundaryMarginal` of an appended history.** For `E = ⟨s₀, sq ++ [(l, sk)]⟩` with
+preceding history `E_pre = ⟨s₀, sq⟩` (terminating), the boundary marginal at `s`
+marginalizes `lastMuBelief E` against the hyperStep boundary of the last weak step
+`(l, μ)` taken from the penult-history end-state `E_pre.endState`:
+`boundaryMarginal E s = ∑' μ, lastMuBelief E μ · hyperBoundary (E_pre.endState) l μ s`. -/
+theorem ProbabilisticExecution.boundaryMarginal_append_singleton {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (s₀ : State) (sq : Seq (Label × State)) (h_sq : sq.Terminates)
+    (l : Label) (sk : State)
+    (h_app : (sq.append (Seq.cons (l, sk) Seq.nil)).Terminates) (s : State) :
+    pe'.boundaryMarginal ⟨s₀, sq.append (Seq.cons (l, sk) Seq.nil)⟩ s
+      = ∑' μ : PMF State, pe'.lastMuBelief ⟨s₀, sq.append (Seq.cons (l, sk) Seq.nil)⟩ μ *
+          (sys.hyperBoundary ((⟨s₀, sq⟩ : AlterSeq State Label).endState h_sq) l μ) s := by
+  classical
+  -- Resolve `exists_split_last` data for `E` (mirrors `probOf_mul_lastMuBelief_append`).
+  have htl : (sq.append (Seq.cons (l, sk) Seq.nil)).toList h_app = sq.toList h_sq ++ [(l, sk)] := by
+    rw [Stream'.Seq.toList_append sq (Seq.cons (l, sk) Seq.nil) h_sq
+        (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) h_app,
+      Stream'.Seq.toList_cons, Stream'.Seq.toList_nil]
+  have hne : (sq.append (Seq.cons (l, sk) Seq.nil)).toList h_app ≠ [] := by rw [htl]; simp
+  have hgetLast : ((sq.append (Seq.cons (l, sk) Seq.nil)).toList h_app).getLast hne = (l, sk) := by
+    have hgl? : ((sq.append (Seq.cons (l, sk) Seq.nil)).toList h_app).getLast? = some (l, sk) := by
+      rw [htl]; exact List.getLast?_concat
+    exact List.getLast_of_getLast?_eq_some hgl?
+  -- The chosen last transition `(l, sk)` and prefix `sq`, stated with the internal subject.
+  have kl : (Stream'.Seq.exists_split_last
+      ((⟨s₀, sq.append (Seq.cons (l, sk) Seq.nil)⟩ : AlterSeq State Label).trans)
+      h_app hne).choose_spec.choose = (l, sk) := by
+    have h := (Stream'.Seq.exists_split_last (sq.append (Seq.cons (l, sk) Seq.nil))
+      h_app hne).choose_spec.choose_spec.choose_spec.2.2
+    rw [h, hgetLast]
+  have kp : (Stream'.Seq.exists_split_last
+      ((⟨s₀, sq.append (Seq.cons (l, sk) Seq.nil)⟩ : AlterSeq State Label).trans)
+      h_app hne).choose = sq := by
+    have hprev_term := (Stream'.Seq.exists_split_last (sq.append (Seq.cons (l, sk) Seq.nil))
+      h_app hne).choose_spec.choose_spec.choose
+    have htoL := (Stream'.Seq.exists_split_last (sq.append (Seq.cons (l, sk) Seq.nil))
+      h_app hne).choose_spec.choose_spec.choose_spec.2.1
+    rw [← Stream'.Seq.ofList_toList (Stream'.Seq.exists_split_last
+      (sq.append (Seq.cons (l, sk) Seq.nil)) h_app hne).choose hprev_term, htoL]
+    conv_lhs => rw [htl]
+    simp [Stream'.Seq.ofList_toList sq h_sq]
+  have kl1 : (Stream'.Seq.exists_split_last
+      ((⟨s₀, sq.append (Seq.cons (l, sk) Seq.nil)⟩ : AlterSeq State Label).trans)
+      h_app hne).choose_spec.choose.1 = l := by rw [kl]
+  unfold ProbabilisticExecution.boundaryMarginal
+  rw [dif_pos h_app, dif_pos hne]
+  -- Rewrite `last` before `prev` (the prev-rewrite recasts the last-instance), then align
+  -- the penult end-state of `⟨s₀, sq⟩` (proof-irrelevant termination argument).
+  simp only [kl1]
+  simp only [kp]
 
 open Classical in
 /-- **(III) The boundary belief-algebra ρ-recursion.** Feeding the per-state single-step
