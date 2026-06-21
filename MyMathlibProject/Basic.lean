@@ -358,6 +358,14 @@ theorem probOf_le_init (pe : ProbabilisticExecution sys)
         ≤ pe.init e.init * 1 := by gcongr; exact pe.kernel_le_one _ _
       _ = pe.init e.init := mul_one _
 
+/-- `probOf` depends only on the execution, not on the chosen termination proof:
+equal executions have equal `probOf` (the `Terminates` proofs being irrelevant). -/
+theorem probOf_congr (pe : ProbabilisticExecution sys)
+    (e e' : AlterSeq State Label) (h_eq : e = e')
+    (hFin : e.trans.Terminates) (hFin' : e'.trans.Terminates) :
+    pe.probOf e hFin = pe.probOf e' hFin' := by
+  subst h_eq; rfl
+
 end ProbabilisticExecution
 
 end PLTS
