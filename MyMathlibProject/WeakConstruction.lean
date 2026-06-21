@@ -2812,29 +2812,141 @@ theorem ProbabilisticExecution.rhoExpect_nil {sys : LabelledSystem State Label}
         if_pos rfl, one_mul]
     rw [h_bound]
 
-/-- **(I) External-boundary disintegration of `expand`'s level mass (the hard part).**
+open Classical in
+/-- The **segment-process scheduler** of `expand`, anchored at the external-trace prefix
+`labs` and run from a boundary state `s₀`. This is the fixed `sys`-scheduler that `expand`
+runs *beyond* a tight trace-`labs` prefix `e_pre` (with `e_pre.endState = s₀`): for an
+all-internal segment `h` (which adds no external labels, so the running trace stays `labs`,
+and `internalSuffix (e_pre ⊕ h) = h`), `expand.next (e_pre ⊕ h)` depends on `e_pre` only
+through `(labs, s₀)`, and equals `(expandSeg sys pe' labs s₀).next h`. Concretely it draws
+the boundary-anchored expansion belief `beliefExpandAt labs (endState of h, defaulting to
+`s₀`)`, the carried post-τ `expandPostScheduler`, and the next external weak step
+`anchoredNextSegment`, then runs the composed `Scheduler.bind` at `h` itself (no
+`internalSuffix` indirection — `h` is already the all-internal suffix).
+
+The total end-state `endStateD h := if h.trans.Terminates then h.endState else s₀` matches
+how `expand.next` reads the current concrete state at a terminating history. -/
+noncomputable def Scheduler.expandSeg (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (labs : List Label) (s₀ : State) :
+    Scheduler sys.toSystem where
+  next h :=
+    (pe'.beliefExpandAt labs
+        (if hT : h.trans.Terminates then h.endState hT else s₀)).bind (fun E =>
+      (pe'.lastMuBelief E).bind (fun μ_k =>
+        (Scheduler.bind (Scheduler.expandPostScheduler sys E μ_k)
+          (Scheduler.anchoredNextSegment sys pe' labs)).next h))
+  valid := by
+    classical
+    intro h n s h_term_n h_state_n l μ h_supp
+    -- The drawn belief `E`, posterior `μ_k`, and the bound scheduler are irrelevant to
+    -- validity: we apply the bound scheduler's own `valid` at `(h, n, s)` directly.
+    rw [PMF.mem_support_bind_iff] at h_supp
+    obtain ⟨E, _, h_supp⟩ := h_supp
+    rw [PMF.mem_support_bind_iff] at h_supp
+    obtain ⟨μ_k, _, h_supp⟩ := h_supp
+    exact (Scheduler.bind (Scheduler.expandPostScheduler sys E μ_k)
+      (Scheduler.anchoredNextSegment sys pe' labs)).valid h n s h_term_n h_state_n l μ h_supp
+
+/-! #### **(I) External-boundary disintegration of `expand`'s level mass (the hard part).**
+
 Appending one external label `l`, the `expand` construction's tight trace-`(labs++[l])`
 external level mass factors at its last external label into the tight trace-`labs`
 prefix (governed by the IH) and a successor SEGMENT, whose belief-averaged segment
 `g`-integral — over the boundary-anchored expansion belief `beliefExpandAt labs s'`, then
 the carried post-τ `expandPostScheduler`, then `anchoredNextSegment`'s next external weak
 step and its witness — telescopes to `segExp labs l g s'` at each tight-`labs` boundary
-state `s'`. Concretely:
-`extLabMass D (labs++[l]) g = extLabMass D labs (segExp labs l g)`
+state `s'`. Concretely `extLabMass D (labs++[l]) g = extLabMass D labs (segExp labs l g)`
 where `D = ⟨pure init, expand sys pe'⟩`.
 
-PROOF SKETCH (mirrors `lower_labProb_eq_aux`'s step, but per external label is a SEGMENT
-and `expand`'s belief RE-ANCHORS): via `extLabMass_eq_tight_tsum` on both sides, a tight
-trace-`(labs++[l])` exec `e` of `D` splits at its last external transition into a tight
-trace-`labs` prefix `e_pre` (end-state `s' = e_pre.endState`) and a segment `seg` from
-`s'`. Along `seg` the trace stays `labs`, so `expand.next` at `e_pre ⊕ seg-prefix` runs
-the carried segment scheduler on `internalSuffix = seg-prefix` (since `e_pre` ends
-external ⟹ `internalSuffix(e_pre ⊕ internal-seg-prefix) = seg-prefix`). The re-anchored
-belief's own segment `g`-integral, averaged, telescopes to `segExp` by
-`expand_step_belief_averaging` (external draw) + `extLabMass_segment_bridge` /
-`weakTau.integrate` (τ-closures) + `beliefExpandAt(End)_normalize_cancel`. This is the
-combinatorial segment-level disintegration of the belief-bind `expand.next` — it has NO
-template and is the genuine research crux. -/
+This is the genuine research crux. It is split into two isolated sub-lemmas: `(Ia)`
+`expand_extLabMass_eq_segSum` (the prefix/segment `probOf`-factorization disintegration)
+and `(Ib)` `expandSeg_extLabMass_eq_segExp` (the segment-process `g`-integral = `segExp`).
+The main theorem `expand_extLabMass_disintegrate` is proven by composing `(Ia)`, `(Ib)`,
+and `extLabMass_eq_tight_tsum`. -/
+
+/-- **(Ib) Segment-process `g`-integral = `segExp` (ISOLATED RESEARCH SUB-LEMMA).**
+From a boundary state `s'`, the segment-process scheduler `expandSeg sys pe' labs`'s tight
+trace-`[l]` external level `g`-mass equals the single-weak-step expansion `g`-expectation
+`segExp labs l g s'`.
+
+EXACT GOAL:
+`sys.extLabMass ⟨PMF.pure s', Scheduler.expandSeg sys pe' labs s'⟩ [l] g = pe'.segExp labs l g s'`.
+
+This is the τ-closure re-anchoring analysis. `expandSeg` from `s'`:
+* re-draws `beliefExpandAt labs (endStateD h)` at every prefix `h` (memoryless), then
+* runs `Scheduler.bind (expandPostScheduler sys E μ_k) (anchoredNextSegment sys pe' labs)`.
+A tight trace-`[l]` run is: the carried post-τ `expandPostScheduler` τ-closure (all
+internal, from `s'`, reaching a μ_k-sample `r`), then `anchoredNextSegment`'s next
+external weak step `(l, μ)` from `r` and its total witness (pre-τ; hyperStep `l`; post-τ).
+Its `g`-integral telescopes to `segExp` by `extLabMass_segment_bridge` /
+`Scheduler.bind_compose_integrate` (compose post-τ then next-step) + `weakTau.integrate`
+(post-τ pushforward `s' → r = μ_k`) + `expand_step_belief_averaging` (the next-step
+belief-average) + `beliefExpandAt(End)_normalize_cancel` (cancel the belief normalizers).
+The post-τ → μ_k = `E.endState` re-anchoring aligns the `hyperBoundary (E.endState)` of
+`segExp`.
+
+BLOCKING DIFFICULTY (why this is a residual `sorry`): `expandSeg` re-draws its belief at
+every intermediate prefix `h`, so it is NOT literally a fixed `Scheduler.bind σ_τ k`;
+`extLabMass_segment_bridge` does not apply verbatim. The memoryless belief re-anchoring
+must be shown irrelevant to the trace-`[l]` `haltMass` (the belief at intermediate internal
+prefixes only reshuffles the hidden split, not the observable mass) before the bridge's
+combinator chain applies. This is the genuine Ionescu–Tulcea step. -/
+theorem expandSeg_extLabMass_eq_segExp (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (labs : List Label) (l : Label) (g : State → ENNReal) (s' : State) :
+    sys.extLabMass ⟨PMF.pure s', Scheduler.expandSeg sys pe' labs s'⟩ [l] g
+      = pe'.segExp labs l g s' := by
+  sorry
+
+/-- **(Ia) External-boundary disintegration factorization (ISOLATED RESEARCH SUB-LEMMA).**
+The tight trace-`(labs++[l])` external level `g`-mass of `D = ⟨pure init, expand sys pe'⟩`
+factors, over the tight trace-`labs` cone of `D`, into the prefix `probOf` times the
+segment-process scheduler's tight trace-`[l]` `g`-mass from the prefix end-state:
+`extLabMass D (labs++[l]) g`
+  `= ∑'_{e_pre : tight trace-labs of D}`
+      `D.probOf e_pre · extLabMass ⟨e_pre.endState, expandSeg⟩ [l] g`.
+
+EXACT GOAL (stated via the `extLabMass_eq_tight_tsum` subtype-cone on the RHS index):
+`sys.extLabMass D (labs ++ [l]) g`
+  `= ∑' e_pre : {e // e.trans.Terminates ∧ sys.trace e = ofList labs ∧ sys.IsTight e},`
+      `D.probOf e_pre.1 e_pre.2.1 *`
+        `sys.extLabMass ⟨PMF.pure (e_pre.1.endState e_pre.2.1),`
+          `expandSeg sys pe' labs (e_pre.1.endState e_pre.2.1)⟩ [l] g`.
+
+This is the hard combinatorial disintegration. Each tight trace-`(labs++[l])` exec `e` of
+`D` splits at its `|labs|`-th external transition into a tight trace-`labs` prefix `e_pre`
+(cut right after the last `labs`-external transition) and a tight trace-`[l]` segment `seg`
+from `s' = e_pre.endState`; `e.trans = e_pre.trans.append seg.trans`, `e.endState =
+seg.endState`. The `probOf` factorizes `D.probOf e = D.probOf e_pre · ⟨s', expandSeg⟩.probOf
+seg` by the KEY STRUCTURAL INSIGHT: for every proper prefix `segPrefix` of `seg` (all
+internal, since the external `l` is `seg`'s last transition), `expand.next (e_pre ⊕
+segPrefix) = (expandSeg sys pe' labs s').next segPrefix` because `internalSuffix(e_pre ⊕
+segPrefix) = segPrefix` (e_pre ends external) and `(e_pre ⊕ segPrefix).endState =
+segPrefix.endState`, and the running trace stays `labs`. So the per-transition kernels of
+`D` beyond `e_pre` agree with those of `⟨s', expandSeg⟩`, iterating `probOf_append_singleton`.
+
+BLOCKING DIFFICULTY (why this is a residual `sorry`): the prefix/segment bijection over the
+tight cone (cutting at the `|labs|`-th external transition — a `tight_trace_prefix_eq`-style
+argument generalized from one transition to a labelled-boundary split) and the
+`expand.kernel (e_pre ⊕ segPrefix) = (expandSeg …).kernel segPrefix` per-transition KEY
+INSIGHT (a `Seq.append`/`internalSuffix`/`drop` combinatorial identity) are new
+infrastructure with no template. -/
+theorem expand_extLabMass_eq_segSum (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init)
+    (labs : List Label) (l : Label) (g : State → ENNReal) :
+    sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (labs ++ [l]) g
+      = ∑' e_pre : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys.trace e = Seq.ofList labs ∧ sys.IsTight e},
+          (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+              : ProbabilisticExecution sys.toSystem).probOf e_pre.1 e_pre.2.1
+            * sys.extLabMass
+                ⟨PMF.pure (e_pre.1.endState e_pre.2.1),
+                  Scheduler.expandSeg sys pe' labs (e_pre.1.endState e_pre.2.1)⟩ [l] g := by
+  sorry
+
 theorem expand_extLabMass_disintegrate (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem)
     (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
@@ -2843,7 +2955,27 @@ theorem expand_extLabMass_disintegrate (sys : LabelledSystem State Label)
     sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (labs ++ [l]) g
       = sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ labs
           (pe'.segExp labs l g) := by
-  sorry
+  classical
+  -- (Ia) Disintegrate the appended level mass over the tight trace-`labs` prefix cone.
+  rw [expand_extLabMass_eq_segSum sys pe' hExt h_init labs l g]
+  -- (Ib) Rewrite each segment-process `g`-integral to the per-state `segExp` integrand.
+  rw [show (∑' e_pre : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys.trace e = Seq.ofList labs ∧ sys.IsTight e},
+          (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+              : ProbabilisticExecution sys.toSystem).probOf e_pre.1 e_pre.2.1
+            * sys.extLabMass
+                ⟨PMF.pure (e_pre.1.endState e_pre.2.1),
+                  Scheduler.expandSeg sys pe' labs (e_pre.1.endState e_pre.2.1)⟩ [l] g)
+        = ∑' e_pre : {e : AlterSeq State Label //
+            e.trans.Terminates ∧ sys.trace e = Seq.ofList labs ∧ sys.IsTight e},
+            (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+                : ProbabilisticExecution sys.toSystem).probOf e_pre.1 e_pre.2.1
+              * pe'.segExp labs l g (e_pre.1.endState e_pre.2.1) from
+    tsum_congr (fun e_pre => by
+      rw [expandSeg_extLabMass_eq_segExp sys pe' hExt labs l g (e_pre.1.endState e_pre.2.1)])]
+  -- Fold back to `extLabMass D labs (segExp labs l g)` via the tight-cone sum form.
+  rw [sys.extLabMass_eq_tight_tsum ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ labs
+    (pe'.segExp labs l g)]
 
 open Classical in
 /-- Under `hExt`, `rhoExpect labs g` collapses to a sum over `sys^w`-histories whose
