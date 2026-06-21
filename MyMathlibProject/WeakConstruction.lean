@@ -2635,7 +2635,11 @@ noncomputable def ProbabilisticExecution.segExp {sys : LabelledSystem State Labe
     (g : State → ENNReal) (s' : State) : ENNReal :=
   ∑' E : AlterSeq State Label, pe'.beliefExpandAt labs s' E *
     (∑' lω : Label × PMF State, pe'.scheduler.next E (some lω) *
-      (if lω.1 = l then (∑' t : State, (sys.hyperBoundary s' lω.1 lω.2) t * g t) else 0))
+      (if lω.1 = l then
+        (dite E.trans.Terminates
+          (fun h => ∑' t : State, (sys.hyperBoundary (E.endState h) lω.1 lω.2) t * g t)
+          (fun _ => 0))
+       else 0))
 
 /-- **`g = 1` slice of `rhoExpect`.** At `g = 1` the boundary marginal sums to `1`
 (`boundaryMarginal_tsum_one`), so each tight-`labs` history contributes its plain
@@ -3123,6 +3127,312 @@ theorem ProbabilisticExecution.boundaryMarginal_append_singleton {State Label : 
   simp only [kp]
 
 open Classical in
+/-- **hExt bridge for `beliefExpandAtW`.** Under `hExt` (every scheduled label external),
+the trace-tight cone defining `beliefExpandAtW` coincides with the plain label-list cone:
+`beliefExpandAtW labs s E = dite(E.trans.Terminates ∧ E.trans.map Prod.fst = ↑labs)
+  (probOf E · boundaryMarginal E s) 0`. (Mirror of `rhoExpect_eq_labelCone`, with the
+boundary-marginal weight `boundaryMarginal E s` in place of the `∑ s, bm·g` integral.) -/
+theorem ProbabilisticExecution.beliefExpandAtW_eq_labelCone {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (labs : List Label) (s : State) (E : AlterSeq State Label) :
+    pe'.beliefExpandAtW labs s E
+      = dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs)
+          (fun h => pe'.probOf E h.1 * pe'.boundaryMarginal E s) (fun _ => 0) := by
+  classical
+  unfold ProbabilisticExecution.beliefExpandAtW
+  by_cases hT : E.trans.Terminates
+  · set labsE : List Label := (E.trans.toList hT).map Prod.fst with hlabsE
+    have hmapE : E.trans.map Prod.fst = Seq.ofList labsE := by
+      rw [hlabsE, ← Seq.map_ofList_pub, Stream'.Seq.ofList_toList E.trans hT]
+    by_cases hext : ∀ p ∈ E.trans.toList hT, ¬ sys.internal p.1
+    · have hextlab : ∀ lab ∈ labsE, ¬ (sys^w).internal lab := by
+        intro lab hlab
+        obtain ⟨p, hp_mem, hp_eq⟩ := List.mem_map.mp hlab
+        simpa [LabelledSystem.weakClosure] using (hp_eq ▸ hext p hp_mem)
+      have hfilter : (Seq.ofList labsE).filter (fun lab => ¬ (sys^w).internal lab)
+          = Seq.ofList labsE := by
+        rw [ofList_filter_helper]
+        congr 1
+        rw [List.filter_eq_self]
+        intro lab hlab; simpa using hextlab lab hlab
+      have htt_iff : sys^w.traceTightLabs (Seq.ofList labs) labsE ↔ labsE = labs := by
+        unfold LabelledSystem.traceTightLabs
+        rw [hfilter]
+        constructor
+        · rintro ⟨h1, _⟩; exact Stream'.Seq.ofList_injective h1
+        · rintro rfl
+          refine ⟨rfl, ?_⟩
+          intro lab hlab; exact hextlab lab (List.mem_of_getLast? hlab)
+      have htight_iff : (sys^w.trace E = Seq.ofList labs ∧ sys^w.IsTight E)
+          ↔ sys^w.traceTightLabs (Seq.ofList labs) labsE :=
+        sys^w.tight_iff (Seq.ofList labs) E hT
+      by_cases hlab_eq : labsE = labs
+      · rw [dif_pos ⟨hT, (htight_iff.mpr (htt_iff.mpr hlab_eq)).1,
+              (htight_iff.mpr (htt_iff.mpr hlab_eq)).2⟩,
+          dif_pos ⟨hT, by rw [hmapE, hlab_eq]⟩]
+      · rw [dif_neg (fun h => hlab_eq (htt_iff.mp (htight_iff.mp ⟨h.2.1, h.2.2⟩))),
+          dif_neg (fun h => hlab_eq (by
+            have : Seq.ofList labsE = Seq.ofList labs := by rw [← hmapE]; exact h.2
+            exact Stream'.Seq.ofList_injective this))]
+    · push Not at hext
+      obtain ⟨p, hp_mem, hp_int⟩ := hext
+      have hprob0 : pe'.probOf E hT = 0 := by
+        have hreassemble : (⟨E.init, Seq.ofList (E.trans.toList hT)⟩ : AlterSeq State Label) = E :=
+          congrArg₂ AlterSeq.mk rfl (Stream'.Seq.ofList_toList E.trans hT)
+        have hterm : (Seq.ofList (E.trans.toList hT) : Seq (Label × State)).Terminates :=
+          Stream'.Seq.terminates_ofList _
+        have hprob : pe'.probOf E hT
+            = pe'.probOf ⟨E.init, Seq.ofList (E.trans.toList hT)⟩ hterm := by
+          have key : ∀ (E' : AlterSeq State Label) (hE : E'.trans.Terminates),
+              E' = (⟨E.init, Seq.ofList (E.trans.toList hT)⟩ : AlterSeq State Label) →
+              pe'.probOf E' hE
+                = pe'.probOf ⟨E.init, Seq.ofList (E.trans.toList hT)⟩ hterm := by
+            rintro E' hE rfl; rfl
+          exact key E hT hreassemble.symm
+        rw [hprob, pe'.probOf_ofList_eq_zero_of_internal_mem hExt E.init
+          (E.trans.toList hT) hterm ⟨p, hp_mem, hp_int⟩]
+      by_cases h1 : E.trans.Terminates ∧ sys^w.trace E = Seq.ofList labs ∧ sys^w.IsTight E
+      · rw [dif_pos h1, hprob0, zero_mul]
+        by_cases h2 : E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs
+        · rw [dif_pos h2, hprob0, zero_mul]
+        · rw [dif_neg h2]
+      · rw [dif_neg h1]
+        by_cases h2 : E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs
+        · rw [dif_pos h2, hprob0, zero_mul]
+        · rw [dif_neg h2]
+  · rw [dif_neg (fun h => hT h.1), dif_neg (fun h => hT h.1)]
+
+open Classical in
+/-- **Append-singleton reindex of the label-list boundary cone.** Reindexing the
+trace-`(labs++[l])` boundary-`g` cone over the bijection `E ↔ (E_pre, sk)` (a trace-`labs`
+prefix `E_pre` + last external transition `(l, sk)`), the appended `boundaryMarginal E`
+(`= ∑' μ, lastMuBelief E μ · hyperBoundary E_pre.endState l μ`) collapses against `probOf E`
+by `probOf_mul_lastMuBelief_append` and the `∑' sk, μ sk = 1` PMF total, giving the
+prefix-`E_pre` single-step boundary `g`-expectation. (Mirror of `labMass_append`.) -/
+theorem ProbabilisticExecution.rhoExpect_labelCone_append_singleton {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (labs : List Label) (l : Label) (g : State → ENNReal) :
+    (∑' E : AlterSeq State Label,
+        dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList (labs ++ [l]))
+          (fun h => pe'.probOf E h.1 * (∑' s : State, pe'.boundaryMarginal E s * g s))
+          (fun _ => 0))
+      = ∑' E_pre : AlterSeq State Label,
+          dite (E_pre.trans.Terminates ∧ E_pre.trans.map Prod.fst = Seq.ofList labs)
+            (fun h => pe'.probOf E_pre h.1 *
+              (∑' μ : PMF State, pe'.scheduler.next E_pre (some (l, μ)) *
+                (∑' s : State, (sys.hyperBoundary (E_pre.endState h.1) l μ) s * g s)))
+            (fun _ => 0) := by
+  classical
+  -- Step A: bijection `E ↔ (E_pre, sk)` onto the `(E_pre, sk)`-summand `gg`.
+  set gg : AlterSeq State Label × State → ENNReal := fun p =>
+      dite (p.1.trans.Terminates ∧ Seq.map Prod.fst p.1.trans = (↑labs : Seq Label))
+        (fun h => pe'.probOf p.1 h.1 *
+          (∑' μ : PMF State, pe'.scheduler.next p.1 (some (l, μ)) * μ p.2 *
+            (∑' s : State, (sys.hyperBoundary (p.1.endState h.1) l μ) s * g s))) (fun _ => 0)
+    with hgg_def
+  set f : AlterSeq State Label → ENNReal := fun E =>
+      dite (E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑(labs ++ [l]) : Seq Label))
+        (fun h => pe'.probOf E h.1 * (∑' s : State, pe'.boundaryMarginal E s * g s)) (fun _ => 0)
+    with hf_def
+  have g_supp_cond : ∀ p : AlterSeq State Label × State, gg p ≠ 0 →
+      p.1.trans.Terminates ∧ Seq.map Prod.fst p.1.trans = (↑labs : Seq Label) := by
+    intro p hp
+    by_contra hcond
+    rw [hgg_def] at hp; simp only at hp; rw [dif_neg hcond] at hp; exact hp rfl
+  have f_supp_cond : ∀ E : AlterSeq State Label, f E ≠ 0 →
+      E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑(labs ++ [l]) : Seq Label) := by
+    intro E hE
+    by_contra hcond
+    rw [hf_def] at hE; simp only at hE; rw [dif_neg hcond] at hE; exact hE rfl
+  -- The per-summand value identity: for a trace-`labs` prefix `E_pre`, the appended
+  -- history `E = ⟨E_pre.init, E_pre.trans ++ [(l, sk)]⟩` has `f E = gg (E_pre, sk)`.
+  have summand_eq : ∀ (E_pre : AlterSeq State Label) (sk : State)
+      (hpre : E_pre.trans.Terminates)
+      (hmap : Seq.map Prod.fst E_pre.trans = (↑labs : Seq Label)),
+      f (⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ : AlterSeq State Label)
+        = gg (E_pre, sk) := by
+    intro E_pre sk hpre hmap
+    -- Termination + label-map of the appended history.
+    have h_app_term : (E_pre.trans.append (Seq.cons (l, sk) Seq.nil)).Terminates :=
+      ⟨_, Stream'.Seq.terminatedAt_append_find hpre
+        (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil).choose_spec⟩
+    have h_map : Seq.map Prod.fst (E_pre.trans.append (Seq.cons (l, sk) Seq.nil))
+        = (↑(labs ++ [l]) : Seq Label) := by
+      rw [Stream'.Seq.map_append, Stream'.Seq.map_cons, Stream'.Seq.map_nil, hmap,
+        Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+    -- `⟨E_pre.init, E_pre.trans⟩ = E_pre` (used to align `boundaryMarginal_append_singleton`).
+    have hEpre_eta : (⟨E_pre.init, E_pre.trans⟩ : AlterSeq State Label) = E_pre := rfl
+    -- LHS then-branch.
+    have hf_then : f (⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩
+        : AlterSeq State Label)
+        = pe'.probOf ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ h_app_term
+          * (∑' s : State, pe'.boundaryMarginal
+              ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ s * g s) := by
+      rw [hf_def]; simp only; rw [dif_pos ⟨h_app_term, h_map⟩]
+    -- RHS (gg) then-branch.
+    have hgg_then : gg (E_pre, sk)
+        = pe'.probOf E_pre hpre *
+          (∑' μ : PMF State, pe'.scheduler.next E_pre (some (l, μ)) * μ sk *
+            (∑' s : State, (sys.hyperBoundary (E_pre.endState hpre) l μ) s * g s)) := by
+      rw [hgg_def]; simp only; rw [dif_pos ⟨hpre, hmap⟩]
+    rw [hf_then, hgg_then]
+    -- Expand `boundaryMarginal` of the appended history and pull `probOf E` inside.
+    have hbm : ∀ s : State, pe'.boundaryMarginal
+          ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ s
+        = ∑' μ : PMF State, pe'.lastMuBelief
+            ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ μ *
+            (sys.hyperBoundary (E_pre.endState hpre) l μ) s := by
+      intro s
+      have := pe'.boundaryMarginal_append_singleton E_pre.init E_pre.trans hpre l sk h_app_term s
+      rw [this]
+    -- Pull `probOf` into the `s`-sum, expand `boundaryMarginal`, swap `s`/`μ`.
+    rw [← ENNReal.tsum_mul_left]
+    rw [show (∑' s : State, pe'.probOf
+            ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ h_app_term *
+            (pe'.boundaryMarginal ⟨E_pre.init,
+              E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ s * g s))
+          = ∑' s : State, ∑' μ : PMF State,
+              (pe'.probOf ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ h_app_term *
+                pe'.lastMuBelief ⟨E_pre.init,
+                  E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ μ) *
+                ((sys.hyperBoundary (E_pre.endState hpre) l μ) s * g s) from
+        tsum_congr (fun s => by
+          rw [hbm s, ← ENNReal.tsum_mul_right, ← ENNReal.tsum_mul_left]
+          exact tsum_congr (fun μ => by ring))]
+    rw [ENNReal.tsum_comm, ← ENNReal.tsum_mul_left]
+    -- Apply the linchpin `probOf · lastMuBelief` cancellation, then `ring`/factor.
+    refine tsum_congr (fun μ => ?_)
+    -- LHS μ-summand: `∑' s, probOf_E * lastMuBelief μ * (hyperBoundary μ s * g s)`.
+    rw [← ENNReal.tsum_mul_left]
+    have hcancel : pe'.probOf
+          ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ h_app_term *
+          pe'.lastMuBelief ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ μ
+        = pe'.probOf E_pre hpre * (pe'.scheduler.next E_pre (some (l, μ)) * μ sk) :=
+      pe'.probOf_mul_lastMuBelief_append E_pre.init E_pre.trans hpre l sk h_app_term μ
+    rw [← ENNReal.tsum_mul_left]
+    refine tsum_congr (fun s => ?_)
+    rw [show pe'.probOf
+          ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ h_app_term *
+          pe'.lastMuBelief ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ μ *
+          ((sys.hyperBoundary (E_pre.endState hpre) l μ) s * g s)
+        = (pe'.probOf
+            ⟨E_pre.init, E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ h_app_term *
+            pe'.lastMuBelief ⟨E_pre.init,
+              E_pre.trans.append (Seq.cons (l, sk) Seq.nil)⟩ μ) *
+            ((sys.hyperBoundary (E_pre.endState hpre) l μ) s * g s) by ring,
+      hcancel]
+    ring
+  -- Step B: bijection `tsum f = ∑' p, gg p`, then `tsum_prod'`, then collapse `sk`.
+  have hbij : tsum f = ∑' p : AlterSeq State Label × State, gg p := by
+    refine (tsum_eq_tsum_of_ne_zero_bij
+      (i := fun x => (⟨(x.1).1.init,
+          (x.1).1.trans.append (Seq.cons (l, (x.1).2) Seq.nil)⟩ : AlterSeq State Label))
+      ?hinj ?hf ?hfg)
+    case hinj =>
+      rintro x y hxy
+      have hx := g_supp_cond x.1 x.2
+      have hy := g_supp_cond y.1 y.2
+      have h_trans := congrArg AlterSeq.trans hxy
+      have h_init := congrArg AlterSeq.init hxy
+      simp only at h_trans h_init
+      have h_last := Stream'.Seq.append_singleton_inj_right
+        (x.1).1.trans (y.1).1.trans hx.1 hy.1 _ _ h_trans
+      have hs' : (x.1).2 = (y.1).2 := (Prod.mk.inj h_last).2
+      have h_prev := Stream'.Seq.append_singleton_inj_left
+        (x.1).1.trans (y.1).1.trans hx.1 hy.1 _ _ h_trans
+      refine Subtype.ext (Prod.ext ?_ hs')
+      exact congrArg₂ AlterSeq.mk h_init h_prev
+    case hf =>
+      intro E hE_mem
+      have hE := f_supp_cond E (Function.mem_support.mp hE_mem)
+      have h_ne : E.trans.toList hE.1 ≠ [] := by
+        intro hnil
+        have h_map_nil : E.trans.map Prod.fst = Stream'.Seq.nil := by
+          have : E.trans = Stream'.Seq.nil := by
+            rw [← Stream'.Seq.ofList_toList E.trans hE.1, hnil, Stream'.Seq.ofList_nil]
+          rw [this, Stream'.Seq.map_nil]
+        rw [hE.2] at h_map_nil
+        have h_len := congrArg Stream'.Seq.length' h_map_nil
+        rw [Stream'.Seq.length'_nil,
+          Stream'.Seq.length'_of_terminates (Stream'.Seq.terminates_ofList _),
+          ← Stream'.Seq.length_toList _ (Stream'.Seq.terminates_ofList _),
+          Stream'.Seq.toList_ofList] at h_len
+        simp only [List.length_append, List.length_singleton, Nat.cast_eq_zero] at h_len
+        omega
+      obtain ⟨prev, last, h_prev_term, h_split, _, _⟩ :=
+        Stream'.Seq.exists_split_last E.trans hE.1 h_ne
+      have h_trans_map := hE.2
+      rw [h_split, Stream'.Seq.map_append, Stream'.Seq.map_cons,
+        Stream'.Seq.map_nil] at h_trans_map
+      rw [show (↑(labs ++ [l]) : Seq Label)
+          = (↑labs : Seq Label).append (Seq.cons l Seq.nil) by
+          rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]]
+        at h_trans_map
+      have h_prev_map_term : (prev.map Prod.fst).Terminates :=
+        Stream'.Seq.terminates_map_iff.mpr h_prev_term
+      have h_prev_map : prev.map Prod.fst = (↑labs : Seq Label) :=
+        Stream'.Seq.append_singleton_inj_left _ _ h_prev_map_term
+          (Stream'.Seq.terminates_ofList _) _ _ h_trans_map
+      have h_last : last.1 = l :=
+        Stream'.Seq.append_singleton_inj_right _ _ h_prev_map_term
+          (Stream'.Seq.terminates_ofList _) _ _ h_trans_map
+      have h_app_term : (prev.append (Seq.cons (l, last.2) Seq.nil)).Terminates := by
+        rw [show (Seq.cons (l, last.2) Seq.nil) = Seq.cons last Seq.nil by
+          rw [← h_last]]
+        exact h_split ▸ hE.1
+      have h_reassemble : (⟨E.init, prev.append (Seq.cons (l, last.2) Seq.nil)⟩
+          : AlterSeq State Label) = E := by
+        refine congrArg₂ AlterSeq.mk rfl ?_
+        rw [show (Seq.cons (l, last.2) Seq.nil) = Seq.cons last Seq.nil by rw [← h_last]]
+        exact h_split.symm
+      have hg_pos : gg (⟨E.init, prev⟩, last.2) ≠ 0 := by
+        rw [hgg_def]; simp only; rw [dif_pos ⟨h_prev_term, h_prev_map⟩]
+        -- The `gg` value equals `f E ≠ 0` via `summand_eq` (modulo the reassembly).
+        have hsum := summand_eq ⟨E.init, prev⟩ last.2 h_prev_term h_prev_map
+        rw [hgg_def] at hsum; simp only at hsum; rw [dif_pos ⟨h_prev_term, h_prev_map⟩] at hsum
+        rw [← hsum]
+        have h_fE : f E ≠ 0 := Function.mem_support.mp hE_mem
+        intro hzero
+        apply h_fE
+        have key : ∀ (A : AlterSeq State Label), A = E →
+            f ⟨E.init, prev.append (Seq.cons (l, last.2) Seq.nil)⟩ = f A := by
+          rintro A rfl; rw [h_reassemble]
+        rw [← key E rfl, hzero]
+      refine ⟨⟨(⟨E.init, prev⟩, last.2), hg_pos⟩, ?_⟩
+      simp only
+      exact h_reassemble
+    case hfg =>
+      rintro x
+      have hx := g_supp_cond x.1 x.2
+      exact summand_eq (x.1).1 (x.1).2 hx.1 hx.2
+  rw [hbij, ENNReal.tsum_prod']
+  -- Step C: collapse the `sk`-coordinate via `∑' sk, μ sk = 1`.
+  refine tsum_congr (fun E_pre => ?_)
+  by_cases hc : E_pre.trans.Terminates ∧ Seq.map Prod.fst E_pre.trans = (↑labs : Seq Label)
+  · rw [dif_pos hc]
+    rw [show (∑' sk : State, gg (E_pre, sk))
+          = ∑' sk : State, pe'.probOf E_pre hc.1 *
+              (∑' μ : PMF State, pe'.scheduler.next E_pre (some (l, μ)) * μ sk *
+                (∑' s : State, (sys.hyperBoundary (E_pre.endState hc.1) l μ) s * g s)) from
+        tsum_congr (fun sk => by rw [hgg_def]; simp only; rw [dif_pos hc])]
+    rw [ENNReal.tsum_mul_left]
+    refine congrArg (fun t => pe'.probOf E_pre hc.1 * t) ?_
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun μ => ?_)
+    rw [show (∑' sk : State, pe'.scheduler.next E_pre (some (l, μ)) * μ sk *
+            (∑' s : State, (sys.hyperBoundary (E_pre.endState hc.1) l μ) s * g s))
+          = ∑' sk : State, μ sk *
+              (pe'.scheduler.next E_pre (some (l, μ)) *
+                (∑' s : State, (sys.hyperBoundary (E_pre.endState hc.1) l μ) s * g s)) from
+        tsum_congr (fun sk => by ring),
+      ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+  · rw [dif_neg hc]
+    rw [show (∑' sk : State, gg (E_pre, sk)) = ∑' _sk : State, (0 : ENNReal) from
+        tsum_congr (fun sk => by rw [hgg_def]; simp only; rw [dif_neg hc])]
+    rw [tsum_zero]
+
+open Classical in
 /-- **(III) The boundary belief-algebra ρ-recursion.** Feeding the per-state single-step
 expansion integrand `segExp labs l g` into the tight trace-`labs` ρ-expectation recovers
 the tight trace-`(labs++[l])` ρ-expectation:
@@ -3145,24 +3455,104 @@ theorem rhoExpect_segExp_step (sys : LabelledSystem State Label)
   classical
   -- Collapse both ρ-expectations to label-list cones (under `hExt` all labels are external).
   rw [pe'.rhoExpect_eq_labelCone hExt labs (pe'.segExp labs l g),
-    pe'.rhoExpect_eq_labelCone hExt (labs ++ [l]) g]
-  -- REMAINING (the append-singleton boundary reindex):
-  -- LHS `∑' E_pre, dite(labelList = labs) (probOf E_pre · ∑' s', boundaryMarginal E_pre s'
-  --        · segExp labs l g s')`
-  -- RHS `∑' E,     dite(labelList = labs++[l]) (probOf E · ∑' s, boundaryMarginal E s · g s)`.
-  -- Reindex RHS via the bijection `E ↔ (E_pre, (l, sk))` (label-list `labs++[l]` ↔ a
-  -- label-list-`labs` prefix `E_pre` + last external transition `(l, sk)`), mirroring
-  -- `tsum_probOf_labels_append`. The appended history's `boundaryMarginal E s`
-  -- (`= ∑' μ, lastMuBelief E μ · hyperBoundary E_pre.endState l μ s`) collapses against
-  -- `probOf E` by `probOf_mul_lastMuBelief_append`
-  -- (`probOf E · lastMuBelief E μ = probOf E_pre · next E_pre (l,μ) · μ sk`), giving
-  -- `∑' (sk,μ), probOf E_pre · next E_pre (l,μ) · μ sk · (∑' s, hyperBoundary … s · g s)`.
-  -- On the LHS, `segExp labs l g s'` is the `beliefExpandAt labs s'`-average of
-  -- `∑' μ, next E_b (l,μ) · (∑' t, hyperBoundary s' l μ t · g t)`; the
-  -- `boundaryMarginal E_pre s'`-weighting + `beliefExpandAt_normalize_cancel` matches the
-  -- belief `beliefExpandAtW labs s' E_b = probOf E_b · boundaryMarginal E_b s'` against the
-  -- reindexed RHS prefix `E_pre`/boundary `s' = E_pre.endState`, closing the recursion.
-  sorry
+    pe'.rhoExpect_eq_labelCone hExt (labs ++ [l]) g,
+    pe'.rhoExpect_labelCone_append_singleton labs l g]
+  -- Per-history single-step boundary `g`-expectation `M E`, equal on the cone to the
+  -- `N E` of `rhoExpect_labelCone_append_singleton` (the `lω → (l, μ)` collapse).
+  set M : AlterSeq State Label → ENNReal := fun E =>
+      ∑' lω : Label × PMF State, pe'.scheduler.next E (some lω) *
+        (if lω.1 = l then
+          (dite E.trans.Terminates
+            (fun h => ∑' t : State, (sys.hyperBoundary (E.endState h) lω.1 lω.2) t * g t)
+            (fun _ => 0))
+         else 0) with hM_def
+  -- `M E = N E` for terminating `E`: only `lω = (l, μ)` contributes, and the `dite`
+  -- on `Terminates` resolves to the `then`-branch.
+  have hMN : ∀ (E : AlterSeq State Label) (hE : E.trans.Terminates),
+      M E = ∑' μ : PMF State, pe'.scheduler.next E (some (l, μ)) *
+        (∑' s : State, (sys.hyperBoundary (E.endState hE) l μ) s * g s) := by
+    intro E hE
+    rw [hM_def]; simp only
+    -- Reindex the `Label × PMF`-sum onto `{l} × PMF` (the `if lω.1 = l` masks the rest).
+    rw [ENNReal.tsum_prod']
+    -- Off-diagonal labels `a ≠ l` vanish: the `if a = l` is false, so each inner summand is 0.
+    rw [tsum_eq_single l (fun a ha => by
+      refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
+      rw [if_neg (by simpa using ha), mul_zero])]
+    -- The `a = l` diagonal: resolve `if l = l` and the `dite` on termination via `hE`.
+    refine tsum_congr (fun μ => ?_)
+    rw [if_pos rfl, dif_pos hE]
+  -- LHS reorganization: pull the `∑' s'` outward.
+  -- LHS `= ∑' s', ρ s' · segExp s'` with `ρ s' := ∑' E, dite(cone) (probOf E · bm E s') 0`.
+  set ρ : State → ENNReal := fun s' =>
+      ∑' E : AlterSeq State Label,
+        dite (E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label))
+          (fun h => pe'.probOf E h.1 * pe'.boundaryMarginal E s') (fun _ => 0) with hρ_def
+  -- `ρ s' = ∑' E, beliefExpandAtW labs s' E` (hExt bridge).
+  have hρZ : ∀ s', ρ s' = ∑' E, pe'.beliefExpandAtW labs s' E := by
+    intro s'
+    rw [hρ_def]; simp only
+    exact (tsum_congr (fun E => pe'.beliefExpandAtW_eq_labelCone hExt labs s' E)).symm
+  -- `segExp s' = ∑' E, beliefExpandAt labs s' E · M E` (definitional, with `M` folded).
+  have hseg : ∀ s', pe'.segExp labs l g s' = ∑' E, pe'.beliefExpandAt labs s' E * M E := by
+    intro s'; rw [hM_def]; rfl
+  -- `∑' s', beliefExpandAtW labs s' E = dite(cone) (probOf E) 0` (push the boundary marginal
+  -- through the `dite` and collapse it via `boundaryMarginal_tsum_one`).
+  have hWsum : ∀ E : AlterSeq State Label, (∑' s' : State, pe'.beliefExpandAtW labs s' E)
+      = dite (E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label))
+          (fun h => pe'.probOf E h.1) (fun _ => 0) := by
+    intro E
+    rw [show (∑' s' : State, pe'.beliefExpandAtW labs s' E)
+        = ∑' s' : State, dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs)
+            (fun h => pe'.probOf E h.1 * pe'.boundaryMarginal E s') (fun _ => 0) from
+      tsum_congr (fun s' => pe'.beliefExpandAtW_eq_labelCone hExt labs s' E)]
+    by_cases hc : E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs
+    · rw [show (∑' s' : State, dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs)
+            (fun h => pe'.probOf E h.1 * pe'.boundaryMarginal E s') (fun _ => 0))
+          = ∑' s' : State, pe'.probOf E hc.1 * pe'.boundaryMarginal E s' from
+        tsum_congr (fun s' => by rw [dif_pos hc])]
+      rw [ENNReal.tsum_mul_left, pe'.boundaryMarginal_tsum_one E, mul_one, dif_pos hc]
+    · rw [show (∑' s' : State, dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs)
+            (fun h => pe'.probOf E h.1 * pe'.boundaryMarginal E s') (fun _ => 0))
+          = ∑' s' : State, (0 : ENNReal) from
+        tsum_congr (fun s' => by rw [dif_neg hc])]
+      rw [tsum_zero, dif_neg hc]
+  -- LHS reorganization: `∑' E, dite(cone) (probOf E · ∑' s', bm s' · seg s') 0
+  --   = ∑' s', ρ s' · seg s'` (push the `dite` through `∑' s'`, `tsum_comm`, factor `seg s'`).
+  have hLHS : (∑' (E : AlterSeq State Label),
+      if h : E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label) then
+        pe'.probOf E h.1 * ∑' (s : State), pe'.boundaryMarginal E s * pe'.segExp labs l g s
+      else 0)
+      = ∑' s' : State, ρ s' * pe'.segExp labs l g s' := by
+    rw [hρ_def]; simp only
+    rw [show (∑' (E : AlterSeq State Label),
+        if h : E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label) then
+          pe'.probOf E h.1 * ∑' (s : State), pe'.boundaryMarginal E s * pe'.segExp labs l g s
+        else 0)
+        = ∑' (E : AlterSeq State Label), ∑' s' : State,
+          (if h : E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label) then
+            pe'.probOf E h.1 * pe'.boundaryMarginal E s' else 0) * pe'.segExp labs l g s' from
+      tsum_congr (fun E => by
+        by_cases hc : E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label)
+        · rw [dif_pos hc, ← ENNReal.tsum_mul_left]
+          refine tsum_congr (fun s' => ?_)
+          rw [dif_pos hc, mul_assoc]
+        · rw [dif_neg hc, eq_comm]
+          refine (tsum_congr (fun s' => by rw [dif_neg hc, zero_mul])).trans tsum_zero)]
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun s' => ?_)
+    rw [ENNReal.tsum_mul_right]
+  -- Assemble: rewrite LHS, cancel the belief normalizer, swap sums, collapse the
+  -- `beliefExpandAtW` total to the cone `dite`, and identify `M = N` via `hMN`.
+  rw [hLHS]
+  simp_rw [hρZ, hseg]
+  simp_rw [pe'.beliefExpandAt_normalize_cancel labs _ M]
+  rw [ENNReal.tsum_comm]
+  refine tsum_congr (fun E => ?_)
+  rw [ENNReal.tsum_mul_right, hWsum E]
+  by_cases hc : E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑labs : Seq Label)
+  · rw [dif_pos hc, dif_pos hc, hMN E hc.1, mul_comm]
+  · rw [dif_neg hc, dif_neg hc, zero_mul]
 
 /-- **The general-`g` inductive step of the `rhoExpect` invariant for `expand`** (the
 research crux — the SOLE remaining `sorry` of the no-internal trace invariant).
