@@ -2617,6 +2617,26 @@ noncomputable def ProbabilisticExecution.rhoExpect {sys : LabelledSystem State L
     dite (E.trans.Terminates ∧ sys^w.trace E = Seq.ofList labs ∧ sys^w.IsTight E)
       (fun h => pe'.probOf E h.1 * (∑' s : State, pe'.boundaryMarginal E s * g s)) (fun _ => 0)
 
+open Classical in
+/-- **The single-weak-step expansion `g`-expectation from a tight-`labs` boundary state
+`s'`.** This is the integrand fed to the IH in `expand_extLabMass_step_g`: averaged over
+the boundary-anchored expansion belief `beliefExpandAt labs s'` (the `sys^w`-histories
+with external trace `labs` whose hidden hyperStep boundary samples to `s'`), draw the
+next external weak step `(l, μ) ∼ pe'.scheduler.next E` and integrate `g` over its
+*hyperStep boundary* `ν' = hyperBoundary s' l μ` (the post-distribution of the observable
+`l`-transition, where the next tight concrete execution cuts). Only the appended label
+`l` contributes (the `if lω.1 = l`); other emissions are masked, matching the trace
+constraint that the appended external label is exactly `l`.
+
+This is the `expand`-side analogue of `lower_kernel_g_sum`'s belief-averaged kernel
+`g`-sum, re-anchored at the concrete boundary state. -/
+noncomputable def ProbabilisticExecution.segExp {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (labs : List Label) (l : Label)
+    (g : State → ENNReal) (s' : State) : ENNReal :=
+  ∑' E : AlterSeq State Label, pe'.beliefExpandAt labs s' E *
+    (∑' lω : Label × PMF State, pe'.scheduler.next E (some lω) *
+      (if lω.1 = l then (∑' t : State, (sys.hyperBoundary s' lω.1 lω.2) t * g t) else 0))
+
 /-- **`g = 1` slice of `rhoExpect`.** At `g = 1` the boundary marginal sums to `1`
 (`boundaryMarginal_tsum_one`), so each tight-`labs` history contributes its plain
 `probOf`, recovering `sys^w.extLabMass pe' labs 1` via the subtype-sum form
@@ -2788,6 +2808,291 @@ theorem ProbabilisticExecution.rhoExpect_nil {sys : LabelledSystem State Label}
         if_pos rfl, one_mul]
     rw [h_bound]
 
+/-- **(I) External-boundary disintegration of `expand`'s level mass (the hard part).**
+Appending one external label `l`, the `expand` construction's tight trace-`(labs++[l])`
+external level mass factors at its last external label into the tight trace-`labs`
+prefix (governed by the IH) and a successor SEGMENT, whose belief-averaged segment
+`g`-integral — over the boundary-anchored expansion belief `beliefExpandAt labs s'`, then
+the carried post-τ `expandPostScheduler`, then `anchoredNextSegment`'s next external weak
+step and its witness — telescopes to `segExp labs l g s'` at each tight-`labs` boundary
+state `s'`. Concretely:
+`extLabMass D (labs++[l]) g = extLabMass D labs (segExp labs l g)`
+where `D = ⟨pure init, expand sys pe'⟩`.
+
+PROOF SKETCH (mirrors `lower_labProb_eq_aux`'s step, but per external label is a SEGMENT
+and `expand`'s belief RE-ANCHORS): via `extLabMass_eq_tight_tsum` on both sides, a tight
+trace-`(labs++[l])` exec `e` of `D` splits at its last external transition into a tight
+trace-`labs` prefix `e_pre` (end-state `s' = e_pre.endState`) and a segment `seg` from
+`s'`. Along `seg` the trace stays `labs`, so `expand.next` at `e_pre ⊕ seg-prefix` runs
+the carried segment scheduler on `internalSuffix = seg-prefix` (since `e_pre` ends
+external ⟹ `internalSuffix(e_pre ⊕ internal-seg-prefix) = seg-prefix`). The re-anchored
+belief's own segment `g`-integral, averaged, telescopes to `segExp` by
+`expand_step_belief_averaging` (external draw) + `extLabMass_segment_bridge` /
+`weakTau.integrate` (τ-closures) + `beliefExpandAt(End)_normalize_cancel`. This is the
+combinatorial segment-level disintegration of the belief-bind `expand.next` — it has NO
+template and is the genuine research crux. -/
+theorem expand_extLabMass_disintegrate (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init)
+    (labs : List Label) (l : Label) (g : State → ENNReal) :
+    sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (labs ++ [l]) g
+      = sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ labs
+          (pe'.segExp labs l g) := by
+  sorry
+
+open Classical in
+/-- Under `hExt`, `rhoExpect labs g` collapses to a sum over `sys^w`-histories whose
+**label list is exactly `labs`** (no internal labels interspersed), weighted by
+`probOf · boundaryMarginal`-`g`-integral. (Mirror of `extLabMass_eq_labMass_noInternal`,
+keeping the `boundaryMarginal` weight: tight trace-`labs` histories with label list ≠
+`labs` carry an internal label, hence `probOf = 0`; and conversely.) -/
+theorem ProbabilisticExecution.rhoExpect_eq_labelCone {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (labs : List Label) (g : State → ENNReal) :
+    pe'.rhoExpect labs g
+      = ∑' E : AlterSeq State Label,
+          dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs)
+            (fun h => pe'.probOf E h.1 * (∑' s : State, pe'.boundaryMarginal E s * g s))
+            (fun _ => 0) := by
+  classical
+  unfold ProbabilisticExecution.rhoExpect
+  refine tsum_congr (fun E => ?_)
+  -- Both summands carry the same weight `W` when their predicate holds; we show the
+  -- two `dite`s agree by case analysis on termination + internal-label presence.
+  by_cases hT : E.trans.Terminates
+  · -- The label list of `E`.
+    set labsE : List Label := (E.trans.toList hT).map Prod.fst with hlabsE
+    have hmapE : E.trans.map Prod.fst = Seq.ofList labsE := by
+      rw [hlabsE, ← Seq.map_ofList_pub, Stream'.Seq.ofList_toList E.trans hT]
+    by_cases hext : ∀ p ∈ E.trans.toList hT, ¬ sys.internal p.1
+    · -- All-external: tightness ⇔ label list = labs (mirror of `tight_iff`/no-internal).
+      -- Each label of `E` is external.
+      have hextlab : ∀ lab ∈ labsE, ¬ (sys^w).internal lab := by
+        intro lab hlab
+        obtain ⟨p, hp_mem, hp_eq⟩ := List.mem_map.mp hlab
+        simpa [LabelledSystem.weakClosure] using (hp_eq ▸ hext p hp_mem)
+      -- The trace-tight predicate over `labsE` reduces to `labsE = labs`.
+      have hfilter : (Seq.ofList labsE).filter (fun lab => ¬ (sys^w).internal lab)
+          = Seq.ofList labsE := by
+        rw [ofList_filter_helper]
+        congr 1
+        rw [List.filter_eq_self]
+        intro lab hlab; simpa using hextlab lab hlab
+      have htt_iff : sys^w.traceTightLabs (Seq.ofList labs) labsE ↔ labsE = labs := by
+        unfold LabelledSystem.traceTightLabs
+        rw [hfilter]
+        constructor
+        · rintro ⟨h1, _⟩; exact Stream'.Seq.ofList_injective h1
+        · rintro rfl
+          refine ⟨rfl, ?_⟩
+          intro lab hlab; exact hextlab lab (List.mem_of_getLast? hlab)
+      -- Bridge the tight-trace dite to the `traceTightLabs` predicate via `tight_iff`.
+      have htight_iff : (sys^w.trace E = Seq.ofList labs ∧ sys^w.IsTight E)
+          ↔ sys^w.traceTightLabs (Seq.ofList labs) labsE :=
+        sys^w.tight_iff (Seq.ofList labs) E hT
+      by_cases hlab_eq : labsE = labs
+      · -- Matching label list: both dites fire with the same weight.
+        rw [dif_pos ⟨hT, (htight_iff.mpr (htt_iff.mpr hlab_eq)).1,
+              (htight_iff.mpr (htt_iff.mpr hlab_eq)).2⟩,
+          dif_pos ⟨hT, by rw [hmapE, hlab_eq]⟩]
+      · -- Mismatched label list: both dites are off.
+        rw [dif_neg (fun h => hlab_eq (htt_iff.mp (htight_iff.mp ⟨h.2.1, h.2.2⟩))),
+          dif_neg (fun h => hlab_eq (by
+            have : Seq.ofList labsE = Seq.ofList labs := by rw [← hmapE]; exact h.2
+            exact Stream'.Seq.ofList_injective this))]
+    · -- Has an internal label ⟹ `probOf E = 0`, both `dite`s collapse to `0`.
+      push Not at hext
+      obtain ⟨p, hp_mem, hp_int⟩ := hext
+      have hprob0 : pe'.probOf E hT = 0 := by
+        have hreassemble : (⟨E.init, Seq.ofList (E.trans.toList hT)⟩ : AlterSeq State Label) = E :=
+          congrArg₂ AlterSeq.mk rfl (Stream'.Seq.ofList_toList E.trans hT)
+        have hterm : (Seq.ofList (E.trans.toList hT) : Seq (Label × State)).Terminates :=
+          Stream'.Seq.terminates_ofList _
+        have hprob : pe'.probOf E hT
+            = pe'.probOf ⟨E.init, Seq.ofList (E.trans.toList hT)⟩ hterm := by
+          have key : ∀ (E' : AlterSeq State Label) (hE : E'.trans.Terminates),
+              E' = (⟨E.init, Seq.ofList (E.trans.toList hT)⟩ : AlterSeq State Label) →
+              pe'.probOf E' hE
+                = pe'.probOf ⟨E.init, Seq.ofList (E.trans.toList hT)⟩ hterm := by
+            rintro E' hE rfl; rfl
+          exact key E hT hreassemble.symm
+        rw [hprob, pe'.probOf_ofList_eq_zero_of_internal_mem hExt E.init
+          (E.trans.toList hT) hterm ⟨p, hp_mem, hp_int⟩]
+      by_cases h1 : E.trans.Terminates ∧ sys^w.trace E = Seq.ofList labs ∧ sys^w.IsTight E
+      · rw [dif_pos h1, hprob0, zero_mul]
+        by_cases h2 : E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs
+        · rw [dif_pos h2, hprob0, zero_mul]
+        · rw [dif_neg h2]
+      · rw [dif_neg h1]
+        by_cases h2 : E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs
+        · rw [dif_pos h2, hprob0, zero_mul]
+        · rw [dif_neg h2]
+  · -- Non-terminating: both predicates fail (they require `Terminates`).
+    rw [dif_neg (fun h => hT h.1), dif_neg (fun h => hT h.1)]
+
+open Classical in
+/-- **`lastMuBelief` of an appended history (the linchpin cancellation).** For
+`E = ⟨s₀, sq ++ [(a, sk)]⟩` with preceding history `E_pre = ⟨s₀, sq⟩` (terminating),
+the posterior over the last-emitted distribution `μ`, weighted by the cancellation,
+satisfies
+`probOf E · lastMuBelief E μ = probOf E_pre · next E_pre (some (a, μ)) · μ sk`.
+(When the last-step kernel `kernel E_pre (a, sk)` vanishes, both sides are `0`:
+`probOf E = probOf E_pre · kernel E_pre (a, sk) = 0`.) -/
+theorem ProbabilisticExecution.probOf_mul_lastMuBelief_append {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (s₀ : State) (sq : Seq (Label × State)) (h_sq : sq.Terminates)
+    (a : Label) (sk : State)
+    (h_app : (sq.append (Seq.cons (a, sk) Seq.nil)).Terminates) (μ : PMF State) :
+    pe'.probOf ⟨s₀, sq.append (Seq.cons (a, sk) Seq.nil)⟩ h_app *
+        pe'.lastMuBelief ⟨s₀, sq.append (Seq.cons (a, sk) Seq.nil)⟩ μ
+      = pe'.probOf ⟨s₀, sq⟩ h_sq *
+          (pe'.scheduler.next ⟨s₀, sq⟩ (some (a, μ)) * μ sk) := by
+  classical
+  -- Abbreviations for the appended history `E` and prefix `Epre`.
+  have hprobE : pe'.probOf ⟨s₀, sq.append (Seq.cons (a, sk) Seq.nil)⟩ h_app
+      = pe'.probOf ⟨s₀, sq⟩ h_sq * pe'.kernel ⟨s₀, sq⟩ (a, sk) :=
+    pe'.probOf_append_singleton s₀ sq h_sq (a, sk) h_app
+  have hsingle : (Seq.cons (a, sk) Seq.nil : Seq (Label × State)).Terminates :=
+    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  -- The `toList` of `E.trans` ends with `(a, sk)`.
+  have htl : (sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app = sq.toList h_sq ++ [(a, sk)] := by
+    rw [Stream'.Seq.toList_append sq (Seq.cons (a, sk) Seq.nil) h_sq hsingle h_app,
+      Stream'.Seq.toList_cons, Stream'.Seq.toList_nil]
+  -- `E.trans.toList` is nonempty (it ends with `(a, sk)`).
+  have hne : (sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app ≠ [] := by rw [htl]; simp
+  -- `getLast` of the appended toList is `(a, sk)` (proof-irrelevant transport).
+  have hgetLast : ∀ (h' : (sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app ≠ []),
+      ((sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app).getLast h' = (a, sk) := by
+    intro h'
+    have hgl? : ((sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app).getLast? = some (a, sk) := by
+      rw [htl]; exact List.getLast?_concat
+    exact List.getLast_of_getLast?_eq_some hgl?
+  -- Resolve the `exists_split_last` data for `E`, quantified over the nonempty proof
+  -- (so it matches the internal proof instance produced by `lastMuBelief`).
+  have hlast : ∀ (h' : (sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app ≠ []),
+      (Stream'.Seq.exists_split_last (sq.append (Seq.cons (a, sk) Seq.nil))
+        h_app h').choose_spec.choose = (a, sk) := by
+    intro h'
+    have h := (Stream'.Seq.exists_split_last (sq.append (Seq.cons (a, sk) Seq.nil))
+      h_app h').choose_spec.choose_spec.choose_spec.2.2
+    rw [h, hgetLast]
+  have hlast1 : ∀ (h' : (sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app ≠ []),
+      (Stream'.Seq.exists_split_last (sq.append (Seq.cons (a, sk) Seq.nil))
+        h_app h').choose_spec.choose.1 = a := fun h' => by rw [hlast h']
+  have hlast2 : ∀ (h' : (sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app ≠ []),
+      (Stream'.Seq.exists_split_last (sq.append (Seq.cons (a, sk) Seq.nil))
+        h_app h').choose_spec.choose.2 = sk := fun h' => by rw [hlast h']
+  -- The chosen `prev` equals `sq` (same `toList`).
+  have hprev_seq : ∀ (h' : (sq.append (Seq.cons (a, sk) Seq.nil)).toList h_app ≠ []),
+      (Stream'.Seq.exists_split_last (sq.append (Seq.cons (a, sk) Seq.nil))
+        h_app h').choose = sq := by
+    intro h'
+    have hprev_term := (Stream'.Seq.exists_split_last (sq.append (Seq.cons (a, sk) Seq.nil))
+      h_app h').choose_spec.choose_spec.choose
+    have htoL := (Stream'.Seq.exists_split_last (sq.append (Seq.cons (a, sk) Seq.nil))
+      h_app h').choose_spec.choose_spec.choose_spec.2.1
+    rw [← Stream'.Seq.ofList_toList (Stream'.Seq.exists_split_last
+      (sq.append (Seq.cons (a, sk) Seq.nil)) h_app h').choose hprev_term, htoL]
+    conv_lhs => rw [htl]
+    simp [Stream'.Seq.ofList_toList sq h_sq]
+  -- Unfold `lastMuBelief` at `E`. The `dite` resolves through `hlast1`/`hlast2`/`hprev_seq`:
+  -- the chosen last transition is `(a, sk)` and the chosen prefix-seq is `sq`. The only
+  -- residual is a `choose`-defeq plumbing step: the *internal* `exists_split_last` proof
+  -- instance produced by `lastMuBelief` (`lastMuBelief._proof_*`, over `{init,trans}.trans`)
+  -- is propositionally — but not syntactically — the `exists_split_last (sq.append …)` term
+  -- of `hlast1`/`hlast2`/`hprev_seq`, so neither `simp`/`rw`/`conv` fires under the `dite`.
+  -- ISOLATED SUB-LEMMA (the EXACT residual goal, after `unfold lastMuBelief;
+  --   rw [dif_pos h_app, dif_pos hne]`):
+  -- ⊢ (dite (∑' μ, next ⟨s₀, spl.choose⟩ (some (spl.choose_spec.choose.1, μ))
+  --            * μ spl.choose_spec.choose.2 ≠ 0)
+  --       (fun h0 => PMF.normalize (fun μ => next ⟨s₀, spl.choose⟩
+  --            (some (spl.choose_spec.choose.1, μ)) * μ spl.choose_spec.choose.2) h0 _ μ)
+  --       (fun _ => (PMF.pure (PMF.pure s₀)) μ))
+  --   = (dite (∑' ν, next ⟨s₀, sq⟩ (some (a, ν)) * ν sk ≠ 0)
+  --       (fun h0 => next ⟨s₀, sq⟩ (some (a, μ)) * μ sk * (∑' ν, …)⁻¹)
+  --       (fun _ => (PMF.pure (PMF.pure s₀)) μ))
+  -- where `spl = exists_split_last (sq.append (cons (a,sk) nil)) h_app hne`, given
+  -- `hlast1 : spl.choose_spec.choose.1 = a`, `hlast2 : … .2 = sk`, `hprev_seq : spl.choose = sq`.
+  -- Closable by aligning the internal proof instance with `Subsingleton.elim` then
+  -- `rw [hlast1, hlast2, hprev_seq]` once the `⋯` matches `spl` syntactically.
+  have hlmb : pe'.lastMuBelief ⟨s₀, sq.append (Seq.cons (a, sk) Seq.nil)⟩ μ
+      = (if h0 : (∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk) ≠ 0 then
+          (pe'.scheduler.next ⟨s₀, sq⟩ (some (a, μ)) * μ sk) *
+            (∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk)⁻¹
+        else (PMF.pure (PMF.pure s₀) : PMF (PMF State)) μ) := by
+    have _resolved := And.intro (hlast1 hne) (And.intro (hlast2 hne) (hprev_seq hne))
+    sorry
+
+  rw [hlmb, hprobE]
+  -- The last-step kernel is the normalizer.
+  have hker : pe'.kernel ⟨s₀, sq⟩ (a, sk)
+      = ∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk := rfl
+  split_ifs with h0
+  · -- Nonzero normalizer: cancel.
+    have hZtop : (∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk) ≠ ⊤ := by
+      rw [← hker]
+      exact ne_top_of_le_ne_top ENNReal.one_ne_top (pe'.kernel_le_one ⟨s₀, sq⟩ (a, sk))
+    rw [hker]
+    rw [show pe'.probOf ⟨s₀, sq⟩ h_sq *
+          (∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk) *
+          (pe'.scheduler.next ⟨s₀, sq⟩ (some (a, μ)) * μ sk *
+            (∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk)⁻¹)
+        = pe'.probOf ⟨s₀, sq⟩ h_sq * (pe'.scheduler.next ⟨s₀, sq⟩ (some (a, μ)) * μ sk) *
+            ((∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk) *
+              (∑' ν : PMF State, pe'.scheduler.next ⟨s₀, sq⟩ (some (a, ν)) * ν sk)⁻¹) by ring,
+      ENNReal.mul_inv_cancel h0 hZtop, mul_one]
+  · -- Zero normalizer ⟹ the kernel is `0` ⟹ `probOf E = 0` and the RHS factor is `0`.
+    push Not at h0
+    rw [hker, h0, mul_zero, zero_mul]
+    -- RHS: `next Epre (some (a,μ)) * μ sk` is one summand of the (zero) normalizer, so `0`.
+    have hsummand : pe'.scheduler.next ⟨s₀, sq⟩ (some (a, μ)) * μ sk = 0 :=
+      (ENNReal.tsum_eq_zero.mp h0) μ
+    rw [hsummand, mul_zero]
+
+open Classical in
+/-- **(III) The boundary belief-algebra ρ-recursion.** Feeding the per-state single-step
+expansion integrand `segExp labs l g` into the tight trace-`labs` ρ-expectation recovers
+the tight trace-`(labs++[l])` ρ-expectation:
+`rhoExpect labs (segExp labs l g) = rhoExpect (labs++[l]) g`.
+
+This is pure belief algebra (the `hyperStep_marginal_decomp` analogue), with NO new
+scheduler reasoning. A tight trace-`(labs++[l])` `sys^w`-history `E` = a tight trace-`labs`
+history `E_pre` + one external weak step `(l, s_k)` (`probOf_append_singleton`/`tight_iff`
+reindex). Its `boundaryMarginal E` marginalizes `lastMuBelief E` against
+`hyperBoundary E_pre.endState l μ` — exactly the `hyperBoundary` integrand of `segExp`,
+once the `beliefExpandAt labs s'` belief normalizer is cancelled
+(`beliefExpandAt_normalize_cancel`) against the `boundaryMarginal E_pre`-weighting of the
+ρ_k boundary, and the `lastMuBelief` cancellation
+`probOf(E)·lastMuBelief(E)(μ) = probOf(E_pre)·next(E_pre)(l,μ)·μ(s_k)` is applied. -/
+theorem rhoExpect_segExp_step (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (labs : List Label) (l : Label) (g : State → ENNReal) :
+    pe'.rhoExpect labs (pe'.segExp labs l g) = pe'.rhoExpect (labs ++ [l]) g := by
+  classical
+  -- Collapse both ρ-expectations to label-list cones (under `hExt` all labels are external).
+  rw [pe'.rhoExpect_eq_labelCone hExt labs (pe'.segExp labs l g),
+    pe'.rhoExpect_eq_labelCone hExt (labs ++ [l]) g]
+  -- REMAINING (the append-singleton boundary reindex):
+  -- LHS `∑' E_pre, dite(labelList = labs) (probOf E_pre · ∑' s', boundaryMarginal E_pre s'
+  --        · segExp labs l g s')`
+  -- RHS `∑' E,     dite(labelList = labs++[l]) (probOf E · ∑' s, boundaryMarginal E s · g s)`.
+  -- Reindex RHS via the bijection `E ↔ (E_pre, (l, sk))` (label-list `labs++[l]` ↔ a
+  -- label-list-`labs` prefix `E_pre` + last external transition `(l, sk)`), mirroring
+  -- `tsum_probOf_labels_append`. The appended history's `boundaryMarginal E s`
+  -- (`= ∑' μ, lastMuBelief E μ · hyperBoundary E_pre.endState l μ s`) collapses against
+  -- `probOf E` by `probOf_mul_lastMuBelief_append`
+  -- (`probOf E · lastMuBelief E μ = probOf E_pre · next E_pre (l,μ) · μ sk`), giving
+  -- `∑' (sk,μ), probOf E_pre · next E_pre (l,μ) · μ sk · (∑' s, hyperBoundary … s · g s)`.
+  -- On the LHS, `segExp labs l g s'` is the `beliefExpandAt labs s'`-average of
+  -- `∑' μ, next E_b (l,μ) · (∑' t, hyperBoundary s' l μ t · g t)`; the
+  -- `boundaryMarginal E_pre s'`-weighting + `beliefExpandAt_normalize_cancel` matches the
+  -- belief `beliefExpandAtW labs s' E_b = probOf E_b · boundaryMarginal E_b s'` against the
+  -- reindexed RHS prefix `E_pre`/boundary `s' = E_pre.endState`, closing the recursion.
+  sorry
+
 /-- **The general-`g` inductive step of the `rhoExpect` invariant for `expand`** (the
 research crux — the SOLE remaining `sorry` of the no-internal trace invariant).
 
@@ -2827,7 +3132,15 @@ tight `(labs ++ [l])`-trace execution's level mass factors at its last external 
 into the IH-governed prefix and the `extLabMass_segment_bridge`-governed successor
 segment, with the carried post-τ `expandPostScheduler` reassociated with the next weak
 step's pre-τ via `weakTau_trans`. This segment-level disintegration of the belief-bind
-`expand.next` (run over the `internalSuffix`) is combinatorial and has no template. -/
+`expand.next` (run over the `internalSuffix`) is combinatorial and has no template.
+
+The proof is now the three-step factorization through `segExp`:
+`(I)` `extLabMass D (labs++[l]) g = extLabMass D labs (segExp labs l g)`
+  (`expand_extLabMass_disintegrate`, the hard belief-re-anchoring disintegration);
+`(II)` `extLabMass D labs (segExp labs l g) = rhoExpect labs (segExp labs l g)`
+  (immediate from the general-`g` `ih`);
+`(III)` `rhoExpect labs (segExp labs l g) = rhoExpect (labs++[l]) g`
+  (`rhoExpect_segExp_step`, the boundary belief-algebra recursion). -/
 theorem expand_extLabMass_step_g (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem)
     (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
@@ -2838,7 +3151,12 @@ theorem expand_extLabMass_step_g (sys : LabelledSystem State Label)
         = pe'.rhoExpect labs g') :
     sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (labs ++ [l]) g
       = pe'.rhoExpect (labs ++ [l]) g := by
-  sorry
+  -- (I) external-boundary disintegration through the per-state `segExp` integrand.
+  rw [expand_extLabMass_disintegrate sys pe' hExt h_init labs l g]
+  -- (II) fold the tight-`labs` prefix by the general-`g` IH.
+  rw [ih (pe'.segExp labs l g)]
+  -- (III) the boundary belief-algebra ρ-recursion.
+  rw [rhoExpect_segExp_step sys pe' hExt labs l g]
 
 /-- **The general-`g` `rhoExpect` invariant for `expand`.** The `sys`-side external
 level mass of the `expand` construction equals the `pe'`-side ρ-expectation, for every
