@@ -1819,6 +1819,135 @@ theorem Scheduler.weakChain_haltMass_one (sys : LabelledSystem State Label)
       simp only [mul_one]
       exact PMF.tsum_coe μ
 
+open Classical in
+/-- **External-trace `extLabMass`/`bind` decomposition** (the M2 trace-cone core,
+the cons step of `weakChain_extLabMass_eq_push`). The tight-trace-cone
+`extLabMass`-mass of the composed scheduler `bind (weakStepWitnessTotal sys s l μ)
+(weakChain sys rest)` at its full external trace factors through the witness's
+post-distribution `μ`:
+
+  `extLabMass ⟨pure s, bind witness (weakChain rest)⟩ (extTrace ((l,μ)::rest)) g`
+    `= ∑' t, μ t * extLabMass ⟨pure t, weakChain rest t⟩ (extTrace rest) g`.
+
+This is the trace-cone (tight-execution) analogue of `weakStepWitness_pushforward`.
+The subtlety — and the reason this does not follow from the raw `haltMass`
+pushforward — is the **trailing-internal suffix**: a halting execution of the
+witness need not be tight (its post-τ closure can append internal transitions
+after the external `l`), so the tight executions realising `extTrace` are the
+*prefixes* of halting executions obtained by stripping the trailing all-internal
+run. The decomposition holds because that stripping is mass-preserving (the
+witness almost surely halts, `weakStepWitness_haltMass_one`), but accounting for it
+requires the a.s.-termination-from-prefix bookkeeping that closes M2.
+
+RESIDUAL: this is the documented hard core of the M2 superset direction (the
+"(Ib) post-τ flaw"). It is stated and consumed by `weakChain_extLabMass_eq_push`;
+its proof (the trailing-internal mass bound, via `internalSuffix` and a Kraft-style
+halt-mass-from-prefix bound built on `pathWeight_antichain`) is left open. -/
+theorem LabelledSystem.weakChain_extLabMass_cons (sys : LabelledSystem State Label)
+    (l : Label) (μ : PMF State) (rest : List (Label × PMF State)) (s : State)
+    (g : State → ENNReal) (hstep : sys^w.step s l μ)
+    (hrest : ∀ t, WeakChainValid sys rest t) :
+    sys.extLabMass ⟨PMF.pure s, Scheduler.bind (Scheduler.weakStepWitnessTotal sys s l μ)
+          (fun s' => Scheduler.weakChain sys rest s')⟩
+        (((l, μ) :: rest).map Prod.fst |>.filter (fun a => ¬ sys.internal a)) g
+      = ∑' t, μ t * sys.extLabMass ⟨PMF.pure t, Scheduler.weakChain sys rest t⟩
+          ((rest.map Prod.fst).filter (fun a => ¬ sys.internal a)) g := by
+  sorry
+
+open Classical in
+/-- **External-trace level-mass of a `weakChain`, in pushforward form.** The
+tight-trace-cone `extLabMass`-mass of `Scheduler.weakChain sys steps s` at its own
+external trace `extTrace steps`, integrated against `g`, equals the iterated
+pushforward `weakChainPush steps s g`. The `g = 1` slice (with
+`traceProb_eq_extLabMass`) is the trace-preservation fact
+`weakChain_traceProb_extTrace`.
+
+Proven by induction on `steps`. The base case (`steps = []`, `ρ = haltNow`,
+`extTrace = []`) is the initial `g`-expectation via `extLabMass_nil` and
+`haltNow_pushforward`. The cons step is the **external-trace `extLabMass`/`bind`
+decomposition** (`weakChain_extLabMass_cons`): the tight-trace-cone mass of the
+composed scheduler factors through the witness's post-distribution `μ`, mirroring
+`weakStepWitness_pushforward` but at the trace-cone (tight) level rather than the
+raw `haltMass` level. -/
+theorem LabelledSystem.weakChain_extLabMass_eq_push (sys : LabelledSystem State Label) :
+    ∀ (steps : List (Label × PMF State)) (s : State) (g : State → ENNReal),
+      WeakChainValid sys steps s →
+      sys.extLabMass ⟨PMF.pure s, Scheduler.weakChain sys steps s⟩
+          ((steps.map Prod.fst).filter (fun l => ¬ sys.internal l)) g
+        = weakChainPush steps s g
+  | List.nil, s, g, _ => by
+      classical
+      -- `extTrace [] = []`; `extLabMass _ [] g = ∑' s₀, (pure s) s₀ * g s₀ = g s`.
+      rw [show ((List.nil : List (Label × PMF State)).map Prod.fst).filter
+              (fun l => ¬ sys.internal l) = ([] : List Label) by simp]
+      rw [sys.extLabMass_nil ⟨PMF.pure s, Scheduler.weakChain sys List.nil s⟩ g]
+      rw [show (⟨PMF.pure s, Scheduler.weakChain sys List.nil s⟩ :
+          ProbabilisticExecution sys.toSystem).initState = PMF.pure s from rfl]
+      rw [tsum_eq_single s (fun b hb => by rw [PMF.pure_apply_of_ne _ _ hb, zero_mul]),
+        PMF.pure_apply_self, one_mul]
+      rfl
+  | List.cons (l, μ) rest, s, g, hvalid => by
+      classical
+      obtain ⟨hstep, hrest⟩ := hvalid
+      -- The cons external trace: prepend `l` iff external.
+      -- Decompose the composed-scheduler `extLabMass` through the witness's
+      -- post-distribution `μ`, then close each fibre with the IH at `t`.
+      have ih : ∀ t : State,
+          sys.extLabMass ⟨PMF.pure t, Scheduler.weakChain sys rest t⟩
+              ((rest.map Prod.fst).filter (fun l => ¬ sys.internal l)) g
+            = weakChainPush rest t g :=
+        fun t => sys.weakChain_extLabMass_eq_push rest t g (hrest t)
+      rw [show weakChainPush (List.cons (l, μ) rest) s g
+          = ∑' t, μ t * weakChainPush rest t g from rfl]
+      rw [tsum_congr (fun t => by rw [← ih t])]
+      -- The external-trace `extLabMass`/`bind` decomposition (M2 trace-cone core).
+      exact sys.weakChain_extLabMass_cons l μ rest s g hstep hrest
+
+open Classical in
+/-- **`extLabMass` = `haltMass`-integral for a `weakChain`** (the *key equality*
+behind `weakChain_traceProb_extTrace`). Both sides equal the pushforward
+`weakChainPush steps s g`: the left by `weakChain_extLabMass_eq_push`, the right by
+`weakChain_pushforward`. -/
+theorem LabelledSystem.weakChain_extLabMass_eq_haltMass_integral
+    (sys : LabelledSystem State Label) (steps : List (Label × PMF State)) (s : State)
+    (hv : WeakChainValid sys steps s) (g : State → ENNReal) :
+    sys.extLabMass ⟨PMF.pure s, Scheduler.weakChain sys steps s⟩
+        ((steps.map Prod.fst).filter (fun l => ¬ sys.internal l)) g
+      = ∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+          (Scheduler.weakChain sys steps s).haltMass (PMF.pure s) e * g (e.1.endState e.2) := by
+  rw [sys.weakChain_extLabMass_eq_push steps s g hv,
+    ← Scheduler.weakChain_pushforward sys steps s g hv]
+
+open Classical in
+/-- **`weakChain` produces its external trace almost surely** (the `g = 1`
+trace-preservation fact). Under `WeakChainValid`, the witness-lowering scheduler
+`Scheduler.weakChain sys steps s` from the Dirac source `PMF.pure s` produces, with
+probability `1`, the external trace `extTrace steps` — the external labels of
+`steps`, i.e. `(steps.map Prod.fst).filter (¬ sys.internal ·)`.
+
+The proof reduces, via `traceProb_eq_extLabMass`, to the *key equality* `KEY` that
+the tight-trace-cone `extLabMass`-mass equals the all-halting `haltMass`-integral.
+With `g = 1` the latter is the total halt mass, which is `1` by
+`weakChain_haltMass_one`. -/
+theorem Scheduler.weakChain_traceProb_extTrace (sys : LabelledSystem State Label)
+    (steps : List (Label × PMF State)) (s : State) (hv : WeakChainValid sys steps s) :
+    sys.traceProb ⟨PMF.pure s, Scheduler.weakChain sys steps s⟩
+        (Seq.ofList ((steps.map Prod.fst).filter (fun l => ¬ sys.internal l))) = 1 := by
+  classical
+  set extLabs := (steps.map Prod.fst).filter (fun l => ¬ sys.internal l) with hext
+  set ρ := Scheduler.weakChain sys steps s with hρ
+  set D : ProbabilisticExecution sys.toSystem := ⟨PMF.pure s, ρ⟩ with hD
+  -- KEY: the tight-trace-cone `extLabMass`-mass equals the all-halting
+  -- `haltMass`-integral. (For `g = 1` the RHS is the total halt mass, hence `1`.)
+  have KEY : ∀ g : State → ENNReal,
+      sys.extLabMass D extLabs g
+        = ∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+            ρ.haltMass (PMF.pure s) e * g (e.1.endState e.2) :=
+    fun g => sys.weakChain_extLabMass_eq_haltMass_integral steps s hv g
+  rw [sys.traceProb_eq_extLabMass D extLabs, KEY (fun _ => 1)]
+  simp only [mul_one]
+  exact Scheduler.weakChain_haltMass_one sys steps s hv
+
 /-- **The expand scheduler** (M2 witness). To be implemented by the new design:
 the previous segment-based belief construction was unsound and has been removed. -/
 noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
