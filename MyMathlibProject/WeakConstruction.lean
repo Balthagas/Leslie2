@@ -1634,6 +1634,191 @@ noncomputable def Scheduler.postTauWitness (sys : LabelledSystem State Label)
     ((h.2.resolve_left (fun hl => h.1 hl.1)).2).weakTau_post.witnessScheduler.toScheduler
   else Scheduler.haltNow sys
 
+/-! #### Witness-lowering of a `sys^w`-history into a `sys`-scheduler
+
+The `weakChain` construction runs a *list* of weak steps `(lᵢ, μᵢ)` in sequence,
+each realized by its total per-step witness `weakStepWitnessTotal`, threading the
+source state through the `bind` halt state. The key analytic property
+(`weakChain_pushforward`) is that — provided each step is a genuine `sys^w`-step
+from the threaded source — the chain almost-surely halts, with the integral of a
+test `g` against the halting end-state equal to the iterated pushforward
+`weakChainPush` (composition of the `μᵢ`). This is the foundational lowering
+object for the new `expand` construction. -/
+
+/-- The iterated pushforward of a chain of weak steps: integrate the test `g`
+against the final distribution obtained by running the steps `(lᵢ, μᵢ)` in
+sequence from source `s`. Base case `[]`: `g s` (no step, halt at `s`); step
+`(l, μ) :: rest`: `∑' t, μ t * weakChainPush rest t g` (push the first step's
+result `μ` forward, recurse from each `t`). This is the RHS of
+`weakChain_pushforward`. -/
+noncomputable def weakChainPush :
+    List (Label × PMF State) → State → (State → ENNReal) → ENNReal
+  | List.nil, s, g => g s
+  | List.cons (_, μ) rest, _, g => ∑' t, μ t * weakChainPush rest t g
+
+/-- **Validity of a weak-step chain from a source `s`.** Threading the source
+state through the chain: the first step `(l, μ)` must be a genuine `sys^w.step`
+from `s`, and the remainder must be valid from *every* possible result state `t`
+in `μ.support` (in fact from every `t`, which is the cleanest sufficient form for
+the pushforward induction). The empty chain is vacuously valid. -/
+def WeakChainValid (sys : LabelledSystem State Label) :
+    List (Label × PMF State) → State → Prop
+  | List.nil, _ => True
+  | List.cons (l, μ) rest, s => sys^w.step s l μ ∧ ∀ t, WeakChainValid sys rest t
+
+/-- A `sys`-scheduler that runs a list of weak steps `(lᵢ, μᵢ)` in sequence, each
+via its total witness `weakStepWitnessTotal`, then halts. The source state of the
+first step is `s`; each subsequent step's source is the previous witness's halt
+end-state (threaded by `bind`). The empty list halts immediately. -/
+noncomputable def Scheduler.weakChain (sys : LabelledSystem State Label) :
+    List (Label × PMF State) → State → Scheduler sys.toSystem
+  | List.nil, _ => Scheduler.haltNow sys
+  | List.cons (l, μ) rest, s =>
+      Scheduler.bind (Scheduler.weakStepWitnessTotal sys s l μ)
+        (fun s' => Scheduler.weakChain sys rest s')
+
+/-- **Base case of `weakChain_pushforward`.** The immediate-halt scheduler
+`haltNow`, from a Dirac source `PMF.pure s`, halts only on the empty execution
+`⟨s, nil⟩` (it never emits a transition, so the one-step kernel is identically
+`0`), and its halt mass there is `1`. Hence integrating `g` against the halting
+end-state recovers `g s`. -/
+theorem Scheduler.haltNow_pushforward (sys : LabelledSystem State Label)
+    (s : State) (g : State → ENNReal) :
+    (∑' e, (Scheduler.haltNow sys).haltMass (PMF.pure s) e * g (e.1.endState e.2)) = g s := by
+  classical
+  set σ := Scheduler.haltNow sys with hσ
+  set pe : ProbabilisticExecution sys.toSystem := ⟨PMF.pure s, σ⟩ with hpe
+  -- `σ.next` always emits `none` with mass `1`.
+  have hnext_none : ∀ e' : AlterSeq State Label, σ.next e' none = 1 := by
+    intro e'; rw [hσ]; exact PMF.pure_apply_self none
+  -- `σ.next` emits any `some` with mass `0`; hence the one-step kernel is `0`.
+  have hker_zero : ∀ (e' : AlterSeq State Label) (step : Label × State),
+      pe.kernel e' step = 0 := by
+    intro e' step
+    unfold ProbabilisticExecution.kernel
+    refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
+    have : pe.scheduler.next e' (some (step.1, μ)) = 0 := by
+      rw [hpe, hσ]; exact PMF.pure_apply_of_ne _ _ (by simp)
+    rw [this, zero_mul]
+  -- The empty execution `⟨s, nil⟩` is the unique fiber with nonzero halt mass.
+  set e₀ : {e : AlterSeq State Label // e.trans.Terminates} :=
+    ⟨⟨s, Seq.nil⟩, Stream'.Seq.terminates_nil⟩ with he₀
+  -- Halt mass of a nonempty execution is `0`: peel the last transition, kernel `= 0`.
+  have hsupp : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      σ.haltMass (PMF.pure s) e ≠ 0 → e = e₀ := by
+    rintro ⟨⟨init', trans'⟩, hterm⟩ hne
+    simp only at hterm hne ⊢
+    have hprob_ne : pe.probOf ⟨init', trans'⟩ hterm ≠ 0 := by
+      intro h0; apply hne
+      unfold Scheduler.haltMass; rw [← hpe, h0, zero_mul]
+    -- `trans' = nil`: else the last kernel factor would be `0`.
+    have htrans_nil : trans' = Seq.nil := by
+      by_contra htrans_ne
+      have hnonempty : trans'.toList hterm ≠ [] := by
+        intro hnil; apply htrans_ne
+        have := Stream'.Seq.ofList_toList trans' hterm
+        rw [hnil, Stream'.Seq.ofList_nil] at this; exact this.symm
+      obtain ⟨previous, last, h_prev, h_split, _, _⟩ :=
+        Stream'.Seq.exists_split_last trans' hterm hnonempty
+      apply hprob_ne
+      have happ : (previous.append (Seq.cons last Seq.nil)).Terminates := h_split ▸ hterm
+      have hrw : pe.probOf ⟨init', trans'⟩ hterm
+          = pe.probOf ⟨init', previous.append (Seq.cons last Seq.nil)⟩ happ := h_split ▸ rfl
+      rw [hrw, ProbabilisticExecution.probOf_append_singleton _ _ _ h_prev _ happ,
+        hker_zero ⟨init', previous⟩ last, mul_zero]
+    -- `init' = s`: else the initial mass `(pure s) init'` would be `0`.
+    have hinit_eq : init' = s := by
+      by_contra hne_init
+      apply hprob_ne
+      have hrw : pe.probOf ⟨init', trans'⟩ hterm
+          = pe.probOf ⟨init', Seq.nil⟩ Stream'.Seq.terminates_nil := by subst htrans_nil; rfl
+      rw [hrw, ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState, hpe]
+      exact PMF.pure_apply_of_ne _ _ hne_init
+    rw [he₀]
+    exact Subtype.ext (by subst htrans_nil; subst hinit_eq; rfl)
+  -- Halt mass at `e₀` is `1`: `probOf ⟨s, nil⟩ = (pure s) s = 1`, times `next none = 1`.
+  have hhalt₀ : σ.haltMass (PMF.pure s) e₀ = 1 := by
+    rw [he₀]
+    unfold Scheduler.haltMass
+    rw [← hpe]
+    rw [show pe.probOf (⟨s, Seq.nil⟩ : AlterSeq State Label) Stream'.Seq.terminates_nil
+        = (1 : ENNReal) by
+      rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState, hpe,
+        PMF.pure_apply_self]]
+    rw [hnext_none, mul_one]
+  -- Collapse the sum to the single fiber `e₀`.
+  rw [tsum_eq_single e₀ (fun e he => by
+    by_cases hz : σ.haltMass (PMF.pure s) e = 0
+    · rw [hz, zero_mul]
+    · exact absurd (hsupp e hz) he)]
+  rw [hhalt₀, one_mul]
+  -- `e₀.1.endState e₀.2 = s`.
+  rw [he₀]
+  rw [AlterSeq.endState_of_trans_nil ⟨s, Seq.nil⟩ rfl Stream'.Seq.terminates_nil]
+
+/-- **The chain almost-surely halts with the composed pushforward.** Given that
+every step of `steps` is a genuine `sys^w`-step from the threaded source
+(`WeakChainValid`), integrating a test `g` against the halting end-state of
+`Scheduler.weakChain sys steps s` (from the Dirac source `PMF.pure s`) equals the
+iterated pushforward `weakChainPush steps s g`. Proven by induction on `steps`:
+the base case is `haltNow_pushforward`, and the step peels the first witness via
+`bind_compose_integrate`, applies the IH to the continuation, and collapses the
+first weak step via `weakStepWitness_pushforward`. -/
+theorem Scheduler.weakChain_pushforward (sys : LabelledSystem State Label) :
+    ∀ (steps : List (Label × PMF State)) (s : State) (g : State → ENNReal),
+      WeakChainValid sys steps s →
+      (∑' e, (Scheduler.weakChain sys steps s).haltMass (PMF.pure s) e * g (e.1.endState e.2))
+        = weakChainPush steps s g
+  | List.nil, s, g, _ => by
+      rw [show Scheduler.weakChain sys List.nil s = Scheduler.haltNow sys from rfl]
+      rw [Scheduler.haltNow_pushforward sys s g]
+      rfl
+  | List.cons (l, μ) rest, s, g, hvalid => by
+      classical
+      obtain ⟨hstep, hrest⟩ := hvalid
+      -- Unfold `weakChain` on the cons and peel the first witness via `bind`.
+      rw [show Scheduler.weakChain sys (List.cons (l, μ) rest) s
+          = Scheduler.bind (Scheduler.weakStepWitnessTotal sys s l μ)
+              (fun s' => Scheduler.weakChain sys rest s') from rfl]
+      rw [Scheduler.bind_compose_integrate (Scheduler.weakStepWitnessTotal sys s l μ)
+        (fun s' => Scheduler.weakChain sys rest s') (PMF.pure s) g]
+      -- The inner sum over `f₂` is the IH from `f₁`'s end-state.
+      have hinner : ∀ f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+          (∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+              (Scheduler.weakChain sys rest (f₁.1.endState f₁.2)).haltMass
+                (PMF.pure (f₁.1.endState f₁.2)) f₂ * g (f₂.1.endState f₂.2))
+            = weakChainPush rest (f₁.1.endState f₁.2) g :=
+        fun f₁ => Scheduler.weakChain_pushforward sys rest (f₁.1.endState f₁.2) g
+          (hrest (f₁.1.endState f₁.2))
+      rw [tsum_congr (fun f₁ => by rw [hinner f₁])]
+      -- Rewrite the total witness to the genuine one and apply its pushforward.
+      rw [Scheduler.weakStepWitnessTotal_eq sys s l μ hstep]
+      rw [Scheduler.weakStepWitness_pushforward sys s l μ hstep
+        (fun t => weakChainPush rest t g)]
+      rfl
+
+/-- **The chain almost-surely halts** (corollary, `g = 1`): given validity, the
+total halt mass of `Scheduler.weakChain sys steps s` from `PMF.pure s` is `1`.
+Follows from `weakChain_pushforward` with the constant test `g = fun _ => 1`,
+since `weakChainPush steps s (fun _ => 1) = 1` (each `μ` is a PMF). -/
+theorem Scheduler.weakChain_haltMass_one (sys : LabelledSystem State Label)
+    (steps : List (Label × PMF State)) (s : State) (hvalid : WeakChainValid sys steps s) :
+    (∑' e, (Scheduler.weakChain sys steps s).haltMass (PMF.pure s) e) = 1 := by
+  have hp := Scheduler.weakChain_pushforward sys steps s (fun _ => 1) hvalid
+  simp only [mul_one] at hp
+  rw [hp]
+  -- `weakChainPush steps s (fun _ => 1) = 1`, by induction on `steps`.
+  clear hp hvalid
+  induction steps generalizing s with
+  | nil => rfl
+  | cons hd rest ih =>
+      obtain ⟨l, μ⟩ := hd
+      rw [show weakChainPush (List.cons (l, μ) rest) s (fun _ => 1)
+          = ∑' t, μ t * weakChainPush rest t (fun _ => 1) from rfl]
+      rw [tsum_congr (fun t => by rw [ih t])]
+      simp only [mul_one]
+      exact PMF.tsum_coe μ
+
 /-- **The expand scheduler** (M2 witness). To be implemented by the new design:
 the previous segment-based belief construction was unsound and has been removed. -/
 noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
