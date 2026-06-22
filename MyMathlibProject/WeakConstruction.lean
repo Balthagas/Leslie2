@@ -3533,12 +3533,21 @@ belief-average) + `beliefExpandAt(End)_normalize_cancel` (cancel the belief norm
 The post-τ → μ_k = `E.endState` re-anchoring aligns the `hyperBoundary (E.endState)` of
 `segExp`.
 
-BLOCKING DIFFICULTY (why this is a residual `sorry`): `expandSeg` re-draws its belief at
-every intermediate prefix `h`, so it is NOT literally a fixed `Scheduler.bind σ_τ k`;
-`extLabMass_segment_bridge` does not apply verbatim. The memoryless belief re-anchoring
-must be shown irrelevant to the trace-`[l]` `haltMass` (the belief at intermediate internal
-prefixes only reshuffles the hidden split, not the observable mass) before the bridge's
-combinator chain applies. This is the genuine Ionescu–Tulcea step. -/
+**THIS LEMMA IS FALSE FOR THE CURRENT CONSTRUCTION (2026-06-22).** `expandSeg` re-draws
+`beliefExpandAt labs (endState h)` at EVERY prefix `h`. During the inter-boundary
+τ-closure the current state is past the k-th hyperStep boundary ν'_k, so
+`beliefExpandAt labs (endState h)` weights by `(ν'_k)(endState h) = 0` (the belief is
+anchored on the k-th boundary, but endState has moved on) ⟹ the belief DEGENERATES, and
+the post-τ witness is not maintained across its (multi-step) run. Even ignoring
+degeneracy, per-step belief re-draw computes `∏(avg kernels) ≠ avg(∏ kernels)` =
+incoherent for a multi-transition segment. (DistConstruction `lower` avoids this: no
+stutter ⟹ one external label = one transition ⟹ no multi-step segment, and `beliefTC`
+conditions on the FULL label list.) FIX (redesign, in progress): condition the belief on
+the FULL sys-label-list / `internalSuffix` (the within-segment progress), making it the
+POSTERIOR given the progress, so per-step re-draw telescopes by the chain rule
+(`∏ posterior-avg = avg∏`). This re-derives `lower`/`beliefTC` for the stuttering case
+(the abstract sys^w-history's weak steps lowered into sys-transitions, with the τ-closure
+witness likelihood). See `project-weak-transitions` memory. -/
 theorem expandSeg_extLabMass_eq_segExp (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem)
     (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
