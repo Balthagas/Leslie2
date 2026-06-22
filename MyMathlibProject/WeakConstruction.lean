@@ -1623,6 +1623,184 @@ noncomputable def ProbabilisticExecution.lastMuBelief
     else PMF.pure (PMF.pure E.init)
   else PMF.pure (PMF.pure E.init)
 
+/-! ### Corrected belief for the `expand` rewire (Fix A)
+
+The `lastMuBelief` posterior above weights a candidate weak-step result `μ` by
+`μ s_last`, where `s_last` is the recorded hyperStep target `ν'`. But `ν'` is
+sampled from the hyperStep *target* distribution (the **pre**-post-τ
+distribution); the post-τ then moves mass to `μ`, so `μ ν'` is generically `0`
+and the belief degenerates (see `MyMathlibProject/FlawCheck.lean`). The fix:
+
+* weight by `(postDist of the candidate weak step)(ν')` instead of `μ ν'`, and
+* range the belief over a *clean* prior `pe'`-history `E'` — drawn so that the
+  next-step query hits `pe'` on-path — with label list `L.dropLast` (`L` the
+  full external trace so far, last label `l`).
+
+`beliefExpandW` is the unnormalised weight; `beliefExpand` its normalisation. -/
+
+/-- Generic (any-`System`) form of `tsum_kernel_le_one`: the one-step kernel,
+summed over result states for a fixed label, is `≤ 1` (the scheduler emits a
+sub-probability). -/
+theorem ProbabilisticExecution.tsum_kernel_le_one' {S Label : Type} {Sys : System S Label}
+    (pe : ProbabilisticExecution Sys) (e : AlterSeq S Label) (l : Label) :
+    (∑' s' : S, pe.kernel e (l, s')) ≤ 1 := by
+  calc (∑' s' : S, pe.kernel e (l, s'))
+      = ∑' (s' : S) (μ : PMF S), pe.scheduler.next e (some (l, μ)) * μ s' := rfl
+    _ = ∑' (μ : PMF S) (s' : S), pe.scheduler.next e (some (l, μ)) * μ s' := ENNReal.tsum_comm
+    _ = ∑' μ : PMF S, pe.scheduler.next e (some (l, μ)) := by
+        refine tsum_congr fun μ => ?_
+        rw [ENNReal.tsum_mul_left, μ.tsum_coe, mul_one]
+    _ ≤ ∑' opt, pe.scheduler.next e opt :=
+        ENNReal.tsum_comp_le_tsum_of_injective (f := fun μ : PMF S => some (l, μ))
+          (fun _ _ h => (Prod.mk.inj (Option.some.inj h)).2) _
+    _ = 1 := (pe.scheduler.next e).tsum_coe
+
+/-- Generic (any-`System`) level-sum bound: the total `probOf`-mass of histories
+with a fixed label list is `≤ 1`. The `g = 1` slice of the level-mass recursion,
+proven by `List.reverseRecOn` via `labMass_nil`, `labMass_step` and
+`tsum_kernel_le_one'`. (Generic analogue of `probOf_labels_tsum_le_one`, which is
+stated only for `𝒟(sys)`-histories.) -/
+theorem ProbabilisticExecution.labMass_one_le_one {S Label : Type} {Sys : System S Label}
+    (pe : ProbabilisticExecution Sys) (labs : List Label) :
+    pe.labMass labs (fun _ => (1 : ENNReal)) ≤ 1 := by
+  classical
+  induction labs using List.reverseRecOn with
+  | nil =>
+      rw [pe.labMass_nil]; simp only [mul_one]; exact le_of_eq pe.initState.tsum_coe
+  | append_singleton labs l ih =>
+      rw [pe.labMass_step labs l (fun _ => 1)]
+      refine le_trans (ENNReal.tsum_le_tsum (fun e' => ?_)) ih
+      by_cases hc : e'.trans.Terminates ∧ e'.trans.map Prod.fst = Seq.ofList labs
+      · rw [dif_pos hc, dif_pos hc]; simp only [mul_one]
+        exact mul_le_of_le_one_right' (pe.tsum_kernel_le_one' e' l)
+      · rw [dif_neg hc, dif_neg hc]
+
+open Classical in
+/-- **Unnormalised weight of the corrected `expand` belief.** A weight over pairs
+`(E', μ)` = (prior clean `pe'`-history `E'`, the last weak step's result PMF `μ`),
+parameterised by the full external trace `L` so far (nonempty here) and the
+observed hyperStep target `ν'`. With `l := L.getLast?`, the weight is
+`probOf(E') * next(E')(some (l, μ)) * postDist(ν')`, where `postDist` is the
+hyperStep-target distribution of the weak step `sys^w.step (E'.endState) l μ` —
+nonzero only when `E'` terminates with label list `L.dropLast`, `l` is external,
+and that weak step holds. (Contrast `lastMuBelief`, which uses `μ ν'`.) -/
+noncomputable def ProbabilisticExecution.beliefExpandW {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (L : List Label) (ν' : State) : AlterSeq State Label × PMF State → ENNReal :=
+  fun p =>
+    match L.getLast? with
+    | none => 0
+    | some l =>
+      if hT : p.1.trans.Terminates ∧ p.1.trans.map Prod.fst = Seq.ofList L.dropLast then
+        if hstep : (¬ sys.internal l) ∧ sys^w.step (p.1.endState hT.1) l p.2 then
+          pe'.probOf p.1 hT.1 * pe'.scheduler.next p.1 (some (l, p.2))
+            * (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν'
+        else 0
+      else 0
+
+open Classical in
+/-- Reduced form of `beliefExpandW` once `L.getLast? = some l` is known (the
+`match` on the option collapses to its `some` branch). -/
+theorem ProbabilisticExecution.beliefExpandW_eq {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (L : List Label) (ν' : State) (l : Label) (hL : L.getLast? = some l)
+    (p : AlterSeq State Label × PMF State) :
+    pe'.beliefExpandW L ν' p =
+      if hT : p.1.trans.Terminates ∧ p.1.trans.map Prod.fst = Seq.ofList L.dropLast then
+        if hstep : (¬ sys.internal l) ∧ sys^w.step (p.1.endState hT.1) l p.2 then
+          pe'.probOf p.1 hT.1 * pe'.scheduler.next p.1 (some (l, p.2))
+            * (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν'
+        else 0
+      else 0 := by
+  classical
+  conv_lhs => rw [ProbabilisticExecution.beliefExpandW]
+  rw [hL]
+
+open Classical in
+/-- **Finiteness of the corrected-belief normaliser.** Each term is `≤
+probOf(E') * next(E')(some (l, μ))` (since `postDist ν' ≤ 1` as a PMF value);
+summing `μ` out gives `≤ ∑' E' [label list L.dropLast], probOf(E') ≤ 1` by the
+level-sum bound `labMass_one_le_one`. Hence the normaliser is `≤ 1`, in
+particular `≠ ⊤` (for `PMF.normalize`). -/
+theorem ProbabilisticExecution.beliefExpandW_tsum_ne_top {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (L : List Label) (ν' : State) :
+    (∑' p, pe'.beliefExpandW L ν' p) ≠ ⊤ := by
+  classical
+  suffices h : (∑' p, pe'.beliefExpandW L ν' p) ≤ 1 from
+    (lt_of_le_of_lt h ENNReal.one_lt_top).ne
+  cases hL : L.getLast? with
+  | none =>
+      have hz : ∀ p : AlterSeq State Label × PMF State, pe'.beliefExpandW L ν' p = 0 := by
+        intro p; unfold ProbabilisticExecution.beliefExpandW; rw [hL]
+      simp only [hz, tsum_zero]; exact zero_le_one
+  | some l =>
+      have hterm : ∀ p : AlterSeq State Label × PMF State,
+          pe'.beliefExpandW L ν' p ≤
+            (if hT : p.1.trans.Terminates ∧ p.1.trans.map Prod.fst = Seq.ofList L.dropLast then
+              pe'.probOf p.1 hT.1 * pe'.scheduler.next p.1 (some (l, p.2)) else 0) := by
+        intro p
+        rw [pe'.beliefExpandW_eq L ν' l hL p]
+        by_cases hT : p.1.trans.Terminates ∧ p.1.trans.map Prod.fst = Seq.ofList L.dropLast
+        · rw [dif_pos hT, dif_pos hT]
+          by_cases hstep : (¬ sys.internal l) ∧ sys^w.step (p.1.endState hT.1) l p.2
+          · rw [dif_pos hstep]
+            exact mul_le_of_le_one_right' (PMF.coe_le_one _ _)
+          · rw [dif_neg hstep]; exact bot_le
+        · rw [dif_neg hT, dif_neg hT]
+      refine le_trans (ENNReal.tsum_le_tsum hterm) ?_
+      rw [ENNReal.tsum_prod' (f := fun p : AlterSeq State Label × PMF State =>
+        if hT : p.1.trans.Terminates ∧ p.1.trans.map Prod.fst = Seq.ofList L.dropLast then
+          pe'.probOf p.1 hT.1 * pe'.scheduler.next p.1 (some (l, p.2)) else 0)]
+      simp only []
+      refine le_trans ?_ (pe'.labMass_one_le_one L.dropLast)
+      unfold ProbabilisticExecution.labMass
+      refine ENNReal.tsum_le_tsum (fun E' => ?_)
+      by_cases hT : E'.trans.Terminates ∧ E'.trans.map Prod.fst = Seq.ofList L.dropLast
+      · rw [dif_pos hT]
+        rw [show (∑' μ : PMF State, if hT' : E'.trans.Terminates ∧
+              E'.trans.map Prod.fst = Seq.ofList L.dropLast then
+              pe'.probOf E' hT'.1 * pe'.scheduler.next E' (some (l, μ)) else 0)
+            = ∑' μ : PMF State, pe'.probOf E' hT.1 * pe'.scheduler.next E' (some (l, μ)) from
+            tsum_congr (fun μ => by rw [dif_pos hT])]
+        rw [ENNReal.tsum_mul_left, mul_one]
+        refine mul_le_of_le_one_right' ?_
+        calc (∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ)))
+            ≤ ∑' opt, pe'.scheduler.next E' opt :=
+              ENNReal.tsum_comp_le_tsum_of_injective
+                (f := fun μ : PMF State => some (l, μ))
+                (fun _ _ h => (Prod.mk.inj (Option.some.inj h)).2) _
+          _ = 1 := (pe'.scheduler.next E').tsum_coe
+      · rw [dif_neg hT]; simp only [dif_neg hT, tsum_zero]; exact bot_le
+
+open Classical in
+/-- **The corrected `expand` belief.** Normalisation of `beliefExpandW`; total
+fallback `pure ⟨⟨sys.init, nil⟩, pure sys.init⟩` when the weight vanishes
+(mirroring `beliefTC`). -/
+noncomputable def ProbabilisticExecution.beliefExpand {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (L : List Label) (ν' : State) : PMF (AlterSeq State Label × PMF State) :=
+  if h0 : (∑' p, pe'.beliefExpandW L ν' p) ≠ 0 then
+    PMF.normalize (pe'.beliefExpandW L ν') h0 (pe'.beliefExpandW_tsum_ne_top L ν')
+  else
+    PMF.pure ⟨⟨sys.toSystem.init, Seq.nil⟩, PMF.pure sys.toSystem.init⟩
+
+open Classical in
+/-- Every pair in `beliefExpand`'s support has nonzero `beliefExpandW`-weight,
+when the normaliser is nonzero (the normalisation branch). Mirrors
+`beliefTC_support`. -/
+theorem ProbabilisticExecution.beliefExpand_support {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (L : List Label) (ν' : State)
+    (h0 : (∑' p, pe'.beliefExpandW L ν' p) ≠ 0)
+    {p : AlterSeq State Label × PMF State}
+    (hp : p ∈ (pe'.beliefExpand L ν').support) :
+    pe'.beliefExpandW L ν' p ≠ 0 := by
+  classical
+  unfold ProbabilisticExecution.beliefExpand at hp
+  rw [dif_pos h0, PMF.mem_support_normalize_iff] at hp
+  exact hp
+
 open Classical in
 /-- The post-τ-closure witness of the weak step `s_prev →[a] μ` (external `a`),
 as a `sys`-scheduler; `haltNow` when there is no such external weak step. (Used by
