@@ -2112,57 +2112,364 @@ theorem ProbabilisticExecution.lowersTo_nondegenerate {sys : LabelledSystem Stat
   · rw [hchain]; exact hv
   · rw [hchain, hE]; exact hf
 
-open Classical in
-/-- A concrete latent result-list `μs` witnessing `LowersTo E fl s`, chosen via
-`Classical.choose`; arbitrary (`[]`) when `E` does not lower to `fl`/`s`. Used by
-`Scheduler.expand` to actually run `E`'s witness-lowering chain. -/
-noncomputable def lowerMus (sys : LabelledSystem State Label)
-    (E : AlterSeq State Label) (fl : List Label) (s : State) : List (PMF State) :=
-  if h : ProbabilisticExecution.LowersTo (sys := sys) E fl s then h.choose_spec.choose else []
+/-! #### The synthesized-continuation `expand` construction (rebuilt)
+
+The rebuilt `Scheduler.expand` is the *history-dependent* memoryless stuttering simulation.
+At a terminating `sys`-history `e`:
+
+* `extTr := sys.trace e` is the external trace realized so far, and
+  `nu := (sys.internalSuffix e).init` is the *observable* last hyperStep boundary `ν'_k`
+  (the state after `e`'s last external transition; `= e.init` at `⟨init, nil⟩`).
+* `expandDone e := ⟨e.init, externalPrefix e⟩` is the **completed** `sys^w`-history `E_done`
+  read directly off `e`: the prefix of `e` up to and including its last external transition
+  (empty `⟨e.init, nil⟩` when `e` has no external transition yet, in particular at
+  `⟨init, nil⟩`). This is the concrete observable boundary history — no `Classical.choose`,
+  so the gates can reduce through it.
+
+The scheduler then runs the **segment** `segmentScheduler E_done nu`, which:
+* first replays `E_done`'s last weak step's *post-τ closure* (`postTauOf`, a `weakTau nu μ_k`
+  witness recovered from `pe'` via `lastMuBelief`, or `haltNow` when `E_done` is empty),
+  reaching a post-τ sample `s_k`;
+* then **draws the next weak step** `(l, μ) ∼ pe'.scheduler.next (E_done.setLast s_k)` (the
+  history queried at the *actual reached* post-τ state) and runs its *pre-τ-and-hs* witness
+  `preHsWitness sys s_k l μ` (the pre-τ;hs part of `weakStepWitness`, dropping the final
+  post-τ — that is the *next* segment's `postTauOf`).
+
+This is what stops `expand` from halting prematurely: at `init`, `postTauOf = haltNow` halts
+at `init`, then `drawAndRun` draws `pe'`'s first weak step from `init` and emits its pre-τ;hs;
+past the first hs (at `nu = ν'_1`), `postTauOf` runs the first step's post-τ from `ν'_1`,
+then `drawAndRun` draws the *second* step at the reached state and emits its pre-τ;hs. So it
+continues, state-consistently.
+
+Validity is **free**: every branch (`postTauOf`, `preHsWitness`, `haltNow`, `Scheduler.bind`)
+is a valid `Scheduler sys.toSystem`, so the belief mixture is valid regardless of its shape. -/
 
 open Classical in
-/-- The reconstructed weak-step chain that `Scheduler.expand` runs for an abstract
-history `E` lowering to `fl`/`s`: `weakChainOf E (chosen μs)`, valid by construction
-(extracted from the `LowersTo` witness). Empty when `E` does not terminate. -/
-noncomputable def lowerChain (sys : LabelledSystem State Label)
-    (E : AlterSeq State Label) (fl : List Label) (s : State) : List (Label × PMF State) :=
-  if hT : E.trans.Terminates then weakChainOf E hT (lowerMus sys E fl s) else []
+/-- Replace the target state of `e`'s last transition by `s` (so a scheduler query at the
+*actual reached* post-τ state lands on the right history). For an empty `e` (no transition),
+this is `⟨s, Seq.nil⟩`. Implemented on `toList` via `dropLast ++ [(label, s)]`. -/
+noncomputable def AlterSeq.setLast (e : AlterSeq State Label) (s : State) :
+    AlterSeq State Label :=
+  if hT : e.trans.Terminates then
+    match (e.trans.toList hT).getLast? with
+    | none => ⟨s, Seq.nil⟩
+    | some last =>
+        ⟨e.init, Seq.ofList ((e.trans.toList hT).dropLast ++ [(last.1, s)])⟩
+  else e
 
 open Classical in
-/-- **The expand scheduler** (M2 witness, new design). At a terminating `sys`-history
-`e`, read off its *full* `sys`-label list `fl` and end-state `s`, sample an abstract
-`sys^w`-history `E` from `beliefLower fl s`, and emit the next `sys`-transition by running
-`E`'s witness-lowering chain `weakChain sys (lowerChain E fl s) E.init` at `e`. Each branch
-is a valid `sys`-scheduler (`weakChain` lowers genuine weak steps into valid `sys`-steps via
-`weakStepWitness`; `haltNow` is trivially valid), so the belief-mixture is valid. -/
+/-- The **completed `sys^w`-history** `E_done` of a `sys`-history `e`, read directly off
+`e`: the prefix of `e` up to and including its last *external* transition. With `m` the
+number of transitions up to (and including) the last external one (`0` if none), it is
+`⟨e.init, Seq.ofList ((e.trans.toList).take m)⟩`. Empty `⟨e.init, Seq.nil⟩` when `e` has no
+external transition yet (in particular at `⟨init, nil⟩`). -/
+noncomputable def ProbabilisticExecution.expandDone {sys : LabelledSystem State Label}
+    (_pe' : ProbabilisticExecution sys^w.toSystem) (e : AlterSeq State Label) :
+    AlterSeq State Label :=
+  if hT : e.trans.Terminates then
+    let L := e.trans.toList hT
+    let m := L.length - (L.reverse.takeWhile (fun p => decide (sys.internal p.1))).length
+    ⟨e.init, Seq.ofList (L.take m)⟩
+  else ⟨e.init, Seq.nil⟩
+
+open Classical in
+/-- The **post-τ-closure** witness carried over from `E_done`'s last completed external weak
+step, run from `nu`: a `weakTau nu μ_k` scheduler, with `μ_k` recovered from `pe'` via
+`lastMuBelief`. Realized through `Scheduler.bind (lastMuBelief belief) (postTauWitness …)`.
+`haltNow` when `E_done` is empty (no completed weak step). -/
+noncomputable def Scheduler.postTauOf {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (E_done : AlterSeq State Label) (nu : State) : Scheduler sys.toSystem :=
+  if hT : E_done.trans.Terminates then
+    if hne : (E_done.trans.toList hT).getLast? ≠ none then
+      match hgl : (E_done.trans.toList hT).getLast? with
+      | none => absurd hgl hne
+      | some last => Scheduler.postTauWitness sys nu last.1 ((pe'.lastMuBelief E_done).bind id)
+    else Scheduler.haltNow sys
+  else Scheduler.haltNow sys
+
+open Classical in
+/-- The **pre-τ-and-hs** witness of the weak step `s →[l] μ`: the `weakStepWitness` chain
+*minus its final post-τ closure* (that is the next segment's `postTauOf`). For external `l`,
+`Scheduler.bind (pre-τ witness) (extStep for the hs)`; for internal `l`, the τ-witness; off
+support, `haltNow`. The decisive point for continuation: for external `l` it always emits a
+transition (the pre-τ's first step or the hs `l`). -/
+noncomputable def Scheduler.preHsWitness (sys : LabelledSystem State Label)
+    (s : State) (l : Label) (μ : PMF State) : Scheduler sys.toSystem :=
+  if h : sys^w.step s l μ then
+    if h_int : sys.internal l then
+      (((h.resolve_right (fun hb => hb.1 h_int)).2).witnessScheduler.toScheduler)
+    else
+      let hws : weakStep sys (PMF.pure s) l μ := (h.resolve_left (fun ha => h_int ha.1)).2
+      Scheduler.bind hws.weakTau_pre.witnessScheduler.toScheduler (fun _ =>
+        Scheduler.extStep sys hws.preDist l hws.hyperStep_mid.kernel
+          (hws.hyperStep_mid.kernel_step))
+  else Scheduler.haltNow sys
+
+open Classical in
+/-- **Draw the next weak step from `pe'` and run its pre-τ;hs.** At the post-τ state `s_k`
+(reached by `postTauOf`), query `pe'.scheduler.next (E_done.setLast s_k)` and, on a drawn
+`some (l, μ)`, run `preHsWitness sys s_k l μ`; on `none`, halt. For empty `E_done`, the
+query history is `⟨s_k, Seq.nil⟩`. -/
+noncomputable def Scheduler.drawAndRun {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (E_done : AlterSeq State Label) (s_k : State) : Scheduler sys.toSystem where
+  next h :=
+    (pe'.scheduler.next (E_done.setLast s_k)).bind (fun opt =>
+      match opt with
+      | none        => PMF.pure none
+      | some (l, μ) => (Scheduler.preHsWitness sys s_k l μ).next h)
+  valid := by
+    classical
+    intro e n s' e_term_n e_stateAt_eq l μ h_supp
+    change some (l, μ) ∈
+      ((pe'.scheduler.next (E_done.setLast s_k)).bind (fun opt =>
+        match opt with
+        | none        => PMF.pure none
+        | some (l', μ') => (Scheduler.preHsWitness sys s_k l' μ').next e)).support at h_supp
+    rw [PMF.mem_support_bind_iff] at h_supp
+    obtain ⟨opt, _hopt, h_supp⟩ := h_supp
+    cases opt with
+    | none =>
+      change some (l, μ) ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
+      rw [PMF.support_pure, Set.mem_singleton_iff] at h_supp
+      exact absurd h_supp (by simp)
+    | some lμ =>
+      obtain ⟨l', μ'⟩ := lμ
+      exact (Scheduler.preHsWitness sys s_k l' μ').valid e n s' e_term_n e_stateAt_eq l μ h_supp
+
+open Classical in
+/-- The **segment** scheduler realizing one expand step from boundary `nu`: run the previous
+weak step's post-τ closure (`postTauOf E_done nu`), threading its post-τ result `s_k` via
+`Scheduler.bind` into `drawAndRun pe' E_done s_k` (draw the next weak step at the reached
+state and run its pre-τ;hs). When `E_done` is empty, `postTauOf = haltNow` halts at `nu`, so
+this is `drawAndRun pe' E_done nu` from `nu`. -/
+noncomputable def Scheduler.segmentScheduler {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (E_done : AlterSeq State Label) (nu : State) : Scheduler sys.toSystem :=
+  Scheduler.bind (Scheduler.postTauOf pe' E_done nu)
+    (fun s_k => Scheduler.drawAndRun pe' E_done s_k)
+
+open Classical in
+/-- **The rebuilt expand scheduler** (M2 witness, synthesized-continuation design). At a
+terminating `sys`-history `e`, read the completed `sys^w`-history `E_done := expandDone e`
+and the observable boundary `nu := (internalSuffix e).init`, then run the segment
+`segmentScheduler pe' E_done nu` at `e`. Validity is free: every branch is a valid
+`sys`-scheduler. -/
 noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem) : Scheduler sys.toSystem where
   next e :=
-    if h_term : e.trans.Terminates then
-      (pe'.beliefLower ((e.trans.toList h_term).map Prod.fst) (e.endState h_term)).bind (fun E =>
-        (Scheduler.weakChain sys
-          (lowerChain sys E ((e.trans.toList h_term).map Prod.fst) (e.endState h_term))
-          E.init).next e)
+    if _h_term : e.trans.Terminates then
+      (Scheduler.segmentScheduler pe' (pe'.expandDone e) (sys.internalSuffix e).init).next
+        (sys.internalSuffix e)
     else
       PMF.pure none
   valid := by
     classical
     intro e n s' e_term_n e_stateAt_eq l μ h_supp
     have h_term : e.trans.Terminates := ⟨n, e_term_n⟩
-    -- Unfold the `next` at the terminating prefix and extract the contributing branch.
     change some (l, μ) ∈
-      (if h_term' : e.trans.Terminates then
-        (pe'.beliefLower ((e.trans.toList h_term').map Prod.fst) (e.endState h_term')).bind
-          (fun E => (Scheduler.weakChain sys
-            (lowerChain sys E ((e.trans.toList h_term').map Prod.fst) (e.endState h_term'))
-            E.init).next e)
+      (if _h_term' : e.trans.Terminates then
+        (Scheduler.segmentScheduler pe' (pe'.expandDone e) (sys.internalSuffix e).init).next
+          (sys.internalSuffix e)
       else PMF.pure none).support at h_supp
-    rw [dif_pos h_term, PMF.mem_support_bind_iff] at h_supp
-    obtain ⟨E, _, h_supp⟩ := h_supp
-    -- Every branch scheduler is a valid `sys`-scheduler; apply its validity.
-    exact (Scheduler.weakChain sys
-      (lowerChain sys E ((e.trans.toList h_term).map Prod.fst) (e.endState h_term)) E.init).valid
-      e n s' e_term_n e_stateAt_eq l μ h_supp
+    rw [dif_pos h_term] at h_supp
+    -- `s' = e.endState` (the `valid` index `n` is terminal), and
+    -- `(internalSuffix e).endState = e.endState`, so the segment's emission at the
+    -- suffix's canonical end is a valid step from `s'`.
+    have h_find_le : Nat.find h_term ≤ n := Nat.find_le e_term_n
+    have h_n_le : n ≤ Nat.find h_term := by
+      by_contra h_lt
+      push Not at h_lt
+      rcases n with _ | m
+      · exact absurd h_lt (Nat.not_lt_zero _)
+      · have hk_ge : Nat.find h_term ≤ m := Nat.lt_succ_iff.mp h_lt
+        have h_term_k : e.trans.TerminatedAt m :=
+          Stream'.Seq.terminated_stable e.trans hk_ge (Nat.find_spec h_term)
+        have h_state_none : e.stateAt (m + 1) = none := by
+          change (e.trans.get? m).map Prod.snd = none
+          rw [show e.trans.get? m = none from h_term_k]; rfl
+        rw [h_state_none] at e_stateAt_eq
+        exact Option.some_ne_none s' e_stateAt_eq.symm
+    have h_n_eq : n = Nat.find h_term := le_antisymm h_n_le h_find_le
+    have h_s_eq : s' = e.endState h_term := by
+      have h := AlterSeq.stateAt_find_eq_endState e h_term
+      rw [← h_n_eq] at h; rw [h] at e_stateAt_eq
+      exact (Option.some.inj e_stateAt_eq).symm
+    -- Invoke the segment's validity at the suffix's canonical terminal index.
+    set d := sys.internalSuffix e with hd
+    have hd_term : d.trans.Terminates := by
+      rw [hd, LabelledSystem.internalSuffix, dif_pos h_term]
+      exact Stream'.Seq.drop_terminates_pub h_term _
+    have hstep := (Scheduler.segmentScheduler pe' (pe'.expandDone e) (sys.internalSuffix e).init).valid
+      d (Nat.find hd_term) (d.endState hd_term) (Nat.find_spec hd_term)
+      (AlterSeq.stateAt_find_eq_endState d hd_term) l μ h_supp
+    rw [h_s_eq]
+    rw [← sys.internalSuffix_endState e h_term hd_term] at *
+    exact hstep
+
+/-- **A scheduler that emits nothing at `⟨s₀, nil⟩` halts immediately there.** If a valid
+`sys`-scheduler `σ` puts no mass on any `some` at the empty history `⟨s₀, nil⟩`, then from
+the Dirac source `PMF.pure s₀` it never takes a step: all its halting mass lives on the
+empty execution `⟨s₀, nil⟩`, so integrating any `g` against the halting end-state recovers
+`g s₀`. (Generalizes `haltNow_pushforward`: `σ`'s behaviour off `⟨s₀, nil⟩` is irrelevant,
+since `pure s₀` never reaches any non-empty prefix.) -/
+theorem Scheduler.pushforward_of_next_halts (sys : LabelledSystem State Label)
+    (σ : Scheduler sys.toSystem) (s₀ : State)
+    (hnone : ∀ x : Label × PMF State, σ.next ⟨s₀, Seq.nil⟩ (some x) = 0) (g : State → ENNReal) :
+    (∑' e, σ.haltMass (PMF.pure s₀) e * g (e.1.endState e.2)) = g s₀ := by
+  classical
+  set pe : ProbabilisticExecution sys.toSystem := ⟨PMF.pure s₀, σ⟩ with hpe
+  -- The one-step kernel at `⟨s₀, nil⟩` is `0` (no `some` emitted there).
+  have hker_nil_zero : ∀ step : Label × State, pe.kernel ⟨s₀, Seq.nil⟩ step = 0 := by
+    intro step
+    unfold ProbabilisticExecution.kernel
+    refine ENNReal.tsum_eq_zero.mpr (fun ν => ?_)
+    have : pe.scheduler.next ⟨s₀, Seq.nil⟩ (some (step.1, ν)) = 0 := by rw [hpe]; exact hnone _
+    rw [this, zero_mul]
+  set e₀ : {e : AlterSeq State Label // e.trans.Terminates} :=
+    ⟨⟨s₀, Seq.nil⟩, Stream'.Seq.terminates_nil⟩ with he₀
+  -- A nonempty execution from `s₀` has `probOf = 0`: reverse-induct on its transition list;
+  -- the front-most transition needs the (zero) kernel at `⟨s₀, nil⟩`.
+  have hprob_zero : ∀ (L : List (Label × State))
+      (hL : (Seq.ofList L : Seq (Label × State)).Terminates),
+      L ≠ [] → pe.probOf ⟨s₀, Seq.ofList L⟩ hL = 0 := by
+    intro L
+    induction L using List.reverseRecOn with
+    | nil => intro _ hne; exact absurd rfl hne
+    | append_singleton rest last ih =>
+      intro hL _
+      have hrest : (Seq.ofList rest : Seq (Label × State)).Terminates :=
+        Stream'.Seq.terminates_ofList rest
+      have hseq : (Seq.ofList (rest ++ [last]) : Seq (Label × State))
+          = (Seq.ofList rest).append (Seq.cons last Seq.nil) := by
+        rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+      have happ : ((Seq.ofList rest).append (Seq.cons last Seq.nil)
+          : Seq (Label × State)).Terminates := by rw [← hseq]; exact hL
+      have hrw : pe.probOf ⟨s₀, Seq.ofList (rest ++ [last])⟩ hL
+          = pe.probOf ⟨s₀, (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩ happ := by
+        have key : ∀ (sq : Seq (Label × State)) (hsq : sq.Terminates),
+            sq = (Seq.ofList rest).append (Seq.cons last Seq.nil) →
+            pe.probOf ⟨s₀, sq⟩ hsq
+              = pe.probOf ⟨s₀, (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩ happ := by
+          rintro sq hsq rfl; rfl
+        exact key _ hL hseq
+      rw [hrw, ProbabilisticExecution.probOf_append_singleton _ _ _ hrest _ happ]
+      by_cases hrnil : rest = []
+      · -- `rest = []`: the front transition `last` needs the zero kernel at `⟨s₀, nil⟩`.
+        refine mul_eq_zero.mpr (Or.inr ?_)
+        have hknil : pe.kernel ⟨s₀, Seq.ofList rest⟩ last = pe.kernel ⟨s₀, Seq.nil⟩ last := by
+          subst hrnil; rw [Stream'.Seq.ofList_nil]
+        rw [hknil, hker_nil_zero last]
+      · -- `rest ≠ []`: the prefix already has zero `probOf`.
+        rw [ih hrest hrnil, zero_mul]
+  -- Only the empty execution `⟨s₀, nil⟩` carries nonzero halt mass.
+  have hsupp : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      σ.haltMass (PMF.pure s₀) e ≠ 0 → e = e₀ := by
+    rintro ⟨⟨init', trans'⟩, hterm⟩ hne
+    simp only at hterm hne ⊢
+    have hprob_ne : pe.probOf ⟨init', trans'⟩ hterm ≠ 0 := by
+      intro h0; apply hne; unfold Scheduler.haltMass; rw [← hpe, h0, zero_mul]
+    -- `init' = s₀` (else initial mass vanishes).
+    have hinit_eq : init' = s₀ := by
+      by_contra hne_init
+      apply hprob_ne
+      refine le_antisymm ?_ bot_le
+      refine le_trans (pe.probOf_le_init _ hterm) ?_
+      rw [ProbabilisticExecution.init_eq_initState, hpe]
+      exact le_of_eq (PMF.pure_apply_of_ne _ _ hne_init)
+    subst hinit_eq
+    -- `trans' = nil`: a nonempty execution from `s₀` has zero `probOf` (`hprob_zero`).
+    have htrans_nil : trans' = Seq.nil := by
+      by_contra htrans_ne
+      apply hprob_ne
+      have hL := Stream'.Seq.ofList_toList trans' hterm
+      have hne_list : trans'.toList hterm ≠ [] := by
+        intro hnil; apply htrans_ne
+        rw [hnil, Stream'.Seq.ofList_nil] at hL; exact hL.symm
+      have hofterm : (Seq.ofList (trans'.toList hterm) : Seq (Label × State)).Terminates :=
+        Stream'.Seq.terminates_ofList _
+      rw [pe.probOf_congr (⟨init', trans'⟩ : AlterSeq State Label)
+            (⟨init', Seq.ofList (trans'.toList hterm)⟩ : AlterSeq State Label)
+            (by rw [hL]) hterm hofterm]
+      exact hprob_zero (trans'.toList hterm) hofterm hne_list
+    rw [he₀]; exact Subtype.ext (by subst htrans_nil; rfl)
+  -- Halt mass at `e₀` is `1`.
+  have hhalt₀ : σ.haltMass (PMF.pure s₀) e₀ = 1 := by
+    rw [he₀]; unfold Scheduler.haltMass; rw [← hpe]
+    rw [show pe.probOf (⟨s₀, Seq.nil⟩ : AlterSeq State Label) Stream'.Seq.terminates_nil
+        = (1 : ENNReal) by
+      rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState, hpe,
+        PMF.pure_apply_self]]
+    have hnext_none : σ.next ⟨s₀, Seq.nil⟩ none = 1 := by
+      have hsum := (σ.next ⟨s₀, Seq.nil⟩).tsum_coe
+      rw [← hsum]
+      refine (tsum_eq_single none ?_).symm
+      rintro (_ | x) hx
+      · exact absurd rfl hx
+      · exact hnone x
+    rw [hnext_none, mul_one]
+  rw [tsum_eq_single e₀ (fun e he => by
+    by_cases hz : σ.haltMass (PMF.pure s₀) e = 0
+    · rw [hz, zero_mul]
+    · exact absurd (hsupp e hz) he)]
+  rw [hhalt₀, one_mul, he₀,
+    AlterSeq.endState_of_trans_nil ⟨s₀, Seq.nil⟩ rfl Stream'.Seq.terminates_nil]
+
+/-- `expandDone` at the empty history `⟨init, nil⟩` is `⟨init, nil⟩` (no external
+transition has happened yet, so the completed `sys^w`-history is empty). -/
+theorem ProbabilisticExecution.expandDone_nil {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (s₀ : State) :
+    pe'.expandDone ⟨s₀, Seq.nil⟩ = ⟨s₀, Seq.nil⟩ := by
+  classical
+  unfold ProbabilisticExecution.expandDone
+  rw [dif_pos (Stream'.Seq.terminates_nil)]
+  simp only [Stream'.Seq.toList_nil, List.length_nil, List.reverse_nil,
+    List.takeWhile_nil, Nat.sub_zero, List.take_nil, Stream'.Seq.ofList_nil]
+
+/-- `internalSuffix` at the empty history `⟨init, nil⟩` is `⟨init, nil⟩`; its init is `init`. -/
+theorem LabelledSystem.internalSuffix_nil_init (sys : LabelledSystem State Label) (s₀ : State) :
+    (sys.internalSuffix ⟨s₀, Seq.nil⟩).init = s₀ := by
+  classical
+  unfold LabelledSystem.internalSuffix
+  rw [dif_pos (Stream'.Seq.terminates_nil)]
+  simp only [Stream'.Seq.toList_nil, List.length_nil, List.reverse_nil,
+    List.takeWhile_nil, Nat.sub_zero]
+  rfl
+
+/-- **A `PMF.bind` emits a transition** whenever some `some`-weighted branch is itself
+non-silent. If the source PMF `p` puts positive mass on `b₀` and the continuation `W b₀`
+puts `< 1` mass on `none` (`W b₀ none ≠ 1`), then the mixture `p.bind W` differs from
+`PMF.pure none` (it has positive mass on some `some`). -/
+theorem Scheduler.bind_emits_of_branch {γ : Type} (sys : LabelledSystem State Label)
+    (p : PMF γ) (W : γ → PMF (Option (Label × PMF State))) (b₀ : γ)
+    (hpos : p b₀ ≠ 0) (hbranch : W b₀ none ≠ 1) :
+    p.bind W ≠ PMF.pure none := by
+  classical
+  intro hbad
+  -- `none`-mass of the mixture is `1`; isolate the `b₀` term.
+  have hmass : (p.bind W) none = 1 := by rw [hbad]; exact PMF.pure_apply_self none
+  rw [PMF.bind_apply] at hmass
+  have hle : ∀ b, p b * (W b) none ≤ p b :=
+    fun b => mul_le_of_le_one_right' (PMF.coe_le_one _ _)
+  have hsum_one : (∑' b, p b) = 1 := p.tsum_coe
+  -- Every term equals the source weight (else the total would be `< 1`).
+  have hterm_eq : ∀ b, p b * (W b) none = p b := by
+    by_contra hne
+    push Not at hne
+    obtain ⟨b₁, hb₁⟩ := hne
+    have hlt : p b₁ * (W b₁) none < p b₁ := lt_of_le_of_ne (hle b₁) hb₁
+    have hstrict := ENNReal.tsum_lt_tsum (i := b₁)
+      (f := fun b => p b * (W b) none) (g := fun b => p b)
+      (by rw [hmass]; exact ENNReal.one_ne_top) hle hlt
+    rw [hmass, hsum_one] at hstrict
+    exact lt_irrefl 1 hstrict
+  -- At `b₀`: positive weight forces `W b₀ none = 1`, contradiction.
+  have heq := hterm_eq b₀
+  have hWnone : (W b₀) none = 1 :=
+    (ENNReal.mul_eq_left hpos (PMF.apply_ne_top _ _)).mp heq
+  exact hbranch hWnone
+
 
 /-- A non-terminating (infinite) trace is achieved with probability `0`: no finite
 execution has an infinite trace. -/
@@ -2178,85 +2485,6 @@ theorem LabelledSystem.traceProb_eq_zero_of_not_terminates
       Stream'.Seq.terminates_map_iff]
     exact Stream'.Seq.terminates_filter _ _ e.2.1
   exact tsum_empty
-
-open Classical in
-/-- **The `expand` one-step kernel is the belief mixture of the branch kernels.** At a
-terminating `sys`-history `e` with full label list `fl` and end-state `s`, the one-step
-kernel of `Scheduler.expand sys pe'` is the `beliefLower fl s`-mixture of the per-branch
-witness-lowering kernels `weakChain (lowerChain E fl s) E.init`. (The `g`-integrated form of
-the `key` step inside `lower_kernel_g_sum`.) -/
-theorem ProbabilisticExecution.expand_kernel_eq
-    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
-    (e : AlterSeq State Label) (h_term : e.trans.Terminates)
-    (l : Label) (s' : State) :
-    (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ :
-        ProbabilisticExecution sys.toSystem).kernel e (l, s')
-      = ∑' E : AlterSeq State Label,
-          pe'.beliefLower ((e.trans.toList h_term).map Prod.fst) (e.endState h_term) E *
-            (⟨PMF.pure (E.init),
-                Scheduler.weakChain sys
-                  (lowerChain sys E ((e.trans.toList h_term).map Prod.fst) (e.endState h_term))
-                  E.init⟩ :
-              ProbabilisticExecution sys.toSystem).kernel e (l, s') := by
-  classical
-  set fl := (e.trans.toList h_term).map Prod.fst with hfl
-  set s := e.endState h_term with hs
-  -- Unfold the kernel and the `expand` next at the terminating prefix.
-  unfold ProbabilisticExecution.kernel
-  -- `expand.next e (some (l, μ)) = ∑' E, beliefLower fl s E * branch_E.next e (some (l, μ))`.
-  have hnext : ∀ μ : PMF State,
-      (Scheduler.expand sys pe').next e (some (l, μ))
-        = ∑' E : AlterSeq State Label,
-            pe'.beliefLower fl s E *
-              (Scheduler.weakChain sys (lowerChain sys E fl s) E.init).next e (some (l, μ)) := by
-    intro μ
-    change (if h : e.trans.Terminates then
-        (pe'.beliefLower ((e.trans.toList h).map Prod.fst) (e.endState h)).bind (fun E =>
-          (Scheduler.weakChain sys
-            (lowerChain sys E ((e.trans.toList h).map Prod.fst) (e.endState h))
-            E.init).next e)
-      else PMF.pure none) (some (l, μ)) = _
-    rw [dif_pos h_term, ← hfl, ← hs, PMF.bind_apply]
-  -- Push the mixture through the `μ`-sum and `* μ s'`, then swap the sums.
-  simp_rw [hnext, ← ENNReal.tsum_mul_right]
-  rw [ENNReal.tsum_comm]
-  refine tsum_congr fun E => ?_
-  rw [← ENNReal.tsum_mul_left]
-  refine tsum_congr fun μ => ?_
-  -- The branch kernel `* μ s'` factor matches definitionally.
-  rw [mul_assoc]
-
-/-- **Full-label-list belief normaliser cancellation** (the `beliefTC_normalize_cancel`
-analogue for `beliefLower`). Multiplying the (normalised) `beliefLower`-expectation by the
-normaliser `∑ beliefLowerW` recovers the unnormalised `beliefLowerW`-weighted sum; the
-`Z = 0` fallback is handled too. The telescoping device for the per-history posterior. -/
-theorem ProbabilisticExecution.beliefLower_normalize_cancel
-    {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (fl : List Label) (s : State) (w : AlterSeq State Label → ENNReal) :
-    (∑' E, pe'.beliefLowerW fl s E) * (∑' E, pe'.beliefLower fl s E * w E)
-      = ∑' E, pe'.beliefLowerW fl s E * w E := by
-  classical
-  by_cases hZ : (∑' E, pe'.beliefLowerW fl s E) = 0
-  · rw [hZ, zero_mul]
-    have hz : ∀ E, pe'.beliefLowerW fl s E = 0 := ENNReal.tsum_eq_zero.mp hZ
-    exact (ENNReal.tsum_eq_zero.mpr (fun E => by rw [hz E, zero_mul])).symm
-  · have hZtop : (∑' E, pe'.beliefLowerW fl s E) ≠ ⊤ := pe'.beliefLowerW_tsum_ne_top fl s
-    have hbel : ∀ E, pe'.beliefLower fl s E
-        = pe'.beliefLowerW fl s E * (∑' E', pe'.beliefLowerW fl s E')⁻¹ := by
-      intro E
-      unfold ProbabilisticExecution.beliefLower
-      rw [dif_pos hZ, PMF.normalize_apply]
-    rw [show (∑' E, pe'.beliefLower fl s E * w E)
-          = ∑' E, (pe'.beliefLowerW fl s E * (∑' E', pe'.beliefLowerW fl s E')⁻¹) * w E from
-        tsum_congr (fun E => by rw [hbel E]),
-      ← ENNReal.tsum_mul_left]
-    refine tsum_congr (fun E => ?_)
-    rw [show (∑' E', pe'.beliefLowerW fl s E') *
-          (pe'.beliefLowerW fl s E * (∑' E', pe'.beliefLowerW fl s E')⁻¹ * w E)
-          = ((∑' E', pe'.beliefLowerW fl s E') * (∑' E', pe'.beliefLowerW fl s E')⁻¹) *
-            (pe'.beliefLowerW fl s E * w E) by ring,
-      ENNReal.mul_inv_cancel hZ hZtop, one_mul]
 
 /-- **The mixture-realization core of `expand_traceProb_eq`** (the `lower_labProb_eq_aux`
 analogue, at the trace level `g = 1`). The total `probOf`-mass that the expanded
@@ -3669,6 +3897,288 @@ theorem Scheduler.weakStepWitness_halting_trace (sys : LabelledSystem State Labe
       · -- σpost is a weak scheduler: halting execs have trace nil.
         intro r' g _ hg
         exact h_post.witnessScheduler.haltMass_trace_nil (PMF.pure r') g hg
+
+open Classical in
+/-- **For an external label `l`, the per-step witness cannot be a.s.-silent** at the empty
+history `⟨s, nil⟩`: its `none`-mass is `≠ 1`. If it were `1`, no `some` is emitted at the
+first step, so by `pushforward_of_next_halts` all its halt mass sits on the empty execution
+`⟨s, nil⟩` (trace `nil`); but `weakStepWitness_halting_trace` forces every halting
+execution's external trace to be `[l] ≠ nil`. -/
+theorem Scheduler.weakStepWitness_external_next_none_ne_one
+    (sys : LabelledSystem State Label) (s : State) (l : Label) (μ : PMF State)
+    (h : sys^w.step s l μ) (hext : ¬ sys.internal l) :
+    (Scheduler.weakStepWitness sys s l μ h).next ⟨s, Seq.nil⟩ none ≠ 1 := by
+  classical
+  intro hone
+  set e₀ : {e : AlterSeq State Label // e.trans.Terminates} :=
+    ⟨⟨s, Seq.nil⟩, Stream'.Seq.terminates_nil⟩ with he₀
+  -- Halt mass at `e₀` is `probOf ⟨s,nil⟩ * next ⟨s,nil⟩ none = 1 * 1 = 1 ≠ 0`.
+  have hhalt_ne : (Scheduler.weakStepWitness sys s l μ h).haltMass (PMF.pure s) e₀ ≠ 0 := by
+    unfold Scheduler.haltMass
+    rw [he₀]
+    rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
+      PMF.pure_apply_self, one_mul, hone]
+    exact one_ne_zero
+  -- Every halting execution has external trace `[l]` (external `l`); but `e₀` has trace `nil`.
+  have htr := Scheduler.weakStepWitness_halting_trace sys s l μ h e₀ hhalt_ne
+  rw [if_neg hext] at htr
+  rw [he₀] at htr
+  simp only at htr
+  rw [sys.trace_init s] at htr
+  exact absurd htr.symm (by simp [Stream'.Seq.ofList_cons])
+
+open Classical in
+/-- **Halting executions of `preHsWitness` (external `l`) have external trace `[l]`.** For
+external `l`, `preHsWitness sys s l μ = bind σpre σext`; its halting executions (from `pure
+s`) split as `(σpre trace nil) ++ (σext trace [l])`, so the external trace is `[l]`. -/
+theorem Scheduler.preHsWitness_halting_trace (sys : LabelledSystem State Label)
+    (s : State) (l : Label) (μ : PMF State) (h : sys^w.step s l μ) (hext : ¬ sys.internal l)
+    (e : {e : AlterSeq State Label // e.trans.Terminates})
+    (hne : (Scheduler.preHsWitness sys s l μ).haltMass (PMF.pure s) e ≠ 0) :
+    sys.trace e.1 = Seq.ofList [l] := by
+  classical
+  set hws : weakStep sys (PMF.pure s) l μ := (h.resolve_left (fun ha => hext ha.1)).2 with hhws
+  set ν := hws.preDist with hν
+  have h_pre : weakTau sys (PMF.pure s) ν := hws.weakTau_pre
+  have h_mid : hyperStep sys ν l hws.postDist := hws.hyperStep_mid
+  set σpre := h_pre.witnessScheduler.toScheduler with hσpre
+  set σext := Scheduler.extStep sys ν l h_mid.kernel h_mid.kernel_step with hσext
+  have hsched : Scheduler.preHsWitness sys s l μ = Scheduler.bind σpre (fun _ => σext) := by
+    unfold Scheduler.preHsWitness
+    rw [dif_pos h, dif_neg hext]
+  rw [hsched] at hne
+  -- Outer split: trace = (σpre trace = nil) ++ (σext trace = [l]).
+  rw [show (Seq.ofList [l] : Seq Label) = Seq.nil.append (Seq.ofList [l]) from
+    (Stream'.Seq.nil_append _).symm]
+  refine Scheduler.bind_haltMass_trace sys σpre (fun _ => σext)
+    (PMF.pure s) e Seq.nil (Seq.ofList [l]) hne ?_ ?_
+  · intro f hf
+    exact h_pre.witnessScheduler.haltMass_trace_nil (PMF.pure s) f hf
+  · intro r f hreach hf
+    obtain ⟨pre, hpre_ne, hpre_end⟩ := hreach
+    have hr_supp : r ∈ ν.support := by
+      rw [PMF.mem_support_iff]
+      intro hr0
+      apply hpre_ne
+      have hle : σpre.haltMass (PMF.pure s) pre ≤ ν (pre.1.endState pre.2) :=
+        weakTau.witness_haltMass_le h_pre pre
+      rw [hpre_end, hr0] at hle
+      exact le_antisymm hle bot_le
+    exact extStep_haltMass_trace sys ν l h_mid.kernel h_mid.kernel_step r hr_supp hext f hf
+
+open Classical in
+/-- **For an external label `l`, `preHsWitness` cannot be a.s.-silent** at `⟨s, nil⟩`: its
+`none`-mass is `≠ 1`. Same argument as `weakStepWitness_external_next_none_ne_one`, via
+`preHsWitness_halting_trace`. -/
+theorem Scheduler.preHsWitness_external_next_none_ne_one (sys : LabelledSystem State Label)
+    (s : State) (l : Label) (μ : PMF State) (h : sys^w.step s l μ) (hext : ¬ sys.internal l) :
+    (Scheduler.preHsWitness sys s l μ).next ⟨s, Seq.nil⟩ none ≠ 1 := by
+  classical
+  intro hone
+  set e₀ : {e : AlterSeq State Label // e.trans.Terminates} :=
+    ⟨⟨s, Seq.nil⟩, Stream'.Seq.terminates_nil⟩ with he₀
+  have hhalt_ne : (Scheduler.preHsWitness sys s l μ).haltMass (PMF.pure s) e₀ ≠ 0 := by
+    unfold Scheduler.haltMass
+    rw [he₀]
+    rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
+      PMF.pure_apply_self, one_mul, hone]
+    exact one_ne_zero
+  have htr := Scheduler.preHsWitness_halting_trace sys s l μ h hext e₀ hhalt_ne
+  rw [he₀] at htr
+  simp only at htr
+  rw [sys.trace_init s] at htr
+  exact absurd htr.symm (by simp [Stream'.Seq.ofList_cons])
+
+/-- **GATE 1 (init continuation).** For an *external* first weak step `(l, μ)` drawn by `pe'`
+from its initial history `⟨init, nil⟩`, the rebuilt `Scheduler.expand` at the initial
+`sys`-history does **not** halt immediately (`≠ PMF.pure none`): `expandDone` is empty, the
+boundary is `init`, `postTauOf = haltNow` halts at `⟨init, nil⟩`, so the segment reduces to
+`drawAndRun` (`bind_next_nil_of_halt`), which draws `(l, μ)` and runs `preHsWitness sys init
+l μ`, whose first step is emitted for external `l`. -/
+theorem expand_continues_init (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (l : Label) (μ : PMF State)
+    (hext : ¬ sys.internal l)
+    (h : some (l, μ) ∈ (pe'.scheduler.next ⟨sys^w.toSystem.init, Seq.nil⟩).support) :
+    (Scheduler.expand sys pe').next (⟨sys.toSystem.init, Seq.nil⟩ : AlterSeq State Label)
+      ≠ PMF.pure none := by
+  classical
+  set s₀ := sys.toSystem.init with hs₀
+  have hinit : (⟨sys^w.toSystem.init, Seq.nil⟩ : AlterSeq State Label)
+      = ⟨s₀, Seq.nil⟩ := rfl
+  rw [hinit] at h
+  -- Reduce `expand.next ⟨s₀, nil⟩` to `drawAndRun pe' ⟨s₀,nil⟩ s₀` at `⟨s₀, nil⟩`.
+  have hnext : (Scheduler.expand sys pe').next ⟨s₀, Seq.nil⟩
+      = (pe'.scheduler.next ⟨s₀, Seq.nil⟩).bind (fun opt =>
+          match opt with
+          | none        => PMF.pure none
+          | some (l', μ') => (Scheduler.preHsWitness sys s₀ l' μ').next ⟨s₀, Seq.nil⟩) := by
+    -- `expand.next ⟨s₀,nil⟩ = (segmentScheduler pe' ⟨s₀,nil⟩ s₀).next (internalSuffix ⟨s₀,nil⟩)`.
+    change (if _h : (⟨s₀, Seq.nil⟩ : AlterSeq State Label).trans.Terminates then
+        (Scheduler.segmentScheduler pe' (pe'.expandDone ⟨s₀, Seq.nil⟩)
+          (sys.internalSuffix ⟨s₀, Seq.nil⟩).init).next (sys.internalSuffix ⟨s₀, Seq.nil⟩)
+      else PMF.pure none) = _
+    rw [dif_pos Stream'.Seq.terminates_nil, pe'.expandDone_nil s₀]
+    -- `internalSuffix ⟨s₀,nil⟩ = ⟨s₀, nil⟩` and its init is `s₀`.
+    have hsuf : sys.internalSuffix (⟨s₀, Seq.nil⟩ : AlterSeq State Label) = ⟨s₀, Seq.nil⟩ := by
+      unfold LabelledSystem.internalSuffix
+      rw [dif_pos (Stream'.Seq.terminates_nil)]
+      simp only [Stream'.Seq.toList_nil, List.length_nil, List.reverse_nil,
+        List.takeWhile_nil, Nat.sub_zero]
+      rfl
+    rw [hsuf]
+    -- `(⟨s₀,nil⟩).init` reduces to `s₀` (defeq), so the boundary is `s₀`.
+    show (Scheduler.segmentScheduler pe' (⟨s₀, Seq.nil⟩ : AlterSeq State Label) s₀).next
+        ⟨s₀, Seq.nil⟩ = _
+    -- `segmentScheduler pe' ⟨s₀,nil⟩ s₀ = bind (postTauOf …) (drawAndRun …)`; the post-τ is
+    -- `haltNow` (empty `E_done`), which halts at `⟨s₀,nil⟩` ⇒ `bind_next_nil_of_halt`.
+    unfold Scheduler.segmentScheduler
+    have hpost : Scheduler.postTauOf pe' (⟨s₀, Seq.nil⟩ : AlterSeq State Label) s₀
+        = Scheduler.haltNow sys := by
+      unfold Scheduler.postTauOf
+      rw [dif_pos Stream'.Seq.terminates_nil]
+      simp only [Stream'.Seq.toList_nil, List.getLast?_nil, ne_eq, not_true_eq_false,
+        dif_neg, not_false_eq_true]
+    rw [hpost]
+    rw [Scheduler.bind_next_nil_of_halt (Scheduler.haltNow sys)
+      (fun s_k => Scheduler.drawAndRun pe' ⟨s₀, Seq.nil⟩ s_k) s₀ (by rfl)]
+    -- `drawAndRun pe' ⟨s₀,nil⟩ s₀` at `⟨s₀,nil⟩`: `⟨s₀,nil⟩.setLast s₀ = ⟨s₀, nil⟩`.
+    show (Scheduler.drawAndRun pe' (⟨s₀, Seq.nil⟩ : AlterSeq State Label) s₀).next ⟨s₀, Seq.nil⟩ = _
+    change (pe'.scheduler.next ((⟨s₀, Seq.nil⟩ : AlterSeq State Label).setLast s₀)).bind _ = _
+    rw [show (⟨s₀, Seq.nil⟩ : AlterSeq State Label).setLast s₀ = ⟨s₀, Seq.nil⟩ from by
+      unfold AlterSeq.setLast
+      rw [dif_pos Stream'.Seq.terminates_nil]
+      simp only [Stream'.Seq.toList_nil, List.getLast?_nil]]
+  rw [hnext]
+  -- The drawn step is a genuine `sys^w.step`; for external `l` the `preHsWitness` is
+  -- non-silent (`none`-mass ≠ 1), so the belief mixture differs from `pure none`.
+  have hstep : sys^w.step s₀ l μ :=
+    pe'.scheduler.valid ⟨s₀, Seq.nil⟩ 0 s₀ Stream'.Seq.terminatedAt_nil rfl l μ h
+  have hcrux : (Scheduler.preHsWitness sys s₀ l μ).next ⟨s₀, Seq.nil⟩ none ≠ 1 :=
+    Scheduler.preHsWitness_external_next_none_ne_one sys s₀ l μ hstep hext
+  exact Scheduler.bind_emits_of_branch sys (pe'.scheduler.next ⟨s₀, Seq.nil⟩)
+    (fun opt => match opt with
+      | none => PMF.pure none
+      | some (l', μ') => (Scheduler.preHsWitness sys s₀ l' μ').next ⟨s₀, Seq.nil⟩)
+    (l, μ) h (by simpa using hcrux)
+
+open Classical in
+/-- **GATE 2 — the decisive continuation check (past the first weak step).** Model a genuine
+`expand`-reachable one-external-transition boundary `e₁ := ⟨init, [(l₁, t₁)]⟩`: the first
+weak step had a trivial pre-τ and emitted hs `l₁` reaching `t₁ = ν'_1`. Under the cleanest
+hypotheses making `e₁` a real boundary (the first hs `l₁` is external) and that `pe'`
+continues with a *second external* step `(l₂, μ₂)` from the history ending at `t₁`, the
+rebuilt `Scheduler.expand` at `e₁` does **not** halt (`≠ PMF.pure none`).
+
+The reduction: `expandDone e₁ = e₁`, `nu = (internalSuffix e₁).init = t₁`,
+`internalSuffix e₁ = ⟨t₁, nil⟩`, so `expand.next e₁ = (segmentScheduler pe' e₁ t₁).next
+⟨t₁, nil⟩ = (bind (postTauOf …) (drawAndRun pe' e₁ ·)).next ⟨t₁, nil⟩`. The `none`-mass
+factorizes (`bind_next_nil_none_mul`) as `postTauOf.next none · drawAndRun.next none`. The
+second factor is `< 1` because `drawAndRun` (querying `pe'` at `e₁.setLast t₁ = e₁`) draws
+the second external step `(l₂, μ₂)` and runs its non-silent `preHsWitness`. So the product
+is `≠ 1`, i.e. `expand.next e₁ ≠ pure none`: the post-τ + draw-next composes to **continue
+past step 1** (the exact failure mode of the prior constructions). -/
+theorem expand_continues_step2 (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (l₁ : Label) (t₁ : State) (l₂ : Label) (μ₂ : PMF State)
+    (hext₁ : ¬ sys.internal l₁) (hext₂ : ¬ sys.internal l₂)
+    (h₂ : some (l₂, μ₂) ∈
+      (pe'.scheduler.next ⟨sys.toSystem.init, Seq.cons (l₁, t₁) Seq.nil⟩).support) :
+    (Scheduler.expand sys pe').next
+        (⟨sys.toSystem.init, Seq.cons (l₁, t₁) Seq.nil⟩ : AlterSeq State Label)
+      ≠ PMF.pure none := by
+  classical
+  set i := sys.toSystem.init with hi
+  set e₁ : AlterSeq State Label := ⟨i, Seq.cons (l₁, t₁) Seq.nil⟩ with he₁
+  have hterm₁ : e₁.trans.Terminates :=
+    (Stream'.Seq.terminates_cons_iff).mpr Stream'.Seq.terminates_nil
+  have htl : (Seq.cons (l₁, t₁) Seq.nil : Seq (Label × State)).toList hterm₁ = [(l₁, t₁)] := by
+    rw [Stream'.Seq.toList_cons, Stream'.Seq.toList_nil]
+  -- The drawn second step is a genuine `sys^w.step` from `t₁` (scheduler validity at `e₁`).
+  have hstep₂ : sys^w.step t₁ l₂ μ₂ := by
+    have hterm1 : e₁.trans.TerminatedAt 1 := by
+      rw [he₁]; change (Seq.cons (l₁, t₁) Seq.nil : Seq (Label × State)).get? 1 = none
+      rw [show (1:ℕ) = 0 + 1 from rfl, Stream'.Seq.get?_cons_succ, Stream'.Seq.get?_nil]
+    have hstate1 : e₁.stateAt 1 = some t₁ := by
+      rw [he₁]
+      change ((Seq.cons (l₁, t₁) Seq.nil : Seq (Label × State)).get? 0).map Prod.snd = some t₁
+      rw [Stream'.Seq.get?_cons_zero]; rfl
+    exact pe'.scheduler.valid e₁ 1 t₁ hterm1 hstate1 l₂ μ₂ h₂
+  -- Structural reductions: `expandDone e₁ = e₁`, `internalSuffix e₁ = ⟨t₁, nil⟩`,
+  -- `e₁.setLast t₁ = e₁` (trivial post-τ ⇒ same target).
+  have hdone : pe'.expandDone e₁ = e₁ := by
+    rw [he₁]; unfold ProbabilisticExecution.expandDone
+    rw [dif_pos hterm₁]
+    simp only [htl, List.reverse_cons, List.reverse_nil, List.nil_append]
+    rw [List.takeWhile_cons]
+    simp only [decide_eq_true_eq, hext₁, Bool.false_eq_true, if_false, List.length_nil,
+      Nat.sub_zero, List.length_cons, List.take_succ_cons, List.take_nil]
+    rw [Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+  have hsuf : sys.internalSuffix e₁ = ⟨t₁, Seq.nil⟩ := by
+    rw [he₁]; unfold LabelledSystem.internalSuffix
+    rw [dif_pos hterm₁]
+    simp only [htl, List.reverse_cons, List.reverse_nil, List.nil_append]
+    rw [List.takeWhile_cons]
+    simp only [decide_eq_true_eq, hext₁, Bool.false_eq_true, if_false, List.length_nil,
+      Nat.sub_zero, List.length_cons]
+    have hstateAt : (⟨i, Seq.cons (l₁, t₁) Seq.nil⟩ : AlterSeq State Label).stateAt 1 = some t₁ := by
+      change ((Seq.cons (l₁, t₁) Seq.nil : Seq (Label × State)).get? 0).map Prod.snd = some t₁
+      rw [Stream'.Seq.get?_cons_zero]; rfl
+    have hdrop : (Seq.cons (l₁, t₁) Seq.nil : Seq (Label × State)).drop 1 = Seq.nil := by
+      apply Stream'.Seq.ext; intro n
+      rw [Stream'.Seq.drop_get?, show 1 + n = (n + 1) from by omega,
+        Stream'.Seq.get?_cons_succ, Stream'.Seq.get?_nil]
+    rw [show (0 + 1 : ℕ) = 1 from rfl, hstateAt, hdrop]; rfl
+  have hsetlast : e₁.setLast t₁ = e₁ := by
+    rw [he₁]; unfold AlterSeq.setLast
+    rw [dif_pos hterm₁]; simp only [htl, List.getLast?_singleton]
+    simp only [List.dropLast, List.nil_append]
+    rw [Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+  -- Reduce `expand.next e₁` to the segment at the internal-suffix `⟨t₁, nil⟩`.
+  have hnext : (Scheduler.expand sys pe').next e₁
+      = (Scheduler.segmentScheduler pe' e₁ t₁).next ⟨t₁, Seq.nil⟩ := by
+    change (if _h : e₁.trans.Terminates then
+        (Scheduler.segmentScheduler pe' (pe'.expandDone e₁) (sys.internalSuffix e₁).init).next
+          (sys.internalSuffix e₁)
+      else PMF.pure none) = _
+    rw [dif_pos hterm₁, hdone, hsuf]
+  rw [hnext, Ne, PMF.ext_iff]
+  push Not
+  refine ⟨none, ?_⟩
+  rw [PMF.pure_apply_self]
+  -- `none`-mass factorizes; the `drawAndRun` factor is `< 1`, so the product is `≠ 1`.
+  unfold Scheduler.segmentScheduler
+  rw [Scheduler.bind_next_nil_none_mul]
+  intro hprod
+  -- `drawAndRun pe' e₁ t₁` at `⟨t₁,nil⟩` is non-silent: it draws `(l₂,μ₂)` and runs the
+  -- (external) `preHsWitness`, which emits.
+  have hk_ne : (Scheduler.drawAndRun pe' e₁ t₁).next ⟨t₁, Seq.nil⟩ ≠ PMF.pure none := by
+    show ((pe'.scheduler.next (e₁.setLast t₁)).bind (fun opt =>
+        match opt with
+        | none => PMF.pure none
+        | some (l, μ) => (Scheduler.preHsWitness sys t₁ l μ).next ⟨t₁, Seq.nil⟩)) ≠ PMF.pure none
+    exact Scheduler.bind_emits_of_branch sys (pe'.scheduler.next (e₁.setLast t₁))
+      (fun opt => match opt with
+        | none => PMF.pure none
+        | some (l, μ) => (Scheduler.preHsWitness sys t₁ l μ).next ⟨t₁, Seq.nil⟩)
+      (some (l₂, μ₂)) (by rw [hsetlast]; exact h₂)
+      (by simpa using Scheduler.preHsWitness_external_next_none_ne_one sys t₁ l₂ μ₂ hstep₂ hext₂)
+  have hk : (Scheduler.drawAndRun pe' e₁ t₁).next ⟨t₁, Seq.nil⟩ none ≠ 1 := by
+    intro hone
+    refine hk_ne (PMF.ext (fun o => ?_))
+    have hsupp := (PMF.apply_eq_one_iff _ none).mp hone
+    cases o with
+    | none => rw [PMF.pure_apply_self]; exact hone
+    | some x =>
+      rw [PMF.pure_apply_of_ne _ _ (by simp), PMF.apply_eq_zero_iff, hsupp,
+        Set.mem_singleton_iff]; simp
+  apply hk
+  have h1 : (Scheduler.postTauOf pe' e₁ t₁).next ⟨t₁, Seq.nil⟩ none
+      * (Scheduler.drawAndRun pe' e₁ t₁).next ⟨t₁, Seq.nil⟩ none
+      ≤ (Scheduler.drawAndRun pe' e₁ t₁).next ⟨t₁, Seq.nil⟩ none :=
+    mul_le_of_le_one_left' (PMF.coe_le_one _ _)
+  rw [hprod] at h1
+  exact le_antisymm (PMF.coe_le_one _ _) h1
 
 open Classical in
 /-- **`weakChain` produces its external trace on every halting execution.** Under

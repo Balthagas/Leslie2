@@ -1456,6 +1456,101 @@ theorem bind_haltMass (σ : Scheduler sys.toSystem) (k : State → Scheduler sys
   rw [haltMass_pure_smul σ μ_init e.init (Stream'.Seq.ofList (e.trans.take j))
     (Stream'.Seq.terminates_ofList _)]
 
+open Classical in
+/-- **The `bind`-at-nil halt reduction.** When the prefix scheduler `σ` halts immediately at
+`⟨s, nil⟩` (emits `pure none`), the sequential composition `bind σ k` at the empty history
+`⟨s, nil⟩` is exactly `(k s).next ⟨s, nil⟩`: the split belief concentrates on the
+`none`-branch (σ active to the end, total weight `1`), so `normalize` is `pure none` and the
+first-step action is `actionBot`, which (since `σ.next ⟨s,nil⟩ = pure none`) folds into `k`'s
+first step at the end-state `s`. -/
+theorem bind_next_nil_of_halt (σ : Scheduler sys.toSystem) (k : State → Scheduler sys.toSystem)
+    (s : State) (hσ : σ.next ⟨s, Seq.nil⟩ = PMF.pure none) :
+    (bind σ k).next ⟨s, Seq.nil⟩ = (k s).next ⟨s, Seq.nil⟩ := by
+  classical
+  have hterm : (Seq.nil : Seq (Label × State)).Terminates := Stream'.Seq.terminates_nil
+  have hlen : (Seq.nil : Seq (Label × State)).length hterm = 0 := by simp
+  have hbnone : bindWeight σ k ⟨s, Seq.nil⟩ hterm none = 1 := by
+    show (⟨PMF.pure s, σ⟩ : ProbabilisticExecution sys.toSystem).probOf ⟨s, Seq.nil⟩ hterm = 1
+    rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
+      PMF.pure_apply_self]
+  have hbsome : ∀ j, bindWeight σ k ⟨s, Seq.nil⟩ hterm (some j) = 0 := by
+    intro j
+    show (if _hj : j < (Seq.nil : Seq (Label × State)).length hterm then _ else 0) = 0
+    rw [hlen]; rw [dif_neg (by omega)]
+  have htot : (∑' o, bindWeight σ k ⟨s, Seq.nil⟩ hterm o) = 1 := by
+    rw [tsum_option_enn, hbnone]
+    simp only [hbsome, tsum_zero, add_zero]
+  have h0 : (∑' o, bindWeight σ k ⟨s, Seq.nil⟩ hterm o) ≠ 0 := by rw [htot]; exact one_ne_zero
+  have hnorm : PMF.normalize (bindWeight σ k ⟨s, Seq.nil⟩ hterm) h0
+      (bindWeight_tsum_ne_top σ k ⟨s, Seq.nil⟩ hterm) = PMF.pure none := by
+    apply PMF.ext
+    intro o
+    rw [PMF.normalize_apply, htot, inv_one, mul_one]
+    cases o with
+    | none => rw [hbnone, PMF.pure_apply_self]
+    | some j => rw [hbsome j, PMF.pure_apply_of_ne _ _ (by simp)]
+  unfold bind
+  simp only [dif_pos hterm, dif_pos h0]
+  rw [hnorm, PMF.pure_bind]
+  show actionBot σ k ⟨s, Seq.nil⟩ hterm = (k s).next ⟨s, Seq.nil⟩
+  unfold actionBot
+  rw [show (⟨s, Seq.nil⟩ : AlterSeq State Label).endState hterm = s from
+    AlterSeq.endState_of_trans_nil _ rfl _]
+  rw [hσ, PMF.pure_bind]
+
+open Classical in
+/-- **The `bind`-at-nil `none`-mass factorization.** At the empty history `⟨s, nil⟩`, the
+halt probability of `bind σ k` factorizes as the product of `σ`'s and `(k s)`'s halt
+probabilities there: the split belief concentrates on the single split point `j = 0` (no
+transitions), so `halt_unfold` collapses to the one term `σ.haltMass · (k s).haltMass`, and
+each halt mass from a Dirac source is `next ⟨s,nil⟩ none`. -/
+theorem bind_next_nil_none_mul (σ : Scheduler sys.toSystem) (k : State → Scheduler sys.toSystem)
+    (s : State) :
+    (bind σ k).next ⟨s, Seq.nil⟩ none
+      = σ.next ⟨s, Seq.nil⟩ none * (k s).next ⟨s, Seq.nil⟩ none := by
+  classical
+  have hterm : (Seq.nil : Seq (Label × State)).Terminates := Stream'.Seq.terminates_nil
+  have hlen : (Seq.nil : Seq (Label × State)).length hterm = 0 := by simp
+  -- Total belief weight is `1` (only the `none`-split survives at the empty history).
+  have hbnone : bindWeight σ k ⟨s, Seq.nil⟩ hterm none = 1 := by
+    show (⟨PMF.pure s, σ⟩ : ProbabilisticExecution sys.toSystem).probOf ⟨s, Seq.nil⟩ hterm = 1
+    rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
+      PMF.pure_apply_self]
+  have hbsome : ∀ j, bindWeight σ k ⟨s, Seq.nil⟩ hterm (some j) = 0 := by
+    intro j
+    show (if _hj : j < (Seq.nil : Seq (Label × State)).length hterm then _ else 0) = 0
+    rw [hlen]; rw [dif_neg (by omega)]
+  have htot : (∑' o, bindWeight σ k ⟨s, Seq.nil⟩ hterm o) = 1 := by
+    rw [tsum_option_enn, hbnone]
+    simp only [hbsome, tsum_zero, add_zero]
+  -- `halt_unfold` at the empty history: range reduces to `{0}`.
+  have hu := halt_unfold σ k ⟨s, Seq.nil⟩ hterm
+  rw [htot, one_mul] at hu
+  rw [show (⟨s, Seq.nil⟩ : AlterSeq State Label).trans.length hterm = 0 from hlen] at hu
+  rw [Finset.sum_range_one] at hu
+  -- the single summand at `j = 0`: prefix `⟨s, nil⟩`, suffix `⟨s, nil⟩`, source `s`.
+  have hsa : stateAfter (⟨s, Seq.nil⟩ : AlterSeq State Label) 0 = s := by
+    show ((⟨s, Seq.nil⟩ : AlterSeq State Label).stateAt 0).getD s = s; rfl
+  rw [hu, hsa]
+  -- both `haltMass`es from a Dirac source reduce to `next ⟨s,nil⟩ none`.
+  have htake : (Stream'.Seq.ofList ((⟨s, Seq.nil⟩ : AlterSeq State Label).trans.take 0)
+      : Seq (Label × State)) = Seq.nil := by
+    rw [show ((⟨s, Seq.nil⟩ : AlterSeq State Label).trans.take 0 : List (Label × State)) = []
+      from by simp [Stream'.Seq.take]]
+    rw [Stream'.Seq.ofList_nil]
+  have hdrop : (⟨s, Seq.nil⟩ : AlterSeq State Label).trans.drop 0 = (Seq.nil : Seq (Label × State)) := by
+    apply Stream'.Seq.ext; intro n; simp [Stream'.Seq.drop]
+  -- Change both subtype histories to the canonical `⟨s, nil⟩` via `haltMass_congr_eq`.
+  rw [haltMass_congr_eq σ (PMF.pure s)
+      (e₂ := ⟨⟨s, Seq.nil⟩, hterm⟩) (by simpa using htake),
+    haltMass_congr_eq (k s) (PMF.pure s)
+      (e₂ := ⟨⟨s, Seq.nil⟩, hterm⟩) (by simpa using hdrop)]
+  -- Each `haltMass` from a Dirac source on `⟨s,nil⟩` is `next ⟨s,nil⟩ none`.
+  unfold Scheduler.haltMass
+  rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
+    PMF.pure_apply_self, one_mul, ProbabilisticExecution.probOf_nil,
+    ProbabilisticExecution.init_eq_initState, PMF.pure_apply_self, one_mul]
+
 end Scheduler
 
 namespace WeakScheduler
