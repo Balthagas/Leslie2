@@ -1595,38 +1595,10 @@ theorem LabelledSystem.internalSuffix_endState (ls : LabelledSystem State Label)
   rw [AlterSeq.endState_congr_pub hsuf h' (Stream'.Seq.drop_terminates_pub h m)]
   exact AlterSeq.endState_drop_suffix e h m hmle
 
-open Classical in
-/-- Posterior over the distribution `μ` that `pe'` emitted for `E`'s last weak step,
-given `E`'s last transition `(a, s_last)` and the preceding history `E'`. Weight
-`μ ↦ pe'.scheduler.next E' (some (a, μ)) * μ s_last`, normalized by the last-step
-kernel. Fallback `pure (PMF.pure E.init)` when `E` is empty/non-terminating or the
-weight vanishes. -/
-noncomputable def ProbabilisticExecution.lastMuBelief
-    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
-    (E : AlterSeq State Label) : PMF (PMF State) :=
-  if hT : E.trans.Terminates then
-    if hne : E.trans.toList hT ≠ [] then
-      let spl := Stream'.Seq.exists_split_last E.trans hT hne
-      let prev := spl.choose
-      let last := spl.choose_spec.choose
-      let E' : AlterSeq State Label := ⟨E.init, prev⟩
-      let a := last.1
-      let s_last := last.2
-      let w : PMF State → ENNReal := fun μ => pe'.scheduler.next E' (some (a, μ)) * μ s_last
-      if h0 : (∑' μ, w μ) ≠ 0 then
-        PMF.normalize w h0
-          (by
-            have hwtsum : (∑' μ, w μ) = pe'.kernel E' (a, s_last) := rfl
-            rw [hwtsum]
-            exact ne_top_of_le_ne_top ENNReal.one_ne_top (pe'.kernel_le_one E' (a, s_last)))
-      else PMF.pure (PMF.pure E.init)
-    else PMF.pure (PMF.pure E.init)
-  else PMF.pure (PMF.pure E.init)
+/-! ### The `expand` belief (post-τ-aware)
 
-/-! ### Corrected belief for the `expand` rewire (Fix A)
-
-The `lastMuBelief` posterior above weights a candidate weak-step result `μ` by
-`μ s_last`, where `s_last` is the recorded hyperStep target `ν'`. But `ν'` is
+A first attempt (the deleted `lastMuBelief`) weighted a candidate weak-step result
+`μ` by `μ s_last`, where `s_last` is the recorded hyperStep target `ν'`. But `ν'` is
 sampled from the hyperStep *target* distribution (the **pre**-post-τ
 distribution); the post-τ then moves mass to `μ`, so `μ ν'` is generically `0`
 and the belief degenerates (see `MyMathlibProject/FlawCheck.lean`). The fix:
@@ -1997,334 +1969,35 @@ theorem Scheduler.weakChain_haltMass_one (sys : LabelledSystem State Label)
       simp only [mul_one]
       exact PMF.tsum_coe μ
 
-/-! #### The full-label-list belief and the `expand` construction
+/-! #### The `expand` construction (belief-draw design)
 
-The corrected `expand` belief, mirroring `DistConstruction.beliefTC`/`Scheduler.lower`
-but adapted for the *stutter* (one `sys^w` weak step = a chain of `sys` transitions
-through a τ-closure).
-
-**Design (the fix for the three prior flaws).** The belief conditions on the
-**FULL `sys`-label list** `fl` of the running `sys`-history `e` (internal τ-labels
-included), *not* on the external trace. This is what keeps the belief non-degenerate
-*inside* a τ-closure: a mid-closure history `e` is itself a valid witness-lowering
-execution, so the abstract `sys^w`-history it descends from stays compatible.
-
-The belief ranges over pairs `(E, μs)` where:
-* `E : AlterSeq State Label` is an abstract `sys^w`-history that `pe'` records, and
-* `μs : List (PMF State)` are the latent per-weak-step result distributions
-  (`E` records only the sampled states, so the result PMFs must be carried).
-
-The reconstructed weak-step chain `zipChain E μs` pairs `E`'s labels with `μs`; when
-`WeakChainValid sys (zipChain E μs) E.init` holds, `Scheduler.weakChain` lowers it into
-a genuine `sys`-scheduler whose halting executions a.s. have external trace `E`'s
-external trace (`weakChain_traceProb_extTrace`). The belief weight is `pe'.probOf E`
-(restricted to *tight* `sys^w`-histories with external trace `extTrace fl`, so the
-normalizer is bounded by `sys^w.traceProb ≤ 1`, the Kraft bound) times the lowering's
-mass on the full-label-list `fl` reaching `s`. -/
-
-/-- Pair an abstract `sys^w`-history `E`'s recorded labels with a parallel list of
-latent per-step result distributions `μs`, producing the weak-step chain consumed by
-`Scheduler.weakChain`. Labels beyond `μs`'s length (or vice versa) are dropped by
-`List.zip`'s truncation, so well-formedness is enforced by the length condition. -/
-noncomputable def weakChainOf (E : AlterSeq State Label) (hT : E.trans.Terminates)
-    (μs : List (PMF State)) : List (Label × PMF State) :=
-  ((E.trans.toList hT).map Prod.fst).zip μs
-
-open Classical in
-/-- The external (non-internal) trace of a full `sys`-label list `fl`. -/
-noncomputable def extOfFull (sys : LabelledSystem State Label) (fl : List Label) : List Label :=
-  fl.filter (fun l => ¬ sys.internal l)
-
-open Classical in
-/-- **The lowering relation.** An abstract `sys^w`-history `E` *lowers to* the full
-`sys`-label list `fl` ending at `s` if there is a latent per-weak-step result list `μs`
-making `weakChainOf E μs` a genuine `sys^w`-weak-step chain (`WeakChainValid` from
-`E.init`) whose witness-lowering `Scheduler.weakChain` puts positive halting mass on a
-`sys`-execution `f` with full label list `fl` and end-state `s`.
-
-This is the heart of the construction: it relates the *abstract* `sys^w`-history `E`
-(external weak steps) to the *concrete* `sys`-history `e` running through the τ-closures
-(full label list `fl`). It is the τ-closure-aware analogue of the `beliefTC` condition
-`E.trans.map Prod.fst = Seq.ofList labs`; the stutter (one weak step = many `sys`
-transitions) is absorbed by the witness chain. -/
-def ProbabilisticExecution.LowersTo {sys : LabelledSystem State Label}
-    (E : AlterSeq State Label) (fl : List Label) (s : State) : Prop :=
-  ∃ (hT : E.trans.Terminates) (μs : List (PMF State)),
-    μs.length = (E.trans.toList hT).length ∧
-    WeakChainValid sys (weakChainOf E hT μs) E.init ∧
-    ∃ f : {e : AlterSeq State Label // e.trans.Terminates},
-      (Scheduler.weakChain sys (weakChainOf E hT μs) E.init).haltMass (PMF.pure E.init) f ≠ 0
-        ∧ (f.1.trans.toList f.2).map Prod.fst = fl ∧ f.1.endState f.2 = s
-
-open Classical in
-/-- **Unnormalized weight of the full-label-list belief.** Mass on abstract
-`sys^w`-histories `E` that are *tight* with external trace `extOfFull sys fl` (so the
-normalizer is bounded by the Kraft bound `sys^w.traceProb pe' (extOfFull sys fl) ≤ 1`)
-**and** lower to the full label list `fl` ending at `s` (`LowersTo`), weighted by
-`pe'.probOf E`.
-
-Conditioning on the *full* label list `fl` (not just the external trace) — via the
-`LowersTo` factor — is the fix that keeps the belief non-degenerate *through* a
-τ-closure (the three prior constructions conditioned only on the external trace and
-degenerated mid-closure; see `beliefLowerW_pos_of_lowersTo`). -/
-noncomputable def ProbabilisticExecution.beliefLowerW
-    {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (fl : List Label) (s : State) (E : AlterSeq State Label) : ENNReal :=
-  if h : E.trans.Terminates ∧ sys^w.IsTight E
-        ∧ sys^w.trace E = Seq.ofList (extOfFull sys fl)
-        ∧ ProbabilisticExecution.LowersTo (sys := sys) E fl s then
-    pe'.probOf E h.1
-  else 0
-
-/-- **The full-label-list normalizer is bounded by the `sys^w` Kraft bound.** Every
-`E` contributing to `beliefLowerW fl s` is a *tight* `sys^w`-history with external trace
-`Seq.ofList (extOfFull sys fl)`, weighted by `pe'.probOf E`; the sum of these is exactly
-`sys^w.traceProb pe' (Seq.ofList (extOfFull sys fl)) ≤ 1` (`traceProb_le_one`). -/
-theorem ProbabilisticExecution.beliefLowerW_tsum_le
-    {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (fl : List Label) (s : State) :
-    (∑' E : AlterSeq State Label, pe'.beliefLowerW fl s E)
-      ≤ sys^w.traceProb pe' (Seq.ofList (extOfFull sys fl)) := by
-  classical
-  -- The tight trace-`(ofList ext)` cone, as a Set of base-type executions.
-  set T : Set (AlterSeq State Label) :=
-    {e | e.trans.Terminates ∧ sys^w.trace e = Seq.ofList (extOfFull sys fl) ∧ sys^w.IsTight e}
-    with hT
-  -- `beliefLowerW` is supported on `T` (its `dif` condition forces cone membership),
-  -- so the whole-type sum equals the cone-subtype sum.
-  have hsupp : ∀ E, pe'.beliefLowerW fl s E = T.indicator (pe'.beliefLowerW fl s) E := by
-    intro E
-    rw [Set.indicator_apply]
-    by_cases hmem : E ∈ T
-    · rw [if_pos hmem]
-    · rw [if_neg hmem]
-      unfold ProbabilisticExecution.beliefLowerW
-      rw [dif_neg]
-      rintro ⟨h1, h2, h3, _⟩
-      exact hmem ⟨h1, h3, h2⟩
-  rw [tsum_congr hsupp, ← tsum_subtype T (pe'.beliefLowerW fl s)]
-  -- Identify `traceProb` as the same cone-subtype sum of `probOf`.
-  rw [sys^w.traceProb_eq_extLabMass pe' (extOfFull sys fl),
-    sys^w.extLabMass_eq_tight_tsum pe' (extOfFull sys fl) (fun _ => 1)]
-  -- Termwise: on the cone, `beliefLowerW e.1 ≤ probOf e.1 · 1`.
-  refine ENNReal.tsum_le_tsum fun e => ?_
-  obtain ⟨hTe, htr, hti⟩ := e.2
-  rw [mul_one]
-  unfold ProbabilisticExecution.beliefLowerW
-  by_cases h : e.1.trans.Terminates ∧ sys^w.IsTight e.1
-      ∧ sys^w.trace e.1 = Seq.ofList (extOfFull sys fl)
-      ∧ ProbabilisticExecution.LowersTo (sys := sys) e.1 fl s
-  · rw [dif_pos h]
-  · rw [dif_neg h]; exact bot_le
-
-/-- The full-label-list normalizer is finite (`≤ 1`, hence `≠ ⊤`), via
-`beliefLowerW_tsum_le` and the Kraft bound `traceProb_le_one`. -/
-theorem ProbabilisticExecution.beliefLowerW_tsum_ne_top
-    {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (fl : List Label) (s : State) :
-    (∑' E : AlterSeq State Label, pe'.beliefLowerW fl s E) ≠ ⊤ := by
-  have hle := pe'.beliefLowerW_tsum_le fl s
-  have h1 : sys^w.traceProb pe' (Seq.ofList (extOfFull sys fl)) ≤ 1 :=
-    sys^w.traceProb_le_one pe' _
-  exact (lt_of_le_of_lt (le_trans hle h1) ENNReal.one_lt_top).ne
-
-/-- **The full-label-list belief.** Posterior over abstract `sys^w`-histories `E` with
-external trace `extOfFull sys fl` that lower to the full `sys`-label list `fl` ending at
-`s`, weighted by `pe'.probOf E`; normalized when the normalizer is positive (with the
-finite-normalizer guarantee from `beliefLowerW_tsum_ne_top`), with the `PMF.pure`
-fallback when it is `0` (mirrors `beliefTC`). -/
-noncomputable def ProbabilisticExecution.beliefLower
-    {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (fl : List Label) (s : State) : PMF (AlterSeq State Label) :=
-  open Classical in
-  if h0 : (∑' E, pe'.beliefLowerW fl s E) ≠ 0 then
-    PMF.normalize (pe'.beliefLowerW fl s) h0 (pe'.beliefLowerW_tsum_ne_top fl s)
-  else
-    PMF.pure ⟨s, Seq.nil⟩
-
-/-- Every `E` in `beliefLower`'s support terminates and *lowers to* `fl` ending at `s`
-(`LowersTo`) — the data the witness scheduler needs to emit a valid `sys`-step. Immediate
-from the weight: the `dif`-condition of `beliefLowerW` carries `LowersTo` as a conjunct.
-(In the `PMF.pure` fallback branch the support is the trivial `⟨s, nil⟩`, handled
-separately by the scheduler.) -/
-theorem ProbabilisticExecution.beliefLower_support
-    {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (fl : List Label) (s : State) {E : AlterSeq State Label}
-    (hE : E ∈ (pe'.beliefLower fl s).support)
-    (h0 : (∑' E, pe'.beliefLowerW fl s E) ≠ 0) :
-    ProbabilisticExecution.LowersTo (sys := sys) E fl s := by
-  classical
-  unfold ProbabilisticExecution.beliefLower at hE
-  rw [dif_pos h0, PMF.mem_support_normalize_iff] at hE
-  unfold ProbabilisticExecution.beliefLowerW at hE
-  split_ifs at hE with h
-  · exact h.2.2.2
-  · exact absurd rfl hE
-
-/-! #### Non-degeneracy of the full-label-list belief
-
-The decisive flaw-check (the property the three prior constructions lacked): the belief
-must stay **non-zero through the τ-closure**, i.e. for a `sys`-history `e` whose end-state
-sits *inside* a weak step's τ-closure (not at a hyperStep boundary), the belief at the
-full label list of `e` must not be identically zero. With the external-trace conditioning
-of the prior designs this failed (mid-closure the external trace had already advanced past
-`e`'s, so no abstract history matched). Conditioning on the FULL label list `fl` via
-`LowersTo` fixes this: `e` itself is a halting witness-lowering execution of the very chain
-that produced it, so the abstract history `E` it descends from is compatible. -/
-
-/-- **`LowersTo` is exactly the existence of a compatible witness-lowering** — the
-structural core of non-degeneracy. If a valid weak-step chain `cs = weakChainOf E hT μs`
-has *any* halting witness-lowering execution `f` with full label list `fl` and end-state
-`s`, then `LowersTo E fl s` holds. In particular this applies to a `sys`-history `e`
-*mid-τ-closure*: `e` is itself such an `f`, so the abstract history it descends from is a
-witness — the belief does not degenerate inside the closure. -/
-theorem ProbabilisticExecution.lowersTo_of_witness {sys : LabelledSystem State Label}
-    (E : AlterSeq State Label) (hT : E.trans.Terminates) (μs : List (PMF State))
-    (hlen : μs.length = (E.trans.toList hT).length)
-    (hvalid : WeakChainValid sys (weakChainOf E hT μs) E.init)
-    (f : {e : AlterSeq State Label // e.trans.Terminates}) (fl : List Label) (s : State)
-    (hf : (Scheduler.weakChain sys (weakChainOf E hT μs) E.init).haltMass (PMF.pure E.init) f ≠ 0)
-    (hfl : (f.1.trans.toList f.2).map Prod.fst = fl) (hs : f.1.endState f.2 = s) :
-    ProbabilisticExecution.LowersTo (sys := sys) E fl s :=
-  ⟨hT, μs, hlen, hvalid, f, hf, hfl, hs⟩
-
-open Classical in
-/-- **The belief is non-zero at a compatible abstract history** (non-degeneracy). For an
-abstract `sys^w`-history `E` that is *tight* with external trace `extOfFull sys fl`, that
-*lowers to* `fl` ending at `s`, and that `pe'` gives positive mass to, the unnormalized
-belief weight is positive; hence the whole normalizer `∑' E, beliefLowerW fl s E ≠ 0` and
-`beliefLower fl s` is the genuine (normalized) posterior — not the `PMF.pure` fallback.
-
-Crucially the three required structural facts (`IsTight`, the external-trace match, and
-`LowersTo`) are **all satisfied by the abstract history a mid-τ-closure `e` descends from**:
-`LowersTo` holds via `lowersTo_of_witness` (with `e` as the witness `f`), and the
-external-trace match holds because witness-lowering preserves the external trace
-(`weakChain_traceProb_extTrace`). So the belief stays non-degenerate through the closure. -/
-theorem ProbabilisticExecution.beliefLowerW_pos_of_compatible
-    {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (fl : List Label) (s : State) (E : AlterSeq State Label)
-    (hT : E.trans.Terminates) (hti : sys^w.IsTight E)
-    (htr : sys^w.trace E = Seq.ofList (extOfFull sys fl))
-    (hlt : ProbabilisticExecution.LowersTo (sys := sys) E fl s)
-    (hpos : pe'.probOf E hT ≠ 0) :
-    pe'.beliefLowerW fl s E ≠ 0 := by
-  unfold ProbabilisticExecution.beliefLowerW
-  rw [dif_pos ⟨hT, hti, htr, hlt⟩]
-  exact hpos
-
-/-- **Non-degeneracy corollary:** a single compatible abstract history forces the whole
-normalizer `∑' E, beliefLowerW fl s E` to be nonzero, so `beliefLower fl s` is the genuine
-normalized posterior. -/
-theorem ProbabilisticExecution.beliefLowerW_tsum_ne_zero_of_compatible
-    {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (fl : List Label) (s : State) (E : AlterSeq State Label)
-    (hT : E.trans.Terminates) (hti : sys^w.IsTight E)
-    (htr : sys^w.trace E = Seq.ofList (extOfFull sys fl))
-    (hlt : ProbabilisticExecution.LowersTo (sys := sys) E fl s)
-    (hpos : pe'.probOf E hT ≠ 0) :
-    (∑' E, pe'.beliefLowerW fl s E) ≠ 0 := by
-  intro h0
-  exact pe'.beliefLowerW_pos_of_compatible fl s E hT hti htr hlt hpos
-    (ENNReal.tsum_eq_zero.mp h0 E)
-
-/-- Rezipping a list of pairs from its projections recovers the original list. -/
-private theorem List.zip_map_fst_snd {α β : Type} (l : List (α × β)) :
-    (l.map Prod.fst).zip (l.map Prod.snd) = l := by
-  induction l with
-  | nil => rfl
-  | cons hd tl ih => simp [List.zip_cons_cons, ih]
-
-/-- **The decisive non-degeneracy theorem (the flaw-check).** For *any* genuinely valid
-weak-step chain `cs` from a source `s₀` — including a chain ending **inside** a τ-closure
-(an internal `cs` whose witness-lowering halting executions carry internal labels) — there
-is an abstract `sys^w`-history `E` (with `E.init = s₀`) and a halting witness-lowering
-execution `f` such that `LowersTo E (full label list of f) (f.endState)` holds.
-
-This is exactly the property the three prior (external-trace-conditioned) constructions
-**lacked**: a mid/through-τ-closure `f` has full label list `fl` with internal labels, and
-its external trace is a *strict prefix* of `E`'s external `sys^w`-trace, so external-trace
-conditioning found no compatible `E` and the belief degenerated. Here `LowersTo` matches the
-**full** label list `fl`, which `f` reproduces by construction (it *is* a witness-lowering
-of `cs`), so a compatible `E` always exists. Combined with `beliefLowerW_pos_of_compatible`
-(supplying the `IsTight`/external-trace/`pe'`-mass facts), this shows the belief stays
-non-zero through the τ-closure. -/
-theorem ProbabilisticExecution.lowersTo_nondegenerate {sys : LabelledSystem State Label}
-    (cs : List (Label × PMF State)) (s₀ : State) (hv : WeakChainValid sys cs s₀) :
-    ∃ (E : AlterSeq State Label) (f : {e : AlterSeq State Label // e.trans.Terminates}),
-      E.init = s₀ ∧
-      (Scheduler.weakChain sys cs s₀).haltMass (PMF.pure s₀) f ≠ 0 ∧
-      ProbabilisticExecution.LowersTo (sys := sys) E
-        ((f.1.trans.toList f.2).map Prod.fst) (f.1.endState f.2) := by
-  classical
-  -- The chain almost surely halts (`weakChain_haltMass_one`), so some fiber `f` is nonzero.
-  have htot := Scheduler.weakChain_haltMass_one sys cs s₀ hv
-  have hne : ∃ f, (Scheduler.weakChain sys cs s₀).haltMass (PMF.pure s₀) f ≠ 0 := by
-    by_contra h
-    push Not at h
-    rw [tsum_congr h, tsum_zero] at htot
-    exact one_ne_zero htot.symm
-  obtain ⟨f, hf⟩ := hne
-  -- Reconstruct the abstract history `E` from `cs`: record each step's label (state `s₀` is
-  -- a placeholder; only the labels and the recovered `μs = cs.map Prod.snd` matter).
-  set E : AlterSeq State Label := ⟨s₀, Seq.ofList (cs.map (fun p => (p.1, s₀)))⟩ with hE
-  have hT : E.trans.Terminates := Stream'.Seq.terminates_ofList _
-  have hzip : (cs.map Prod.fst).zip (cs.map Prod.snd) = cs := List.zip_map_fst_snd cs
-  have hlabels : (E.trans.toList hT).map Prod.fst = cs.map Prod.fst := by
-    change ((Seq.ofList (cs.map (fun p => (p.1, s₀)))).toList hT).map Prod.fst = cs.map Prod.fst
-    rw [Stream'.Seq.toList_ofList, List.map_map]; rfl
-  have hlen : (E.trans.toList hT).length = cs.length := by
-    have := congrArg List.length hlabels
-    rwa [List.length_map, List.length_map] at this
-  -- `weakChainOf E hT (cs.map Prod.snd) = cs`: the labels rezip with the recovered `μs`.
-  have hchain : weakChainOf E hT (cs.map Prod.snd) = cs := by
-    unfold weakChainOf; rw [hlabels, hzip]
-  refine ⟨E, f, rfl, hf, hT, cs.map Prod.snd, ?_, ?_, f, ?_, rfl, rfl⟩
-  · rw [List.length_map, hlen]
-  · rw [hchain]; exact hv
-  · rw [hchain, hE]; exact hf
-
-/-! #### The synthesized-continuation `expand` construction (rebuilt)
-
-The rebuilt `Scheduler.expand` is the *history-dependent* memoryless stuttering simulation.
+`Scheduler.expand` is the *history-dependent* memoryless stuttering simulation of `pe'`.
 At a terminating `sys`-history `e`:
 
-* `extTr := sys.trace e` is the external trace realized so far, and
-  `nu := (sys.internalSuffix e).init` is the *observable* last hyperStep boundary `ν'_k`
-  (the state after `e`'s last external transition; `= e.init` at `⟨init, nil⟩`).
-* `expandDone e := ⟨e.init, externalPrefix e⟩` is the **completed** `sys^w`-history `E_done`
-  read directly off `e`: the prefix of `e` up to and including its last external transition
-  (empty `⟨e.init, nil⟩` when `e` has no external transition yet, in particular at
-  `⟨init, nil⟩`). This is the concrete observable boundary history — no `Classical.choose`,
-  so the gates can reduce through it.
+* `ν' := (sys.internalSuffix e).init` is the *observable* last hyperStep boundary `ν'_k`
+  (the state after `e`'s last external transition; `= e.init` at `⟨init, nil⟩`), and
+  `L := (sys.trace e).toList` is the external trace realized so far. The trailing internal
+  run (from `ν'`) is the in-progress post-τ;pre-τ;hs, threaded by `Scheduler.bind` at
+  `sys.internalSuffix e`.
 
-The scheduler then runs the **segment** `segmentScheduler E_done nu`, which:
-* first replays `E_done`'s last weak step's *post-τ closure* (`postTauOf`, a `weakTau nu μ_k`
-  witness recovered from `pe'` via `lastMuBelief`, or `haltNow` when `E_done` is empty),
-  reaching a post-τ sample `s_k`;
-* then **draws the next weak step** `(l, μ) ∼ pe'.scheduler.next (E_done.setLast s_k)` (the
-  history queried at the *actual reached* post-τ state) and runs its *pre-τ-and-hs* witness
-  `preHsWitness sys s_k l μ` (the pre-τ;hs part of `weakStepWitness`, dropping the final
-  post-τ — that is the *next* segment's `postTauOf`).
+On `L.getLast?`:
+* `none` (no external label yet): run `drawAndRun pe' ⟨init, nil⟩` — query `pe'` at the empty
+  clean history and run the first weak step's pre-τ;hs.
+* `some l` (`l` = the just-completed weak step's external label): draw `(E', μ)` from the
+  belief `pe'.beliefExpand L ν'`, where `E'` is the **clean** prior `sys^w`-history (σ-states,
+  no stutter) and `μ` the just-completed step's result PMF. The belief weights `μ` by
+  `postDist ν'` — the hyperStep-target distribution `ν'` is genuinely sampled from — so it
+  recovers the drawn `μ` (unlike the old `lastMuBelief`, which weighted by `μ ν'` and
+  degenerated). Then run `segmentScheduler pe' ν' l E' μ`: replay the post-τ
+  (`postTauWitness (E'.endState) l μ`) to reach a sample `σ_k`, form the **clean** history
+  `E' ++ [(l, σ_k)]`, and `drawAndRun` the next step there (so `pe'` is queried *on-path*).
 
-This is what stops `expand` from halting prematurely: at `init`, `postTauOf = haltNow` halts
-at `init`, then `drawAndRun` draws `pe'`'s first weak step from `init` and emits its pre-τ;hs;
-past the first hs (at `nu = ν'_1`), `postTauOf` runs the first step's post-τ from `ν'_1`,
-then `drawAndRun` draws the *second* step at the reached state and emits its pre-τ;hs. So it
-continues, state-consistently.
-
-Validity is **free**: every branch (`postTauOf`, `preHsWitness`, `haltNow`, `Scheduler.bind`)
-is a valid `Scheduler sys.toSystem`, so the belief mixture is valid regardless of its shape. -/
+Validity is **free**: every branch (`postTauWitness`, `preHsWitness`, `haltNow`,
+`Scheduler.bind`) is a valid `Scheduler sys.toSystem`, so the belief mixture is valid too. -/
 
 open Classical in
 /-- The **pre-τ-and-hs** witness of the weak step `s →[l] μ`: the `weakStepWitness` chain
-*minus its final post-τ closure* (that is the next segment's `postTauOf`). For external `l`,
+*minus its final post-τ closure* (that is the next segment's post-τ). For external `l`,
 `Scheduler.bind (pre-τ witness) (extStep for the hs)`; for internal `l`, the τ-witness; off
 support, `haltNow`. The decisive point for continuation: for external `l` it always emits a
 transition (the pre-τ's first step or the hs `l`). -/
@@ -2612,16 +2285,6 @@ theorem Scheduler.pushforward_of_next_halts (sys : LabelledSystem State Label)
   rw [hhalt₀, one_mul, he₀,
     AlterSeq.endState_of_trans_nil ⟨s₀, Seq.nil⟩ rfl Stream'.Seq.terminates_nil]
 
-/-- `internalSuffix` at the empty history `⟨init, nil⟩` is `⟨init, nil⟩`; its init is `init`. -/
-theorem LabelledSystem.internalSuffix_nil_init (sys : LabelledSystem State Label) (s₀ : State) :
-    (sys.internalSuffix ⟨s₀, Seq.nil⟩).init = s₀ := by
-  classical
-  unfold LabelledSystem.internalSuffix
-  rw [dif_pos (Stream'.Seq.terminates_nil)]
-  simp only [Stream'.Seq.toList_nil, List.length_nil, List.reverse_nil,
-    List.takeWhile_nil, Nat.sub_zero]
-  rfl
-
 /-- **A `PMF.bind` emits a transition** whenever some `some`-weighted branch is itself
 non-silent. If the source PMF `p` puts positive mass on `b₀` and the continuation `W b₀`
 puts `< 1` mass on `none` (`W b₀ none ≠ 1`), then the mixture `p.bind W` differs from
@@ -2677,14 +2340,15 @@ analogue, at the trace level `g = 1`). The total `probOf`-mass that the expanded
 the total `probOf`-mass that `pe'` assigns to *tight* `sys^w`-histories with external trace
 `ofList L`.
 
-The expand scheduler is, at each terminating `sys`-history `e` (full label list `fl`,
-end-state `s`), the belief mixture `(beliefLower fl s).bind (fun E => weakChain (lowerChain E
-fl s) E.init)`. The per-history belief telescopes (chain rule, `beliefLower`-normalize-cancel
-analogue of `beliefTC_normalize_cancel`), and the latent result list `μs` of the
-witness-lowering is benign for the *trace*: `weakChain (lowerChain E) .traceProb` equals the
-indicator `[E's external trace = ofList L]` regardless of `μs`
-(`weakChain_traceProb_extTrace`). Summing the mixture over the tight trace-`L` cone and
-swapping the belief sum to the outside collapses to `pe'`'s tight trace-`L` mass. -/
+This is the headline trace-equality. The proof route (see `expand_extLabMass_eq` /
+`expand_traceProb_eq_hExt`): under `hExt` (`pe'` schedules only external weak steps, so its
+label list = its external trace) reduce both sides to the external level mass and prove the
+`g`-indexed invariant `expand.extLabMass L g = pe'.hsLabMass L g` by induction on `L`
+(the `lower_labProb_eq_aux` analogue under stutter — the pe'-side is integrated at the
+hyperStep boundary `ν'` via `hsLabMass`, not the post-τ result, since the two differ by one
+post-τ at general `g`); the `g = 1` slice gives the trace-equality. Then a Phase-2 WLOG
+drops `hExt` (normalizing internal weak steps into the next external step's pre-τ via
+`weakTau_trans`). -/
 theorem expand_traceProb_tight_tsum_eq (sys : LabelledSystem State Label)
     (pe' : ProbabilisticExecution sys^w.toSystem)
     (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (L : List Label) :
@@ -2708,28 +2372,12 @@ theorem expand_traceProb_tight_tsum_eq (sys : LabelledSystem State Label)
           pe'.probOf E.1 E.2.1)
       = sys^w.traceProb pe' (Seq.ofList L) := rfl
   rw [hLHS, hRHS]
-  -- RESIDUAL (the stutter-bridging level-mass induction). Exact remaining goal:
-  --   `sys.traceProb ⟨PMF.pure sys.init, Scheduler.expand sys pe'⟩ (Seq.ofList L)`
-  --     `= sys^w.traceProb pe' (Seq.ofList L)`.
-  -- This is the genuine `lower_labProb_eq_aux` analogue under *stutter* (one `sys^w`
-  -- external step = a whole τ-closure of `sys` transitions). Unlike `lower` (where
-  -- `sys` and `𝒟(sys)` share the full label list, so `traceProb_eq_labProb_sum`
-  -- regroups both by the *same* `labs` and matches per-`labs`), here the full label
-  -- lists differ: `expand`'s `sys`-histories carry the τ-closure internals while
-  -- `pe'`'s `sys^w`-histories carry the `sys^w`-internal τ-steps, so matching is only
-  -- possible at the *external trace* `L`. The latent per-weak-step result list `μs`
-  -- (`lowerMus`, `Classical.choose`n) is moreover NOT consistent across prefix lengths,
-  -- so `expand`'s kernel does not compose into a single `weakChain`; the identity holds
-  -- only at the *summed* (level-mass) level, where `μs` washes out via
-  -- `weakChain_traceProb_extTrace` (`weakChain` a.s.-produces its external trace,
-  -- independent of `μs`). The intended proof inducts on the external trace `L`,
-  -- peeling one external label together with its following τ-closure, telescoping the
-  -- per-history belief with `beliefLower_normalize_cancel` and collapsing each branch's
-  -- contribution via `expand_kernel_eq` + `weakChain_pushforward`/`weakChain_haltMass_one`
-  -- (mirroring `lower_labProb_eq_aux`'s `lower_kernel_g_sum`/`beliefTC_normalize_cancel`/
-  -- `hyperStep_marginal_decomp` chain). Building the external-trace-step recursion for
-  -- `extLabMass` of `expand` (the stutter-aware analogue of `labMass_step`) is the
-  -- missing infrastructure.
+  -- RESIDUAL: `sys.traceProb ⟨pure init, expand⟩ (ofList L) = sys^w.traceProb pe' (ofList L)`.
+  -- Under `hExt` this is exactly `expand_traceProb_eq_hExt` (proven modulo the inductive
+  -- STEP of `expand_extLabMass_eq` — the `lower_kernel_g_sum` analogue under stutter). The
+  -- general statement here additionally needs the Phase-2 WLOG dropping `hExt`
+  -- (normalizing internal weak steps into the next external step's pre-τ via
+  -- `weakTau_trans`). Both pieces are pending; see `expand_extLabMass_eq`.
   sorry
 
 /-- **Trace preservation for `Scheduler.expand`** (the M2 core, TO BE PROVEN):
