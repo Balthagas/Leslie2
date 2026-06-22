@@ -2164,18 +2164,6 @@ noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
       (lowerChain sys E ((e.trans.toList h_term).map Prod.fst) (e.endState h_term)) E.init).valid
       e n s' e_term_n e_stateAt_eq l μ h_supp
 
-/-- **Trace preservation for `Scheduler.expand`** (the M2 core, TO BE PROVEN):
-the expanded `sys`-execution has the same trace distribution as `pe'`. Proven by
-grouping both `traceProb`s by external trace and matching per `sys^w`-execution,
-using a.s.-termination of the witnesses (mass preservation) and
-`hyperStep_marginal_decomp` for the external steps. -/
-theorem expand_traceProb_eq (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (τ : Seq Label) :
-    sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ τ
-      = sys^w.traceProb pe' τ :=
-  sorry
-
 /-- A non-terminating (infinite) trace is achieved with probability `0`: no finite
 execution has an infinite trace. -/
 theorem LabelledSystem.traceProb_eq_zero_of_not_terminates
@@ -2190,6 +2178,139 @@ theorem LabelledSystem.traceProb_eq_zero_of_not_terminates
       Stream'.Seq.terminates_map_iff]
     exact Stream'.Seq.terminates_filter _ _ e.2.1
   exact tsum_empty
+
+open Classical in
+/-- **The `expand` one-step kernel is the belief mixture of the branch kernels.** At a
+terminating `sys`-history `e` with full label list `fl` and end-state `s`, the one-step
+kernel of `Scheduler.expand sys pe'` is the `beliefLower fl s`-mixture of the per-branch
+witness-lowering kernels `weakChain (lowerChain E fl s) E.init`. (The `g`-integrated form of
+the `key` step inside `lower_kernel_g_sum`.) -/
+theorem ProbabilisticExecution.expand_kernel_eq
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) (h_term : e.trans.Terminates)
+    (l : Label) (s' : State) :
+    (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ :
+        ProbabilisticExecution sys.toSystem).kernel e (l, s')
+      = ∑' E : AlterSeq State Label,
+          pe'.beliefLower ((e.trans.toList h_term).map Prod.fst) (e.endState h_term) E *
+            (⟨PMF.pure (E.init),
+                Scheduler.weakChain sys
+                  (lowerChain sys E ((e.trans.toList h_term).map Prod.fst) (e.endState h_term))
+                  E.init⟩ :
+              ProbabilisticExecution sys.toSystem).kernel e (l, s') := by
+  classical
+  set fl := (e.trans.toList h_term).map Prod.fst with hfl
+  set s := e.endState h_term with hs
+  -- Unfold the kernel and the `expand` next at the terminating prefix.
+  unfold ProbabilisticExecution.kernel
+  -- `expand.next e (some (l, μ)) = ∑' E, beliefLower fl s E * branch_E.next e (some (l, μ))`.
+  have hnext : ∀ μ : PMF State,
+      (Scheduler.expand sys pe').next e (some (l, μ))
+        = ∑' E : AlterSeq State Label,
+            pe'.beliefLower fl s E *
+              (Scheduler.weakChain sys (lowerChain sys E fl s) E.init).next e (some (l, μ)) := by
+    intro μ
+    change (if h : e.trans.Terminates then
+        (pe'.beliefLower ((e.trans.toList h).map Prod.fst) (e.endState h)).bind (fun E =>
+          (Scheduler.weakChain sys
+            (lowerChain sys E ((e.trans.toList h).map Prod.fst) (e.endState h))
+            E.init).next e)
+      else PMF.pure none) (some (l, μ)) = _
+    rw [dif_pos h_term, ← hfl, ← hs, PMF.bind_apply]
+  -- Push the mixture through the `μ`-sum and `* μ s'`, then swap the sums.
+  simp_rw [hnext, ← ENNReal.tsum_mul_right]
+  rw [ENNReal.tsum_comm]
+  refine tsum_congr fun E => ?_
+  rw [← ENNReal.tsum_mul_left]
+  refine tsum_congr fun μ => ?_
+  -- The branch kernel `* μ s'` factor matches definitionally.
+  rw [mul_assoc]
+
+/-- **Full-label-list belief normaliser cancellation** (the `beliefTC_normalize_cancel`
+analogue for `beliefLower`). Multiplying the (normalised) `beliefLower`-expectation by the
+normaliser `∑ beliefLowerW` recovers the unnormalised `beliefLowerW`-weighted sum; the
+`Z = 0` fallback is handled too. The telescoping device for the per-history posterior. -/
+theorem ProbabilisticExecution.beliefLower_normalize_cancel
+    {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (fl : List Label) (s : State) (w : AlterSeq State Label → ENNReal) :
+    (∑' E, pe'.beliefLowerW fl s E) * (∑' E, pe'.beliefLower fl s E * w E)
+      = ∑' E, pe'.beliefLowerW fl s E * w E := by
+  classical
+  by_cases hZ : (∑' E, pe'.beliefLowerW fl s E) = 0
+  · rw [hZ, zero_mul]
+    have hz : ∀ E, pe'.beliefLowerW fl s E = 0 := ENNReal.tsum_eq_zero.mp hZ
+    exact (ENNReal.tsum_eq_zero.mpr (fun E => by rw [hz E, zero_mul])).symm
+  · have hZtop : (∑' E, pe'.beliefLowerW fl s E) ≠ ⊤ := pe'.beliefLowerW_tsum_ne_top fl s
+    have hbel : ∀ E, pe'.beliefLower fl s E
+        = pe'.beliefLowerW fl s E * (∑' E', pe'.beliefLowerW fl s E')⁻¹ := by
+      intro E
+      unfold ProbabilisticExecution.beliefLower
+      rw [dif_pos hZ, PMF.normalize_apply]
+    rw [show (∑' E, pe'.beliefLower fl s E * w E)
+          = ∑' E, (pe'.beliefLowerW fl s E * (∑' E', pe'.beliefLowerW fl s E')⁻¹) * w E from
+        tsum_congr (fun E => by rw [hbel E]),
+      ← ENNReal.tsum_mul_left]
+    refine tsum_congr (fun E => ?_)
+    rw [show (∑' E', pe'.beliefLowerW fl s E') *
+          (pe'.beliefLowerW fl s E * (∑' E', pe'.beliefLowerW fl s E')⁻¹ * w E)
+          = ((∑' E', pe'.beliefLowerW fl s E') * (∑' E', pe'.beliefLowerW fl s E')⁻¹) *
+            (pe'.beliefLowerW fl s E * w E) by ring,
+      ENNReal.mul_inv_cancel hZ hZtop, one_mul]
+
+/-- **The mixture-realization core of `expand_traceProb_eq`** (the `lower_labProb_eq_aux`
+analogue, at the trace level `g = 1`). The total `probOf`-mass that the expanded
+`sys`-execution assigns to *tight* `sys`-executions with external trace `ofList L` equals
+the total `probOf`-mass that `pe'` assigns to *tight* `sys^w`-histories with external trace
+`ofList L`.
+
+The expand scheduler is, at each terminating `sys`-history `e` (full label list `fl`,
+end-state `s`), the belief mixture `(beliefLower fl s).bind (fun E => weakChain (lowerChain E
+fl s) E.init)`. The per-history belief telescopes (chain rule, `beliefLower`-normalize-cancel
+analogue of `beliefTC_normalize_cancel`), and the latent result list `μs` of the
+witness-lowering is benign for the *trace*: `weakChain (lowerChain E) .traceProb` equals the
+indicator `[E's external trace = ofList L]` regardless of `μs`
+(`weakChain_traceProb_extTrace`). Summing the mixture over the tight trace-`L` cone and
+swapping the belief sum to the outside collapses to `pe'`'s tight trace-`L` mass. -/
+theorem expand_traceProb_tight_tsum_eq (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (L : List Label) :
+    (∑' e : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = Seq.ofList L ∧ sys.IsTight e},
+        (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ :
+          ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1)
+      = ∑' E : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys^w.trace e = Seq.ofList L ∧ sys^w.IsTight e},
+          pe'.probOf E.1 E.2.1 := by
+  sorry
+
+/-- **Trace preservation for `Scheduler.expand`** (the M2 core, TO BE PROVEN):
+the expanded `sys`-execution has the same trace distribution as `pe'`. Proven by
+grouping both `traceProb`s by external trace and matching per `sys^w`-execution,
+using a.s.-termination of the witnesses (mass preservation) and
+`hyperStep_marginal_decomp` for the external steps. -/
+theorem expand_traceProb_eq (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (τ : Seq Label) :
+    sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ τ
+      = sys^w.traceProb pe' τ := by
+  classical
+  -- Infinite traces: both sides are `0` (no finite execution has an infinite trace).
+  by_cases hτ : τ.Terminates
+  · -- Finite trace: write `τ = ofList L` and reduce to the external-trace level mass.
+    obtain ⟨L, rfl⟩ : ∃ L : List Label, τ = Seq.ofList L :=
+      ⟨τ.toList hτ, (Stream'.Seq.ofList_toList τ hτ).symm⟩
+    -- Reformulate both sides as the `g = 1` slice of the external-trace level mass,
+    -- i.e. the total `probOf`-mass over tight, trace-`L` executions.
+    rw [sys.traceProb_eq_extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ L,
+        sys^w.traceProb_eq_extLabMass pe' L,
+        sys.extLabMass_eq_tight_tsum ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ L
+          (fun _ => 1),
+        sys^w.extLabMass_eq_tight_tsum pe' L (fun _ => 1)]
+    simp only [mul_one]
+    exact expand_traceProb_tight_tsum_eq sys pe' h_init L
+  · rw [LabelledSystem.traceProb_eq_zero_of_not_terminates sys _ τ hτ,
+      LabelledSystem.traceProb_eq_zero_of_not_terminates sys^w pe' τ hτ]
 
 /-- Under `hExt` (`pe'` schedules only external labels), the one-step kernel of
 `pe'` at an internal label is `0`: every `some (l, μ)` with `l` internal is
