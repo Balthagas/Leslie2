@@ -2282,6 +2282,41 @@ theorem expand_traceProb_tight_tsum_eq (sys : LabelledSystem State Label)
       = ∑' E : {e : AlterSeq State Label //
           e.trans.Terminates ∧ sys^w.trace e = Seq.ofList L ∧ sys^w.IsTight e},
           pe'.probOf E.1 E.2.1 := by
+  classical
+  -- Both sides are `traceProb`s at `Seq.ofList L`: the LHS for the expanded `sys`-execution,
+  -- the RHS literally the definition of `sys^w.traceProb pe' (Seq.ofList L)`.
+  have hLHS : (∑' e : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = Seq.ofList L ∧ sys.IsTight e},
+        (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ :
+          ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1)
+      = sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (Seq.ofList L) := rfl
+  have hRHS : (∑' E : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys^w.trace e = Seq.ofList L ∧ sys^w.IsTight e},
+          pe'.probOf E.1 E.2.1)
+      = sys^w.traceProb pe' (Seq.ofList L) := rfl
+  rw [hLHS, hRHS]
+  -- RESIDUAL (the stutter-bridging level-mass induction). Exact remaining goal:
+  --   `sys.traceProb ⟨PMF.pure sys.init, Scheduler.expand sys pe'⟩ (Seq.ofList L)`
+  --     `= sys^w.traceProb pe' (Seq.ofList L)`.
+  -- This is the genuine `lower_labProb_eq_aux` analogue under *stutter* (one `sys^w`
+  -- external step = a whole τ-closure of `sys` transitions). Unlike `lower` (where
+  -- `sys` and `𝒟(sys)` share the full label list, so `traceProb_eq_labProb_sum`
+  -- regroups both by the *same* `labs` and matches per-`labs`), here the full label
+  -- lists differ: `expand`'s `sys`-histories carry the τ-closure internals while
+  -- `pe'`'s `sys^w`-histories carry the `sys^w`-internal τ-steps, so matching is only
+  -- possible at the *external trace* `L`. The latent per-weak-step result list `μs`
+  -- (`lowerMus`, `Classical.choose`n) is moreover NOT consistent across prefix lengths,
+  -- so `expand`'s kernel does not compose into a single `weakChain`; the identity holds
+  -- only at the *summed* (level-mass) level, where `μs` washes out via
+  -- `weakChain_traceProb_extTrace` (`weakChain` a.s.-produces its external trace,
+  -- independent of `μs`). The intended proof inducts on the external trace `L`,
+  -- peeling one external label together with its following τ-closure, telescoping the
+  -- per-history belief with `beliefLower_normalize_cancel` and collapsing each branch's
+  -- contribution via `expand_kernel_eq` + `weakChain_pushforward`/`weakChain_haltMass_one`
+  -- (mirroring `lower_labProb_eq_aux`'s `lower_kernel_g_sum`/`beliefTC_normalize_cancel`/
+  -- `hyperStep_marginal_decomp` chain). Building the external-trace-step recursion for
+  -- `extLabMass` of `expand` (the stutter-aware analogue of `labMass_step`) is the
+  -- missing infrastructure.
   sorry
 
 /-- **Trace preservation for `Scheduler.expand`** (the M2 core, TO BE PROVEN):
