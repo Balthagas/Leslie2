@@ -1551,6 +1551,38 @@ theorem bind_next_nil_none_mul (σ : Scheduler sys.toSystem) (k : State → Sche
     PMF.pure_apply_self, one_mul, ProbabilisticExecution.probOf_nil,
     ProbabilisticExecution.init_eq_initState, PMF.pure_apply_self, one_mul]
 
+open Classical in
+/-- **`bind` halts (returns `pure none`) at a zero-belief history.** If, at a terminating
+history `e`, the prefix scheduler `σ` (from the Dirac source `pure e.init`)
+* produces all of `e` with probability `0` (`(⟨pure e.init, σ⟩).probOf e hT = 0`), and
+* has zero halting mass on every strict prefix (`σ.haltMass (pure e.init) (j-prefix) = 0` for
+  all `j < length`),
+
+then the total split-belief weight vanishes, so `(bind σ k).next e = PMF.pure none`. This is
+the structural source of the *off-trajectory spurious halt* in `Scheduler.drawAndRun`'s
+constant re-draw: a witness re-driven at a history it would never itself reach (zero belief)
+defaults to halting. -/
+theorem bind_next_eq_pure_none_of_belief_zero (σ : Scheduler sys.toSystem)
+    (k : State → Scheduler sys.toSystem) (e : AlterSeq State Label) (hT : e.trans.Terminates)
+    (hnone : (⟨PMF.pure e.init, σ⟩ : ProbabilisticExecution sys.toSystem).probOf e hT = 0)
+    (hsome : ∀ j, j < e.trans.length hT →
+      σ.haltMass (PMF.pure e.init)
+        ⟨⟨e.init, Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩ = 0) :
+    (bind σ k).next e = PMF.pure none := by
+  classical
+  have hZ : (∑' o, bindWeight σ k e hT o) = 0 := by
+    refine ENNReal.tsum_eq_zero.mpr (fun o => ?_)
+    cases o with
+    | none => exact hnone
+    | some j =>
+      change (if _hj : j < e.trans.length hT then _ else 0) = 0
+      by_cases hj : j < e.trans.length hT
+      · rw [dif_pos hj, hsome j hj, zero_mul]
+      · rw [dif_neg hj]
+  have hZne : ¬ (∑' o, bindWeight σ k e hT o) ≠ 0 := by rw [hZ]; exact not_not.mpr rfl
+  unfold bind
+  simp only [dif_pos hT, dif_neg hZne]
+
 end Scheduler
 
 namespace WeakScheduler

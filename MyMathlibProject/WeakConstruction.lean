@@ -1655,7 +1655,18 @@ observed hyperStep target `ν'`. With `l := L.getLast?`, the weight is
 `probOf(E') * next(E')(some (l, μ)) * postDist(ν')`, where `postDist` is the
 hyperStep-target distribution of the weak step `sys^w.step (E'.endState) l μ` —
 nonzero only when `E'` terminates with label list `L.dropLast`, `l` is external,
-and that weak step holds. (Contrast `lastMuBelief`, which uses `μ ν'`.) -/
+and that weak step holds. (Contrast `lastMuBelief`, which uses `μ ν'`.)
+
+FOLLOW-UP (post-τ side of the 7th-flaw fix): like the *pre-τ* re-draw fixed in
+`drawAndRun` (now posterior-conditioned via `drawAndRunW`), this *post-τ* draw of
+the weak-step result `μ` conditions only on the hyperStep boundary `ν'` (via
+`postDist ν'`), NOT on the post-τ *trajectory* actually replayed by
+`postTauWitness`. For randomized post-τ with nontrivial branching this can leak
+mass to off-trajectory post-τ continuations, exactly as the old `drawAndRun` did
+pre-τ. The validated drawAndRun fix is the B2Check-exercised piece; trajectory-
+conditioning this post-τ `μ`-draw (reweighting `beliefExpandW` by the likelihood of
+the replayed post-τ history under each `(E', μ)`) is the analogous follow-up for the
+general case. -/
 noncomputable def ProbabilisticExecution.beliefExpandW {State Label : Type}
     {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
     (L : List Label) (ν' : State) : AlterSeq State Label × PMF State → ENNReal :=
@@ -2045,44 +2056,100 @@ noncomputable def Scheduler.preHsWitness (sys : LabelledSystem State Label)
   else Scheduler.haltNow sys
 
 open Classical in
-/-- **Draw the next clean weak step from `pe'` and run its pre-τ;hs.** Takes the *clean*
-`sys^w`-history `E''` directly (`E' ++ [(l, σ_k)]`, the reached on-path history after the
-just-completed step's post-τ). When `E''` terminates, query `pe'.scheduler.next E''` at the
-clean history and, on a drawn `some (l, μ)`, run `preHsWitness sys (E''.endState) l μ` (the
-source state for the next step is `E''`'s end-state `σ_k`); on `none`, halt. Off-terminating
-or off-support, halt. -/
+/-- **The posterior weight of a drawn weak step `opt` given the running trajectory `h`.**
+The fixed prior `pe'.scheduler.next E''` is reweighted by the *likelihood* of the running
+`sys`-history `h` under each option: for `some (l, μ)`, the likelihood is the `probOf` that
+`preHsWitness sys (E''.endState hT) l μ` (run from the Dirac source `pure (E''.endState hT)`)
+realizes exactly `h`; for `none`, the likelihood is `1` iff `h` is the empty halt history at
+`E''`'s end-state, else `0`. Options whose witness *cannot* produce `h` (off-trajectory) get
+likelihood `0` and drop out — eliminating the spurious off-trajectory halt mass that the
+fixed-prior re-draw leaked (the 7th flaw; see `B2Check`). -/
+noncomputable def Scheduler.drawAndRunW {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (h : AlterSeq State Label) :
+    Option (Label × PMF State) → ENNReal := fun opt =>
+  pe'.scheduler.next E'' opt *
+    (match opt with
+     | none => if h = (⟨E''.endState hT, Stream'.Seq.nil⟩ : AlterSeq State Label) then 1 else 0
+     | some (l, μ) =>
+         if hh : h.trans.Terminates then
+           (⟨PMF.pure (E''.endState hT), Scheduler.preHsWitness sys (E''.endState hT) l μ⟩
+              : ProbabilisticExecution sys.toSystem).probOf h hh
+         else 0)
+
+/-- **Finiteness of the posterior normaliser.** Each likelihood factor is `≤ 1` (a `probOf`
+is `≤ pe.init ≤ 1`, and the `if … 1 else 0` is `≤ 1`), so `∑' opt, drawAndRunW … opt ≤
+∑' opt, pe'.scheduler.next E'' opt = 1 ≠ ⊤`. -/
+theorem Scheduler.drawAndRunW_tsum_ne_top {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (h : AlterSeq State Label) :
+    (∑' opt, Scheduler.drawAndRunW pe' E'' hT h opt) ≠ ⊤ := by
+  classical
+  suffices hle : (∑' opt, Scheduler.drawAndRunW pe' E'' hT h opt) ≤ 1 from
+    (lt_of_le_of_lt hle ENNReal.one_lt_top).ne
+  calc (∑' opt, Scheduler.drawAndRunW pe' E'' hT h opt)
+      ≤ ∑' opt, pe'.scheduler.next E'' opt := by
+        refine ENNReal.tsum_le_tsum (fun opt => ?_)
+        unfold Scheduler.drawAndRunW
+        refine mul_le_of_le_one_right' ?_
+        split
+        · split <;> simp
+        · split
+          · exact le_trans (ProbabilisticExecution.probOf_le_init _ _ _) (PMF.coe_le_one _ _)
+          · exact zero_le_one
+    _ = 1 := (pe'.scheduler.next E'').tsum_coe
+
+open Classical in
+/-- **Draw the next clean weak step from `pe'` (POSTERIOR-conditioned) and run its pre-τ;hs.**
+Takes the *clean* `sys^w`-history `E''` directly (`E' ++ [(l, σ_k)]`, the reached on-path
+history after the just-completed step's post-τ). When `E''` terminates, reweight the prior
+`pe'.scheduler.next E''` by the likelihood of the running `sys`-history `h` (see
+`drawAndRunW`) and *normalise* — this conditions the draw on the trajectory, so off-path
+options drop out (fixing the 7th flaw). On a drawn `some (l, μ)`, run `preHsWitness sys
+(E''.endState) l μ` at `h`; on `none`, halt. If the posterior normaliser vanishes (no option
+explains `h`) or `E''` does not terminate, halt. -/
 noncomputable def Scheduler.drawAndRun {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label) :
     Scheduler sys.toSystem where
   next h :=
     if hT : E''.trans.Terminates then
-      (pe'.scheduler.next E'').bind (fun opt =>
-        match opt with
-        | none        => PMF.pure none
-        | some (l, μ) => (Scheduler.preHsWitness sys (E''.endState hT) l μ).next h)
+      if h0 : (∑' opt, Scheduler.drawAndRunW pe' E'' hT h opt) ≠ 0 then
+        (PMF.normalize (Scheduler.drawAndRunW pe' E'' hT h) h0
+            (Scheduler.drawAndRunW_tsum_ne_top pe' E'' hT h)).bind (fun opt =>
+          match opt with
+          | none        => PMF.pure none
+          | some (l, μ) => (Scheduler.preHsWitness sys (E''.endState hT) l μ).next h)
+      else PMF.pure none
     else PMF.pure none
   valid := by
     classical
     intro e n s' e_term_n e_stateAt_eq l μ h_supp
     change some (l, μ) ∈
       (if hT : E''.trans.Terminates then
-        (pe'.scheduler.next E'').bind (fun opt =>
-          match opt with
-          | none        => PMF.pure none
-          | some (l', μ') => (Scheduler.preHsWitness sys (E''.endState hT) l' μ').next e)
+        if h0 : (∑' opt, Scheduler.drawAndRunW pe' E'' hT e opt) ≠ 0 then
+          (PMF.normalize (Scheduler.drawAndRunW pe' E'' hT e) h0
+              (Scheduler.drawAndRunW_tsum_ne_top pe' E'' hT e)).bind (fun opt =>
+            match opt with
+            | none        => PMF.pure none
+            | some (l', μ') => (Scheduler.preHsWitness sys (E''.endState hT) l' μ').next e)
+        else PMF.pure none
       else PMF.pure none).support at h_supp
     by_cases hT : E''.trans.Terminates
-    · rw [dif_pos hT, PMF.mem_support_bind_iff] at h_supp
-      obtain ⟨opt, _hopt, h_supp⟩ := h_supp
-      cases opt with
-      | none =>
-        change some (l, μ) ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
-        rw [PMF.support_pure, Set.mem_singleton_iff] at h_supp
+    · rw [dif_pos hT] at h_supp
+      by_cases h0 : (∑' opt, Scheduler.drawAndRunW pe' E'' hT e opt) ≠ 0
+      · rw [dif_pos h0, PMF.mem_support_bind_iff] at h_supp
+        obtain ⟨opt, _hopt, h_supp⟩ := h_supp
+        cases opt with
+        | none =>
+          change some (l, μ) ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
+          rw [PMF.support_pure, Set.mem_singleton_iff] at h_supp
+          exact absurd h_supp (by simp)
+        | some lμ =>
+          obtain ⟨l', μ'⟩ := lμ
+          exact (Scheduler.preHsWitness sys (E''.endState hT) l' μ').valid
+            e n s' e_term_n e_stateAt_eq l μ h_supp
+      · rw [dif_neg h0, PMF.support_pure, Set.mem_singleton_iff] at h_supp
         exact absurd h_supp (by simp)
-      | some lμ =>
-        obtain ⟨l', μ'⟩ := lμ
-        exact (Scheduler.preHsWitness sys (E''.endState hT) l' μ').valid
-          e n s' e_term_n e_stateAt_eq l μ h_supp
     · rw [dif_neg hT, PMF.support_pure, Set.mem_singleton_iff] at h_supp
       exact absurd h_supp (by simp)
 
