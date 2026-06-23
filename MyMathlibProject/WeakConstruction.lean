@@ -2153,6 +2153,373 @@ noncomputable def Scheduler.drawAndRun {sys : LabelledSystem State Label}
     · rw [dif_neg hT, PMF.support_pure, Set.mem_singleton_iff] at h_supp
       exact absurd h_supp (by simp)
 
+/-- The one-step kernel of `haltNow` is `0`: the immediate-halt scheduler never
+emits a `some` step, so `(⟨ν, haltNow⟩).kernel e p = 0` for every prefix `e` and
+step `p`. -/
+theorem Scheduler.haltNow_kernel_eq_zero (sys : LabelledSystem State Label)
+    (ν : PMF State) (e : AlterSeq State Label) (p : Label × State) :
+    (⟨ν, Scheduler.haltNow sys⟩ : ProbabilisticExecution sys.toSystem).kernel e p = 0 := by
+  unfold ProbabilisticExecution.kernel
+  refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
+  change (Scheduler.haltNow sys).next e (some (p.1, μ)) * μ p.2 = 0
+  simp [Scheduler.haltNow, PMF.pure_apply]
+
+open Classical in
+/-- **`probOf` under `haltNow`.** The immediate-halt scheduler run from the Dirac
+source `pure s` realizes exactly the empty execution `⟨s, nil⟩` with mass `1`, and
+everything else with mass `0`. -/
+theorem Scheduler.haltNow_probOf (sys : LabelledSystem State Label) (s : State)
+    (e : AlterSeq State Label) (he : e.trans.Terminates) :
+    (⟨PMF.pure s, Scheduler.haltNow sys⟩ : ProbabilisticExecution sys.toSystem).probOf e he
+      = if e = (⟨s, Stream'.Seq.nil⟩ : AlterSeq State Label) then 1 else 0 := by
+  classical
+  obtain ⟨ei, et⟩ := e
+  set pe : ProbabilisticExecution sys.toSystem := ⟨PMF.pure s, Scheduler.haltNow sys⟩ with hpe
+  -- rewrite `et` as `ofList (toList)` and factor via pathWeight
+  have he_ofList : (⟨ei, et⟩ : AlterSeq State Label)
+      = ⟨ei, Seq.ofList (et.toList he)⟩ := by
+    congr 1; exact (Stream'.Seq.ofList_toList et he).symm
+  rw [pe.probOf_congr ⟨ei, et⟩ ⟨ei, Seq.ofList (et.toList he)⟩ he_ofList he
+        (Stream'.Seq.terminates_ofList _),
+    pe.probOf_eq_pathWeight ei (et.toList he) (Stream'.Seq.terminates_ofList _)]
+  -- pathWeight from a haltNow scheduler: `1` on the empty list, `0` otherwise
+  rcases List.eq_nil_or_concat (et.toList he) with hL | ⟨rest, last, hL⟩
+  · -- empty trans: probOf = init = (pure s) ei = if ei = s then 1 else 0
+    rw [hL]
+    unfold ProbabilisticExecution.pathWeight
+    rw [List.reverseRecOn_nil, mul_one]
+    change (PMF.pure s) ei = _
+    rw [PMF.pure_apply]
+    -- `et = nil` since toList = []
+    have htrans_nil : et = Seq.nil := by
+      have := Stream'.Seq.ofList_toList et he
+      rw [hL] at this; rw [← this]; rfl
+    by_cases hi : ei = s
+    · have heq : (⟨ei, et⟩ : AlterSeq State Label) = ⟨s, Seq.nil⟩ := by
+        rw [htrans_nil, hi]
+      rw [if_pos hi, if_pos heq]
+    · have hne : (⟨ei, et⟩ : AlterSeq State Label) ≠ ⟨s, Seq.nil⟩ := by
+        intro hcon; exact hi (congrArg AlterSeq.init hcon)
+      rw [if_neg hi, if_neg hne]
+  · -- nonempty trans: pathWeight has a `0` kernel factor, so probOf = 0
+    rw [hL, List.concat_eq_append]
+    unfold ProbabilisticExecution.pathWeight
+    rw [List.reverseRecOn_concat, Scheduler.haltNow_kernel_eq_zero, mul_zero, mul_zero]
+    rw [if_neg]
+    intro hcon
+    -- `⟨ei,et⟩ = ⟨s, nil⟩` forces `et = nil` hence `toList = []`, contradicting `hL`
+    have hnil : et = Seq.nil := congrArg AlterSeq.trans hcon
+    have : et.toList he = [] := by simp [hnil, Stream'.Seq.toList_nil]
+    rw [this, List.concat_eq_append] at hL
+    exact (List.append_ne_nil_of_right_ne_nil rest (by simp)) hL.symm
+
+open Classical in
+/-- The per-option **committed witness** of a drawn weak step `opt` (the scheduler the
+posterior-bind `drawAndRun` actually runs once `opt` is committed): for `some (l, μ)` it is
+the pre-τ;hs witness `preHsWitness sys s l μ`; for `none` (halt) it is `haltNow`. -/
+noncomputable def Scheduler.drawWit (sys : LabelledSystem State Label) (s : State) :
+    Option (Label × PMF State) → Scheduler sys.toSystem
+  | none        => Scheduler.haltNow sys
+  | some (l, μ) => Scheduler.preHsWitness sys s l μ
+
+/-- **The likelihood factor of `drawAndRunW` is the witness `probOf`.** For terminating `h`,
+the per-option likelihood weight in `drawAndRunW` equals `(⟨pure (endState), drawWit opt⟩).probOf h`
+(the `none` branch's `if h = ⟨endState,nil⟩ then 1 else 0` is exactly `haltNow`'s `probOf`). -/
+theorem Scheduler.drawAndRunW_eq {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (h : AlterSeq State Label) (hh : h.trans.Terminates)
+    (opt : Option (Label × PMF State)) :
+    Scheduler.drawAndRunW pe' E'' hT h opt
+      = pe'.scheduler.next E'' opt *
+          (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+            : ProbabilisticExecution sys.toSystem).probOf h hh := by
+  classical
+  unfold Scheduler.drawAndRunW
+  congr 1
+  cases opt with
+  | none =>
+    simp only [Scheduler.drawWit]
+    rw [Scheduler.haltNow_probOf]
+  | some lμ =>
+    obtain ⟨l, μ⟩ := lμ
+    simp only [Scheduler.drawWit, dif_pos hh]
+
+/-- **Generic `normalize` cancellation** (the `beliefExpand_normalize_cancel` shape, abstracted):
+`(∑' o, W o) * (∑' o, normalize(W) o * w o) = ∑' o, W o * w o`, valid whether or not the
+normaliser vanishes. -/
+theorem ProbabilisticExecution.normalize_cancel {ι : Type*} (W : ι → ENNReal)
+    (hWtop : (∑' o, W o) ≠ ⊤) (w : ι → ENNReal) (hZ0 : (∑' o, W o) ≠ 0) :
+    (∑' o, W o) * (∑' o, W o * (∑' o', W o')⁻¹ * w o) = ∑' o, W o * w o := by
+  rw [← ENNReal.tsum_mul_left]
+  refine tsum_congr (fun o => ?_)
+  rw [show (∑' o', W o') * (W o * (∑' o', W o')⁻¹ * w o)
+        = ((∑' o', W o') * (∑' o', W o')⁻¹) * (W o * w o) by ring,
+    ENNReal.mul_inv_cancel hZ0 hWtop, one_mul]
+
+/-- **Expansion of the posterior-bind emission.** When the posterior normaliser does not vanish,
+the emission `drawAndRun.next e' (some (l, μ))` is the posterior-weighted sum of the per-option
+committed-witness emissions `(drawWit opt).next e' (some (l, μ))` (the `none` branch's `pure none`
+agrees with `haltNow`'s emission, namely `0`). -/
+theorem Scheduler.drawAndRun_next_some {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (e' : AlterSeq State Label)
+    (h0 : (∑' opt, Scheduler.drawAndRunW pe' E'' hT e' opt) ≠ 0) (l : Label) (μ : PMF State) :
+    (Scheduler.drawAndRun pe' E'').next e' (some (l, μ))
+      = ∑' opt, (PMF.normalize (Scheduler.drawAndRunW pe' E'' hT e') h0
+            (Scheduler.drawAndRunW_tsum_ne_top pe' E'' hT e')) opt *
+          (Scheduler.drawWit sys (E''.endState hT) opt).next e' (some (l, μ)) := by
+  classical
+  change (if hT' : E''.trans.Terminates then
+      if h0' : (∑' opt, Scheduler.drawAndRunW pe' E'' hT' e' opt) ≠ 0 then
+        (PMF.normalize (Scheduler.drawAndRunW pe' E'' hT' e') h0'
+            (Scheduler.drawAndRunW_tsum_ne_top pe' E'' hT' e')).bind (fun opt =>
+          match opt with
+          | none        => PMF.pure none
+          | some (l, μ) => (Scheduler.preHsWitness sys (E''.endState hT') l μ).next e')
+      else PMF.pure none
+    else PMF.pure none) (some (l, μ)) = _
+  rw [dif_pos hT, dif_pos h0, PMF.bind_apply]
+  refine tsum_congr (fun opt => ?_)
+  congr 1
+  cases opt with
+  | none =>
+    change (PMF.pure (α := Option (Label × PMF State)) none) (some (l, μ))
+      = (Scheduler.haltNow sys).next e' (some (l, μ))
+    simp [Scheduler.haltNow, PMF.pure_apply]
+  | some lμ =>
+    obtain ⟨l₀, μ₀⟩ := lμ
+    rfl
+
+/-- **One-step kernel of the posterior-bind scheduler as a posterior average.** When the
+posterior normaliser `Z' := ∑' opt, drawAndRunW … opt` does not vanish, the `drawAndRun`
+kernel at `e'` is the posterior-weighted average of the committed witnesses' kernels. -/
+theorem Scheduler.drawAndRun_kernel_eq {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (e' : AlterSeq State Label)
+    (h0 : (∑' opt, Scheduler.drawAndRunW pe' E'' hT e' opt) ≠ 0) (p : Label × State) :
+    (⟨PMF.pure (E''.endState hT), Scheduler.drawAndRun pe' E''⟩
+        : ProbabilisticExecution sys.toSystem).kernel e' p
+      = ∑' opt, (PMF.normalize (Scheduler.drawAndRunW pe' E'' hT e') h0
+            (Scheduler.drawAndRunW_tsum_ne_top pe' E'' hT e')) opt *
+          (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+            : ProbabilisticExecution sys.toSystem).kernel e' p := by
+  classical
+  obtain ⟨l, s'⟩ := p
+  unfold ProbabilisticExecution.kernel
+  -- expand the scheduler emission, swap sums, pull the posterior weight out
+  have hexp : ∀ μ : PMF State,
+      (⟨PMF.pure (E''.endState hT), Scheduler.drawAndRun pe' E''⟩
+          : ProbabilisticExecution sys.toSystem).scheduler.next e' (some (l, μ)) * μ s'
+        = ∑' opt, (PMF.normalize (Scheduler.drawAndRunW pe' E'' hT e') h0
+              (Scheduler.drawAndRunW_tsum_ne_top pe' E'' hT e')) opt *
+            ((Scheduler.drawWit sys (E''.endState hT) opt).next e' (some (l, μ)) * μ s') := by
+    intro μ
+    rw [show (⟨PMF.pure (E''.endState hT), Scheduler.drawAndRun pe' E''⟩
+            : ProbabilisticExecution sys.toSystem).scheduler.next e' (some (l, μ))
+          = (Scheduler.drawAndRun pe' E'').next e' (some (l, μ)) from rfl,
+      Scheduler.drawAndRun_next_some pe' E'' hT e' h0 l μ, ← ENNReal.tsum_mul_right]
+    refine tsum_congr (fun opt => ?_); rw [mul_assoc]
+  rw [tsum_congr hexp, ENNReal.tsum_comm]
+  refine tsum_congr (fun opt => ?_)
+  rw [ENNReal.tsum_mul_left]
+
+/-- The **posterior marginal** `Z e'` at a running history `e'`: the prior-weighted sum of the
+committed witnesses' `probOf` (the RHS of the keystone, evaluated at the prefix `e'`). -/
+noncomputable def Scheduler.drawZ {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (e' : AlterSeq State Label) (he' : e'.trans.Terminates) :
+    ENNReal :=
+  ∑' opt : Option (Label × PMF State),
+    pe'.scheduler.next E'' opt *
+      (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+        : ProbabilisticExecution sys.toSystem).probOf e' he'
+
+/-- `drawZ` depends only on the running history, not the termination proof (equal histories
+have equal `drawZ`). -/
+theorem Scheduler.drawZ_congr {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (e e' : AlterSeq State Label) (h_eq : e = e')
+    (he : e.trans.Terminates) (he' : e'.trans.Terminates) :
+    Scheduler.drawZ pe' E'' hT e he = Scheduler.drawZ pe' E'' hT e' he' := by
+  subst h_eq; rfl
+
+/-- `drawZ` is exactly the posterior normaliser `∑' opt, drawAndRunW … opt`. -/
+theorem Scheduler.drawZ_eq_tsum_drawAndRunW {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (e' : AlterSeq State Label) (he' : e'.trans.Terminates) :
+    Scheduler.drawZ pe' E'' hT e' he'
+      = ∑' opt, Scheduler.drawAndRunW pe' E'' hT e' opt := by
+  unfold Scheduler.drawZ
+  exact (tsum_congr (fun opt => (Scheduler.drawAndRunW_eq pe' E'' hT e' he' opt).symm))
+
+/-- **Telescoping step (multiplicative kernel-ratio).** Extending the running history `⟨s₀, sq⟩`
+by one transition `last` multiplies the posterior marginal `drawZ` by the `drawAndRun` kernel:
+`drawZ (⟨s₀, sq ++ [last]⟩) = drawZ ⟨s₀, sq⟩ * drawAndRun.kernel ⟨s₀, sq⟩ last`. This is the
+division-free form of `kernel = Z(e'++[t]) / Z(e')`, handling the vanishing-normaliser case. -/
+theorem Scheduler.drawZ_step {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (s₀ : State) (sq : Seq (Label × State)) (h_sq : sq.Terminates)
+    (last : Label × State)
+    (h_app : (sq.append (Seq.cons last Seq.nil)).Terminates) :
+    Scheduler.drawZ pe' E'' hT ⟨s₀, sq.append (Seq.cons last Seq.nil)⟩ h_app
+      = Scheduler.drawZ pe' E'' hT ⟨s₀, sq⟩ h_sq
+        * (⟨PMF.pure (E''.endState hT), Scheduler.drawAndRun pe' E''⟩
+            : ProbabilisticExecution sys.toSystem).kernel ⟨s₀, sq⟩ last := by
+  classical
+  set e' : AlterSeq State Label := ⟨s₀, sq⟩ with he'_def
+  set e'' : AlterSeq State Label := ⟨s₀, sq.append (Seq.cons last Seq.nil)⟩ with he''_def
+  -- each witness `probOf` telescopes: probOf(e'') = probOf(e') * kernel
+  have htel : ∀ opt : Option (Label × PMF State),
+      (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+          : ProbabilisticExecution sys.toSystem).probOf e'' h_app
+        = (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+            : ProbabilisticExecution sys.toSystem).probOf e' h_sq
+          * (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+              : ProbabilisticExecution sys.toSystem).kernel e' last := by
+    intro opt
+    exact (ProbabilisticExecution.probOf_append_singleton _ s₀ sq h_sq last h_app)
+  by_cases h0 : Scheduler.drawZ pe' E'' hT e' h_sq = 0
+  · -- vanishing normaliser: both sides are 0
+    rw [h0, zero_mul]
+    -- drawZ e' = 0 ⟹ every prior·probOf(e') = 0 ⟹ every prior·probOf(e'') = 0
+    have hz : ∀ opt, pe'.scheduler.next E'' opt *
+        (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+          : ProbabilisticExecution sys.toSystem).probOf e' h_sq = 0 :=
+      ENNReal.tsum_eq_zero.mp h0
+    unfold Scheduler.drawZ
+    refine ENNReal.tsum_eq_zero.mpr (fun opt => ?_)
+    rw [htel opt, ← mul_assoc, hz opt, zero_mul]
+  · -- nonvanishing normaliser: use the kernel-as-posterior-average + normalize cancel
+    have h0' : (∑' opt, Scheduler.drawAndRunW pe' E'' hT e' opt) ≠ 0 := by
+      rwa [← Scheduler.drawZ_eq_tsum_drawAndRunW pe' E'' hT e' h_sq]
+    rw [Scheduler.drawAndRun_kernel_eq pe' E'' hT e' h0' last]
+    -- pull the normaliser through: drawZ e' * ∑' opt, normalize(W) opt * K opt
+    --   = ∑' opt, W opt * K opt  (normalize_cancel) = ∑' opt, prior·probOf(e')·K = drawZ e''
+    rw [show Scheduler.drawZ pe' E'' hT e' h_sq
+          = ∑' opt, Scheduler.drawAndRunW pe' E'' hT e' opt
+        from Scheduler.drawZ_eq_tsum_drawAndRunW pe' E'' hT e' h_sq]
+    simp only [PMF.normalize_apply]
+    rw [ProbabilisticExecution.normalize_cancel _
+        (Scheduler.drawAndRunW_tsum_ne_top pe' E'' hT e') _ h0']
+    -- now: ∑' opt, drawAndRunW opt * K opt = drawZ e''
+    unfold Scheduler.drawZ
+    refine tsum_congr (fun opt => ?_)
+    rw [Scheduler.drawAndRunW_eq pe' E'' hT e' h_sq opt, htel opt, mul_assoc]
+
+/-- **Base case `Z₀ = 1`.** At the empty halt history `⟨endState, nil⟩`, every committed witness
+realizes the empty execution with mass `1` (the Dirac source `pure endState` puts mass `1` on
+`endState`), so the posterior marginal collapses to the prior PMF's total mass `1`. This is why
+`drawAndRun` carries **no** extra normalisation factor — its prior `pe'.next E''` is a full PMF. -/
+theorem Scheduler.drawZ_nil {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) :
+    Scheduler.drawZ pe' E'' hT ⟨E''.endState hT, Stream'.Seq.nil⟩ Stream'.Seq.terminates_nil
+      = 1 := by
+  unfold Scheduler.drawZ
+  rw [show (∑' opt : Option (Label × PMF State), pe'.scheduler.next E'' opt *
+        (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+          : ProbabilisticExecution sys.toSystem).probOf
+            ⟨E''.endState hT, Stream'.Seq.nil⟩ Stream'.Seq.terminates_nil)
+      = ∑' opt, pe'.scheduler.next E'' opt from
+    tsum_congr (fun opt => by
+      rw [ProbabilisticExecution.probOf_nil]
+      change pe'.scheduler.next E'' opt * (PMF.pure (E''.endState hT)) (E''.endState hT) = _
+      rw [PMF.pure_apply_self, mul_one])]
+  exact (pe'.scheduler.next E'').tsum_coe
+
+/-- **Telescoping (auxiliary, over `ofList`).** The `drawAndRun` `probOf` from the Dirac source
+`pure (endState)` equals the posterior marginal `drawZ`, proven by reverse (cons-end) induction on
+the transition list: base = `drawZ_nil = 1`; step = `probOf_append_singleton` (peel `last`) + the
+IH + the kernel-ratio `drawZ_step`. -/
+theorem Scheduler.drawAndRun_probOf_eq_drawZ_ofList {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates) (trans : List (Label × State))
+    (hFin : (Seq.ofList trans : Seq (Label × State)).Terminates) :
+    (⟨PMF.pure (E''.endState hT), Scheduler.drawAndRun pe' E''⟩
+        : ProbabilisticExecution sys.toSystem).probOf
+          ⟨E''.endState hT, Seq.ofList trans⟩ hFin
+      = Scheduler.drawZ pe' E'' hT ⟨E''.endState hT, Seq.ofList trans⟩ hFin := by
+  classical
+  induction trans using List.reverseRecOn with
+  | nil =>
+    -- base: probOf ⟨endState, nil⟩ = init endState = 1 = drawZ ⟨endState, nil⟩
+    have hnil : (⟨E''.endState hT, Seq.ofList []⟩ : AlterSeq State Label)
+        = ⟨E''.endState hT, Stream'.Seq.nil⟩ := by simp [Stream'.Seq.ofList_nil]
+    rw [ProbabilisticExecution.probOf_congr _ ⟨E''.endState hT, Seq.ofList []⟩
+        ⟨E''.endState hT, Stream'.Seq.nil⟩ hnil hFin Stream'.Seq.terminates_nil,
+      ProbabilisticExecution.probOf_nil,
+      Scheduler.drawZ_congr pe' E'' hT ⟨E''.endState hT, Seq.ofList []⟩
+        ⟨E''.endState hT, Stream'.Seq.nil⟩ hnil hFin Stream'.Seq.terminates_nil,
+      Scheduler.drawZ_nil]
+    change (PMF.pure (E''.endState hT)) (E''.endState hT) = 1
+    rw [PMF.pure_apply_self]
+  | append_singleton rest last ih =>
+    -- step: peel `last`, use IH on `rest`, then `drawZ_step`
+    have hrest_term : (Seq.ofList rest : Seq (Label × State)).Terminates :=
+      Stream'.Seq.terminates_ofList rest
+    -- ofList (rest ++ [last]) = (ofList rest).append (cons last nil)
+    have hsplit : (Seq.ofList (rest ++ [last]) : Seq (Label × State))
+        = (Seq.ofList rest).append (Seq.cons last Seq.nil) := by
+      rw [Stream'.Seq.ofList_append]
+      congr 1
+      rw [Stream'.Seq.ofList_cons]
+      simp [Stream'.Seq.ofList_nil]
+    have happ_term : ((Seq.ofList rest).append (Seq.cons last Seq.nil)
+        : Seq (Label × State)).Terminates := by rw [← hsplit]; exact hFin
+    have heq_ext : (⟨E''.endState hT, Seq.ofList (rest ++ [last])⟩ : AlterSeq State Label)
+        = ⟨E''.endState hT, (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩ := by rw [hsplit]
+    rw [ProbabilisticExecution.probOf_congr _
+        ⟨E''.endState hT, Seq.ofList (rest ++ [last])⟩
+        ⟨E''.endState hT, (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩
+        heq_ext hFin happ_term,
+      ProbabilisticExecution.probOf_append_singleton _ (E''.endState hT) (Seq.ofList rest)
+        hrest_term last happ_term,
+      ih hrest_term,
+      ← Scheduler.drawZ_step pe' E'' hT (E''.endState hT) (Seq.ofList rest) hrest_term last
+        happ_term]
+    -- conclude: drawZ at the appended form = drawZ at ofList (rest ++ [last])
+    exact Scheduler.drawZ_congr pe' E'' hT
+      ⟨E''.endState hT, (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩
+      ⟨E''.endState hT, Seq.ofList (rest ++ [last])⟩ heq_ext.symm happ_term hFin
+
+/-- **KEYSTONE: the filter-marginal identity for `drawAndRun`.** The posterior-bind scheduler's
+`probOf` from the Dirac source `pure (E''.endState hT)` is the **prior-weighted sum** of the
+committed witnesses' `probOf`:
+`drawAndRun.probOf e = ∑' opt, pe'.next E'' opt * (⟨pure endState, drawWit opt⟩).probOf e`.
+(`drawWit none = haltNow`, `drawWit (some (l,μ)) = preHsWitness sys (endState) l μ`.) There is
+**no extra normalisation factor**: the base marginal `Z₀ = drawZ ⟨endState, nil⟩ = 1`, because the
+prior `pe'.next E''` is a full PMF and every witness realizes the empty history with mass `1`.
+Proven by HMM/Bayes-filter telescoping (`drawZ_step` kernel-ratio +
+`drawAndRun_probOf_eq_drawZ_ofList`). -/
+theorem Scheduler.drawAndRun_probOf_eq {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E'' : AlterSeq State Label)
+    (hT : E''.trans.Terminates)
+    (e : AlterSeq State Label) (he : e.trans.Terminates) (he_init : e.init = E''.endState hT) :
+    (⟨PMF.pure (E''.endState hT), Scheduler.drawAndRun pe' E''⟩
+        : ProbabilisticExecution sys.toSystem).probOf e he
+      = ∑' opt : Option (Label × PMF State),
+          pe'.scheduler.next E'' opt *
+            (⟨PMF.pure (E''.endState hT), Scheduler.drawWit sys (E''.endState hT) opt⟩
+              : ProbabilisticExecution sys.toSystem).probOf e he := by
+  classical
+  -- rewrite `e` to its `ofList`/`endState` normal form, then invoke the telescoping aux
+  have he_ofList : e = ⟨E''.endState hT, Seq.ofList (e.trans.toList he)⟩ := by
+    obtain ⟨ei, et⟩ := e
+    simp only at he_init
+    subst he_init
+    congr 1
+    exact (Stream'.Seq.ofList_toList et he).symm
+  have hFin' : (Seq.ofList (e.trans.toList he) : Seq (Label × State)).Terminates :=
+    Stream'.Seq.terminates_ofList _
+  rw [ProbabilisticExecution.probOf_congr _ e
+      ⟨E''.endState hT, Seq.ofList (e.trans.toList he)⟩ he_ofList he hFin',
+    Scheduler.drawAndRun_probOf_eq_drawZ_ofList pe' E'' hT (e.trans.toList he) hFin']
+  -- the RHS sum is exactly `drawZ e he` after the same `probOf_congr`
+  unfold Scheduler.drawZ
+  refine tsum_congr (fun opt => ?_)
+  rw [ProbabilisticExecution.probOf_congr _ e
+      ⟨E''.endState hT, Seq.ofList (e.trans.toList he)⟩ he_ofList he hFin']
+
 open Classical in
 /-- **Unnormalised weight of the POSTERIOR post-τ `μ`-draw** (the post-τ analogue of
 `drawAndRunW`). For a clean prior `pe'`-history `E'` (terminating, with `hT`), an external
