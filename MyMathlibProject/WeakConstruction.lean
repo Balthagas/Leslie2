@@ -2630,6 +2630,104 @@ noncomputable def ProbabilisticExecution.hsExpect
   else 0
 
 open Classical in
+/-- **Lemma B1 (pre-τ;hs pushforward).** For external `l`, the pre-τ-and-hyperStep witness of a
+weak step `s →[l] μ`, run from `pure s` and integrated against `g`, equals the hyper-step
+expectation `hsExpect s l μ g` (`∑' s'', postDist s'' * g s''`). Mirrors the EXTERNAL case of
+`weakStepWitness_pushforward`, stopping before the post-τ collapse. -/
+theorem Scheduler.preHsWitness_pushforward {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (s : State) (l : Label) (μ : PMF State)
+    (h : sys^w.step s l μ) (hext : ¬ sys.internal l) (g : State → ENNReal) :
+    (∑' e, (Scheduler.preHsWitness sys s l μ).haltMass (PMF.pure s) e * g (e.1.endState e.2))
+      = pe'.hsExpect s l μ g := by
+  classical
+  have hws : weakStep sys (PMF.pure s) l μ := (h.resolve_left (fun ha => hext ha.1)).2
+  set ν := hws.preDist with hν
+  set ν' := hws.postDist with hν'
+  have h_pre : weakTau sys (PMF.pure s) ν := hws.weakTau_pre
+  have h_mid : hyperStep sys ν l ν' := hws.hyperStep_mid
+  set σpre := h_pre.witnessScheduler.toScheduler with hσpre
+  set σext := Scheduler.extStep sys ν l h_mid.kernel h_mid.kernel_step with hσext
+  have hsched : Scheduler.preHsWitness sys s l μ = Scheduler.bind σpre (fun _ => σext) := by
+    unfold Scheduler.preHsWitness; rw [dif_pos h, dif_neg hext]
+  rw [hsched]
+  -- Step 1: outer bind composition.
+  rw [Scheduler.bind_compose_integrate σpre (fun _ => σext) (PMF.pure s) g]
+  -- INNER r := ∑' f₂, σext.haltMass (pure r) f₂ * g(f₂.end)
+  set INNER : State → ENNReal := fun r =>
+    ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+      σext.haltMass (PMF.pure r) f₂ * g (f₂.1.endState f₂.2) with hINNER
+  -- Step 2: τ-collapse the pre-segment via `weakTau.integrate h_pre`.
+  have h2 := h_pre.integrate INNER
+  rw [show (∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+        σpre.haltMass (PMF.pure s) f₁ *
+          ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+            σext.haltMass (PMF.pure (f₁.1.endState f₁.2)) f₂ * g (f₂.1.endState f₂.2))
+      = ∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+          h_pre.witnessScheduler.haltMass (PMF.pure s) f₁ * INNER (f₁.1.endState f₁.2) from rfl,
+    h2]
+  -- Step 3: pull `ν r` in, swap, fold the source-mixture via `haltMass_init_mix`.
+  have hpull : ∀ r : State,
+      ν r * INNER r
+        = ∑' f₂' : {e : AlterSeq State Label // e.trans.Terminates},
+            ν r * σext.haltMass (PMF.pure r) f₂' * g (f₂'.1.endState f₂'.2) := by
+    intro r
+    rw [hINNER, ← ENNReal.tsum_mul_left]
+    exact tsum_congr (fun f₂' => by ring)
+  rw [tsum_congr hpull, ENNReal.tsum_comm]
+  have hmix : ∀ f₂' : {e : AlterSeq State Label // e.trans.Terminates},
+      (∑' r : State, ν r * σext.haltMass (PMF.pure r) f₂' * g (f₂'.1.endState f₂'.2))
+        = σext.haltMass ν f₂' * g (f₂'.1.endState f₂'.2) := by
+    intro f₂'
+    rw [ENNReal.tsum_mul_right, ← Scheduler.haltMass_init_mix σext ν f₂']
+  rw [tsum_congr hmix]
+  -- Step 4: push the external step forward; rewrite the bind back to `ν'`.
+  rw [hσext, extStep_pushforward sys ν l h_mid.kernel h_mid.kernel_step g, ← h_mid.post_eq_bind]
+  -- The result `∑' s'', ν' s'' * g s''` is exactly `hsExpect s l μ g`.
+  unfold ProbabilisticExecution.hsExpect
+  rw [dif_pos h, dif_neg hext]
+
+open Classical in
+/-- **Lemma E (post-τ marginal collapse).** Integrating the post-τ witness from each
+hyperStep-target sample `ν'`, weighted by `postDist ν'`, collapses to the weak-step result `μ`.
+Mirrors the post-τ collapse step of `weakStepWitness_pushforward`: fold the `ν'`-mixture into
+`haltMass postDist` via `haltMass_init_mix`, then `weakTau.integrate weakTau_post`. -/
+theorem Scheduler.postTau_marginal_collapse {sys : LabelledSystem State Label}
+    (s : State) (l : Label) (μ : PMF State) (h : sys^w.step s l μ) (hext : ¬ sys.internal l)
+    (g' : State → ENNReal) :
+    (∑' ν' : State,
+        ((h.resolve_left (fun ha => hext ha.1)).2 : weakStep sys (PMF.pure s) l μ).postDist ν' *
+        (∑' e, (Scheduler.postTauWitness sys s l μ).haltMass (PMF.pure ν') e
+            * g' (e.1.endState e.2)))
+      = ∑' σ : State, μ σ * g' σ := by
+  classical
+  set hws : weakStep sys (PMF.pure s) l μ := (h.resolve_left (fun ha => hext ha.1)).2 with hhws
+  set ν' := hws.postDist with hν'
+  have h_post : weakTau sys ν' μ := hws.weakTau_post
+  -- `postTauWitness sys s l μ = h_post.witnessScheduler.toScheduler` (`dif_pos ⟨hext, h⟩` branch).
+  have hsched : Scheduler.postTauWitness sys s l μ = h_post.witnessScheduler.toScheduler := by
+    unfold Scheduler.postTauWitness
+    rw [dif_pos ⟨hext, h⟩]
+  set σpost := h_post.witnessScheduler.toScheduler with hσpost
+  rw [hsched]
+  -- Pull `ν' t` into the inner `e`-sum, swap, fold the `t`-mixture via `haltMass_init_mix`.
+  have hpull : ∀ t : State,
+      ν' t * (∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+          σpost.haltMass (PMF.pure t) e * g' (e.1.endState e.2))
+        = ∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+            ν' t * σpost.haltMass (PMF.pure t) e * g' (e.1.endState e.2) := by
+    intro t
+    rw [← ENNReal.tsum_mul_left]
+    exact tsum_congr (fun e => by ring)
+  rw [tsum_congr hpull, ENNReal.tsum_comm]
+  have hmix : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      (∑' t : State, ν' t * σpost.haltMass (PMF.pure t) e * g' (e.1.endState e.2))
+        = σpost.haltMass ν' e * g' (e.1.endState e.2) := by
+    intro e
+    rw [ENNReal.tsum_mul_right, ← Scheduler.haltMass_init_mix σpost ν' e]
+  rw [tsum_congr hmix]
+  exact h_post.integrate g'
+
+open Classical in
 /-- The **hyper-step-boundary level mass** of `pe'` at external trace `L`. For
 empty `L` it is the initial `g`-expectation; otherwise, with `l := L.getLast?`,
 it sums over `sys^w`-histories `E'` with label list `L.dropLast` the product of
@@ -4020,6 +4118,46 @@ theorem Scheduler.weakStepWitness_halting_trace (sys : LabelledSystem State Labe
       · -- σpost is a weak scheduler: halting execs have trace nil.
         intro r' g _ hg
         exact h_post.witnessScheduler.haltMass_trace_nil (PMF.pure r') g hg
+
+open Classical in
+/-- **Lemma B2 (drawAndRun pushforward).** `drawAndRun pe' E''`, run from the Dirac source
+`pure (E''.endState)` and restricted (via the trace indicator) to halting executions whose
+external trace is `[l]`, integrates `g` to the `pe'`-emission-weighted hyper-step expectation:
+the sum over drawn `μ` of `pe'.next E'' (some (l, μ)) * hsExpect (E''.endState) l μ g`.
+
+OBSTACLE (genuine, not a missing-lemma gap): `drawAndRun pe' E''` is a **constant mixture**
+of schedulers, *not* a `Scheduler.bind`. Concretely (confirmed by unfolding `.next`):
+`(drawAndRun pe' E'').next e = (pe'.scheduler.next E'').bind (fun opt => (runOpt opt).next e)`
+where `runOpt (some (l,μ)) = preHsWitness sys (E''.endState) l μ` and `runOpt none = haltNow`,
+and crucially the draw weights `pe'.scheduler.next E''` are **independent of the running
+prefix `e`** (they always query the FIXED clean history `E''`, never the running history).
+Such a scheduler RE-DRAWS `opt ~ pe'.next E''` at every prefix. Its halting mass is therefore
+NOT the `pe'.next E''`-weighted sum of the component halt masses: `probOf` is a *product* of
+per-step kernels, each kernel is the mixture `∑ opt, w opt * (runOpt opt).kernel`, and for
+executions with ≥ 2 transitions the product of mixtures ≠ mixture of products (a hidden-Markov
+re-draw, not a single up-front draw). ⚠️ WHETHER B2 IS TRUE IS OPEN — and it bears on
+SOUNDNESS. For a weak step with nontrivial pre-τ (≥2 concrete steps) under a *randomized*
+`pe'.next E''` (≥2 options with disjoint pre-τ trajectories), the re-draw underweights the
+natural trajectory: e.g. with two ½-mass options, `drawAndRun.probOf(a-path) = ½·½ = ¼` while
+the committed mixture gives `½·1 = ½`; the missing ¼ leaks to spurious partial-halts (trace
+`[]`) unless recovered by cross-trajectory paths (whose contribution depends on
+`preHsWitness_b`'s OFF-trajectory behavior — unknown). If the cross-paths do NOT recover the
+mass, B2 is FALSE and the construction is unsound for randomized `pe'` + nontrivial pre-τ (a
+7th flaw, same class as the prior memoryless-re-draw-under-stutter issues: `lower` avoids it
+because `distHyperKernel` is ONE concrete step + `beliefTC` is a posterior; here the multi-step
+witness is re-driven from the FIXED prior `pe'.next E''`). MUST be verified concretely (a
+randomized-`pe'` + 2-step-pre-τ counterexample, à la `FlawCheck`) before relying on it. B1
+(`preHsWitness_pushforward`) and E (`postTau_marginal_collapse`) — the single-witness pieces —
+are fully proven above and reusable regardless of B2's fate. -/
+theorem Scheduler.drawAndRun_pushforward {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (E'' : AlterSeq State Label) (hT : E''.trans.Terminates) (l : Label) (g : State → ENNReal) :
+    (∑' e, (Scheduler.drawAndRun pe' E'').haltMass (PMF.pure (E''.endState hT)) e *
+        (if sys.trace e.1 = Seq.ofList [l] then g (e.1.endState e.2) else 0))
+      = ∑' μ : PMF State, pe'.scheduler.next E'' (some (l, μ)) *
+          pe'.hsExpect (E''.endState hT) l μ g := by
+  sorry
 
 open Classical in
 /-- **For an external label `l`, the per-step witness cannot be a.s.-silent** at the empty
