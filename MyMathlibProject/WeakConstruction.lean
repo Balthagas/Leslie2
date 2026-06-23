@@ -2154,22 +2154,111 @@ noncomputable def Scheduler.drawAndRun {sys : LabelledSystem State Label}
       exact absurd h_supp (by simp)
 
 open Classical in
+/-- **Unnormalised weight of the POSTERIOR post-τ `μ`-draw** (the post-τ analogue of
+`drawAndRunW`). For a clean prior `pe'`-history `E'` (terminating, with `hT`), an external
+label `l` of the just-completed weak step, and the running *post-τ* `sys`-history `h` (whose
+boundary `h.init` is the hyperStep target `ν'`), the prior `pe'.scheduler.next E' (some (l, μ))`
+(the mass `pe'` assigns to result `μ` for this step) is reweighted by the *likelihood* of `h`
+under the candidate post-τ closure `postTauWitness sys (E'.endState hT) l μ`, run from the
+Dirac source `PMF.pure h.init`: candidate `μ`'s whose post-τ witness *cannot* produce the
+observed trajectory `h` get likelihood `0` and drop out. This conditions the `μ`-draw on the
+post-τ trajectory, fixing the post-τ analogue of the 7th flaw (the `beliefExpand` `μ`-draw was
+conditioned only on the boundary `ν'`, not the replayed post-τ). -/
+noncomputable def Scheduler.postTauDrawW {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E' : AlterSeq State Label)
+    (hT : E'.trans.Terminates) (l : Label) (h : AlterSeq State Label) :
+    PMF State → ENNReal := fun μ =>
+  pe'.scheduler.next E' (some (l, μ)) *
+    (if hh : h.trans.Terminates then
+       (⟨PMF.pure h.init, Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
+          : ProbabilisticExecution sys.toSystem).probOf h hh
+     else 0)
+
+/-- **Finiteness of the post-τ posterior normaliser** (mirrors `drawAndRunW_tsum_ne_top`).
+Each likelihood factor is a `probOf ≤ pe.init ≤ 1`, so `∑' μ, postTauDrawW … μ ≤ ∑' μ,
+pe'.scheduler.next E' (some (l, μ)) ≤ ∑' opt, pe'.scheduler.next E' opt = 1 ≠ ⊤` (the
+`(l,·)`-fiber sub-sum of the PMF `pe'.next E'` is `≤ 1` via `tsum_comp_le_tsum_of_injective`
++ `tsum_coe`, as in `beliefExpandW_tsum_ne_top`). -/
+theorem Scheduler.postTauDrawW_tsum_ne_top {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E' : AlterSeq State Label)
+    (hT : E'.trans.Terminates) (l : Label) (h : AlterSeq State Label) :
+    (∑' μ, Scheduler.postTauDrawW pe' E' hT l h μ) ≠ ⊤ := by
+  classical
+  suffices hle : (∑' μ, Scheduler.postTauDrawW pe' E' hT l h μ) ≤ 1 from
+    (lt_of_le_of_lt hle ENNReal.one_lt_top).ne
+  calc (∑' μ, Scheduler.postTauDrawW pe' E' hT l h μ)
+      ≤ ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ)) := by
+        refine ENNReal.tsum_le_tsum (fun μ => ?_)
+        unfold Scheduler.postTauDrawW
+        refine mul_le_of_le_one_right' ?_
+        split
+        · exact le_trans (ProbabilisticExecution.probOf_le_init _ _ _) (PMF.coe_le_one _ _)
+        · exact zero_le_one
+    _ ≤ ∑' opt, pe'.scheduler.next E' opt :=
+        ENNReal.tsum_comp_le_tsum_of_injective (f := fun μ : PMF State => some (l, μ))
+          (fun _ _ h => (Prod.mk.inj (Option.some.inj h)).2) _
+    _ = 1 := (pe'.scheduler.next E').tsum_coe
+
+open Classical in
+/-- **Draw the just-completed step's result `μ` (POSTERIOR-conditioned) and run its post-τ.**
+The post-τ analogue of `drawAndRun`: at a concrete post-τ boundary history `h` (boundary
+`h.init = ν'`), reweight the prior `pe'.scheduler.next E' (some (l, ·))` by the likelihood of
+the running post-τ history `h` (see `postTauDrawW`) and *normalise* — conditioning the `μ`-draw
+on the post-τ trajectory so off-path `μ`'s drop out (the post-τ 7th-flaw fix). On a drawn `μ`,
+run `postTauWitness sys (E'.endState hT) l μ` at `h`. If the normaliser vanishes (no `μ`
+explains `h`) or `E'` does not terminate, halt. -/
+noncomputable def Scheduler.postTauDraw {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem) (E' : AlterSeq State Label) (l : Label) :
+    Scheduler sys.toSystem where
+  next h :=
+    if hT : E'.trans.Terminates then
+      if h0 : (∑' μ, Scheduler.postTauDrawW pe' E' hT l h μ) ≠ 0 then
+        (PMF.normalize (Scheduler.postTauDrawW pe' E' hT l h) h0
+            (Scheduler.postTauDrawW_tsum_ne_top pe' E' hT l h)).bind (fun μ =>
+          (Scheduler.postTauWitness sys (E'.endState hT) l μ).next h)
+      else PMF.pure none
+    else PMF.pure none
+  valid := by
+    classical
+    intro e n s' e_term_n e_stateAt_eq l' μ h_supp
+    change some (l', μ) ∈
+      (if hT : E'.trans.Terminates then
+        if h0 : (∑' μ, Scheduler.postTauDrawW pe' E' hT l e μ) ≠ 0 then
+          (PMF.normalize (Scheduler.postTauDrawW pe' E' hT l e) h0
+              (Scheduler.postTauDrawW_tsum_ne_top pe' E' hT l e)).bind (fun μ =>
+            (Scheduler.postTauWitness sys (E'.endState hT) l μ).next e)
+        else PMF.pure none
+      else PMF.pure none).support at h_supp
+    by_cases hT : E'.trans.Terminates
+    · rw [dif_pos hT] at h_supp
+      by_cases h0 : (∑' μ, Scheduler.postTauDrawW pe' E' hT l e μ) ≠ 0
+      · rw [dif_pos h0, PMF.mem_support_bind_iff] at h_supp
+        obtain ⟨μ₀, _hμ₀, h_supp⟩ := h_supp
+        exact (Scheduler.postTauWitness sys (E'.endState hT) l μ₀).valid
+          e n s' e_term_n e_stateAt_eq l' μ h_supp
+      · rw [dif_neg h0, PMF.support_pure, Set.mem_singleton_iff] at h_supp
+        exact absurd h_supp (by simp)
+    · rw [dif_neg hT, PMF.support_pure, Set.mem_singleton_iff] at h_supp
+      exact absurd h_supp (by simp)
+
+open Classical in
 /-- The **segment** scheduler realizing one expand step from boundary `ν'`, given the
-externally-drawn `(E', μ)` (clean prior `pe'`-history `E'` and the just-completed weak step's
-result PMF `μ`). First replay the just-completed step's *post-τ closure* — the post-τ of the
-full weak step `E'.endState →[l]→ μ` (whose `postDist`-sample is the boundary `ν'`),
-realized by `postTauWitness sys (E'.endState) l μ` which extracts `weakTau (postDist) μ` and,
-run at the concrete boundary `⟨ν', nil⟩`, takes the internal post-τ steps to a sample
-`σ_k ∼ μ`. Thread `σ_k` via `Scheduler.bind` into `drawAndRun pe'` at the CLEAN history
+externally-drawn `E'` (clean prior `pe'`-history). First replay the just-completed step's
+*post-τ closure* — the post-τ of the full weak step `E'.endState →[l]→ μ` — but now the
+result `μ` is **drawn POSTERIOR-conditioned on the post-τ trajectory** via `postTauDraw pe'
+E' l` (mirroring the pre-τ `drawAndRun` fix: previously `μ` was taken as a parameter, drawn
+by `beliefExpand` conditioned only on the boundary `ν'`, which leaked mass to off-trajectory
+post-τ continuations — the post-τ analogue of the 7th flaw). The post-τ run reaches a sample
+`σ_k ∼ μ`; thread `σ_k` via `Scheduler.bind` into `drawAndRun pe'` at the CLEAN history
 `E' ++ [(l, σ_k)]` (draw the next weak step at the on-path reached state and run its
-pre-τ;hs). `ν'` itself is the concrete history boundary at which this scheduler runs; the
-post-τ witness is selected from `E'.endState` (where the weak step genuinely holds). -/
+pre-τ;hs). The `μ` argument is retained (unused for the post-τ) so the trace-equality scaffold
+(`beliefExpand`/`beliefExpandW`, `hsLabMass_eq_Z_sum`, …) is unchanged pending its update. -/
 noncomputable def Scheduler.segmentScheduler {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution sys^w.toSystem)
-    (_ν' : State) (l : Label) (E' : AlterSeq State Label) (μ : PMF State) :
+    (_ν' : State) (l : Label) (E' : AlterSeq State Label) (_μ : PMF State) :
     Scheduler sys.toSystem :=
-  if hT : E'.trans.Terminates then
-    Scheduler.bind (Scheduler.postTauWitness sys (E'.endState hT) l μ)
+  if _hT : E'.trans.Terminates then
+    Scheduler.bind (Scheduler.postTauDraw pe' E' l)
       (fun σ_k => Scheduler.drawAndRun pe'
         ⟨E'.init, E'.trans.append (Seq.cons (l, σ_k) Seq.nil)⟩)
   else Scheduler.haltNow sys
