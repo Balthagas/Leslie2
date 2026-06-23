@@ -1773,6 +1773,37 @@ theorem ProbabilisticExecution.beliefExpand_support {State Label : Type}
   rw [dif_pos h0, PMF.mem_support_normalize_iff] at hp
   exact hp
 
+/-- **Corrected `expand` belief normaliser cancellation.** Multiplying the
+(possibly unnormalised) `beliefExpand`-expectation by the normaliser recovers the
+unnormalised `beliefExpandW`-weighted sum; covers the `Z = 0` fallback too.
+Mirrors `beliefTC_normalize_cancel`. -/
+theorem ProbabilisticExecution.beliefExpand_normalize_cancel {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (L : List Label) (ν' : State) (w : AlterSeq State Label × PMF State → ENNReal) :
+    (∑' p, pe'.beliefExpandW L ν' p) * (∑' p, pe'.beliefExpand L ν' p * w p)
+      = ∑' p, pe'.beliefExpandW L ν' p * w p := by
+  classical
+  by_cases hZ : (∑' p, pe'.beliefExpandW L ν' p) = 0
+  · rw [hZ, zero_mul]
+    have hz : ∀ p, pe'.beliefExpandW L ν' p = 0 := ENNReal.tsum_eq_zero.mp hZ
+    exact (ENNReal.tsum_eq_zero.mpr (fun p => by rw [hz p, zero_mul])).symm
+  · have hZtop : (∑' p, pe'.beliefExpandW L ν' p) ≠ ⊤ := pe'.beliefExpandW_tsum_ne_top L ν'
+    have hbel : ∀ p, pe'.beliefExpand L ν' p
+        = pe'.beliefExpandW L ν' p * (∑' p', pe'.beliefExpandW L ν' p')⁻¹ := by
+      intro p
+      unfold ProbabilisticExecution.beliefExpand
+      rw [dif_pos hZ, PMF.normalize_apply]
+    rw [show (∑' p, pe'.beliefExpand L ν' p * w p)
+          = ∑' p, (pe'.beliefExpandW L ν' p * (∑' p', pe'.beliefExpandW L ν' p')⁻¹) * w p from
+        tsum_congr (fun p => by rw [hbel p]),
+      ← ENNReal.tsum_mul_left]
+    refine tsum_congr (fun p => ?_)
+    rw [show (∑' p', pe'.beliefExpandW L ν' p') *
+          (pe'.beliefExpandW L ν' p * (∑' p', pe'.beliefExpandW L ν' p')⁻¹ * w p)
+          = ((∑' p', pe'.beliefExpandW L ν' p') * (∑' p', pe'.beliefExpandW L ν' p')⁻¹) *
+            (pe'.beliefExpandW L ν' p * w p) by ring,
+      ENNReal.mul_inv_cancel hZ hZtop, one_mul]
+
 open Classical in
 /-- The post-τ-closure witness of the weak step `s_prev →[a] μ` (external `a`),
 as a `sys`-scheduler; `haltNow` when there is no such external weak step. (Used by
@@ -2624,6 +2655,89 @@ theorem ProbabilisticExecution.hsLabMass_nil
     pe'.hsLabMass [] g = ∑' s : State, pe'.initState s * g s := by
   unfold ProbabilisticExecution.hsLabMass
   rw [List.getLast?_nil]
+
+open Classical in
+/-- **Regrouping `hsLabMass` by the hyper-step target `ν'`.** The
+hyper-step-boundary level mass at external trace `L` (with `L.getLast? = some l`)
+equals, summed over the boundary distribution-target `ν'`, the total
+`beliefExpandW`-normaliser at `ν'` weighted by `h ν'`. The analogue of
+`lower_labProb_eq_aux`'s `stepA` regrouping for the `expand` telescoping. -/
+theorem ProbabilisticExecution.hsLabMass_eq_Z_sum {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (L : List Label) (l : Label) (hL : L.getLast? = some l) (h : State → ENNReal) :
+    pe'.hsLabMass L h = ∑' ν' : State, (∑' p, pe'.beliefExpandW L ν' p) * h ν' := by
+  classical
+  -- The common triple-sum form `∑' E' ∑' μ ∑' ν', G E' μ ν'`.
+  set G : AlterSeq State Label → PMF State → State → ENNReal :=
+    fun E' μ ν' =>
+      if hT : E'.trans.Terminates ∧ E'.trans.map Prod.fst = Seq.ofList L.dropLast then
+        if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT.1) l μ then
+          pe'.probOf E' hT.1 * pe'.scheduler.next E' (some (l, μ))
+            * (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' * h ν'
+        else 0
+      else 0 with hG
+  have hLHS : pe'.hsLabMass L h
+      = ∑' E' : AlterSeq State Label, ∑' μ : PMF State, ∑' ν' : State, G E' μ ν' := by
+    rw [ProbabilisticExecution.hsLabMass, hL]
+    dsimp only []
+    refine tsum_congr (fun E' => ?_)
+    by_cases hT : E'.trans.Terminates ∧ E'.trans.map Prod.fst = Seq.ofList L.dropLast
+    · rw [dif_pos hT, ← ENNReal.tsum_mul_left]
+      refine tsum_congr (fun μ => ?_)
+      by_cases hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT.1) l μ
+      · -- `hsExpect` opens to the `postDist`-integral; pull constants into the `ν'`-sum.
+        rw [show pe'.hsExpect (E'.endState hT.1) l μ h
+              = ∑' s' : State, (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist s'
+                  * h s' from by
+          unfold ProbabilisticExecution.hsExpect
+          rw [dif_pos hstep.2, dif_neg hstep.1]]
+        rw [← ENNReal.tsum_mul_left, ← ENNReal.tsum_mul_left]
+        refine tsum_congr (fun ν' => ?_)
+        rw [hG]
+        simp only [dif_pos hT, dif_pos hstep]
+        ring
+      · -- No external step at `μ`: `hsExpect = 0`, and every `G`-term vanishes.
+        rw [show pe'.hsExpect (E'.endState hT.1) l μ h = 0 from by
+          unfold ProbabilisticExecution.hsExpect
+          by_cases hsw : sys^w.step (E'.endState hT.1) l μ
+          · rw [dif_pos hsw]
+            by_cases hint : sys.internal l
+            · rw [dif_pos hint]
+            · exact absurd ⟨hint, hsw⟩ hstep
+          · rw [dif_neg hsw]]
+        rw [mul_zero, mul_zero]
+        symm
+        refine ENNReal.tsum_eq_zero.mpr (fun ν' => ?_)
+        rw [hG]; simp only [dif_pos hT, dif_neg hstep]
+    · rw [dif_neg hT]
+      symm
+      refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
+      refine ENNReal.tsum_eq_zero.mpr (fun ν' => ?_)
+      rw [hG]; simp only [dif_neg hT]
+  have hRHS : (∑' ν' : State, (∑' p, pe'.beliefExpandW L ν' p) * h ν')
+      = ∑' E' : AlterSeq State Label, ∑' μ : PMF State, ∑' ν' : State, G E' μ ν' := by
+    rw [show (∑' ν' : State, (∑' p, pe'.beliefExpandW L ν' p) * h ν')
+          = ∑' ν' : State, ∑' p : AlterSeq State Label × PMF State,
+              pe'.beliefExpandW L ν' p * h ν' from
+        tsum_congr (fun ν' => by rw [ENNReal.tsum_mul_right])]
+    rw [show (∑' ν' : State, ∑' p : AlterSeq State Label × PMF State,
+              pe'.beliefExpandW L ν' p * h ν')
+          = ∑' ν' : State, ∑' E' : AlterSeq State Label, ∑' μ : PMF State,
+              pe'.beliefExpandW L ν' (E', μ) * h ν' from
+        tsum_congr (fun ν' => by rw [ENNReal.tsum_prod'])]
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun E' => ?_)
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun μ => ?_)
+    refine tsum_congr (fun ν' => ?_)
+    rw [pe'.beliefExpandW_eq L ν' l hL (E', μ), hG]
+    by_cases hT : E'.trans.Terminates ∧ E'.trans.map Prod.fst = Seq.ofList L.dropLast
+    · simp only [dif_pos hT]
+      by_cases hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT.1) l μ
+      · simp only [dif_pos hstep]
+      · simp only [dif_neg hstep, zero_mul]
+    · simp only [dif_neg hT, zero_mul]
+  rw [hLHS, hRHS]
 
 /-- **Scheduler validity at the canonical terminal index.** For a terminating
 history `E'` and an emitted `some (l, μ)`, the weak step `sys^w.step
