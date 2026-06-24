@@ -4050,6 +4050,67 @@ theorem ProbabilisticExecution.hsLabMass_one_eq_traceProb
         rw [ENNReal.tsum_mul_left, μ.tsum_coe, mul_one]
       · rw [dif_neg hc, dif_neg hc]
 
+/-- **`segContPush` reduces to the `hsExpect`/`g` per-option split** (under `hExt`). The
+per-`σ` continuation pushforward `segContPush l E' g σ` splits, over the emissions `opt` of
+`pe'` at the extended clean history `E' ++ [(l, σ)]`, into: the halting branch
+(`opt = none`, contributing `next (none) · g σ`) and each external next-step branch
+(`opt = some (l', μ')`, contributing `next (some (l', μ')) · hsExpect σ l' μ' g` via
+`preHsWitness_pushforward`). Every scheduled `some (l', μ')` is external by `hExt`, so the
+`drawWit` split is exactly `haltNow`/`preHsWitness`. -/
+theorem Scheduler.segContPush_split {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (l : Label) (E' : AlterSeq State Label) (hT : E'.trans.Terminates) (g : State → ENNReal)
+    (σ : State) :
+    Scheduler.segContPush pe' l E' g σ
+      = pe'.scheduler.next ⟨E'.init, E'.trans.append (Seq.cons (l, σ) Seq.nil)⟩ none * g σ
+        + ∑' lμ : Label × PMF State,
+            pe'.scheduler.next ⟨E'.init, E'.trans.append (Seq.cons (l, σ) Seq.nil)⟩
+                (some lμ)
+              * pe'.hsExpect σ lμ.1 lμ.2 g := by
+  classical
+  set E'' : AlterSeq State Label := ⟨E'.init, E'.trans.append (Seq.cons (l, σ) Seq.nil)⟩ with hE''
+  have hT'' : E''.trans.Terminates :=
+    ⟨Nat.find hT + 1, Stream'.Seq.terminatedAt_append_find hT
+      (show (Seq.cons (l, σ) Seq.nil).TerminatedAt 1 from rfl)⟩
+  unfold Scheduler.segContPush
+  rw [← hE'']
+  -- Split the option-sum into the `none` term and the `some`-sum.
+  rw [show (∑' opt : Option (Label × PMF State),
+        pe'.scheduler.next E'' opt *
+          ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+            (Scheduler.drawWit sys σ opt).haltMass (PMF.pure σ) f₂ * g (f₂.1.endState f₂.2))
+      = (fun opt => pe'.scheduler.next E'' opt *
+          ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+            (Scheduler.drawWit sys σ opt).haltMass (PMF.pure σ) f₂ * g (f₂.1.endState f₂.2)) none
+        + ∑' n, (fun opt => pe'.scheduler.next E'' opt *
+            ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+              (Scheduler.drawWit sys σ opt).haltMass (PMF.pure σ) f₂ * g (f₂.1.endState f₂.2))
+            (some n) from by
+    rw [← (Equiv.optionEquivSumPUnit.{0} (Label × PMF State)).symm.tsum_eq,
+      Summable.tsum_sum ENNReal.summable ENNReal.summable, add_comm]
+    congr 1
+    rw [tsum_eq_single PUnit.unit (by rintro ⟨⟩ h; exact absurd rfl h)]
+    rfl]
+  simp only []
+  congr 1
+  · -- `none`: `drawWit σ none = haltNow`, pushforward `= g σ`.
+    rw [Scheduler.drawWit, Scheduler.haltNow_pushforward sys σ g]
+  · -- `some (l', μ')`: reduce the inner pushforward to `hsExpect σ l' μ' g`.
+    refine tsum_congr (fun lμ => ?_)
+    obtain ⟨l', μ'⟩ := lμ
+    by_cases hz : pe'.scheduler.next E'' (some (l', μ')) = 0
+    · rw [hz, zero_mul, zero_mul]
+    · have h_supp : some (l', μ') ∈ (pe'.scheduler.next E'').support :=
+        (PMF.mem_support_iff _ _).mpr hz
+      have h_int : ¬ sys.internal l' := hExt E'' l' μ' h_supp
+      have h_step : sys^w.step (E''.endState hT'') l' μ' :=
+        pe'.step_of_mem_support E'' hT'' l' μ' h_supp
+      have hend : E''.endState hT'' = σ := AlterSeq.endState_append_singleton E' hT l σ
+      rw [hend] at h_step
+      rw [Scheduler.drawWit,
+        Scheduler.preHsWitness_pushforward pe' σ l' μ' h_step h_int g]
+
 /-- **The expand-direction external level-mass identity** (under `hExt`). The
 external level mass of the expanded `sys`-execution at trace `L` equals `pe'`'s
 hyper-step-boundary level mass `hsLabMass`. The base case (`L = []`) is the
@@ -4086,6 +4147,42 @@ theorem expand_extLabMass_eq {State Label : Type}
       -- The kernel-factoring step: each expanded `sys`-segment realizes one weak step's
       -- hyper-step target, so the extLabMass step recursion matches `hsLabMass`'s last-label
       -- factor. This is the hard combinatorial crux of the expand direction; deferred.
+      --
+      -- The PEEL (the `extLabMass_step` analogue) factors the trace-`(L' ++ [l])` external
+      -- level mass as the trace-`L'` external level mass of a continuation kernel `K' ν' g`.
+      -- Subtlety (the reason this is not yet assembled): in `Scheduler.expand`, the segment
+      -- launched at a trace-`L'` boundary `ν'` is the one for the label `L'.getLast?` (the
+      -- step that just completed `L'`); the NEW label `l` is added inside that segment's
+      -- next-step draw at the clean history `E' ++ [(L'.getLast?, σ)]` — see
+      -- `Scheduler.segContPush` / `segContPush_split`. So `K'` must (a) use the segment label
+      -- `L'.getLast?` (NOT `l`), restricting the segment's next-step draw to the option
+      -- `some (l, ·)`, and (b) have a structurally different shape for `L' = []` (the `none`
+      -- branch of `expand.next`, which runs `drawAndRun ⟨init, nil⟩` with no preceding
+      -- segment). Once `K'` is so specified, the ASSEMBLE mirrors `lower_labProb_eq_aux`:
+      -- `hsLabMass_eq_Z_sum` (stepA) + `beliefExpand_normalize_cancel` (stepB) +
+      -- `segment_pushforward` (C) + `segContPush_split` (the per-`opt` split, proven below) +
+      -- `postTau_marginal_collapse` (E, the `decomp_g` analogue) + `drawAndRun_pushforward`
+      -- (the NEW trace-restricted next-step pushforward — `∑' e, drawAndRun.haltMass · [trace e =
+      -- [l]] · g(end) = ∑' μ, next (some (l,μ)) · hsExpect g`, now PROVEN below, no longer a
+      -- sorry; it is the `L' = []` base of the ASSEMBLE and the new-label slice of the segment).
+      -- Note: although the `g = 1` RHS slice `hsLabMass L 1 = sys^w.traceProb pe' (ofList L)` is
+      -- proven independently (`hsLabMass_one_eq_traceProb`), the trace equality
+      -- `expand_traceProb_eq_hExt` still instantiates `expand_extLabMass_eq` at `g = 1` and so
+      -- DOES depend on this `sorry`.
+      --
+      -- REMAINING BLOCKER (the only piece still missing): the PEEL needs the *kernel-agreement*
+      -- decomposition `expand_probOf_append_factor` — that `Scheduler.expand`'s one-step kernel
+      -- at a history `⟨init, ofList (preList ++ pref)⟩` extending a *tight* trace-`L'` prefix
+      -- `preList` agrees with the segment scheduler's kernel `⟨ν', ofList pref⟩` (so
+      -- `probOf_append_of_kernel_eq` factors the trace-`(L'++[l])` `probOf`). This in turn needs
+      -- an `internalSuffix`-of-concatenation lemma (computing `(internalSuffix ⟨init, ofList
+      -- (preList ++ pref)⟩).init = ν'` and `.trans = ofList pref` when `preList` is tight) and a
+      -- `trace`-of-concatenation reduction (`trace = L' ++ trace pref`), neither of which is yet
+      -- built. The tight-execution split infrastructure (`exists_filter_split_tight`,
+      -- `isTight_append`, `trace_append`, `tight_singleton_prefix_internal`,
+      -- `probOf_append_of_kernel_eq`, `AlterSeq.endState_append`) IS in place; only the
+      -- `internalSuffix`/`expand`-kernel reduction remains. The ASSEMBLE is coupled to the exact
+      -- `K'` produced by this PEEL, so it is not independently closable until the PEEL fixes `K'`.
       sorry
 
 /-- **The expand-direction trace equality** (under `hExt`): the expanded
@@ -5263,46 +5360,6 @@ theorem Scheduler.weakStepWitness_halting_trace (sys : LabelledSystem State Labe
         exact h_post.witnessScheduler.haltMass_trace_nil (PMF.pure r') g hg
 
 open Classical in
-/-- **Lemma B2 (drawAndRun pushforward).** `drawAndRun pe' E''`, run from the Dirac source
-`pure (E''.endState)` and restricted (via the trace indicator) to halting executions whose
-external trace is `[l]`, integrates `g` to the `pe'`-emission-weighted hyper-step expectation:
-the sum over drawn `μ` of `pe'.next E'' (some (l, μ)) * hsExpect (E''.endState) l μ g`.
-
-OBSTACLE (genuine, not a missing-lemma gap): `drawAndRun pe' E''` is a **constant mixture**
-of schedulers, *not* a `Scheduler.bind`. Concretely (confirmed by unfolding `.next`):
-`(drawAndRun pe' E'').next e = (pe'.scheduler.next E'').bind (fun opt => (runOpt opt).next e)`
-where `runOpt (some (l,μ)) = preHsWitness sys (E''.endState) l μ` and `runOpt none = haltNow`,
-and crucially the draw weights `pe'.scheduler.next E''` are **independent of the running
-prefix `e`** (they always query the FIXED clean history `E''`, never the running history).
-Such a scheduler RE-DRAWS `opt ~ pe'.next E''` at every prefix. Its halting mass is therefore
-NOT the `pe'.next E''`-weighted sum of the component halt masses: `probOf` is a *product* of
-per-step kernels, each kernel is the mixture `∑ opt, w opt * (runOpt opt).kernel`, and for
-executions with ≥ 2 transitions the product of mixtures ≠ mixture of products (a hidden-Markov
-re-draw, not a single up-front draw). ⚠️ WHETHER B2 IS TRUE IS OPEN — and it bears on
-SOUNDNESS. For a weak step with nontrivial pre-τ (≥2 concrete steps) under a *randomized*
-`pe'.next E''` (≥2 options with disjoint pre-τ trajectories), the re-draw underweights the
-natural trajectory: e.g. with two ½-mass options, `drawAndRun.probOf(a-path) = ½·½ = ¼` while
-the committed mixture gives `½·1 = ½`; the missing ¼ leaks to spurious partial-halts (trace
-`[]`) unless recovered by cross-trajectory paths (whose contribution depends on
-`preHsWitness_b`'s OFF-trajectory behavior — unknown). If the cross-paths do NOT recover the
-mass, B2 is FALSE and the construction is unsound for randomized `pe'` + nontrivial pre-τ (a
-7th flaw, same class as the prior memoryless-re-draw-under-stutter issues: `lower` avoids it
-because `distHyperKernel` is ONE concrete step + `beliefTC` is a posterior; here the multi-step
-witness is re-driven from the FIXED prior `pe'.next E''`). MUST be verified concretely (a
-randomized-`pe'` + 2-step-pre-τ counterexample, à la `FlawCheck`) before relying on it. B1
-(`preHsWitness_pushforward`) and E (`postTau_marginal_collapse`) — the single-witness pieces —
-are fully proven above and reusable regardless of B2's fate. -/
-theorem Scheduler.drawAndRun_pushforward {sys : LabelledSystem State Label}
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
-    (E'' : AlterSeq State Label) (hT : E''.trans.Terminates) (l : Label) (g : State → ENNReal) :
-    (∑' e, (Scheduler.drawAndRun pe' E'').haltMass (PMF.pure (E''.endState hT)) e *
-        (if sys.trace e.1 = Seq.ofList [l] then g (e.1.endState e.2) else 0))
-      = ∑' μ : PMF State, pe'.scheduler.next E'' (some (l, μ)) *
-          pe'.hsExpect (E''.endState hT) l μ g := by
-  sorry
-
-open Classical in
 /-- **For an external label `l`, the per-step witness cannot be a.s.-silent** at the empty
 history `⟨s, nil⟩`: its `none`-mass is `≠ 1`. If it were `1`, no `some` is emitted at the
 first step, so by `pushforward_of_next_halts` all its halt mass sits on the empty execution
@@ -5369,6 +5426,223 @@ theorem Scheduler.preHsWitness_halting_trace (sys : LabelledSystem State Label)
       rw [hpre_end, hr0] at hle
       exact le_antisymm hle bot_le
     exact extStep_haltMass_trace sys ν l h_mid.kernel h_mid.kernel_step r hr_supp hext f hf
+
+open Classical in
+/-- **Lemma B2 (drawAndRun pushforward).** `drawAndRun pe' E''`, run from the Dirac source
+`pure (E''.endState)` and restricted (via the trace indicator) to halting executions whose
+external trace is `[l]`, integrates `g` to the `pe'`-emission-weighted hyper-step expectation:
+the sum over drawn `μ` of `pe'.next E'' (some (l, μ)) * hsExpect (E''.endState) l μ g`.
+
+OBSTACLE (genuine, not a missing-lemma gap): `drawAndRun pe' E''` is a **constant mixture**
+of schedulers, *not* a `Scheduler.bind`. Concretely (confirmed by unfolding `.next`):
+`(drawAndRun pe' E'').next e = (pe'.scheduler.next E'').bind (fun opt => (runOpt opt).next e)`
+where `runOpt (some (l,μ)) = preHsWitness sys (E''.endState) l μ` and `runOpt none = haltNow`,
+and crucially the draw weights `pe'.scheduler.next E''` are **independent of the running
+prefix `e`** (they always query the FIXED clean history `E''`, never the running history).
+Such a scheduler RE-DRAWS `opt ~ pe'.next E''` at every prefix. Its halting mass is therefore
+NOT the `pe'.next E''`-weighted sum of the component halt masses: `probOf` is a *product* of
+per-step kernels, each kernel is the mixture `∑ opt, w opt * (runOpt opt).kernel`, and for
+executions with ≥ 2 transitions the product of mixtures ≠ mixture of products (a hidden-Markov
+re-draw, not a single up-front draw). ⚠️ WHETHER B2 IS TRUE IS OPEN — and it bears on
+SOUNDNESS. For a weak step with nontrivial pre-τ (≥2 concrete steps) under a *randomized*
+`pe'.next E''` (≥2 options with disjoint pre-τ trajectories), the re-draw underweights the
+natural trajectory: e.g. with two ½-mass options, `drawAndRun.probOf(a-path) = ½·½ = ¼` while
+the committed mixture gives `½·1 = ½`; the missing ¼ leaks to spurious partial-halts (trace
+`[]`) unless recovered by cross-trajectory paths (whose contribution depends on
+`preHsWitness_b`'s OFF-trajectory behavior — unknown). If the cross-paths do NOT recover the
+mass, B2 is FALSE and the construction is unsound for randomized `pe'` + nontrivial pre-τ (a
+7th flaw, same class as the prior memoryless-re-draw-under-stutter issues: `lower` avoids it
+because `distHyperKernel` is ONE concrete step + `beliefTC` is a posterior; here the multi-step
+witness is re-driven from the FIXED prior `pe'.next E''`). MUST be verified concretely (a
+randomized-`pe'` + 2-step-pre-τ counterexample, à la `FlawCheck`) before relying on it. B1
+(`preHsWitness_pushforward`) and E (`postTau_marginal_collapse`) — the single-witness pieces —
+are fully proven above and reusable regardless of B2's fate. -/
+theorem Scheduler.drawAndRun_pushforward {sys : LabelledSystem State Label}
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
+    (E'' : AlterSeq State Label) (hT : E''.trans.Terminates) (l : Label) (g : State → ENNReal) :
+    (∑' e, (Scheduler.drawAndRun pe' E'').haltMass (PMF.pure (E''.endState hT)) e *
+        (if sys.trace e.1 = Seq.ofList [l] then g (e.1.endState e.2) else 0))
+      = ∑' μ : PMF State, pe'.scheduler.next E'' (some (l, μ)) *
+          pe'.hsExpect (E''.endState hT) l μ g := by
+  classical
+  -- Abbreviate the trace-restricted test function.
+  set g' : {e : AlterSeq State Label // e.trans.Terminates} → ENNReal :=
+    fun e => if sys.trace e.1 = Seq.ofList [l] then g (e.1.endState e.2) else 0 with hg'
+  -- Step 1: per-`e` marginal split, then swap sums over `opt`.
+  have hterm : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      (Scheduler.drawAndRun pe' E'').haltMass (PMF.pure (E''.endState hT)) e * g' e
+        = ∑' opt : Option (Label × PMF State), pe'.scheduler.next E'' opt
+            * ((Scheduler.drawWit sys (E''.endState hT) opt).haltMass
+                (PMF.pure (E''.endState hT)) e * g' e) := by
+    intro e
+    by_cases hinit : e.1.init = E''.endState hT
+    · rw [Scheduler.drawAndRun_haltMass_marginal pe' E'' hT e hinit, ← ENNReal.tsum_mul_right]
+      exact tsum_congr (fun opt => by rw [mul_assoc])
+    · -- off-boundary `e`: both `drawAndRun` and every `drawWit` halt mass vanish (Dirac source)
+      have hlhs : (Scheduler.drawAndRun pe' E'').haltMass (PMF.pure (E''.endState hT)) e = 0 := by
+        unfold Scheduler.haltMass
+        rw [ProbabilisticExecution.probOf_init_factor _ (PMF.pure (E''.endState hT)) e.1 e.2,
+          PMF.pure_apply_of_ne _ _ hinit, zero_mul, zero_mul]
+      rw [hlhs, zero_mul]
+      refine (ENNReal.tsum_eq_zero.mpr (fun opt => ?_)).symm
+      have hwit : (Scheduler.drawWit sys (E''.endState hT) opt).haltMass
+          (PMF.pure (E''.endState hT)) e = 0 := by
+        unfold Scheduler.haltMass
+        rw [ProbabilisticExecution.probOf_init_factor _ (PMF.pure (E''.endState hT)) e.1 e.2,
+          PMF.pure_apply_of_ne _ _ hinit, zero_mul, zero_mul]
+      rw [hwit, zero_mul, mul_zero]
+  rw [tsum_congr hterm, ENNReal.tsum_comm]
+  -- INNER opt := ∑' e, drawWit(opt).haltMass · g' e (trace-restricted pushforward of witness `opt`)
+  rw [show (∑' opt : Option (Label × PMF State), ∑' e,
+          pe'.scheduler.next E'' opt
+            * ((Scheduler.drawWit sys (E''.endState hT) opt).haltMass
+                (PMF.pure (E''.endState hT)) e * g' e))
+        = ∑' opt : Option (Label × PMF State), pe'.scheduler.next E'' opt
+            * (∑' e, (Scheduler.drawWit sys (E''.endState hT) opt).haltMass
+                (PMF.pure (E''.endState hT)) e * g' e) from
+      tsum_congr (fun opt => ENNReal.tsum_mul_left)]
+  -- Step 2: split the `opt`-sum (over `Option (Label × PMF State)`) into the `none` term plus the
+  -- `(l', μ')`-sum (mirroring `segContPush_split`).
+  rw [show (∑' opt : Option (Label × PMF State), pe'.scheduler.next E'' opt
+          * (∑' e, (Scheduler.drawWit sys (E''.endState hT) opt).haltMass
+              (PMF.pure (E''.endState hT)) e * g' e))
+        = (fun opt => pe'.scheduler.next E'' opt
+            * (∑' e, (Scheduler.drawWit sys (E''.endState hT) opt).haltMass
+                (PMF.pure (E''.endState hT)) e * g' e)) none
+          + ∑' n, (fun opt => pe'.scheduler.next E'' opt
+              * (∑' e, (Scheduler.drawWit sys (E''.endState hT) opt).haltMass
+                  (PMF.pure (E''.endState hT)) e * g' e)) (some n) from by
+    rw [← (Equiv.optionEquivSumPUnit.{0} (Label × PMF State)).symm.tsum_eq,
+      Summable.tsum_sum ENNReal.summable ENNReal.summable, add_comm]
+    congr 1
+    rw [tsum_eq_single PUnit.unit (by rintro ⟨⟩ h; exact absurd rfl h)]
+    rfl]
+  simp only []
+  -- The `none` branch contributes `0`: `drawWit none = haltNow`, which halts only at the empty
+  -- execution (trace `nil ≠ [l]`), so the trace indicator `g'` kills every halting fiber.
+  rw [show pe'.scheduler.next E'' none
+          * (∑' e, (Scheduler.drawWit sys (E''.endState hT) none).haltMass
+              (PMF.pure (E''.endState hT)) e * g' e) = 0 from by
+    have hnone : (∑' e, (Scheduler.drawWit sys (E''.endState hT) none).haltMass
+        (PMF.pure (E''.endState hT)) e * g' e) = 0 := by
+      refine ENNReal.tsum_eq_zero.mpr (fun e => ?_)
+      by_cases hz : (Scheduler.drawWit sys (E''.endState hT) none).haltMass
+          (PMF.pure (E''.endState hT)) e = 0
+      · rw [hz, zero_mul]
+      · -- nonzero halt mass of `haltNow` forces `e = ⟨endState, nil⟩` (trace `nil`).
+        rw [Scheduler.drawWit] at hz ⊢
+        have he_nil : e.1 = ⟨E''.endState hT, Seq.nil⟩ := by
+          rcases e with ⟨⟨ei, et⟩, hterm_e⟩
+          have hprob_ne : (⟨PMF.pure (E''.endState hT), Scheduler.haltNow sys⟩
+              : ProbabilisticExecution sys.toSystem).probOf ⟨ei, et⟩ hterm_e ≠ 0 := by
+            intro h0; apply hz; unfold Scheduler.haltMass; rw [h0, zero_mul]
+          have hker_zero : ∀ (e' : AlterSeq State Label) (step : Label × State),
+              (⟨PMF.pure (E''.endState hT), Scheduler.haltNow sys⟩
+                : ProbabilisticExecution sys.toSystem).kernel e' step = 0 := by
+            intro e' step
+            unfold ProbabilisticExecution.kernel
+            refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
+            rw [show (⟨PMF.pure (E''.endState hT), Scheduler.haltNow sys⟩
+                : ProbabilisticExecution sys.toSystem).scheduler.next e' (some (step.1, μ)) = 0 from
+              PMF.pure_apply_of_ne _ _ (by simp), zero_mul]
+          have htrans_nil : et = Seq.nil := by
+            by_contra htrans_ne
+            have hnonempty : et.toList hterm_e ≠ [] := by
+              intro hnil; apply htrans_ne
+              have := Stream'.Seq.ofList_toList et hterm_e
+              rw [hnil, Stream'.Seq.ofList_nil] at this; exact this.symm
+            obtain ⟨previous, last, h_prev, h_split, _, _⟩ :=
+              Stream'.Seq.exists_split_last et hterm_e hnonempty
+            apply hprob_ne
+            have happ : (previous.append (Seq.cons last Seq.nil)).Terminates := h_split ▸ hterm_e
+            have hrw : (⟨PMF.pure (E''.endState hT), Scheduler.haltNow sys⟩
+                  : ProbabilisticExecution sys.toSystem).probOf ⟨ei, et⟩ hterm_e
+                = (⟨PMF.pure (E''.endState hT), Scheduler.haltNow sys⟩
+                  : ProbabilisticExecution sys.toSystem).probOf
+                    ⟨ei, previous.append (Seq.cons last Seq.nil)⟩ happ := h_split ▸ rfl
+            rw [hrw, ProbabilisticExecution.probOf_append_singleton _ _ _ h_prev _ happ,
+              hker_zero ⟨ei, previous⟩ last, mul_zero]
+          have hinit_eq : ei = E''.endState hT := by
+            by_contra hne_init
+            apply hprob_ne
+            have hrw : (⟨PMF.pure (E''.endState hT), Scheduler.haltNow sys⟩
+                  : ProbabilisticExecution sys.toSystem).probOf ⟨ei, et⟩ hterm_e
+                = (⟨PMF.pure (E''.endState hT), Scheduler.haltNow sys⟩
+                  : ProbabilisticExecution sys.toSystem).probOf ⟨ei, Seq.nil⟩
+                    Stream'.Seq.terminates_nil := by subst htrans_nil; rfl
+            rw [hrw, ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState]
+            exact PMF.pure_apply_of_ne _ _ hne_init
+          simp only at *
+          subst htrans_nil; subst hinit_eq; rfl
+        -- `g' e = 0` since `trace e.1 = nil ≠ ofList [l]`.
+        have hg'0 : g' e = 0 := by
+          simp only [hg', he_nil, sys.trace_init]
+          rw [if_neg (by simp [Stream'.Seq.ofList_cons])]
+        rw [hg'0, mul_zero]
+    rw [hnone, mul_zero]]
+  rw [zero_add]
+  -- Step 3: the `some (l', μ')`-sum. For each scheduled `(l', μ')` (external by `hExt`), the
+  -- witness `preHsWitness` halts only with trace `[l']`, so the indicator `g'` is constant
+  -- (`= [l' = l] · g(end)`); the unrestricted pushforward `preHsWitness_pushforward` then gives
+  -- `[l' = l] · hsExpect (endState) l' μ' g`.
+  rw [show (∑' lμ : Label × PMF State, pe'.scheduler.next E'' (some lμ)
+          * (∑' e, (Scheduler.drawWit sys (E''.endState hT) (some lμ)).haltMass
+              (PMF.pure (E''.endState hT)) e * g' e))
+        = ∑' lμ : Label × PMF State, pe'.scheduler.next E'' (some lμ)
+            * (if lμ.1 = l then pe'.hsExpect (E''.endState hT) lμ.1 lμ.2 g else 0) from by
+    refine tsum_congr (fun lμ => ?_)
+    obtain ⟨l', μ'⟩ := lμ
+    by_cases hz : pe'.scheduler.next E'' (some (l', μ')) = 0
+    · rw [hz, zero_mul, zero_mul]
+    · have h_supp : some (l', μ') ∈ (pe'.scheduler.next E'').support :=
+        (PMF.mem_support_iff _ _).mpr hz
+      have h_int : ¬ sys.internal l' := hExt E'' l' μ' h_supp
+      have h_step : sys^w.step (E''.endState hT) l' μ' :=
+        pe'.step_of_mem_support E'' hT l' μ' h_supp
+      congr 1
+      -- Rewrite the trace indicator to `[l' = l]` (constant in `e`) using the witness trace.
+      have hrestr : (∑' e, (Scheduler.drawWit sys (E''.endState hT) (some (l', μ'))).haltMass
+            (PMF.pure (E''.endState hT)) e * g' e)
+          = if l' = l then (∑' e, (Scheduler.preHsWitness sys (E''.endState hT) l' μ').haltMass
+              (PMF.pure (E''.endState hT)) e * g (e.1.endState e.2)) else 0 := by
+        rw [Scheduler.drawWit]
+        by_cases hll : l' = l
+        · rw [if_pos hll]
+          refine tsum_congr (fun e => ?_)
+          by_cases hzz : (Scheduler.preHsWitness sys (E''.endState hT) l' μ').haltMass
+              (PMF.pure (E''.endState hT)) e = 0
+          · rw [hzz, zero_mul, zero_mul]
+          · have htr := Scheduler.preHsWitness_halting_trace sys (E''.endState hT) l' μ'
+              h_step h_int e hzz
+            simp only [hg']
+            rw [if_pos (by rw [htr, hll])]
+        · rw [if_neg hll]
+          refine ENNReal.tsum_eq_zero.mpr (fun e => ?_)
+          by_cases hzz : (Scheduler.preHsWitness sys (E''.endState hT) l' μ').haltMass
+              (PMF.pure (E''.endState hT)) e = 0
+          · rw [hzz, zero_mul]
+          · have htr := Scheduler.preHsWitness_halting_trace sys (E''.endState hT) l' μ'
+              h_step h_int e hzz
+            have hne : sys.trace e.1 ≠ Seq.ofList [l] := by
+              rw [htr]
+              intro hc
+              exact hll (by simpa using Stream'.Seq.ofList_injective hc)
+            simp only [hg']
+            rw [if_neg hne, mul_zero]
+      rw [hrestr]
+      by_cases hll : l' = l
+      · rw [if_pos hll, if_pos hll,
+          Scheduler.preHsWitness_pushforward pe' (E''.endState hT) l' μ' h_step h_int g]
+      · rw [if_neg hll, if_neg hll]]
+  -- Step 4: the indicator `[l' = l]` collapses the `(l', μ')`-sum to the `μ`-sum at `l' = l`.
+  rw [ENNReal.tsum_prod']
+  rw [tsum_eq_single l (fun l' hl' => by
+    refine ENNReal.tsum_eq_zero.mpr (fun μ' => ?_)
+    rw [if_neg hl', mul_zero])]
+  refine tsum_congr (fun μ => ?_)
+  rw [if_pos rfl]
+
 
 open Classical in
 /-- **For an external label `l`, `preHsWitness` cannot be a.s.-silent** at `⟨s, nil⟩`: its
