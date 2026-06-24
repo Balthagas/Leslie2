@@ -3463,7 +3463,7 @@ theorem Scheduler.pushforward_of_next_halts (sys : LabelledSystem State Label)
 non-silent. If the source PMF `p` puts positive mass on `b₀` and the continuation `W b₀`
 puts `< 1` mass on `none` (`W b₀ none ≠ 1`), then the mixture `p.bind W` differs from
 `PMF.pure none` (it has positive mass on some `some`). -/
-theorem Scheduler.bind_emits_of_branch {γ : Type} (sys : LabelledSystem State Label)
+theorem Scheduler.bind_emits_of_branch {γ : Type}
     (p : PMF γ) (W : γ → PMF (Option (Label × PMF State))) (b₀ : γ)
     (hpos : p b₀ ≠ 0) (hbranch : W b₀ none ≠ 1) :
     p.bind W ≠ PMF.pure none := by
@@ -4620,6 +4620,123 @@ noncomputable def ProbabilisticExecution.expandK
     (Scheduler.expandCont sys pe' L' ν' l').haltMass (PMF.pure ν') e
       * (if sys.trace e.1 = Seq.ofList [l] then g (e.1.endState e.2) else 0)
 
+open Classical in
+/-- **Kernel-agreement along an expand segment (PEEL step 1b/1a, fully proven).** At a
+within-segment position `⟨init, ofList (preList ++ pref₀)⟩` — where `preList` ends with an
+external transition whose external trace is `ofList L'` (`L'` nonempty, last label `l'`) and
+`pref₀` is all-internal — the expanded scheduler's one-step kernel coincides with that of the
+single segment-continuation execution `⟨pure ν', expandCont sys pe' L' ν' l'⟩` at `⟨ν',
+ofList pref₀⟩`, where `ν' = endState preList`. Combines `trace_append_internal` (the running
+external trace stays `ofList L'`, keeping `expand.next` on the `some l'` branch),
+`internalSuffix_append_internal` (the internal suffix is `⟨ν', ofList pref₀⟩`) and
+`expand_next_eq_expandCont`. -/
+theorem expand_kernel_eq_expandCont {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (init : State) (L' : List Label) (l' : Label) (hL' : L'.getLast? = some l')
+    (preList pref₀ : List (Label × State))
+    (hpre_ext : ∀ x, preList.getLast? = some x → ¬ sys.internal x.1)
+    (hpre_tr : sys.trace ⟨init, Seq.ofList preList⟩ = Seq.ofList L')
+    (hpref_int : ∀ p ∈ pref₀, sys.internal p.1)
+    (step : Label × State) :
+    (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+        : ProbabilisticExecution sys.toSystem).kernel
+        ⟨init, Seq.ofList (preList ++ pref₀)⟩ step
+      = (⟨PMF.pure ((⟨init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_ofList _)), Scheduler.expandCont sys pe' L'
+            ((⟨init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_ofList _)) l'⟩
+          : ProbabilisticExecution sys.toSystem).kernel
+        ⟨(⟨init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+            (Stream'.Seq.terminates_ofList _), Seq.ofList pref₀⟩ step := by
+  classical
+  set ν' := (⟨init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+    (Stream'.Seq.terminates_ofList _) with hν'
+  -- The full position and its termination.
+  set e : AlterSeq State Label := ⟨init, Seq.ofList (preList ++ pref₀)⟩ with he
+  have heT : e.trans.Terminates := Stream'.Seq.terminates_ofList _
+  -- Running external trace is `ofList L'` (appending internal `pref₀` leaves it unchanged).
+  have htr : sys.trace e = Seq.ofList L' := by
+    rw [he, sys.trace_append_internal init preList pref₀ hpref_int, hpre_tr]
+  -- Its trace.toList = L', so getLast? = some l'.
+  have hmapT : (sys.trace e).Terminates := by rw [htr]; exact Stream'.Seq.terminates_ofList _
+  have hgl : ((sys.trace e).toList
+      (Stream'.Seq.terminates_map_iff.mpr (Stream'.Seq.terminates_filter _ _ heT))).getLast?
+      = some l' := by
+    have hcongr : (sys.trace e).toList
+        (Stream'.Seq.terminates_map_iff.mpr (Stream'.Seq.terminates_filter _ _ heT)) = L' := by
+      apply Stream'.Seq.ofList_injective
+      rw [Stream'.Seq.ofList_toList, htr]
+    rw [hcongr, hL']
+  -- The internal suffix is `⟨ν', ofList pref₀⟩`.
+  have hsuf : sys.internalSuffix e = ⟨ν', Seq.ofList pref₀⟩ := by
+    rw [he, sys.internalSuffix_append_internal init preList pref₀ hpre_ext hpref_int]
+  -- `expand.next e = (expandCont L' ν' l').next ⟨ν', ofList pref₀⟩`.
+  have hnext : (Scheduler.expand sys pe').next e
+      = (Scheduler.expandCont sys pe' L' ν' l').next ⟨ν', Seq.ofList pref₀⟩ := by
+    rw [expand_next_eq_expandCont sys pe' e heT l' hgl]
+    -- match the `L'` / `ν'` / suffix arguments
+    have hLeq : (sys.trace e).toList
+        (Stream'.Seq.terminates_map_iff.mpr (Stream'.Seq.terminates_filter _ _ heT)) = L' := by
+      apply Stream'.Seq.ofList_injective
+      rw [Stream'.Seq.ofList_toList, htr]
+    rw [hLeq, hsuf]
+  -- Kernels are tsums of the (equal) `next`s.
+  unfold ProbabilisticExecution.kernel
+  refine tsum_congr (fun μ => ?_)
+  rw [show (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+        : ProbabilisticExecution sys.toSystem).scheduler = Scheduler.expand sys pe' from rfl,
+    show (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+        : ProbabilisticExecution sys.toSystem).scheduler = Scheduler.expandCont sys pe' L' ν' l'
+      from rfl]
+  rw [hnext]
+
+open Classical in
+/-- **`probOf` factorization along an expand segment (PEEL step 1c, fully proven).** A tight
+trace-`(L' ++ [l])` execution written as `⟨init, ofList (preList ++ segList)⟩` — with `preList`
+a tight trace-`L'` prefix ending in an external transition (last label `l'`, `L'` nonempty),
+and `segList` the trace-`[l]` continuation whose only external transition is its last — has
+`expand`-probability factoring as the prefix `probOf` times the segment-continuation `probOf`
+of `⟨pure ν', expandCont sys pe' L' ν' l'⟩` (`ν' = endState preList`). The factorization is
+`probOf_append_of_kernel_eq` fed the kernel-agreement `expand_kernel_eq_expandCont`. -/
+theorem expand_probOf_segment_factor {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (init : State) (L' : List Label) (l' : Label) (hL' : L'.getLast? = some l')
+    (preList segList : List (Label × State))
+    (hpre_ext : ∀ x, preList.getLast? = some x → ¬ sys.internal x.1)
+    (hpre_tr : sys.trace ⟨init, Seq.ofList preList⟩ = Seq.ofList L')
+    (hseg_int : ∀ (pref : List (Label × State)) (stp : Label × State),
+      pref ++ [stp] <+: segList → ∀ q ∈ pref, sys.internal q.1) :
+    (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+        : ProbabilisticExecution sys.toSystem).probOf
+        ⟨init, Seq.ofList (preList ++ segList)⟩ (Stream'.Seq.terminates_ofList _)
+      = (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+            : ProbabilisticExecution sys.toSystem).probOf
+          ⟨init, Seq.ofList preList⟩ (Stream'.Seq.terminates_ofList _)
+        * (⟨PMF.pure ((⟨init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_ofList _)),
+            Scheduler.expandCont sys pe' L'
+              ((⟨init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+                (Stream'.Seq.terminates_ofList _)) l'⟩
+            : ProbabilisticExecution sys.toSystem).probOf
+          ⟨(⟨init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_ofList _), Seq.ofList segList⟩
+          (Stream'.Seq.terminates_ofList _) := by
+  classical
+  set ν' := (⟨init, Seq.ofList preList⟩ : AlterSeq State Label).endState
+    (Stream'.Seq.terminates_ofList _) with hν'
+  refine (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+      : ProbabilisticExecution sys.toSystem).probOf_append_of_kernel_eq
+    (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+      : ProbabilisticExecution sys.toSystem)
+    init ν' preList segList ?_ ?_
+  · -- `pe'.init ν' = 1`: the segment source is `pure ν'`.
+    rw [ProbabilisticExecution.init_eq_initState]
+    exact PMF.pure_apply_self ν'
+  · -- kernel agreement at every visited within-segment position.
+    intro pref stp hpf
+    have hpref_int : ∀ p ∈ pref, sys.internal p.1 := hseg_int pref stp hpf
+    exact expand_kernel_eq_expandCont pe' init L' l' hL' preList pref hpre_ext hpre_tr hpref_int stp
+
 /-- **The inductive step of `expand_extLabMass_eq` (PEEL + ASSEMBLE).** Given the
 induction hypothesis (`extLabMass L' g' = hsLabMass L' g'` for every test `g'`), the
 trace-`(L' ++ [l])` external level mass of the expanded `sys`-execution equals `pe'`'s
@@ -4658,14 +4775,46 @@ theorem expand_extLabMass_step {State Label : Type}
         = pe'.hsLabMass L' g') :
     sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (L' ++ [l]) g
       = pe'.hsLabMass (L' ++ [l]) g := by
-  -- PEEL (tight-exec bijection split via `exists_filter_split_tight` /
-  -- `tight_singleton_prefix_internal`, kernel-agreement via `expand_next_eq_expandCont` +
-  -- `internalSuffix_append_internal` + `trace_append_internal` + `probOf_append_of_kernel_eq`)
-  -- followed by ASSEMBLE (IH + `hsLabMass_eq_Z_sum` + `beliefExpand_normalize_cancel` +
-  -- `segment_pushforward` + `postTau_marginal_collapse` + `drawAndRun_pushforward`). The
-  -- supporting infrastructure (`internalSuffix_of_tight`, `internalSuffix_append_internal`,
-  -- `expandCont`, `expand_next_eq_expandCont`, `expandK`) is in place above; the remaining gap is
-  -- the tight-execution bijection bookkeeping and the `expandK`-collapse reindex.
+  -- STATUS (gap analysis, kept precise for the next pass):
+  --
+  -- PEEL CORE — DONE. The per-segment kernel-agreement and `probOf` factorization are now proven,
+  -- self-contained, reusable lemmas:
+  --   * `expand_kernel_eq_expandCont` — at any within-segment position `⟨init, ofList (preList ++
+  --     pref₀)⟩` (preList tight-`L'`, ending external `l'`; `pref₀` internal) the `expand` kernel
+  --     equals `(⟨pure ν', expandCont L' ν' l'⟩).kernel ⟨ν', ofList pref₀⟩` (via
+  --     `trace_append_internal` + `internalSuffix_append_internal` + `expand_next_eq_expandCont`).
+  --   * `expand_probOf_segment_factor` — hence `expand.probOf ⟨init, ofList (preList ++ segList)⟩
+  --     = expand.probOf ⟨init, ofList preList⟩ · (⟨pure ν', expandCont L' ν' l'⟩).probOf
+  --       ⟨ν', ofList segList⟩` (via `probOf_append_of_kernel_eq`).
+  --
+  -- GAP 1 (PEEL bijection bookkeeping — TRUE, mechanical). Build the bijection between tight
+  -- trace-`(L'++[l])` execs and pairs (tight trace-`L'` prefix `preList`, trace-`[l]` segment
+  -- `segList`) via `exists_filter_split_tight` (on the label list) +
+  -- `tight_singleton_prefix_internal` (segment internals) + `isTight_append`/`trace_append`, then
+  -- apply `expand_probOf_segment_factor` and regroup by `preList` (using `extLabMass_eq_tight_tsum`
+  -- both ways). NOTE: this also needs the haltMass-vs-probOf reconciliation — `extLabMass` sums
+  -- *raw* `probOf` over tight (= ending-external) execs, whereas `expandK` is defined via
+  -- `expandCont.haltMass` (= probOf · next none); the inner segment sum `∑' segList trace-[l],
+  -- expandCont.probOf · g(end)` must be identified with `expandK` (likely by recasting `expandK` in
+  -- the raw tight-tsum form, since a tight trace-`[l]` segment is a maximal/halting continuation).
+  --
+  -- GAP 2 (ASSEMBLE `expandK`-collapse — GENUINELY OPEN, soundness-class). After IH +
+  -- `hsLabMass_eq_Z_sum`, the collapse needs `expandK L' l' l g ν' = ∑' p, beliefExpand L' ν' p ·
+  -- (single-draw segment trace-[l] g-mass of `segmentScheduler … p`)`. But `expandCont`'s emission
+  -- `(beliefExpand L' ν').bind (fun p => (segmentScheduler … p).next d)` is a *history-independent
+  -- (constant)* belief mixture — it re-draws `p` afresh at every prefix. `probOf` is a *product* of
+  -- mixture kernels, and for ≥2-transition execs (the `l'`-step pre-τ is multi-step internal) the
+  -- product of mixtures ≠ the mixture of products. This is the SAME constant-mixture re-draw
+  -- phenomenon flagged OPEN (bears on SOUNDNESS) in `Scheduler.drawAndRun_pushforward` (Lemma B2) —
+  -- with the crucial difference that `drawAndRun`'s mixture is *posterior-conditioned*
+  -- (`drawAndRunW`/`normalize` depends on the running prefix, which is exactly what makes its
+  -- marginal `drawAndRun_haltMass_marginal` — and hence B2 — go through), whereas `beliefExpand` is
+  -- NOT posterior-conditioned, so no analogous marginal exists. Establishing this collapse (or
+  -- refuting it with a randomized-`pe'` + multi-step-pre-τ counterexample, à la `FlawCheck`) is the
+  -- genuine remaining mathematical content; it cannot be discharged by rearrangement. (The proven
+  -- ASSEMBLE supporting pieces — `hsLabMass_eq_Z_sum`, `beliefExpand_normalize_cancel`,
+  -- `segment_pushforward`, `segContPush_split`, `postTau_marginal_collapse`, and
+  -- `drawAndRun_pushforward` — would finish the step the moment GAP 1 + GAP 2 are closed.)
   sorry
 
 /-- **The expand-direction external level-mass identity** (under `hExt`). The
