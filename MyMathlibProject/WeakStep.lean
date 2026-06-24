@@ -1470,12 +1470,12 @@ theorem bind_next_nil_of_halt (σ : Scheduler sys.toSystem) (k : State → Sched
   have hterm : (Seq.nil : Seq (Label × State)).Terminates := Stream'.Seq.terminates_nil
   have hlen : (Seq.nil : Seq (Label × State)).length hterm = 0 := by simp
   have hbnone : bindWeight σ k ⟨s, Seq.nil⟩ hterm none = 1 := by
-    show (⟨PMF.pure s, σ⟩ : ProbabilisticExecution sys.toSystem).probOf ⟨s, Seq.nil⟩ hterm = 1
+    change (⟨PMF.pure s, σ⟩ : ProbabilisticExecution sys.toSystem).probOf ⟨s, Seq.nil⟩ hterm = 1
     rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
       PMF.pure_apply_self]
   have hbsome : ∀ j, bindWeight σ k ⟨s, Seq.nil⟩ hterm (some j) = 0 := by
     intro j
-    show (if _hj : j < (Seq.nil : Seq (Label × State)).length hterm then _ else 0) = 0
+    change (if _hj : j < (Seq.nil : Seq (Label × State)).length hterm then _ else 0) = 0
     rw [hlen]; rw [dif_neg (by omega)]
   have htot : (∑' o, bindWeight σ k ⟨s, Seq.nil⟩ hterm o) = 1 := by
     rw [tsum_option_enn, hbnone]
@@ -1492,7 +1492,7 @@ theorem bind_next_nil_of_halt (σ : Scheduler sys.toSystem) (k : State → Sched
   unfold bind
   simp only [dif_pos hterm, dif_pos h0]
   rw [hnorm, PMF.pure_bind]
-  show actionBot σ k ⟨s, Seq.nil⟩ hterm = (k s).next ⟨s, Seq.nil⟩
+  change actionBot σ k ⟨s, Seq.nil⟩ hterm = (k s).next ⟨s, Seq.nil⟩
   unfold actionBot
   rw [show (⟨s, Seq.nil⟩ : AlterSeq State Label).endState hterm = s from
     AlterSeq.endState_of_trans_nil _ rfl _]
@@ -1513,12 +1513,12 @@ theorem bind_next_nil_none_mul (σ : Scheduler sys.toSystem) (k : State → Sche
   have hlen : (Seq.nil : Seq (Label × State)).length hterm = 0 := by simp
   -- Total belief weight is `1` (only the `none`-split survives at the empty history).
   have hbnone : bindWeight σ k ⟨s, Seq.nil⟩ hterm none = 1 := by
-    show (⟨PMF.pure s, σ⟩ : ProbabilisticExecution sys.toSystem).probOf ⟨s, Seq.nil⟩ hterm = 1
+    change (⟨PMF.pure s, σ⟩ : ProbabilisticExecution sys.toSystem).probOf ⟨s, Seq.nil⟩ hterm = 1
     rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
       PMF.pure_apply_self]
   have hbsome : ∀ j, bindWeight σ k ⟨s, Seq.nil⟩ hterm (some j) = 0 := by
     intro j
-    show (if _hj : j < (Seq.nil : Seq (Label × State)).length hterm then _ else 0) = 0
+    change (if _hj : j < (Seq.nil : Seq (Label × State)).length hterm then _ else 0) = 0
     rw [hlen]; rw [dif_neg (by omega)]
   have htot : (∑' o, bindWeight σ k ⟨s, Seq.nil⟩ hterm o) = 1 := by
     rw [tsum_option_enn, hbnone]
@@ -1530,7 +1530,7 @@ theorem bind_next_nil_none_mul (σ : Scheduler sys.toSystem) (k : State → Sche
   rw [Finset.sum_range_one] at hu
   -- the single summand at `j = 0`: prefix `⟨s, nil⟩`, suffix `⟨s, nil⟩`, source `s`.
   have hsa : stateAfter (⟨s, Seq.nil⟩ : AlterSeq State Label) 0 = s := by
-    show ((⟨s, Seq.nil⟩ : AlterSeq State Label).stateAt 0).getD s = s; rfl
+    change ((⟨s, Seq.nil⟩ : AlterSeq State Label).stateAt 0).getD s = s; rfl
   rw [hu, hsa]
   -- both `haltMass`es from a Dirac source reduce to `next ⟨s,nil⟩ none`.
   have htake : (Stream'.Seq.ofList ((⟨s, Seq.nil⟩ : AlterSeq State Label).trans.take 0)
@@ -1538,13 +1538,14 @@ theorem bind_next_nil_none_mul (σ : Scheduler sys.toSystem) (k : State → Sche
     rw [show ((⟨s, Seq.nil⟩ : AlterSeq State Label).trans.take 0 : List (Label × State)) = []
       from by simp [Stream'.Seq.take]]
     rw [Stream'.Seq.ofList_nil]
-  have hdrop : (⟨s, Seq.nil⟩ : AlterSeq State Label).trans.drop 0 = (Seq.nil : Seq (Label × State)) := by
+  have hdrop :
+    (⟨s, Seq.nil⟩ : AlterSeq State Label).trans.drop 0 = (Seq.nil : Seq (Label × State)) := by
     apply Stream'.Seq.ext; intro n; simp [Stream'.Seq.drop]
   -- Change both subtype histories to the canonical `⟨s, nil⟩` via `haltMass_congr_eq`.
   rw [haltMass_congr_eq σ (PMF.pure s)
-      (e₂ := ⟨⟨s, Seq.nil⟩, hterm⟩) (by simpa using htake),
+      (e₂ := ⟨⟨s, Seq.nil⟩, hterm⟩) (by simp only [Seq.take_nil, Seq.ofList_nil]),
     haltMass_congr_eq (k s) (PMF.pure s)
-      (e₂ := ⟨⟨s, Seq.nil⟩, hterm⟩) (by simpa using hdrop)]
+      (e₂ := ⟨⟨s, Seq.nil⟩, hterm⟩) (by simp only [Seq.drop_zero])]
   -- Each `haltMass` from a Dirac source on `⟨s,nil⟩` is `next ⟨s,nil⟩ none`.
   unfold Scheduler.haltMass
   rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState,
@@ -2249,12 +2250,12 @@ private theorem WeakScheduler.endState_suf (e : AlterSeq State Label)
 
 /-- The concatenation of two terminating executions `f₁`, `f₂`: start at
 `f₁.init`, follow `f₁`'s transitions then `f₂`'s (as lists). -/
-private noncomputable def WeakScheduler.concat
+noncomputable def WeakScheduler.concat
     (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
     AlterSeq State Label :=
   ⟨f₁.1.init, Seq.ofList (f₁.1.trans.toList f₁.2 ++ f₂.1.trans.toList f₂.2)⟩
 
-private theorem WeakScheduler.concat_terminates
+theorem WeakScheduler.concat_terminates
     (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
     (WeakScheduler.concat f₁ f₂).trans.Terminates :=
   Stream'.Seq.terminates_ofList _
@@ -2376,6 +2377,171 @@ private theorem WeakScheduler.length_pre (e : {e : AlterSeq State Label // e.tra
   rw [length_ofList, WeakScheduler.take_eq_toList_take e.1.trans e.2 j,
     List.length_take, Stream'.Seq.length_toList]
   omega
+
+open Classical in
+/-- **Generalized bind/compose integration identity.** The fully-general bijection core: a
+test `F` on the *whole* halting execution (not just its end-state) integrated against the
+halt-mass of `bind σ k` (from `μ_init`) equals the convolution over the split point, with `F`
+evaluated at the concatenation `concat f₁ f₂` of each prefix/suffix pair. The split↔pair
+reindexing is `(f₁, f₂) ↦ (concat f₁ f₂, |f₁|)`. This refines `bind_compose_integrate` (which is
+the end-state-test special case) and supports trace-restricted tests via `WeakScheduler.concat`'s
+trace decomposition. -/
+theorem Scheduler.bind_compose_integrate_gen {sys : LabelledSystem State Label}
+    (σ : Scheduler sys.toSystem) (k : State → Scheduler sys.toSystem)
+    (μ_init : PMF State) (F : {e : AlterSeq State Label // e.trans.Terminates} → ENNReal) :
+    (∑' e, (Scheduler.bind σ k).haltMass μ_init e * F e)
+      = ∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+          σ.haltMass μ_init f₁ *
+            ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+              (k (f₁.1.endState f₁.2)).haltMass (PMF.pure (f₁.1.endState f₁.2)) f₂
+                * F ⟨WeakScheduler.concat f₁ f₂, WeakScheduler.concat_terminates f₁ f₂⟩ := by
+  classical
+  -- Off-diagonal vanishing: `k s'` from a Dirac at `s` ignores executions not starting at `s`.
+  have hoff : ∀ (s : State) (f₂ : {e : AlterSeq State Label // e.trans.Terminates}),
+      f₂.1.init ≠ s → (k s).haltMass (PMF.pure s) f₂ = 0 := by
+    intro s f₂ hne
+    unfold Scheduler.haltMass
+    rw [ProbabilisticExecution.probOf_init_factor (k s) (PMF.pure s) f₂.1 f₂.2,
+      PMF.pure_apply_of_ne _ _ hne, zero_mul, zero_mul]
+  -- Recast the RHS as a single `tsum` over the pair type.
+  rw [show (∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+        σ.haltMass μ_init f₁ *
+          ∑' f₂ : {e : AlterSeq State Label // e.trans.Terminates},
+            (k (f₁.1.endState f₁.2)).haltMass (PMF.pure (f₁.1.endState f₁.2)) f₂
+              * F ⟨WeakScheduler.concat f₁ f₂, WeakScheduler.concat_terminates f₁ f₂⟩)
+      = ∑' p : {e : AlterSeq State Label // e.trans.Terminates} ×
+          {e : AlterSeq State Label // e.trans.Terminates},
+          σ.haltMass μ_init p.1
+            * (k (p.1.1.endState p.1.2)).haltMass (PMF.pure (p.1.1.endState p.1.2)) p.2
+            * F ⟨WeakScheduler.concat p.1 p.2, WeakScheduler.concat_terminates p.1 p.2⟩ from by
+    rw [ENNReal.tsum_prod']
+    refine tsum_congr fun f₁ => ?_
+    rw [← ENNReal.tsum_mul_left]
+    exact tsum_congr fun f₂ => by ring]
+  simp_rw [Scheduler.bind_haltMass σ k μ_init, Finset.sum_mul]
+  -- Step 2a: turn each `Finset.range` sum into a capped `tsum`.
+  rw [show (∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+      ∑ i ∈ Finset.range (e.1.trans.length e.2 + 1),
+        σ.haltMass μ_init ⟨⟨e.1.init, Seq.ofList (Seq.take i e.1.trans)⟩,
+            Stream'.Seq.terminates_ofList _⟩ *
+          (k (WeakScheduler.stateAfter e.1 i)).haltMass
+            (PMF.pure (WeakScheduler.stateAfter e.1 i))
+            ⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+              WeakScheduler.drop_terminates e.2 i⟩ *
+          F e)
+    = ∑' e : {e : AlterSeq State Label // e.trans.Terminates}, ∑' i : ℕ,
+        (if i ≤ e.1.trans.length e.2 then
+          σ.haltMass μ_init ⟨⟨e.1.init, Seq.ofList (Seq.take i e.1.trans)⟩,
+              Stream'.Seq.terminates_ofList _⟩ *
+            (k (WeakScheduler.stateAfter e.1 i)).haltMass
+              (PMF.pure (WeakScheduler.stateAfter e.1 i))
+              ⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+                WeakScheduler.drop_terminates e.2 i⟩ *
+            F e
+          else 0) from
+    tsum_congr fun e => by
+      rw [tsum_eq_sum (s := Finset.range (e.1.trans.length e.2 + 1)) (fun i hi => by
+        rw [Finset.mem_range, Nat.lt_succ_iff] at hi; rw [if_neg hi])]
+      exact (Finset.sum_congr rfl (fun i hi => by
+        rw [Finset.mem_range, Nat.lt_succ_iff] at hi; rw [if_pos hi])).symm]
+  -- Step 2b: combine into a single `tsum` over `{e//T} × ℕ`.
+  rw [← ENNReal.tsum_prod (f := fun (e : {e : AlterSeq State Label // e.trans.Terminates})
+      (i : ℕ) =>
+      (if i ≤ e.1.trans.length e.2 then
+        σ.haltMass μ_init ⟨⟨e.1.init, Seq.ofList (Seq.take i e.1.trans)⟩,
+            Stream'.Seq.terminates_ofList _⟩ *
+          (k (WeakScheduler.stateAfter e.1 i)).haltMass
+            (PMF.pure (WeakScheduler.stateAfter e.1 i))
+            ⟨⟨WeakScheduler.stateAfter e.1 i, e.1.trans.drop i⟩,
+              WeakScheduler.drop_terminates e.2 i⟩ *
+          F e
+        else 0))]
+  -- Step 2c: reindex by the bijection `(f₁, f₂) ↦ (concat f₁ f₂, |f₁|)`.
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (fun p => (⟨WeakScheduler.concat p.1.1 p.1.2, WeakScheduler.concat_terminates p.1.1 p.1.2⟩,
+      p.1.1.1.trans.length p.1.1.2)) ?_ ?_ ?_
+  · -- hinj : injective on the support of the pair-summand
+    rintro ⟨⟨f₁, f₂⟩, hp⟩ ⟨⟨f₁', f₂'⟩, hp'⟩ hii
+    simp only [Function.mem_support, ne_eq] at hp hp'
+    have hc : f₂.1.init = f₁.1.endState f₁.2 := by
+      by_contra hne
+      exact hp (by rw [hoff (f₁.1.endState f₁.2) f₂ hne, mul_zero, zero_mul])
+    have hc' : f₂'.1.init = f₁'.1.endState f₁'.2 := by
+      by_contra hne
+      exact hp' (by rw [hoff (f₁'.1.endState f₁'.2) f₂' hne, mul_zero, zero_mul])
+    simp only [Prod.mk.injEq] at hii
+    obtain ⟨hconcat, hleneq⟩ := hii
+    have hcc : WeakScheduler.concat f₁ f₂ = WeakScheduler.concat f₁' f₂' :=
+      Subtype.ext_iff.mp hconcat
+    have hf₁ : f₁ = f₁' := by
+      apply Subtype.ext
+      have hinit : f₁.1.init = f₁'.1.init := by
+        have : (WeakScheduler.concat f₁ f₂).init = (WeakScheduler.concat f₁' f₂').init := by
+          rw [hcc]
+        exact this
+      have htrans : f₁.1.trans = f₁'.1.trans := by
+        rw [← WeakScheduler.take_concat f₁ f₂, ← WeakScheduler.take_concat f₁' f₂',
+          hleneq, hcc]
+      exact AlterSeq.ext_of hinit htrans
+    have hf₂ : f₂ = f₂' := by
+      apply Subtype.ext
+      have htrans : f₂.1.trans = f₂'.1.trans := by
+        rw [← WeakScheduler.drop_concat f₁ f₂, ← WeakScheduler.drop_concat f₁' f₂',
+          hleneq, hcc]
+      have hinit : f₂.1.init = f₂'.1.init := by
+        rw [hc, hc', ← hf₁]
+      exact AlterSeq.ext_of hinit htrans
+    simp only [hf₁, hf₂]
+  · -- hf : support ⊆ range i
+    rintro ⟨e, j⟩ hq
+    simp only [Function.mem_support, ne_eq] at hq
+    have hjle : j ≤ e.1.trans.length e.2 := by
+      by_contra hlt
+      exact hq (if_neg hlt)
+    rw [if_pos hjle] at hq
+    set pre : {e : AlterSeq State Label // e.trans.Terminates} :=
+      ⟨⟨e.1.init, Seq.ofList (Seq.take j e.1.trans)⟩, Stream'.Seq.terminates_ofList _⟩ with hpredef
+    set suf : {e : AlterSeq State Label // e.trans.Terminates} :=
+      ⟨⟨WeakScheduler.stateAfter e.1 j, e.1.trans.drop j⟩,
+        WeakScheduler.drop_terminates e.2 j⟩ with hsufdef
+    have hcs : WeakScheduler.concat pre suf = e.1 := WeakScheduler.concat_split e j
+    have hlen : pre.1.trans.length pre.2 = j := WeakScheduler.length_pre e j hjle
+    have hpreend : pre.1.endState pre.2 = WeakScheduler.stateAfter e.1 j := by
+      rw [← WeakScheduler.stateAfter_concat pre suf, hlen,
+        WeakScheduler.stateAfter_congr hcs j]
+    have hconcat_eq : (⟨WeakScheduler.concat pre suf, WeakScheduler.concat_terminates pre suf⟩
+        : {e : AlterSeq State Label // e.trans.Terminates}) = e := Subtype.ext hcs
+    refine ⟨⟨(pre, suf), ?_⟩, ?_⟩
+    · simp only [Function.mem_support, ne_eq]
+      rw [hpreend, hconcat_eq]
+      exact hq
+    · apply Prod.ext
+      · exact Subtype.ext hcs
+      · exact hlen
+  · -- hfg : f (i x) = g x
+    rintro ⟨⟨f₁, f₂⟩, hx⟩
+    simp only [Function.mem_support, ne_eq] at hx
+    have hcomp : f₂.1.init = f₁.1.endState f₁.2 := by
+      by_contra hne
+      exact hx (by
+        rw [hoff (f₁.1.endState f₁.2) f₂ hne, mul_zero, zero_mul])
+    have hcap : f₁.1.trans.length f₁.2
+        ≤ (WeakScheduler.concat f₁ f₂).trans.length (WeakScheduler.concat_terminates f₁ f₂) := by
+      rw [WeakScheduler.length_concat]; exact Nat.le_add_right _ _
+    simp only
+    rw [if_pos hcap, WeakScheduler.stateAfter_concat]
+    have hpre : (⟨(WeakScheduler.concat f₁ f₂).init,
+          Seq.ofList (Seq.take (f₁.1.trans.length f₁.2)
+            (WeakScheduler.concat f₁ f₂).trans)⟩ : AlterSeq State Label) = f₁.1 := by
+      rw [WeakScheduler.take_concat]
+      rfl
+    have hsuf : (⟨f₁.1.endState f₁.2,
+          (WeakScheduler.concat f₁ f₂).trans.drop (f₁.1.trans.length f₁.2)⟩
+          : AlterSeq State Label) = f₂.1 := by
+      rw [WeakScheduler.drop_concat, ← hcomp]
+    rw [Scheduler.haltMass_congr_eq σ μ_init hpre,
+      Scheduler.haltMass_congr_eq (k (f₁.1.endState f₁.2))
+        (PMF.pure (f₁.1.endState f₁.2)) hsuf]
 
 open Classical in
 /-- **Bind/compose integration identity** (the split↔pair reindexing core of the
