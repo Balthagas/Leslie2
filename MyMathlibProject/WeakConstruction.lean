@@ -3378,80 +3378,6 @@ theorem LabelledSystem.traceProb_eq_zero_of_not_terminates
     exact Stream'.Seq.terminates_filter _ _ e.2.1
   exact tsum_empty
 
-/-- **The mixture-realization core of `expand_traceProb_eq`** (the `lower_labProb_eq_aux`
-analogue, at the trace level `g = 1`). The total `probOf`-mass that the expanded
-`sys`-execution assigns to *tight* `sys`-executions with external trace `ofList L` equals
-the total `probOf`-mass that `pe'` assigns to *tight* `sys^w`-histories with external trace
-`ofList L`.
-
-This is the headline trace-equality. The proof route (see `expand_extLabMass_eq` /
-`expand_traceProb_eq_hExt`): under `hExt` (`pe'` schedules only external weak steps, so its
-label list = its external trace) reduce both sides to the external level mass and prove the
-`g`-indexed invariant `expand.extLabMass L g = pe'.hsLabMass L g` by induction on `L`
-(the `lower_labProb_eq_aux` analogue under stutter — the pe'-side is integrated at the
-hyperStep boundary `ν'` via `hsLabMass`, not the post-τ result, since the two differ by one
-post-τ at general `g`); the `g = 1` slice gives the trace-equality. Then a Phase-2 WLOG
-drops `hExt` (normalizing internal weak steps into the next external step's pre-τ via
-`weakTau_trans`). -/
-theorem expand_traceProb_tight_tsum_eq (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (L : List Label) :
-    (∑' e : {e : AlterSeq State Label //
-        e.trans.Terminates ∧ sys.trace e = Seq.ofList L ∧ sys.IsTight e},
-        (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ :
-          ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1)
-      = ∑' E : {e : AlterSeq State Label //
-          e.trans.Terminates ∧ sys^w.trace e = Seq.ofList L ∧ sys^w.IsTight e},
-          pe'.probOf E.1 E.2.1 := by
-  classical
-  -- Both sides are `traceProb`s at `Seq.ofList L`: the LHS for the expanded `sys`-execution,
-  -- the RHS literally the definition of `sys^w.traceProb pe' (Seq.ofList L)`.
-  have hLHS : (∑' e : {e : AlterSeq State Label //
-        e.trans.Terminates ∧ sys.trace e = Seq.ofList L ∧ sys.IsTight e},
-        (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ :
-          ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1)
-      = sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (Seq.ofList L) := rfl
-  have hRHS : (∑' E : {e : AlterSeq State Label //
-          e.trans.Terminates ∧ sys^w.trace e = Seq.ofList L ∧ sys^w.IsTight e},
-          pe'.probOf E.1 E.2.1)
-      = sys^w.traceProb pe' (Seq.ofList L) := rfl
-  rw [hLHS, hRHS]
-  -- RESIDUAL: `sys.traceProb ⟨pure init, expand⟩ (ofList L) = sys^w.traceProb pe' (ofList L)`.
-  -- Under `hExt` this is exactly `expand_traceProb_eq_hExt` (proven modulo the inductive
-  -- STEP of `expand_extLabMass_eq` — the `lower_kernel_g_sum` analogue under stutter). The
-  -- general statement here additionally needs the Phase-2 WLOG dropping `hExt`
-  -- (normalizing internal weak steps into the next external step's pre-τ via
-  -- `weakTau_trans`). Both pieces are pending; see `expand_extLabMass_eq`.
-  sorry
-
-/-- **Trace preservation for `Scheduler.expand`** (the M2 core, TO BE PROVEN):
-the expanded `sys`-execution has the same trace distribution as `pe'`. Proven by
-grouping both `traceProb`s by external trace and matching per `sys^w`-execution,
-using a.s.-termination of the witnesses (mass preservation) and
-`hyperStep_marginal_decomp` for the external steps. -/
-theorem expand_traceProb_eq (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (τ : Seq Label) :
-    sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ τ
-      = sys^w.traceProb pe' τ := by
-  classical
-  -- Infinite traces: both sides are `0` (no finite execution has an infinite trace).
-  by_cases hτ : τ.Terminates
-  · -- Finite trace: write `τ = ofList L` and reduce to the external-trace level mass.
-    obtain ⟨L, rfl⟩ : ∃ L : List Label, τ = Seq.ofList L :=
-      ⟨τ.toList hτ, (Stream'.Seq.ofList_toList τ hτ).symm⟩
-    -- Reformulate both sides as the `g = 1` slice of the external-trace level mass,
-    -- i.e. the total `probOf`-mass over tight, trace-`L` executions.
-    rw [sys.traceProb_eq_extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ L,
-        sys^w.traceProb_eq_extLabMass pe' L,
-        sys.extLabMass_eq_tight_tsum ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ L
-          (fun _ => 1),
-        sys^w.extLabMass_eq_tight_tsum pe' L (fun _ => 1)]
-    simp only [mul_one]
-    exact expand_traceProb_tight_tsum_eq sys pe' h_init L
-  · rw [LabelledSystem.traceProb_eq_zero_of_not_terminates sys _ τ hτ,
-      LabelledSystem.traceProb_eq_zero_of_not_terminates sys^w pe' τ hτ]
-
 /-- Under `hExt` (`pe'` schedules only external labels), the one-step kernel of
 `pe'` at an internal label is `0`: every `some (l, μ)` with `l` internal is
 outside the scheduler support, so contributes `0`. -/
@@ -4187,34 +4113,6 @@ theorem expandK_Z_mul {State Label : Type}
   rw [ENNReal.tsum_comm]
   refine tsum_congr (fun p => ?_)
   rw [← ENNReal.tsum_mul_left]
-
-/-- **Expansion existence (the M2 core).** Every probabilistic execution of
-`sys^w` from the Dirac initial state is matched, trace-distribution-wise, by a
-probabilistic execution of `sys`. Assembled from `Scheduler.expand` and
-`expand_traceProb_eq`. -/
-theorem expand_exists (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem)
-    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) :
-    ∃ pe : ProbabilisticExecution sys.toSystem,
-      pe.initState = PMF.pure sys.toSystem.init ∧
-      ∀ τ, sys.traceProb pe τ = sys^w.traceProb pe' τ :=
-  ⟨⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩, rfl,
-    fun τ => expand_traceProb_eq sys pe' h_init τ⟩
-
-/-- **Hard direction of `weakClosure_traceProb_eq`**: every trace distribution
-achievable by `sys^w` is achievable by `sys`. Reduces to `expand_exists`. -/
-theorem weakClosure_traceProb_superset (sys : LabelledSystem State Label) :
-    achievableTraceDists sys^w ⊆ achievableTraceDists sys := by
-  rintro D ⟨pe', h_init, hpe'⟩
-  obtain ⟨pe, hpe_init, hpe_trace⟩ := expand_exists sys pe' h_init
-  exact ⟨pe, hpe_init, fun τ => (hpe_trace τ).trans (hpe' τ)⟩
-
-/-- **Weak-closure construction preserves trace distributions.** -/
-theorem weakClosure_traceProb_eq (sys : LabelledSystem State Label) :
-    achievableTraceDists sys = achievableTraceDists sys^w :=
-  Set.Subset.antisymm
-    (weakClosure_traceProb_subset sys)
-    (weakClosure_traceProb_superset sys)
 
 /-- **Reconstruction of a terminating sequence from its `j`-split.** `e.trans` is the
 `ofList`-prefix of its first `j` transitions appended to the drop of the rest. -/
@@ -6787,5 +6685,113 @@ theorem Scheduler.weakChain_traceProb_extTrace (sys : LabelledSystem State Label
   · -- (ii) every halting execution has the external trace `extTrace steps`
     intro e hne
     exact Scheduler.weakChain_halting_trace sys steps s hv e hne
+
+/-! ### Trace-equality (general) and the M2 goal theorems
+
+These sit last: `expand_traceProb_tight_tsum_eq` is the only remaining `sorry` (the Phase-2
+WLOG dropping `hExt`); `expand_traceProb_eq`/`expand_exists`/`weakClosure_*` are the M2 goals
+that consume it. Everything above is the construction + the (axiom-clean) hExt trace-equality. -/
+
+/-- **The mixture-realization core of `expand_traceProb_eq`** (the `lower_labProb_eq_aux`
+analogue, at the trace level `g = 1`). The total `probOf`-mass that the expanded
+`sys`-execution assigns to *tight* `sys`-executions with external trace `ofList L` equals
+the total `probOf`-mass that `pe'` assigns to *tight* `sys^w`-histories with external trace
+`ofList L`.
+
+This is the headline trace-equality. The proof route (see `expand_extLabMass_eq` /
+`expand_traceProb_eq_hExt`): under `hExt` (`pe'` schedules only external weak steps, so its
+label list = its external trace) reduce both sides to the external level mass and prove the
+`g`-indexed invariant `expand.extLabMass L g = pe'.hsLabMass L g` by induction on `L`
+(the `lower_labProb_eq_aux` analogue under stutter — the pe'-side is integrated at the
+hyperStep boundary `ν'` via `hsLabMass`, not the post-τ result, since the two differ by one
+post-τ at general `g`); the `g = 1` slice gives the trace-equality. Then a Phase-2 WLOG
+drops `hExt` (normalizing internal weak steps into the next external step's pre-τ via
+`weakTau_trans`). -/
+theorem expand_traceProb_tight_tsum_eq (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (L : List Label) :
+    (∑' e : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = Seq.ofList L ∧ sys.IsTight e},
+        (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ :
+          ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1)
+      = ∑' E : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys^w.trace e = Seq.ofList L ∧ sys^w.IsTight e},
+          pe'.probOf E.1 E.2.1 := by
+  classical
+  -- Both sides are `traceProb`s at `Seq.ofList L`: the LHS for the expanded `sys`-execution,
+  -- the RHS literally the definition of `sys^w.traceProb pe' (Seq.ofList L)`.
+  have hLHS : (∑' e : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = Seq.ofList L ∧ sys.IsTight e},
+        (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ :
+          ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1)
+      = sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ (Seq.ofList L) := rfl
+  have hRHS : (∑' E : {e : AlterSeq State Label //
+          e.trans.Terminates ∧ sys^w.trace e = Seq.ofList L ∧ sys^w.IsTight e},
+          pe'.probOf E.1 E.2.1)
+      = sys^w.traceProb pe' (Seq.ofList L) := rfl
+  rw [hLHS, hRHS]
+  -- RESIDUAL: `sys.traceProb ⟨pure init, expand⟩ (ofList L) = sys^w.traceProb pe' (ofList L)`.
+  -- Under `hExt` this is exactly `expand_traceProb_eq_hExt` (proven modulo the inductive
+  -- STEP of `expand_extLabMass_eq` — the `lower_kernel_g_sum` analogue under stutter). The
+  -- general statement here additionally needs the Phase-2 WLOG dropping `hExt`
+  -- (normalizing internal weak steps into the next external step's pre-τ via
+  -- `weakTau_trans`). Both pieces are pending; see `expand_extLabMass_eq`.
+  sorry
+
+/-- **Trace preservation for `Scheduler.expand`** (the M2 core, TO BE PROVEN):
+the expanded `sys`-execution has the same trace distribution as `pe'`. Proven by
+grouping both `traceProb`s by external trace and matching per `sys^w`-execution,
+using a.s.-termination of the witnesses (mass preservation) and
+`hyperStep_marginal_decomp` for the external steps. -/
+theorem expand_traceProb_eq (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) (τ : Seq Label) :
+    sys.traceProb ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ τ
+      = sys^w.traceProb pe' τ := by
+  classical
+  -- Infinite traces: both sides are `0` (no finite execution has an infinite trace).
+  by_cases hτ : τ.Terminates
+  · -- Finite trace: write `τ = ofList L` and reduce to the external-trace level mass.
+    obtain ⟨L, rfl⟩ : ∃ L : List Label, τ = Seq.ofList L :=
+      ⟨τ.toList hτ, (Stream'.Seq.ofList_toList τ hτ).symm⟩
+    -- Reformulate both sides as the `g = 1` slice of the external-trace level mass,
+    -- i.e. the total `probOf`-mass over tight, trace-`L` executions.
+    rw [sys.traceProb_eq_extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ L,
+        sys^w.traceProb_eq_extLabMass pe' L,
+        sys.extLabMass_eq_tight_tsum ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ L
+          (fun _ => 1),
+        sys^w.extLabMass_eq_tight_tsum pe' L (fun _ => 1)]
+    simp only [mul_one]
+    exact expand_traceProb_tight_tsum_eq sys pe' h_init L
+  · rw [LabelledSystem.traceProb_eq_zero_of_not_terminates sys _ τ hτ,
+      LabelledSystem.traceProb_eq_zero_of_not_terminates sys^w pe' τ hτ]
+
+/-- **Expansion existence (the M2 core).** Every probabilistic execution of
+`sys^w` from the Dirac initial state is matched, trace-distribution-wise, by a
+probabilistic execution of `sys`. Assembled from `Scheduler.expand` and
+`expand_traceProb_eq`. -/
+theorem expand_exists (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (h_init : pe'.initState = PMF.pure sys^w.toSystem.init) :
+    ∃ pe : ProbabilisticExecution sys.toSystem,
+      pe.initState = PMF.pure sys.toSystem.init ∧
+      ∀ τ, sys.traceProb pe τ = sys^w.traceProb pe' τ :=
+  ⟨⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩, rfl,
+    fun τ => expand_traceProb_eq sys pe' h_init τ⟩
+
+/-- **Hard direction of `weakClosure_traceProb_eq`**: every trace distribution
+achievable by `sys^w` is achievable by `sys`. Reduces to `expand_exists`. -/
+theorem weakClosure_traceProb_superset (sys : LabelledSystem State Label) :
+    achievableTraceDists sys^w ⊆ achievableTraceDists sys := by
+  rintro D ⟨pe', h_init, hpe'⟩
+  obtain ⟨pe, hpe_init, hpe_trace⟩ := expand_exists sys pe' h_init
+  exact ⟨pe, hpe_init, fun τ => (hpe_trace τ).trans (hpe' τ)⟩
+
+/-- **Weak-closure construction preserves trace distributions.** -/
+theorem weakClosure_traceProb_eq (sys : LabelledSystem State Label) :
+    achievableTraceDists sys = achievableTraceDists sys^w :=
+  Set.Subset.antisymm
+    (weakClosure_traceProb_subset sys)
+    (weakClosure_traceProb_superset sys)
 
 end PLTS
