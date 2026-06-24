@@ -5,6 +5,7 @@ import MyMathlibProject.PmfUtils
 import MyMathlibProject.PostTauAccounting
 import MyMathlibProject.SeqHelper
 import MyMathlibProject.Simulation
+import MyMathlibProject.TightTrace
 import MyMathlibProject.TraceProbBound
 import MyMathlibProject.WeakConstruction
 import MyMathlibProject.WeakStep
