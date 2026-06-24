@@ -2675,6 +2675,8 @@ noncomputable def Scheduler.postTauDrawW {sys : LabelledSystem State Label}
     (hT : E'.trans.Terminates) (l : Label) (h : AlterSeq State Label) :
     PMF State → ENNReal := fun μ =>
   pe'.scheduler.next E' (some (l, μ)) *
+    (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+       (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist h.init else 0) *
     (if hh : h.trans.Terminates then
        (⟨PMF.pure h.init, Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
           : ProbabilisticExecution sys.toSystem).probOf h hh
@@ -2696,10 +2698,14 @@ theorem Scheduler.postTauDrawW_tsum_ne_top {sys : LabelledSystem State Label}
       ≤ ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ)) := by
         refine ENNReal.tsum_le_tsum (fun μ => ?_)
         unfold Scheduler.postTauDrawW
-        refine mul_le_of_le_one_right' ?_
-        split
-        · exact le_trans (ProbabilisticExecution.probOf_le_init _ _ _) (PMF.coe_le_one _ _)
-        · exact zero_le_one
+        rw [mul_assoc]
+        refine mul_le_of_le_one_right' (mul_le_one' ?_ ?_)
+        · split
+          · exact PMF.coe_le_one _ _
+          · exact zero_le_one
+        · split
+          · exact le_trans (ProbabilisticExecution.probOf_le_init _ _ _) (PMF.coe_le_one _ _)
+          · exact zero_le_one
     _ ≤ ∑' opt, pe'.scheduler.next E' opt :=
         ENNReal.tsum_comp_le_tsum_of_injective (f := fun μ : PMF State => some (l, μ))
           (fun _ _ h => (Prod.mk.inj (Option.some.inj h)).2) _
@@ -2766,13 +2772,13 @@ theorem Scheduler.postTauDrawW_eq {sys : LabelledSystem State Label}
     (he' : e'.trans.Terminates) (he'_init : e'.init = ν') (μ : PMF State) :
     Scheduler.postTauDrawW pe' E' hT l e' μ
       = pe'.scheduler.next E' (some (l, μ)) *
+          (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+            (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0) *
           (⟨PMF.pure ν', Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
             : ProbabilisticExecution sys.toSystem).probOf e' he' := by
   classical
   unfold Scheduler.postTauDrawW
-  rw [dif_pos he']
-  congr 2
-  rw [he'_init]
+  rw [dif_pos he', he'_init]
 
 open Classical in
 /-- **The `some (l, μ)`-emission of `postTauDraw` as a posterior average** (analogue of
@@ -2817,6 +2823,7 @@ theorem Scheduler.postTauDraw_next_none {sys : LabelledSystem State Label}
     else PMF.pure none) none = _
   rw [dif_pos hT, dif_pos h0, PMF.bind_apply]
 
+open Classical in
 /-- The **post-τ posterior marginal** `postTauZ e'` at a running history `e'` (with boundary
 `ν'`): the prior-weighted sum of the per-`μ` post-τ witnesses' `probOf` (the RHS of the
 filter-marginal). The post-τ analogue of `drawZ`; here the prior is the `(l,·)`-fiber. -/
@@ -2826,6 +2833,8 @@ noncomputable def Scheduler.postTauZ {sys : LabelledSystem State Label}
     (he' : e'.trans.Terminates) : ENNReal :=
   ∑' μ : PMF State,
     pe'.scheduler.next E' (some (l, μ)) *
+      (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+        (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0) *
       (⟨PMF.pure ν', Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
         : ProbabilisticExecution sys.toSystem).probOf e' he'
 
@@ -2909,9 +2918,11 @@ theorem Scheduler.postTauZ_step {sys : LabelledSystem State Label}
   by_cases h0 : Scheduler.postTauZ pe' E' hT l ν' e' h_sq = 0
   · rw [h0, zero_mul]
     have hz : ∀ μ, pe'.scheduler.next E' (some (l, μ)) *
+        (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0) *
         (⟨PMF.pure ν', Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
           : ProbabilisticExecution sys.toSystem).probOf e' h_sq = 0 :=
-      ENNReal.tsum_eq_zero.mp h0
+      ENNReal.tsum_eq_zero.mp (by rw [Scheduler.postTauZ] at h0; exact h0)
     unfold Scheduler.postTauZ
     refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
     rw [htel μ, ← mul_assoc, hz μ, zero_mul]
@@ -2926,21 +2937,25 @@ theorem Scheduler.postTauZ_step {sys : LabelledSystem State Label}
         (Scheduler.postTauDrawW_tsum_ne_top pe' E' hT l e') _ h0']
     unfold Scheduler.postTauZ
     refine tsum_congr (fun μ => ?_)
-    rw [Scheduler.postTauDrawW_eq pe' E' hT l ν' e' h_sq he'_init μ, htel μ, mul_assoc]
+    rw [Scheduler.postTauDrawW_eq pe' E' hT l ν' e' h_sq he'_init μ, htel μ]; ring
 
+open Classical in
 /-- **Base value `Z₀` for `postTauZ`** (analogue of `drawZ_nil`, but NOT `1`). At the empty
 history `⟨ν', nil⟩`, every post-τ witness realizes the empty execution with mass `1` (Dirac
-source `pure ν'`), so the marginal collapses to the FIBER mass `∑' μ, pe'.next E' (some (l, μ))`
-— the prior here is a fiber, not a full PMF. -/
+source `pure ν'`), so the marginal collapses to the postDist-weighted FIBER mass `∑' μ,
+pe'.next E' (some (l, μ)) · postDist_μ(ν')` — the new normaliser `Z₀(ν')` is the reach-`ν'`
+likelihood (the prior here is a fiber, not a full PMF). -/
 theorem Scheduler.postTauZ_nil {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution sys^w.toSystem) (E' : AlterSeq State Label)
     (hT : E'.trans.Terminates) (l : Label) (ν' : State) :
     Scheduler.postTauZ pe' E' hT l ν' ⟨ν', Stream'.Seq.nil⟩ Stream'.Seq.terminates_nil
-      = ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ)) := by
+      = ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ)) *
+          (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+            (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0) := by
   unfold Scheduler.postTauZ
   refine tsum_congr (fun μ => ?_)
   rw [ProbabilisticExecution.probOf_nil]
-  change pe'.scheduler.next E' (some (l, μ)) * (PMF.pure ν') ν' = _
+  change pe'.scheduler.next E' (some (l, μ)) * _ * (PMF.pure ν') ν' = _
   rw [PMF.pure_apply_self, mul_one]
 
 /-- **Telescoping over `ofList`** (analogue of `drawAndRun_probOf_eq_drawZ_ofList`): the
@@ -2993,18 +3008,23 @@ theorem Scheduler.postTauDraw_probOf_eq_postTauZ_ofList {sys : LabelledSystem St
       ⟨ν', (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩
       ⟨ν', Seq.ofList (rest ++ [last])⟩ heq_ext.symm happ_term hFin
 
-/-- **PIECE B (probOf form): the post-τ filter-marginal, MULTIPLIED form.** The fiber mass
-`Z₀ = ∑' μ, pe'.next E' (some (l, μ))` times `postTauDraw.probOf e` (from `pure ν'`) equals the
-prior-weighted sum of the per-`μ` post-τ witnesses' `probOf`. Division-free (the base normaliser
-`Z₀` need not be `1`). -/
+open Classical in
+/-- **PIECE B (probOf form): the post-τ filter-marginal, MULTIPLIED form.** The reach-`ν'`
+likelihood `Z₀(ν') = ∑' μ, pe'.next E' (some (l, μ)) · postDist_μ(ν')` times `postTauDraw.probOf e`
+(from `pure ν'`) equals the prior-weighted sum of the per-`μ` post-τ witnesses' `postDist_μ(ν') ·
+probOf`. Division-free (the base normaliser `Z₀(ν')` need not be `1`). -/
 theorem Scheduler.postTauDraw_probOf_eq {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution sys^w.toSystem) (E' : AlterSeq State Label)
     (hT : E'.trans.Terminates) (l : Label) (ν' : State)
     (e : AlterSeq State Label) (he : e.trans.Terminates) (he_init : e.init = ν') :
-    (∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+    (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+        (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
       (⟨PMF.pure ν', Scheduler.postTauDraw pe' E' l⟩
         : ProbabilisticExecution sys.toSystem).probOf e he
       = ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ))
+          * (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+              (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)
           * (⟨PMF.pure ν', Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
               : ProbabilisticExecution sys.toSystem).probOf e he := by
   classical
@@ -3018,7 +3038,9 @@ theorem Scheduler.postTauDraw_probOf_eq {sys : LabelledSystem State Label}
   have hFin' : (Seq.ofList (e.trans.toList he) : Seq (Label × State)).Terminates :=
     Stream'.Seq.terminates_ofList _
   -- Z₀ as `postTauZ_nil`
-  rw [show (∑' μ, pe'.scheduler.next E' (some (l, μ)))
+  rw [show (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+            (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+              (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0))
         = Scheduler.postTauZ pe' E' hT l ν' ⟨ν', Stream'.Seq.nil⟩ Stream'.Seq.terminates_nil
       from (Scheduler.postTauZ_nil pe' E' hT l ν').symm,
     ProbabilisticExecution.probOf_congr _ e
@@ -3030,17 +3052,22 @@ theorem Scheduler.postTauDraw_probOf_eq {sys : LabelledSystem State Label}
   rw [ProbabilisticExecution.probOf_congr _ e
       ⟨ν', Seq.ofList (e.trans.toList he)⟩ he_ofList he hFin']
 
+open Classical in
 /-- **Per-execution halt-mass marginal of `postTauDraw`, MULTIPLIED form** (the `haltMass`
-analogue of `postTauDraw_probOf_eq`). `Z₀ · postTauDraw.haltMass e = ∑' μ, pe'.next E' (some
-(l, μ)) · (postTauWitness … μ).haltMass e`. Proven by multiplying the multiplied probOf
-marginal by the `none`-emission posterior average; the `postTauZ e` normaliser cancels. -/
+analogue of `postTauDraw_probOf_eq`). `Z₀(ν') · postTauDraw.haltMass e = ∑' μ, pe'.next E' (some
+(l, μ)) · postDist_μ(ν') · (postTauWitness … μ).haltMass e`. Proven by multiplying the multiplied
+probOf marginal by the `none`-emission posterior average; the `postTauZ e` normaliser cancels. -/
 theorem Scheduler.postTauDraw_haltMass_marginal {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution sys^w.toSystem) (E' : AlterSeq State Label)
     (hT : E'.trans.Terminates) (l : Label) (ν' : State)
     (e : {e : AlterSeq State Label // e.trans.Terminates}) (he_init : e.1.init = ν') :
-    (∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+    (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+        (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
         (Scheduler.postTauDraw pe' E' l).haltMass (PMF.pure ν') e
       = ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ))
+          * (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+              (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)
           * (Scheduler.postTauWitness sys (E'.endState hT) l μ).haltMass (PMF.pure ν') e := by
   classical
   unfold Scheduler.haltMass
@@ -3049,13 +3076,17 @@ theorem Scheduler.postTauDraw_haltMass_marginal {sys : LabelledSystem State Labe
     rw [Scheduler.postTauDraw_next_none pe' E' hT l e.1 h0]
     -- LHS = Z₀ · (probOf e · ∑' μ, normalize(W) μ · (postTauWit μ).next none)
     -- regroup: (Z₀ · probOf e) · (∑' μ, normalize(W) μ · K μ) = postTauZ e · (…)
-    rw [show (∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+    rw [show (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+              (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
             ((⟨PMF.pure ν', Scheduler.postTauDraw pe' E' l⟩
                 : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
               * ∑' μ, (PMF.normalize (Scheduler.postTauDrawW pe' E' hT l e.1) h0
                   (Scheduler.postTauDrawW_tsum_ne_top pe' E' hT l e.1)) μ *
                 (Scheduler.postTauWitness sys (E'.endState hT) l μ).next e.1 none)
-          = ((∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+          = ((∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+              (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
               (⟨PMF.pure ν', Scheduler.postTauDraw pe' E' l⟩
                 : ProbabilisticExecution sys.toSystem).probOf e.1 e.2)
             * ∑' μ, (PMF.normalize (Scheduler.postTauDrawW pe' E' hT l e.1) h0
@@ -3064,6 +3095,8 @@ theorem Scheduler.postTauDraw_haltMass_marginal {sys : LabelledSystem State Labe
       Scheduler.postTauDraw_probOf_eq pe' E' hT l ν' e.1 e.2 he_init]
     -- now postTauZ e = ∑' μ, W μ ; recognise the multiplied form and cancel
     rw [show (∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ))
+            * (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)
             * (⟨PMF.pure ν', Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
                 : ProbabilisticExecution sys.toSystem).probOf e.1 e.2)
           = ∑' μ, Scheduler.postTauDrawW pe' E' hT l e.1 μ from
@@ -3073,67 +3106,91 @@ theorem Scheduler.postTauDraw_haltMass_marginal {sys : LabelledSystem State Labe
     rw [ProbabilisticExecution.normalize_cancel _
         (Scheduler.postTauDrawW_tsum_ne_top pe' E' hT l e.1) _ h0]
     refine tsum_congr (fun μ => ?_)
-    rw [Scheduler.postTauDrawW_eq pe' E' hT l ν' e.1 e.2 he_init μ, mul_assoc]
+    rw [Scheduler.postTauDrawW_eq pe' E' hT l ν' e.1 e.2 he_init μ]; ring
   · -- vanishing normaliser: postTauZ e = 0 ⟹ probOf e = 0 and every prior·probOf(e) = 0
     push Not at h0
     have hZ0 : Scheduler.postTauZ pe' E' hT l ν' e.1 e.2 = 0 := by
       rw [Scheduler.postTauZ_eq_tsum_postTauDrawW pe' E' hT l ν' e.1 e.2 he_init]; exact h0
     -- LHS: `Z₀ · probOf e · next none`; `Z₀ · probOf e = postTauZ e = 0`
-    rw [show (∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+    rw [show (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+              (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
             ((⟨PMF.pure ν', Scheduler.postTauDraw pe' E' l⟩
                 : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
               * (Scheduler.postTauDraw pe' E' l).next e.1 none)
-          = ((∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+          = ((∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+              (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
               (⟨PMF.pure ν', Scheduler.postTauDraw pe' E' l⟩
                 : ProbabilisticExecution sys.toSystem).probOf e.1 e.2)
             * (Scheduler.postTauDraw pe' E' l).next e.1 none by ring,
       Scheduler.postTauDraw_probOf_eq pe' E' hT l ν' e.1 e.2 he_init,
       show (∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ))
+            * (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)
             * (⟨PMF.pure ν', Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
                 : ProbabilisticExecution sys.toSystem).probOf e.1 e.2)
           = Scheduler.postTauZ pe' E' hT l ν' e.1 e.2 from rfl,
       hZ0, zero_mul]
     -- RHS: every term `prior·(postTauWit μ).haltMass e = prior·probOf(e)·next none = 0`
     have hz : ∀ μ, pe'.scheduler.next E' (some (l, μ)) *
+        (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0) *
         (⟨PMF.pure ν', Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
           : ProbabilisticExecution sys.toSystem).probOf e.1 e.2 = 0 :=
-      ENNReal.tsum_eq_zero.mp hZ0
+      ENNReal.tsum_eq_zero.mp (by rw [Scheduler.postTauZ] at hZ0; exact hZ0)
     refine (ENNReal.tsum_eq_zero.mpr (fun μ => ?_)).symm
     change pe'.scheduler.next E' (some (l, μ)) *
+        (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0) *
         ((⟨PMF.pure ν', Scheduler.postTauWitness sys (E'.endState hT) l μ⟩
           : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
             * (Scheduler.postTauWitness sys (E'.endState hT) l μ).next e.1 none) = 0
     rw [← mul_assoc, hz μ, zero_mul]
 
+open Classical in
 /-- **PIECE B (pushforward form): the post-τ filter-marginal `g`-integral, MULTIPLIED form.**
-`Z₀ · postTauDraw.pushforward g = ∑' μ, pe'.next E' (some (l, μ)) · (postTauWitness … μ).pushforward
-g`, where `Z₀ = ∑' μ, pe'.next E' (some (l, μ))` is the fiber mass. Obtained from
-`postTauDraw_haltMass_marginal` by `∑'_e` + `ENNReal.tsum_comm`. -/
+`Z₀(ν') · postTauDraw.pushforward g = ∑' μ, pe'.next E' (some (l, μ)) · postDist_μ(ν') ·
+(postTauWitness … μ).pushforward g`, where `Z₀(ν') = ∑' μ, pe'.next E' (some (l, μ)) ·
+postDist_μ(ν')` is the reach-`ν'` likelihood. Obtained from `postTauDraw_haltMass_marginal` by
+`∑'_e` + `ENNReal.tsum_comm`. -/
 theorem Scheduler.postTauDraw_pushforward {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution sys^w.toSystem) (E' : AlterSeq State Label)
     (hT : E'.trans.Terminates) (l : Label) (ν' : State) (g : State → ENNReal) :
-    (∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+    (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+        (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
         (∑' e, (Scheduler.postTauDraw pe' E' l).haltMass (PMF.pure ν') e * g (e.1.endState e.2))
       = ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ))
+          * (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+              (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)
           * (∑' e, (Scheduler.postTauWitness sys (E'.endState hT) l μ).haltMass
               (PMF.pure ν') e * g (e.1.endState e.2)) := by
   classical
   rw [← ENNReal.tsum_mul_left]
   have hterm : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
-      (∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+      (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+          (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+            (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
           ((Scheduler.postTauDraw pe' E' l).haltMass (PMF.pure ν') e * g (e.1.endState e.2))
         = ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ))
+            * (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)
             * ((Scheduler.postTauWitness sys (E'.endState hT) l μ).haltMass
                 (PMF.pure ν') e * g (e.1.endState e.2)) := by
     intro e
     by_cases hinit : e.1.init = ν'
-    · rw [show (∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+    · rw [show (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+              (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
               ((Scheduler.postTauDraw pe' E' l).haltMass (PMF.pure ν') e * g (e.1.endState e.2))
-            = ((∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+            = ((∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+                (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+                  (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
                 (Scheduler.postTauDraw pe' E' l).haltMass (PMF.pure ν') e) * g (e.1.endState e.2)
             by ring,
         Scheduler.postTauDraw_haltMass_marginal pe' E' hT l ν' e hinit, ← ENNReal.tsum_mul_right]
-      exact tsum_congr (fun μ => by rw [mul_assoc])
+      exact tsum_congr (fun μ => by ring)
     · -- off-boundary `e`: both halt masses vanish (Dirac source `pure ν'`)
       have hlhs : (Scheduler.postTauDraw pe' E' l).haltMass (PMF.pure ν') e = 0 := by
         unfold Scheduler.haltMass
@@ -3208,12 +3265,14 @@ theorem Scheduler.segContPush_eq {sys : LabelledSystem State Label}
   refine tsum_congr (fun opt => ?_)
   rw [hend]
 
+open Classical in
 /-- **PIECE C: segment pushforward (MULTIPLIED form).** Integrating a test `g` against the
 halting end-state of `segmentScheduler pe' ν' l E' μ_ig` (run from the Dirac source `pure ν'`),
-scaled by the fiber mass `Z₀ = ∑' μ, pe'.next E' (some (l, μ))`, equals the prior-weighted
-post-τ-witness pushforward of the per-`σ` continuation `segContPush`. Derivation:
-`bind_compose_integrate` (peel the post-τ draw) → PIECE A on the inner draw (`segContPush_eq`)
-→ PIECE B (`postTauDraw_pushforward`, multiplied form) to factor the fiber-mass out.
+scaled by the reach-`ν'` likelihood `Z₀(ν') = ∑' μ, pe'.next E' (some (l, μ)) · postDist_μ(ν')`,
+equals the prior-weighted (with `postDist_μ(ν')`) post-τ-witness pushforward of the per-`σ`
+continuation `segContPush`. Derivation: `bind_compose_integrate` (peel the post-τ draw) → PIECE A
+on the inner draw (`segContPush_eq`) → PIECE B (`postTauDraw_pushforward`, multiplied form) to
+factor the reach-`ν'` likelihood out.
 
 The remaining work for the trace-equality induction (NOT done here): split each `opt` inside
 `segContPush` into `some (l', μ')` (→ `hsExpect σ l' μ' g` via `preHsWitness_pushforward`) and
@@ -3223,10 +3282,14 @@ theorem Scheduler.segment_pushforward {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution sys^w.toSystem) (ν' : State) (l : Label)
     (E' : AlterSeq State Label) (μ_ig : PMF State) (hT : E'.trans.Terminates)
     (g : State → ENNReal) :
-    (∑' μ, pe'.scheduler.next E' (some (l, μ))) *
+    (∑' μ, pe'.scheduler.next E' (some (l, μ)) *
+        (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
         (∑' e, (Scheduler.segmentScheduler pe' ν' l E' μ_ig).haltMass (PMF.pure ν') e
             * g (e.1.endState e.2))
       = ∑' μ : PMF State, pe'.scheduler.next E' (some (l, μ))
+          * (if hstep : (¬ sys.internal l) ∧ sys^w.step (E'.endState hT) l μ then
+              (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)
           * (∑' f₁, (Scheduler.postTauWitness sys (E'.endState hT) l μ).haltMass (PMF.pure ν') f₁
               * Scheduler.segContPush pe' l E' g (f₁.1.endState f₁.2)) := by
   classical
@@ -6562,11 +6625,15 @@ theorem segmentScheduler_traceL_pushforward {State Label : Type}
     (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
     (ν' : State) (l' l : Label) (E' : AlterSeq State Label) (μ_ig : PMF State)
     (hT : E'.trans.Terminates) (g : State → ENNReal) :
-    (∑' μ, pe'.scheduler.next E' (some (l', μ))) *
+    (∑' μ, pe'.scheduler.next E' (some (l', μ)) *
+        (if hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT) l' μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)) *
         (∑' e : {e : AlterSeq State Label // e.trans.Terminates},
           (Scheduler.segmentScheduler pe' ν' l' E' μ_ig).haltMass (PMF.pure ν') e
             * (if sys.trace e.1 = Seq.ofList [l] then g (e.1.endState e.2) else 0))
       = ∑' μ : PMF State, pe'.scheduler.next E' (some (l', μ))
+          * (if hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT) l' μ then
+              (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0)
           * (∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
               (Scheduler.postTauWitness sys (E'.endState hT) l' μ).haltMass (PMF.pure ν') f₁
                 * (∑' μ_n : PMF State,
@@ -6618,6 +6685,8 @@ theorem segmentScheduler_traceL_pushforward {State Label : Type}
     rw [hg', hend'']]
   -- Step 4: rewrite the RHS inner expectation as `g'`, then apply the post-τ marginal pushforward.
   rw [show (∑' (μ : PMF State), pe'.scheduler.next E' (some (l', μ)) *
+        (if hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT) l' μ then
+          (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0) *
         ∑' (f₁ : {e : AlterSeq State Label // e.trans.Terminates}),
           (Scheduler.postTauWitness sys (E'.endState hT) l' μ).haltMass (PMF.pure ν') f₁ *
             ∑' μ_n : PMF State,
@@ -6625,11 +6694,159 @@ theorem segmentScheduler_traceL_pushforward {State Label : Type}
                   (Seq.cons (l', f₁.1.endState f₁.2) Seq.nil)⟩ (some (l, μ_n))
                 * pe'.hsExpect (f₁.1.endState f₁.2) l μ_n g)
       = ∑' (μ : PMF State), pe'.scheduler.next E' (some (l', μ)) *
+          (if hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT) l' μ then
+            (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0) *
           ∑' (f₁ : {e : AlterSeq State Label // e.trans.Terminates}),
             (Scheduler.postTauWitness sys (E'.endState hT) l' μ).haltMass (PMF.pure ν') f₁ *
               g' (f₁.1.endState f₁.2) from
     tsum_congr (fun μ => by rw [hg'])]
   exact Scheduler.postTauDraw_pushforward pe' E' hT l' ν' g'
+
+open Classical in
+/-- **Append-singleton reindex (with a test) for `hsLabMass`-style sums.** Summing the
+prefix-`probOf` times the one-step kernel `kernel E' (l', σ)` times a test `F` evaluated at the
+extended history `⟨E'.init, E'.trans ++ [(l', σ)]⟩`, over `(E', σ)` with `E'` of label list
+`labs`, equals summing `probOf E · F E` over `E` of label list `labs ++ [l']`. The
+`(E', σ) ↔ ⟨E'.init, E'.trans ++ [(l', σ)]⟩` bijection + `probOf_append_singleton`. Mirrors
+`tsum_probOf_labels_append`. -/
+theorem tsum_probOf_kernel_test_append {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (labs : List Label) (l' : Label) (F : AlterSeq State Label → ENNReal) :
+    (∑' E : AlterSeq State Label,
+        dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList (labs ++ [l']))
+          (fun h => pe'.probOf E h.1 * F E) (fun _ => 0))
+      = ∑' (E' : AlterSeq State Label) (σ : State),
+          dite (E'.trans.Terminates ∧ E'.trans.map Prod.fst = Seq.ofList labs)
+            (fun h => pe'.probOf E' h.1 * pe'.kernel E' (l', σ)
+              * F ⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩) (fun _ => 0) := by
+  classical
+  rw [← ENNReal.tsum_prod' (f := fun p : AlterSeq State Label × State =>
+      dite (p.1.trans.Terminates ∧ Seq.map Prod.fst p.1.trans = (↑labs : Seq Label))
+        (fun h => pe'.probOf p.1 h.1 * pe'.kernel p.1 (l', p.2)
+          * F ⟨p.1.init, p.1.trans.append (Seq.cons (l', p.2) Seq.nil)⟩) (fun _ => 0))]
+  set f : AlterSeq State Label → ENNReal := fun E =>
+      dite (E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑(labs ++ [l']) : Seq Label))
+        (fun h => pe'.probOf E h.1 * F E) (fun _ => 0) with hf_def
+  set g : AlterSeq State Label × State → ENNReal := fun p =>
+      dite (p.1.trans.Terminates ∧ Seq.map Prod.fst p.1.trans = (↑labs : Seq Label))
+        (fun h => pe'.probOf p.1 h.1 * pe'.kernel p.1 (l', p.2)
+          * F ⟨p.1.init, p.1.trans.append (Seq.cons (l', p.2) Seq.nil)⟩) (fun _ => 0) with hg_def
+  have g_supp_cond : ∀ p : AlterSeq State Label × State, g p ≠ 0 →
+      p.1.trans.Terminates ∧ Seq.map Prod.fst p.1.trans = (↑labs : Seq Label) := by
+    intro p hp
+    by_contra hcond
+    rw [hg_def] at hp; simp only at hp; rw [dif_neg hcond] at hp; exact hp rfl
+  have f_supp_cond : ∀ E : AlterSeq State Label, f E ≠ 0 →
+      E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑(labs ++ [l']) : Seq Label) := by
+    intro E hE
+    by_contra hcond
+    rw [hf_def] at hE; simp only at hE; rw [dif_neg hcond] at hE; exact hE rfl
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (i := fun x => (⟨(x.1).1.init,
+        (x.1).1.trans.append (Seq.cons (l', (x.1).2) Seq.nil)⟩ : AlterSeq State Label))
+    ?hinj ?hf ?hfg
+  case hinj =>
+    rintro x y hxy
+    have hx := g_supp_cond x.1 x.2
+    have hy := g_supp_cond y.1 y.2
+    have h_trans := congrArg AlterSeq.trans hxy
+    have h_init := congrArg AlterSeq.init hxy
+    simp only at h_trans h_init
+    have h_last := Stream'.Seq.append_singleton_inj_right
+      (x.1).1.trans (y.1).1.trans hx.1 hy.1 _ _ h_trans
+    have hσ : (x.1).2 = (y.1).2 := (Prod.mk.inj h_last).2
+    have h_prev := Stream'.Seq.append_singleton_inj_left
+      (x.1).1.trans (y.1).1.trans hx.1 hy.1 _ _ h_trans
+    refine Subtype.ext (Prod.ext ?_ hσ)
+    exact congrArg₂ AlterSeq.mk h_init h_prev
+  case hf =>
+    intro E hE_mem
+    have hE := f_supp_cond E hE_mem
+    have h_ne : E.trans.toList hE.1 ≠ [] := by
+      intro hnil
+      have h_map_nil : E.trans.map Prod.fst = Stream'.Seq.nil := by
+        have : E.trans = Stream'.Seq.nil := by
+          rw [← Stream'.Seq.ofList_toList E.trans hE.1, hnil, Stream'.Seq.ofList_nil]
+        rw [this, Stream'.Seq.map_nil]
+      rw [hE.2] at h_map_nil
+      have h_len := congrArg Stream'.Seq.length' h_map_nil
+      rw [Stream'.Seq.length'_nil,
+        Stream'.Seq.length'_of_terminates (Stream'.Seq.terminates_ofList _),
+        ← Stream'.Seq.length_toList _ (Stream'.Seq.terminates_ofList _),
+        Stream'.Seq.toList_ofList] at h_len
+      simp only [List.length_append, List.length_singleton, Nat.cast_eq_zero] at h_len
+      omega
+    obtain ⟨prev, last, h_prev_term, h_split, _, _⟩ :=
+      Stream'.Seq.exists_split_last E.trans hE.1 h_ne
+    have h_trans_map := hE.2
+    rw [h_split, Stream'.Seq.map_append, Stream'.Seq.map_cons, Stream'.Seq.map_nil] at h_trans_map
+    rw [show (↑(labs ++ [l']) : Seq Label)
+        = (↑labs : Seq Label).append (Seq.cons l' Seq.nil) by
+        rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]]
+      at h_trans_map
+    have h_prev_map_term : (prev.map Prod.fst).Terminates :=
+      Stream'.Seq.terminates_map_iff.mpr h_prev_term
+    have h_prev_map : prev.map Prod.fst = (↑labs : Seq Label) :=
+      Stream'.Seq.append_singleton_inj_left _ _ h_prev_map_term
+        (Stream'.Seq.terminates_ofList _) _ _ h_trans_map
+    have h_last : last.1 = l' :=
+      Stream'.Seq.append_singleton_inj_right _ _ h_prev_map_term
+        (Stream'.Seq.terminates_ofList _) _ _ h_trans_map
+    have h_app_term : (prev.append (Seq.cons (l', last.2) Seq.nil)).Terminates := by
+      rw [show (Seq.cons (l', last.2) Seq.nil) = Seq.cons last Seq.nil by rw [← h_last]]
+      exact h_split ▸ hE.1
+    have h_factor := ProbabilisticExecution.probOf_append_singleton pe'
+      E.init prev h_prev_term (l', last.2) h_app_term
+    have h_reassemble : (⟨E.init, prev.append (Seq.cons (l', last.2) Seq.nil)⟩
+        : AlterSeq State Label) = E := by
+      refine congrArg₂ AlterSeq.mk rfl ?_
+      rw [show (Seq.cons (l', last.2) Seq.nil) = Seq.cons last Seq.nil by rw [← h_last]]
+      exact h_split.symm
+    -- `g (preimage) = probOf E · F E = f E ≠ 0`.
+    have h_probOf_kernel : pe'.probOf ⟨E.init, prev⟩ h_prev_term
+        * pe'.kernel ⟨E.init, prev⟩ (l', last.2) = pe'.probOf E hE.1 := by
+      rw [← h_factor,
+        ProbabilisticExecution.probOf_congr pe'
+          ⟨E.init, prev.append (Seq.cons (l', last.2) Seq.nil)⟩ E h_reassemble h_app_term hE.1]
+    have hg_eq : g (⟨E.init, prev⟩, last.2) = pe'.probOf E hE.1 * F E := by
+      rw [hg_def]; simp only
+      rw [dif_pos ⟨h_prev_term, h_prev_map⟩]
+      refine congrArg₂ (· * ·) ?_ (congrArg F h_reassemble)
+      exact h_probOf_kernel
+    have hf_eq : f E = pe'.probOf E hE.1 * F E := by
+      rw [hf_def]; simp only; rw [dif_pos hE]
+    have hg_pos : g (⟨E.init, prev⟩, last.2) ≠ 0 := by
+      rw [hg_eq, ← hf_eq]; exact Function.mem_support.mp hE_mem
+    refine ⟨⟨(⟨E.init, prev⟩, last.2), hg_pos⟩, ?_⟩
+    simp only
+    refine congrArg₂ AlterSeq.mk rfl ?_
+    rw [show (Seq.cons (l', last.2) Seq.nil) = Seq.cons last Seq.nil by rw [← h_last]]
+    exact h_split.symm
+  case hfg =>
+    rintro x
+    set E' := (x.1).1 with hE'_def
+    set σ := (x.1).2 with hσ_def
+    have hx := g_supp_cond x.1 x.2
+    have h_g : g x.1 = pe'.probOf E' hx.1 * pe'.kernel E' (l', σ)
+        * F ⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩ := by
+      rw [hg_def]; simp only; rw [dif_pos hx]
+    have h_app_term : (E'.trans.append (Seq.cons (l', σ) Seq.nil)).Terminates :=
+      ⟨_, Stream'.Seq.terminatedAt_append_find hx.1
+        (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil).choose_spec⟩
+    have h_map : Seq.map Prod.fst (E'.trans.append (Seq.cons (l', σ) Seq.nil))
+        = (↑(labs ++ [l']) : Seq Label) := by
+      rw [Stream'.Seq.map_append, Stream'.Seq.map_cons, Stream'.Seq.map_nil, hx.2,
+        Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+    have h_f : f (⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩
+        : AlterSeq State Label)
+        = pe'.probOf ⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩ h_app_term
+          * F ⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩ := by
+      rw [hf_def]; simp only; rw [dif_pos ⟨h_app_term, h_map⟩]
+    change f (⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩
+        : AlterSeq State Label) = g x.1
+    rw [h_f, h_g]
+    rw [ProbabilisticExecution.probOf_append_singleton pe' E'.init E'.trans hx.1 (l', σ)
+      h_app_term]
 
 open Classical in
 /-- **ASSEMBLE half** (nonempty `L'`): collapsing the trace-`L'` continuation kernel `expandK`
@@ -6701,22 +6918,181 @@ theorem hsLabMass_expandK_step {State Label : Type}
         refine tsum_congr (fun μ => ?_)
         rw [hseg_indep ν' (E', μ)])]
     rw [ENNReal.tsum_comm]]
-  -- REMAINING (deep ASSEMBLE collapse), a REINDEX `(E', σ) ↔ E'_full := E'++[(l',σ)]` (LHS `E'`
-  -- has label-list `L'.dropLast`, RHS `E'_full` label-list `L'`). After expanding
-  -- `beliefExpandW L' ν' (E',μ) = [E' tight, L'.dropLast] probOf E' · next(some(l',μ)) · postDist_μ(ν')`
-  -- and swapping, the per-`E'` per-`μ` core is
-  --   `∑' ν', postDist_{l',μ}(ν') · SegMass(ν', E') =? ∑' σ, μ σ · g'(σ)`
-  -- with `g'(σ) = ∑' μ_n, next ⟨E'.init, E'.trans++[(l',σ)]⟩ (some(l,μ_n)) · hsExpect σ l μ_n g`;
-  -- then `∑' μ next(some(l',μ))·μ σ = kernel(E',(l',σ))` and `probOf E' · kernel = probOf E'_full`
-  -- give the RHS. GENUINE BLOCKER: the per-`μ` core needs `SegMass(ν',E') = P_μ(ν')` (the
-  -- *single-μ* post-τ-witness pushforward) so `postTau_marginal_collapse` applies; but `SegMass`
-  -- is the *posterior* `postTauDraw` segment (μ-INDEPENDENT), and `segmentScheduler_traceL_pushforward`
-  -- only gives `Z₀·SegMass = ∑' μ̃ next(some(l',μ̃))·P_μ̃(ν')` (an aggregate over a SECOND index μ̃).
-  -- Substituting yields μ̃≠μ cross post-τ integrals `∑' ν', postDist_μ(ν')·P_μ̃(ν')` that do NOT
-  -- collapse to `∑' σ μ σ·g'`. The missing fact is the posterior↔prior bridge
-  --   `∀ μ, ∑' ν', postDist_{l',μ}(ν') · SegMass(ν',E') = ∑' σ, μ σ · g'(σ)`,
-  -- i.e. soundness of the GAP-2 posterior re-draw — NOT derivable from the provided pieces.
-  sorry
+  -- The post-fix ASSEMBLE: `postDist` now travels with `μ̃`, so the per-`E'` core collapses via
+  -- `segmentScheduler_traceL_pushforward` + `postTau_marginal_collapse` (PER `μ`, no cross-term),
+  -- then the `(E', σ) ↔ E'++[(l',σ)]` reindex (`tsum_probOf_kernel_test_append`) hits the RHS.
+  -- The RHS test `F` (per full history `E_full`), via `dite` on termination.
+  set F : AlterSeq State Label → ENNReal := fun E =>
+    if hE : E.trans.Terminates then
+      ∑' μ_n : PMF State, pe'.scheduler.next E (some (l, μ_n))
+        * pe'.hsExpect (E.endState hE) l μ_n g
+    else 0 with hF
+  -- Reindex the RHS: `∑' E_full [tight L'] probOf · F = ∑' E' σ [tight L'.dropLast] probOf · kernel · F`.
+  have hL'_eq : L'.dropLast ++ [l'] = L' :=
+    List.dropLast_append_getLast? l' (by rw [hL']; rfl)
+  rw [show (∑' (E' : AlterSeq State Label),
+        if h : E'.trans.Terminates ∧ Seq.map Prod.fst E'.trans = ↑L' then
+          pe'.probOf E' h.1 *
+            ∑' (μ_n : PMF State), (pe'.scheduler.next E') (some (l, μ_n))
+              * pe'.hsExpect (E'.endState h.1) l μ_n g
+        else 0)
+      = ∑' (E : AlterSeq State Label),
+          dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList (L'.dropLast ++ [l']))
+            (fun h => pe'.probOf E h.1 * F E) (fun _ => 0) from by
+    rw [hL'_eq]
+    refine tsum_congr (fun E => ?_)
+    by_cases hc : E.trans.Terminates ∧ Seq.map Prod.fst E.trans = (↑L' : Seq Label)
+    · rw [dif_pos hc, dif_pos hc, hF]; simp only [dif_pos hc.1]
+    · rw [dif_neg hc, dif_neg hc]]
+  rw [tsum_probOf_kernel_test_append pe' L'.dropLast l' F]
+  -- Now match the LHS `∑' E' ν' μ` to `∑' E' σ [tight L'.dropLast] probOf · kernel · F⟨…⟩`.
+  refine tsum_congr (fun E' => ?_)
+  by_cases hT : E'.trans.Terminates ∧ E'.trans.map Prod.fst = Seq.ofList L'.dropLast
+  · -- Tight `E'`: collapse the segment via `segmentScheduler_traceL_pushforward` + `postTau`.
+    -- `g'(σ) = F ⟨E'.init, E'.trans++[(l',σ)]⟩` (the segment-collapse test).
+    set g' : State → ENNReal := fun σ =>
+      ∑' μ_n : PMF State,
+        pe'.scheduler.next ⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩ (some (l, μ_n))
+          * pe'.hsExpect σ l μ_n g with hg'
+    have hFeq : ∀ σ : State,
+        F ⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩ = g' σ := by
+      intro σ
+      have happT : (E'.trans.append (Seq.cons (l', σ) Seq.nil)).Terminates :=
+        ⟨_, Stream'.Seq.terminatedAt_append_find hT.1
+          (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil).choose_spec⟩
+      rw [hF]; simp only [dif_pos happT]
+      rw [hg']
+      refine tsum_congr (fun μ_n => ?_)
+      rw [show (⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩
+            : AlterSeq State Label).endState happT = σ from
+        AlterSeq.endState_append_singleton E' hT.1 l' σ]
+    -- RHS for this `E'`: `∑' σ, [tight] probOf E' · kernel E'(l',σ) · F⟨…⟩`. Pull out `probOf E'`.
+    rw [show (∑' σ : State,
+            dite (E'.trans.Terminates ∧ Seq.map Prod.fst E'.trans = (↑L'.dropLast : Seq Label))
+              (fun h => pe'.probOf E' h.1 * pe'.kernel E' (l', σ)
+                * F ⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩) (fun _ => 0))
+          = pe'.probOf E' hT.1 * ∑' σ : State, pe'.kernel E' (l', σ) * g' σ from by
+      rw [← ENNReal.tsum_mul_left]
+      refine tsum_congr (fun σ => ?_)
+      rw [dif_pos hT, hFeq σ]; ring]
+    -- LHS for this `E'`: collapse `∑' ν' μ` to `probOf E' · ∑' σ, kernel E'(l',σ) · g' σ`.
+    -- The (μ-dependent) reach-likelihood factor `postDist_μ(ν')`.
+    set pd : PMF State → State → ENNReal := fun μ ν' =>
+      if hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT.1) l' μ then
+        (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0 with hpd
+    -- The per-`μ` post-τ-witness pushforward of `g'` from boundary `ν'`.
+    set W : PMF State → State → ENNReal := fun μ ν' =>
+      ∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+        (Scheduler.postTauWitness sys (E'.endState hT.1) l' μ).haltMass (PMF.pure ν') f₁
+          * g' (f₁.1.endState f₁.2) with hW
+    -- Step 1: expand `beliefExpandW` (tight `E'`) as `probOf E' · next(some(l',μ)) · pd μ ν'`.
+    have hbel : ∀ (ν' : State) (μ : PMF State),
+        pe'.beliefExpandW L' ν' (E', μ) * SegMass ν' E'
+          = pe'.probOf E' hT.1 *
+              ((pe'.scheduler.next E' (some (l', μ)) * pd μ ν') * SegMass ν' E') := by
+      intro ν' μ
+      rw [pe'.beliefExpandW_eq L' ν' l' hL' (E', μ)]
+      dsimp only
+      rw [dif_pos hT]
+      show _ = pe'.probOf E' hT.1 *
+        ((pe'.scheduler.next E' (some (l', μ)) *
+          (if hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT.1) l' μ then
+            (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0))
+          * SegMass ν' E')
+      by_cases hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT.1) l' μ
+      · rw [dif_pos hstep, dif_pos hstep]; ring
+      · rw [dif_neg hstep, dif_neg hstep]; ring
+    -- Step 2: per `ν'` and `μ`, identify the segment pushforward (postDist bundled with `μ̃`).
+    -- `segmentScheduler_traceL_pushforward`: `Z₀(ν') · SegMass = ∑' μ, next·pd·W`.
+    have hpush : ∀ ν' : State,
+        (∑' μ : PMF State, pe'.scheduler.next E' (some (l', μ)) * pd μ ν') * SegMass ν' E'
+          = ∑' μ : PMF State, pe'.scheduler.next E' (some (l', μ)) * pd μ ν' * W μ ν' := by
+      intro ν'
+      have hps := segmentScheduler_traceL_pushforward pe' hExt ν' l' l E' (PMF.pure ν') hT.1 g
+      rw [hpd, hSegMass, hW, hg']
+      simp only []
+      exact hps
+    -- Step 3: assemble. Pull `probOf E'` out, swap `ν' ↔ μ`, collapse per `μ`.
+    -- Per `ν'`: `∑' μ, beliefExpandW·SegMass = probOf · ∑' μ, next·pd·W`.
+    have hperν' : ∀ ν' : State,
+        (∑' μ : PMF State, pe'.beliefExpandW L' ν' (E', μ) * SegMass ν' E')
+          = pe'.probOf E' hT.1 *
+              ∑' μ : PMF State, pe'.scheduler.next E' (some (l', μ)) * pd μ ν' * W μ ν' := by
+      intro ν'
+      have step1 : (∑' μ : PMF State, pe'.beliefExpandW L' ν' (E', μ) * SegMass ν' E')
+          = pe'.probOf E' hT.1 *
+              ∑' μ : PMF State,
+                pe'.scheduler.next E' (some (l', μ)) * pd μ ν' * SegMass ν' E' := by
+        rw [← ENNReal.tsum_mul_left]
+        refine tsum_congr (fun μ => ?_)
+        rw [hbel ν' μ]
+      rw [step1]
+      refine congrArg _ ?_
+      rw [← hpush ν', ENNReal.tsum_mul_right]
+    calc (∑' (ν' : State) (μ : PMF State), pe'.beliefExpandW L' ν' (E', μ) * SegMass ν' E')
+        = pe'.probOf E' hT.1 *
+            ∑' ν' : State, ∑' μ : PMF State,
+              pe'.scheduler.next E' (some (l', μ)) * pd μ ν' * W μ ν' := by
+          rw [← ENNReal.tsum_mul_left]
+          exact tsum_congr hperν'
+      _ = pe'.probOf E' hT.1 *
+            ∑' μ : PMF State, pe'.scheduler.next E' (some (l', μ)) * ∑' σ : State, μ σ * g' σ := by
+          refine congrArg _ ?_
+          rw [ENNReal.tsum_comm (f := fun ν' μ =>
+            pe'.scheduler.next E' (some (l', μ)) * pd μ ν' * W μ ν')]
+          refine tsum_congr (fun μ => ?_)
+          by_cases hns : pe'.scheduler.next E' (some (l', μ)) = 0
+          · rw [hns]
+            simp only [zero_mul, tsum_zero]
+          · have hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT.1) l' μ :=
+              ⟨hExt E' l' μ ((PMF.mem_support_iff _ _).mpr hns),
+                pe'.step_of_mem_support E' hT.1 l' μ ((PMF.mem_support_iff _ _).mpr hns)⟩
+            rw [show (∑' ν' : State,
+                    pe'.scheduler.next E' (some (l', μ)) * pd μ ν' * W μ ν')
+                  = pe'.scheduler.next E' (some (l', μ)) *
+                      ∑' ν' : State, pd μ ν' * W μ ν' from by
+              rw [← ENNReal.tsum_mul_left]; exact tsum_congr (fun ν' => by ring)]
+            refine congrArg _ ?_
+            rw [hW]
+            rw [show (∑' ν' : State, pd μ ν' *
+                    ∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+                      (Scheduler.postTauWitness sys (E'.endState hT.1) l' μ).haltMass
+                          (PMF.pure ν') f₁ * g' (f₁.1.endState f₁.2))
+                  = ∑' ν' : State,
+                      (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' *
+                      ∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
+                        (Scheduler.postTauWitness sys (E'.endState hT.1) l' μ).haltMass
+                            (PMF.pure ν') f₁ * g' (f₁.1.endState f₁.2) from by
+              refine tsum_congr (fun ν' => ?_)
+              rw [hpd]
+              simp only [dif_pos hstep]]
+            exact Scheduler.postTau_marginal_collapse (E'.endState hT.1) l' μ hstep.2 hstep.1 g'
+      _ = pe'.probOf E' hT.1 * ∑' σ : State, pe'.kernel E' (l', σ) * g' σ := by
+          congr 1
+          unfold ProbabilisticExecution.kernel
+          rw [show (∑' σ : State, (∑' μ : PMF State,
+                  pe'.scheduler.next E' (some (l', μ)) * μ σ) * g' σ)
+                = ∑' μ : PMF State, ∑' σ : State,
+                    pe'.scheduler.next E' (some (l', μ)) * μ σ * g' σ from by
+            rw [show (∑' σ : State, (∑' μ : PMF State,
+                    pe'.scheduler.next E' (some (l', μ)) * μ σ) * g' σ)
+                  = ∑' σ : State, ∑' μ : PMF State,
+                      pe'.scheduler.next E' (some (l', μ)) * μ σ * g' σ from
+                tsum_congr (fun σ => by rw [ENNReal.tsum_mul_right])]
+            rw [ENNReal.tsum_comm]]
+          refine tsum_congr (fun μ => ?_)
+          rw [← ENNReal.tsum_mul_left]
+          exact tsum_congr (fun σ => by ring)
+  · -- Non-tight `E'`: both sides vanish.
+    rw [show (∑' σ : State,
+            dite (E'.trans.Terminates ∧ Seq.map Prod.fst E'.trans = (↑L'.dropLast : Seq Label))
+              (fun h => pe'.probOf E' h.1 * pe'.kernel E' (l', σ)
+                * F ⟨E'.init, E'.trans.append (Seq.cons (l', σ) Seq.nil)⟩) (fun _ => 0)) = 0 from by
+      refine ENNReal.tsum_eq_zero.mpr (fun σ => ?_); rw [dif_neg hT]]
+    refine ENNReal.tsum_eq_zero.mpr (fun ν' => ?_)
+    refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
+    rw [pe'.beliefExpandW_eq L' ν' l' hL' (E', μ)]
+    rw [dif_neg hT, zero_mul]
 
 open Classical in
 /-- **PEEL half**: the trace-`(L' ++ [l])` external level mass of the expanded `sys`-execution
