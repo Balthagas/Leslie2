@@ -1584,6 +1584,126 @@ theorem bind_next_eq_pure_none_of_belief_zero (σ : Scheduler sys.toSystem)
   unfold bind
   simp only [dif_pos hT, dif_neg hZne]
 
+open Classical in
+/-- **`bind` emits nothing at a history `σ` cannot produce while `k` is silent on every
+suffix.** At a terminating history `e`, if
+* the prefix scheduler `σ` (from the Dirac source `pure e.init`) produces all of `e` with
+  probability `0` (`(⟨pure e.init, σ⟩).probOf e hT = 0`) — so the "σ stays active to the end"
+  split is dead — and
+* for every split point `j`, the continuation `k (stateAfter e j)` emits the step `some a`
+  with probability `0` at the remaining suffix `⟨stateAfter e j, drop j⟩`,
+
+then `(bind σ k).next e (some a) = 0`. (When `σ` is internal-only and `e` ends with an external
+transition, the first hypothesis holds; when `k`'s every suffix is past its single external
+emission, the second holds.) -/
+theorem bind_next_some_eq_zero (σ : Scheduler sys.toSystem)
+    (k : State → Scheduler sys.toSystem) (e : AlterSeq State Label) (hT : e.trans.Terminates)
+    (a : Label × PMF State)
+    (hnone : (⟨PMF.pure e.init, σ⟩ : ProbabilisticExecution sys.toSystem).probOf e hT = 0)
+    (hk : ∀ (s : State) (t : Seq (Label × State)), t ≠ Seq.nil →
+      (k s).next ⟨s, t⟩ (some a) = 0) :
+    (bind σ k).next e (some a) = 0 := by
+  classical
+  by_cases hZ : (∑' o, bindWeight σ k e hT o) ≠ 0
+  · -- nonzero belief: cancel the normalizer via `bind_next_smul`.
+    have hsmul := bind_next_smul σ k e hT (some a)
+    have hrhs : (∑' (i : Option ℕ), bindWeight σ k e hT i
+        * (match i with
+            | none => actionBot σ k e hT
+            | some j => actionK k e j : PMF (Option (Label × PMF State))) (some a)) = 0 := by
+      refine ENNReal.tsum_eq_zero.mpr (fun i => ?_)
+      cases i with
+      | none =>
+        have : bindWeight σ k e hT none = 0 := hnone
+        rw [this, zero_mul]
+      | some j =>
+        by_cases hj : j < e.trans.length hT
+        · -- the `j`-suffix `drop j` is non-nil (its head is `e.trans.get? j`), so `k` is silent.
+          have hdrop_ne : e.trans.drop j ≠ Seq.nil := by
+            obtain ⟨x, hx⟩ := Stream'.Seq.lt_length_iff.mp hj
+            intro hnil
+            have h0 : (e.trans.drop j).get? 0 = e.trans.get? j := by
+              rw [Stream'.Seq.drop_get?, Nat.add_zero]
+            rw [hnil, Stream'.Seq.get?_nil] at h0
+            rw [Option.mem_def] at hx
+            rw [hx] at h0
+            exact absurd h0 (by simp)
+          have hact : (actionK k e j : PMF (Option (Label × PMF State))) (some a) = 0 := by
+            change (k (stateAfter e j)).next ⟨stateAfter e j, e.trans.drop j⟩ (some a) = 0
+            exact hk (stateAfter e j) (e.trans.drop j) hdrop_ne
+          rw [hact, mul_zero]
+        · have hbw : bindWeight σ k e hT (some j) = 0 := by
+            change (if _hj : j < e.trans.length hT then _ else 0) = 0
+            rw [dif_neg hj]
+          rw [hbw, zero_mul]
+    rw [hrhs] at hsmul
+    -- `Z * next = 0`, `Z ≠ 0` ⟹ `next = 0`.
+    exact (mul_eq_zero.mp hsmul).resolve_left hZ
+  · -- zero belief: `bind.next e = pure none`, so `next e (some a) = 0`.
+    push Not at hZ
+    have hpure : (bind σ k).next e = PMF.pure none := by
+      have hZne : ¬ (∑' o, bindWeight σ k e hT o) ≠ 0 := by rw [hZ]; exact not_not.mpr rfl
+      unfold bind
+      simp only [dif_pos hT, dif_neg hZne]
+    rw [hpure, PMF.pure_apply, if_neg (by simp)]
+
+open Classical in
+/-- **`bind` emits nothing — split-conditioned form.** Like `bind_next_some_eq_zero`, but the
+continuation hypothesis is conditioned on each *live* split point `j` (a `j` whose prefix
+halt-mass for `σ` is nonzero): the continuation `k` (started at the state `(e.stateAt j).getD
+e.init` reached after `j` transitions) must be silent on the suffix `⟨…, e.trans.drop j⟩`. Phrased
+entirely in public concepts (`stateAt`, `take`, `drop`, `length`) so it can be assembled in
+downstream files; the dead `none`-split is killed by `hnone`. -/
+theorem bind_next_some_eq_zero_of_suffix (σ : Scheduler sys.toSystem)
+    (k : State → Scheduler sys.toSystem) (e : AlterSeq State Label) (hT : e.trans.Terminates)
+    (a : Label × PMF State)
+    (hnone : (⟨PMF.pure e.init, σ⟩ : ProbabilisticExecution sys.toSystem).probOf e hT = 0)
+    (hk : ∀ j, j < e.trans.length hT →
+      σ.haltMass (PMF.pure e.init)
+          ⟨⟨e.init, Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩ ≠ 0 →
+      (k ((e.stateAt j).getD e.init)).next
+          ⟨(e.stateAt j).getD e.init, e.trans.drop j⟩ (some a) = 0) :
+    (bind σ k).next e (some a) = 0 := by
+  classical
+  by_cases hZ : (∑' o, bindWeight σ k e hT o) ≠ 0
+  · have hsmul := bind_next_smul σ k e hT (some a)
+    have hrhs : (∑' (i : Option ℕ), bindWeight σ k e hT i
+        * (match i with
+            | none => actionBot σ k e hT
+            | some j => actionK k e j : PMF (Option (Label × PMF State))) (some a)) = 0 := by
+      refine ENNReal.tsum_eq_zero.mpr (fun i => ?_)
+      cases i with
+      | none =>
+        have : bindWeight σ k e hT none = 0 := hnone
+        rw [this, zero_mul]
+      | some j =>
+        by_cases hbw : bindWeight σ k e hT (some j) = 0
+        · rw [hbw, zero_mul]
+        · -- live split: `j < length` and the prefix halt-mass is nonzero ⟹ `k` is silent.
+          have hj : j < e.trans.length hT := by
+            by_contra hj
+            apply hbw
+            change (if _hj : j < e.trans.length hT then _ else 0) = 0
+            rw [dif_neg hj]
+          have hpre_ne : σ.haltMass (PMF.pure e.init)
+              ⟨⟨e.init, Seq.ofList (e.trans.take j)⟩, Stream'.Seq.terminates_ofList _⟩ ≠ 0 := by
+            intro hpre0
+            apply hbw
+            change (if _hj : j < e.trans.length hT then _ else 0) = 0
+            rw [dif_pos hj, hpre0, zero_mul]
+          have hact : (actionK k e j : PMF (Option (Label × PMF State))) (some a) = 0 := by
+            change (k (stateAfter e j)).next ⟨stateAfter e j, e.trans.drop j⟩ (some a) = 0
+            exact hk j hj hpre_ne
+          rw [hact, mul_zero]
+    rw [hrhs] at hsmul
+    exact (mul_eq_zero.mp hsmul).resolve_left hZ
+  · push Not at hZ
+    have hpure : (bind σ k).next e = PMF.pure none := by
+      have hZne : ¬ (∑' o, bindWeight σ k e hT o) ≠ 0 := by rw [hZ]; exact not_not.mpr rfl
+      unfold bind
+      simp only [dif_pos hT, dif_neg hZne]
+    rw [hpure, PMF.pure_apply, if_neg (by simp)]
+
 end Scheduler
 
 namespace WeakScheduler
