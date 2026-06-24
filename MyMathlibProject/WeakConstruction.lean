@@ -6334,35 +6334,17 @@ theorem Scheduler.drawAndRun_next_some_eq_zero {sys : LabelledSystem State Label
     rw [this, PMF.pure_apply, if_neg (by simp)]
 
 open Classical in
-/-- **Lemma B2 (drawAndRun pushforward).** `drawAndRun pe' E''`, run from the Dirac source
+/-- **`drawAndRun` pushforward.** `drawAndRun pe' E''`, run from the Dirac source
 `pure (E''.endState)` and restricted (via the trace indicator) to halting executions whose
 external trace is `[l]`, integrates `g` to the `pe'`-emission-weighted hyper-step expectation:
 the sum over drawn `μ` of `pe'.next E'' (some (l, μ)) * hsExpect (E''.endState) l μ g`.
 
-OBSTACLE (genuine, not a missing-lemma gap): `drawAndRun pe' E''` is a **constant mixture**
-of schedulers, *not* a `Scheduler.bind`. Concretely (confirmed by unfolding `.next`):
-`(drawAndRun pe' E'').next e = (pe'.scheduler.next E'').bind (fun opt => (runOpt opt).next e)`
-where `runOpt (some (l,μ)) = preHsWitness sys (E''.endState) l μ` and `runOpt none = haltNow`,
-and crucially the draw weights `pe'.scheduler.next E''` are **independent of the running
-prefix `e`** (they always query the FIXED clean history `E''`, never the running history).
-Such a scheduler RE-DRAWS `opt ~ pe'.next E''` at every prefix. Its halting mass is therefore
-NOT the `pe'.next E''`-weighted sum of the component halt masses: `probOf` is a *product* of
-per-step kernels, each kernel is the mixture `∑ opt, w opt * (runOpt opt).kernel`, and for
-executions with ≥ 2 transitions the product of mixtures ≠ mixture of products (a hidden-Markov
-re-draw, not a single up-front draw). ⚠️ WHETHER B2 IS TRUE IS OPEN — and it bears on
-SOUNDNESS. For a weak step with nontrivial pre-τ (≥2 concrete steps) under a *randomized*
-`pe'.next E''` (≥2 options with disjoint pre-τ trajectories), the re-draw underweights the
-natural trajectory: e.g. with two ½-mass options, `drawAndRun.probOf(a-path) = ½·½ = ¼` while
-the committed mixture gives `½·1 = ½`; the missing ¼ leaks to spurious partial-halts (trace
-`[]`) unless recovered by cross-trajectory paths (whose contribution depends on
-`preHsWitness_b`'s OFF-trajectory behavior — unknown). If the cross-paths do NOT recover the
-mass, B2 is FALSE and the construction is unsound for randomized `pe'` + nontrivial pre-τ (a
-7th flaw, same class as the prior memoryless-re-draw-under-stutter issues: `lower` avoids it
-because `distHyperKernel` is ONE concrete step + `beliefTC` is a posterior; here the multi-step
-witness is re-driven from the FIXED prior `pe'.next E''`). MUST be verified concretely (a
-randomized-`pe'` + 2-step-pre-τ counterexample, à la `FlawCheck`) before relying on it. B1
-(`preHsWitness_pushforward`) and E (`postTau_marginal_collapse`) — the single-witness pieces —
-are fully proven above and reusable regardless of B2's fate. -/
+`drawAndRun` is the trajectory-conditioned Bayesian posterior (the re-draw fix), so the
+keystone posterior-bind filter-marginal `drawAndRun_probOf_eq` applies with normaliser
+`Z₀ = 1` (its prior `pe'.next E''` is a full PMF): `drawAndRun.haltMass` equals the
+`pe'.next E''`-weighted sum of the component witnesses' halt masses. The trace-`[l]` indicator
+then splits per option — `some (l', μ)` (external by `hExt`) contributes `hsExpect` via
+`preHsWitness_pushforward`, while `none` halts at trace `[]` ≠ `[l]` and drops out. -/
 theorem Scheduler.drawAndRun_pushforward {sys : LabelledSystem State Label}
     (pe' : ProbabilisticExecution sys^w.toSystem)
     (hExt : ∀ E l μ, some (l, μ) ∈ (pe'.scheduler.next E).support → ¬ sys.internal l)
