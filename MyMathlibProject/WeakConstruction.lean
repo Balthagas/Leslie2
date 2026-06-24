@@ -7648,6 +7648,147 @@ theorem expandK_eq_tight_tsum {State Label : Type}
   rw [← expandCont_extLabMass_eq_expandK pe' hExt L' ν' l' l g,
     sys.extLabMass_eq_tight_tsum ⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩ [l] g]
 
+/-- **Uniqueness of the filter-tight split.** If `A ++ B = C ++ D` with `A.filter P = C.filter P`
+and both `A`, `C` empty-or-ending in a `P`-element, then `A = C` (and hence `B = D`). The longer
+prefix's surplus has empty `P`-filter (all `¬P`), but it would carry that prefix's external last
+element, contradicting it ending in a `P`-element — so the prefixes coincide. -/
+private theorem List.filter_tight_split_unique {α : Type} (P : α → Bool) :
+    ∀ A B C D : List α, A ++ B = C ++ D → A.filter P = C.filter P →
+      (∀ y, A.getLast? = some y → P y) → (∀ y, C.getLast? = some y → P y) → A = C := by
+  -- WLOG handle the case where one is a prefix of the other.
+  have key : ∀ A C M : List α, C = A ++ M → A.filter P = C.filter P →
+      (∀ y, C.getLast? = some y → P y) → M = [] := by
+    intro A C M hC hfilt hClast
+    rw [hC, List.filter_append] at hfilt
+    have hMfilt : M.filter P = [] := by
+      have : A.filter P ++ M.filter P = A.filter P ++ [] := by
+        rw [List.append_nil]; exact hfilt.symm
+      exact List.append_cancel_left this
+    by_contra hMne
+    -- `M`'s last element fails `P` (its filter is empty), but it is `C`'s last (so passes `P`).
+    obtain ⟨ml, hml⟩ : ∃ ml, M.getLast? = some ml := by
+      cases hm : M.getLast? with
+      | none => exact absurd (List.getLast?_eq_none_iff.mp hm) hMne
+      | some ml => exact ⟨ml, rfl⟩
+    have hml_mem : ml ∈ M := List.mem_of_getLast? hml
+    have hml_notP : ¬ P ml := by
+      intro hP
+      have : ml ∈ M.filter P := List.mem_filter.mpr ⟨hml_mem, hP⟩
+      rw [hMfilt] at this; exact absurd this (List.not_mem_nil)
+    have hClast_eq : C.getLast? = some ml := by
+      rw [hC, List.getLast?_append_of_ne_nil _ hMne, hml]
+    exact hml_notP (hClast ml hClast_eq)
+  intro A B C D hABCD hfilt hAlast hClast
+  rcases List.append_eq_append_iff.mp hABCD with ⟨M, hC, _⟩ | ⟨M, hA, _⟩
+  · -- `C = A ++ M`.
+    rw [hC, key A C M hC hfilt hClast, List.append_nil]
+  · -- `A = C ++ M`.
+    rw [hA, key C A M hA hfilt.symm hAlast, List.append_nil]
+
+open Classical in
+/-- **Tight-execution split at the last external transition.** A tight trace-`(L' ++ [l])`
+execution `e` splits as `e.trans.toList = preList ++ segList` where `⟨e.init, ofList preList⟩` is
+a tight trace-`L'` prefix (its last transition external) and `⟨ν', ofList segList⟩` (any source
+`ν'`) is a tight trace-`[l]` segment whose only external transition is its last. The split is the
+shortest prefix whose external sub-list is `L'`. Built on `List.exists_filter_split_tight`. -/
+theorem LabelledSystem.tight_split_last_external {State Label : Type}
+    (sys : LabelledSystem State Label) (e : AlterSeq State Label) (h : e.trans.Terminates)
+    (L' : List Label) (l : Label)
+    (htr : sys.trace e = Seq.ofList (L' ++ [l])) (htight : sys.IsTight e) :
+    ∃ preList segList : List (Label × State),
+      e.trans.toList h = preList ++ segList ∧
+      (∀ x, preList.getLast? = some x → ¬ sys.internal x.1) ∧
+      sys.trace ⟨e.init, Seq.ofList preList⟩ = Seq.ofList L' ∧
+      sys.trace ⟨e.init, Seq.ofList segList⟩ = Seq.ofList [l] ∧
+      sys.IsTight ⟨e.init, Seq.ofList segList⟩ ∧
+      segList ≠ [] := by
+  classical
+  set Ltr := e.trans.toList h with hLtr
+  set P : Label × State → Bool := fun p => decide (¬ sys.internal p.1) with hP
+  -- `trace ⟨s, ofList K⟩ = ofList ((K.filter P).map fst)` for any list `K` and source `s`.
+  have htrace_ofList : ∀ (s : State) (K : List (Label × State)),
+      sys.trace ⟨s, Seq.ofList K⟩ = Seq.ofList ((K.filter P).map Prod.fst) := by
+    intro s K
+    change ((Seq.ofList K).filter (fun p => ¬ sys.internal p.1)).map Prod.fst = _
+    rw [Stream'.Seq.filter_ofList_pub, Seq.map_ofList_pub]
+  -- The external transition sub-list `T := Ltr.filter P` has fst-image `L' ++ [l]`.
+  have hfst_filter : (Ltr.filter P).map Prod.fst = L' ++ [l] := by
+    have htraceL : sys.trace ⟨e.init, Seq.ofList Ltr⟩ = Seq.ofList (L' ++ [l]) := by
+      rw [hLtr]
+      have : (⟨e.init, Seq.ofList (e.trans.toList h)⟩ : AlterSeq State Label) = e := by
+        obtain ⟨ei, et⟩ := e
+        simp only [AlterSeq.mk.injEq, true_and]
+        exact Stream'.Seq.ofList_toList et h
+      rw [this]; exact htr
+    rw [htrace_ofList] at htraceL
+    exact Stream'.Seq.ofList_injective htraceL
+  -- `T = Tpre ++ [tlast]`: split off the last external transition (fst = `l`).
+  obtain ⟨Tpre, tlast, hTsplit⟩ :
+      ∃ Tpre tlast, Ltr.filter P = Tpre ++ [tlast] := by
+    have hTne : Ltr.filter P ≠ [] := by
+      intro hc; rw [hc, List.map_nil] at hfst_filter; exact absurd hfst_filter.symm (by simp)
+    exact ⟨(Ltr.filter P).dropLast, (Ltr.filter P).getLast hTne,
+      (List.dropLast_append_getLast hTne).symm⟩
+  have hTpre_fst : Tpre.map Prod.fst = L' := by
+    rw [hTsplit, List.map_append, List.map_singleton] at hfst_filter
+    exact List.append_inj_left' hfst_filter (by simp)
+  have htlast_l : tlast.1 = l := by
+    rw [hTsplit, List.map_append, List.map_singleton] at hfst_filter
+    have := List.append_inj_right' hfst_filter (by simp)
+    simpa using this
+  -- Split `Ltr` into `preList ++ segList` via the filter split.
+  obtain ⟨preList, segList, hLtr_split, hpre_filt, hseg_filt, hpre_tight⟩ :=
+    List.exists_filter_split_tight P Ltr Tpre [tlast] (by simp) hTsplit
+  refine ⟨preList, segList, hLtr_split, ?_, ?_, ?_, ?_, ?_⟩
+  · -- `preList`'s last transition is external (it satisfies `P`).
+    intro x hx
+    have := hpre_tight x hx
+    simpa [hP] using this
+  · -- trace of the prefix is `ofList L'`.
+    rw [htrace_ofList, hpre_filt, hTpre_fst]
+  · -- trace of the segment is `ofList [l]`.
+    rw [htrace_ofList, hseg_filt, List.map_singleton, htlast_l]
+  · -- the segment is tight: its trace is `[l]` and its last transition is external.
+    -- `segList` is a nonempty suffix of `Ltr`, so its last transition equals `e`'s last,
+    -- which is external by `e`'s tightness.
+    have hsegne : segList ≠ [] := by
+      intro hc; rw [hc, List.filter_nil] at hseg_filt; exact absurd hseg_filt.symm (by simp)
+    have hseg_last : segList.getLast? = Ltr.getLast? := by
+      rw [hLtr_split, List.getLast?_append_of_ne_nil _ hsegne]
+    have hLtr_last_ext : ∀ ll, Ltr.getLast? = some ll → ¬ sys.internal ll.1 := by
+      intro ll hll
+      exact sys.tight_getLast_external e h htight ll (by rw [← hLtr]; exact hll)
+    -- `traceTightLabs [l] (segList.map fst)`: filter is `[l]`, last label external.
+    refine ((sys.tight_iff (Seq.ofList [l]) ⟨e.init, Seq.ofList segList⟩
+      (Stream'.Seq.terminates_ofList _)).mpr ?_).2
+    -- the label list is `segList.map fst` (since `(ofList segList).toList = segList`).
+    have hlabs : (((⟨e.init, Seq.ofList segList⟩ : AlterSeq State Label).trans.toList
+        (Stream'.Seq.terminates_ofList _)).map Prod.fst) = segList.map Prod.fst := by
+      change ((Seq.ofList segList).toList _).map Prod.fst = _
+      rw [Stream'.Seq.toList_ofList]
+    rw [LabelledSystem.traceTightLabs, hlabs]
+    refine ⟨?_, ?_⟩
+    · -- filter of label list is `ofList [l]`.
+      have hcomm : (Seq.ofList (segList.map Prod.fst)).filter (fun lab => ¬ sys.internal lab)
+          = Seq.ofList (((segList.map Prod.fst).filter
+              (fun lab => decide (¬ sys.internal lab)))) := Stream'.Seq.filter_ofList_pub _ _
+      rw [hcomm]
+      congr 1
+      have : (segList.map Prod.fst).filter (fun lab => decide (¬ sys.internal lab))
+          = (segList.filter P).map Prod.fst := by rw [List.filter_map]; rfl
+      rw [this, hseg_filt, List.map_singleton, htlast_l]
+    · -- last label is external.
+      intro lab hlab
+      rw [List.getLast?_map, hseg_last] at hlab
+      cases hgl : Ltr.getLast? with
+      | none => rw [hgl] at hlab; simp at hlab
+      | some ll =>
+        rw [hgl, Option.map_some] at hlab
+        rw [← Option.some.inj hlab]
+        exact hLtr_last_ext ll hgl
+  · -- segList is nonempty (its filter `[tlast]` is nonempty).
+    intro hc; rw [hc, List.filter_nil] at hseg_filt; exact absurd hseg_filt.symm (by simp)
+
 open Classical in
 /-- **PEEL half**: the trace-`(L' ++ [l])` external level mass of the expanded `sys`-execution
 factors as the trace-`L'` external level mass of the continuation `expandK`. The tight-exec
@@ -7692,28 +7833,407 @@ theorem expand_extLabMass_peel {State Label : Type}
     intro e'
     rw [expandK_eq_tight_tsum pe' hExt L' (e'.1.endState e'.2.1) l' l g, ENNReal.tsum_mul_left]
   rw [tsum_congr hRHS]
-  -- REMAINING: the tight-exec bijection `{tight trace-(L'++[l])} ≃ Σ (prefix : tight trace-L')
-  -- (segment : tight trace-[l])`, with `probOf(concat) = probOf(prefix) · expandCont.probOf(seg)`
-  -- (`expand_probOf_segment_factor`) and `concat.end = seg.end`. Forward map = concatenation
-  -- (`isTight_append` + `trace_append`); inverse = `exists_filter_split_tight` +
-  -- `tight_singleton_prefix_internal`. The flatten/reindexing then closes the goal.
-  sorry
+  -- Abbreviations for the two summands.
+  set Top : Type := {e : AlterSeq State Label //
+      e.trans.Terminates ∧ sys.trace e = Seq.ofList (L' ++ [l]) ∧ sys.IsTight e} with hTop
+  set Pre : Type := {e : AlterSeq State Label //
+      e.trans.Terminates ∧ sys.trace e = Seq.ofList L' ∧ sys.IsTight e} with hPre
+  set Seg : Type := {e : AlterSeq State Label //
+      e.trans.Terminates ∧ sys.trace e = Seq.ofList [l] ∧ sys.IsTight e} with hSeg
+  set fTop : Top → ENNReal := fun e => PE.probOf e.1 e.2.1 * g (e.1.endState e.2.1) with hfTop
+  set fSig : ((_ : Pre) × Seg) → ENNReal :=
+    fun p => PE.probOf p.1.1 p.1.2.1
+      * ((⟨PMF.pure (p.1.1.endState p.1.2.1),
+            Scheduler.expandCont sys pe' L' (p.1.1.endState p.1.2.1) l'⟩
+          : ProbabilisticExecution sys.toSystem).probOf p.2.1 p.2.2.1
+        * g (p.2.1.endState p.2.2.1)) with hfSig
+  -- Fold the RHS double-tsum into a single tsum over the sigma type.
+  rw [show (∑' (b : Pre) (seg : Seg),
+          PE.probOf b.1 b.2.1
+            * ((⟨PMF.pure (b.1.endState b.2.1),
+                  Scheduler.expandCont sys pe' L' (b.1.endState b.2.1) l'⟩
+                : ProbabilisticExecution sys.toSystem).probOf seg.1 seg.2.1
+              * g (seg.1.endState seg.2.1)))
+        = ∑' p : ((_ : Pre) × Seg), fSig p from (ENNReal.tsum_sigma' fSig).symm]
+  -- The bijection: split each tight trace-`(L'++[l])` execution at its last external transition.
+  symm
+  -- For a tight `e : Top`, choose its split via `tight_split_last_external`.
+  have hsplit : ∀ e : Top, ∃ preList segList : List (Label × State),
+      e.1.trans.toList e.2.1 = preList ++ segList ∧
+      (∀ x, preList.getLast? = some x → ¬ sys.internal x.1) ∧
+      sys.trace ⟨e.1.init, Seq.ofList preList⟩ = Seq.ofList L' ∧
+      sys.trace ⟨e.1.init, Seq.ofList segList⟩ = Seq.ofList [l] ∧
+      sys.IsTight ⟨e.1.init, Seq.ofList segList⟩ ∧ segList ≠ [] :=
+    fun e => sys.tight_split_last_external e.1 e.2.1 L' l e.2.2.1 e.2.2.2
+  -- The chosen split lists and their properties, per `e : Top`.
+  set preL : Top → List (Label × State) := fun e => (hsplit e).choose with hpreL
+  set segL : Top → List (Label × State) := fun e => (hsplit e).choose_spec.choose with hsegL
+  have hspec : ∀ e : Top,
+      e.1.trans.toList e.2.1 = preL e ++ segL e ∧
+      (∀ x, (preL e).getLast? = some x → ¬ sys.internal x.1) ∧
+      sys.trace ⟨e.1.init, Seq.ofList (preL e)⟩ = Seq.ofList L' ∧
+      sys.trace ⟨e.1.init, Seq.ofList (segL e)⟩ = Seq.ofList [l] ∧
+      sys.IsTight ⟨e.1.init, Seq.ofList (segL e)⟩ ∧ segL e ≠ [] :=
+    fun e => (hsplit e).choose_spec.choose_spec
+  -- A list whose execution has trace `ofList τ` and whose last transition is external is tight.
+  have htight_ofList : ∀ (s : State) (K : List (Label × State)) (τ : List Label),
+      sys.trace ⟨s, Seq.ofList K⟩ = Seq.ofList τ →
+      (∀ x, K.getLast? = some x → ¬ sys.internal x.1) →
+      sys.IsTight ⟨s, Seq.ofList K⟩ := by
+    intro s K τ htrK hlast
+    refine ((sys.tight_iff (Seq.ofList τ) ⟨s, Seq.ofList K⟩
+      (Stream'.Seq.terminates_ofList _)).mpr ?_).2
+    have hlabs : (((⟨s, Seq.ofList K⟩ : AlterSeq State Label).trans.toList
+        (Stream'.Seq.terminates_ofList _)).map Prod.fst) = K.map Prod.fst := by
+      change ((Seq.ofList K).toList _).map Prod.fst = _
+      rw [Stream'.Seq.toList_ofList]
+    rw [LabelledSystem.traceTightLabs, hlabs]
+    refine ⟨?_, ?_⟩
+    · -- filter of label list = `ofList τ`: this is exactly `trace` of `⟨s, ofList K⟩`.
+      have hfm : (Seq.ofList (K.map Prod.fst)).filter (fun lab => ¬ sys.internal lab)
+          = ((Seq.ofList K).filter (fun p => ¬ sys.internal p.1)).map Prod.fst := by
+        rw [Stream'.Seq.filter_ofList_pub, Stream'.Seq.filter_ofList_pub, Seq.map_ofList_pub]
+        congr 1
+        rw [List.filter_map]; rfl
+      rw [hfm]; exact htrK
+    · -- last label external.
+      intro lab hlab
+      rw [List.getLast?_map] at hlab
+      cases hgl : K.getLast? with
+      | none => rw [hgl] at hlab; simp at hlab
+      | some x =>
+        rw [hgl, Option.map_some] at hlab
+        rw [← Option.some.inj hlab]
+        exact hlast x hgl
+  -- The prefix execution `⟨e.init, ofList (preL e)⟩ : Pre`.
+  have hpreExec : ∀ e : Top, (Seq.ofList (preL e) : Seq (Label × State)).Terminates ∧
+      sys.trace ⟨e.1.init, Seq.ofList (preL e)⟩ = Seq.ofList L' ∧
+      sys.IsTight ⟨e.1.init, Seq.ofList (preL e)⟩ := by
+    intro e
+    exact ⟨Stream'.Seq.terminates_ofList _, (hspec e).2.2.1,
+      htight_ofList e.1.init (preL e) L' (hspec e).2.2.1 (hspec e).2.1⟩
+  -- The segment execution `⟨ν', ofList (segL e)⟩ : Seg`, where `ν' = preExec.end`.
+  set preExec : Top → Pre := fun e =>
+    ⟨⟨e.1.init, Seq.ofList (preL e)⟩, (hpreExec e).1, (hpreExec e).2.1, (hpreExec e).2.2⟩
+    with hpreExecDef
+  set nu : Top → State := fun e => (preExec e).1.endState (preExec e).2.1 with hnu
+  have hsegExec : ∀ e : Top, (Seq.ofList (segL e) : Seq (Label × State)).Terminates ∧
+      sys.trace ⟨nu e, Seq.ofList (segL e)⟩ = Seq.ofList [l] ∧
+      sys.IsTight ⟨nu e, Seq.ofList (segL e)⟩ := by
+    intro e
+    refine ⟨Stream'.Seq.terminates_ofList _, (hspec e).2.2.2.1, ?_⟩
+    exact sys.isTight_init_irrel e.1.init (nu e) _ (hspec e).2.2.2.2.1
+  set segExec : Top → Seg := fun e =>
+    ⟨⟨nu e, Seq.ofList (segL e)⟩, (hsegExec e).1, (hsegExec e).2.1, (hsegExec e).2.2⟩
+    with hsegExecDef
+  -- Reconstruction: every `e : Top` is the concatenation of its split lists.
+  have hrecon : ∀ e : Top,
+      e.1 = ⟨e.1.init, Seq.ofList (preL e ++ segL e)⟩ := by
+    intro e
+    have htrans : e.1.trans = Seq.ofList (preL e ++ segL e) := by
+      conv_lhs => rw [← Stream'.Seq.ofList_toList e.1.trans e.2.1]
+      rw [(hspec e).1]
+    calc e.1 = ⟨e.1.init, e.1.trans⟩ := rfl
+      _ = ⟨e.1.init, Seq.ofList (preL e ++ segL e)⟩ := by rw [htrans]
+  -- The segment is the (init-`ν'`) segment execution; its internal-prefix property.
+  have hseg_int : ∀ e : Top, ∀ (pref : List (Label × State)) (stp : Label × State),
+      pref ++ [stp] <+: segL e → ∀ q ∈ pref, sys.internal q.1 := by
+    intro e pref stp hpf q hq
+    refine sys.tight_singleton_prefix_internal ⟨nu e, Seq.ofList (segL e)⟩
+      (Stream'.Seq.terminates_ofList _) l (hsegExec e).2.1 (hsegExec e).2.2 pref stp ?_ q hq
+    change pref ++ [stp] <+: (Seq.ofList (segL e)).toList _
+    rw [Stream'.Seq.toList_ofList]; exact hpf
+  -- **The unconditional value match**: `fSig ⟨preExec e, segExec e⟩ = fTop e` for every `e`.
+  have hval_gen : ∀ e : Top, fSig ⟨preExec e, segExec e⟩ = fTop e := by
+    intro e
+    simp only [hfSig, hfTop]
+    -- Factor `PE.probOf e.1` through the segment via `expand_probOf_segment_factor`.
+    have hfactor := expand_probOf_segment_factor pe' e.1.init L' l' hL' (preL e) (segL e)
+      (hspec e).2.1 (hspec e).2.2.1 (hseg_int e)
+    have hpreVal : (preExec e).1 = (⟨e.1.init, Seq.ofList (preL e)⟩ : AlterSeq State Label) := rfl
+    have hsegVal : (segExec e).1 = (⟨nu e, Seq.ofList (segL e)⟩ : AlterSeq State Label) := rfl
+    have hABterm : ((Seq.ofList (preL e)).append (Seq.ofList (segL e))).Terminates := by
+      rw [← Stream'.Seq.ofList_append]; exact Stream'.Seq.terminates_ofList _
+    -- Match end-states: `e.1.end = (segExec e).1.end`.
+    have hend : e.1.endState e.2.1 = (segExec e).1.endState (hsegExec e).1 := by
+      have hsplit_end := AlterSeq.endState_append (s := e.1.init) (s' := nu e)
+        (Seq.ofList (preL e)) (Seq.ofList (segL e))
+        (Stream'.Seq.terminates_ofList _) (Stream'.Seq.terminates_ofList _)
+        (by rw [Stream'.Seq.toList_ofList]; exact (hspec e).2.2.2.2.2) hABterm
+      calc e.1.endState e.2.1
+          = (⟨e.1.init, Seq.ofList (preL e ++ segL e)⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_ofList _) :=
+            AlterSeq.endState_congr_pub (hrecon e) _ _
+        _ = (⟨e.1.init, (Seq.ofList (preL e)).append (Seq.ofList (segL e))⟩
+              : AlterSeq State Label).endState hABterm :=
+            AlterSeq.endState_congr_pub
+              (congrArg (AlterSeq.mk e.1.init) (Stream'.Seq.ofList_append _ _)) _ _
+        _ = (⟨nu e, Seq.ofList (segL e)⟩ : AlterSeq State Label).endState
+              (Stream'.Seq.terminates_ofList _) := hsplit_end
+        _ = (segExec e).1.endState (hsegExec e).1 :=
+            AlterSeq.endState_congr_pub hsegVal.symm _ (hsegExec e).1
+    rw [hend]
+    -- Factor the probOf via `expand_probOf_segment_factor` (= `hfactor`).
+    have hprob : PE.probOf e.1 e.2.1
+        = PE.probOf (preExec e).1 (hpreExec e).1
+          * (⟨PMF.pure (nu e), Scheduler.expandCont sys pe' L' (nu e) l'⟩
+              : ProbabilisticExecution sys.toSystem).probOf (segExec e).1 (hsegExec e).1 := by
+      calc PE.probOf e.1 e.2.1
+          = PE.probOf (⟨e.1.init, Seq.ofList (preL e ++ segL e)⟩ : AlterSeq State Label)
+              (Stream'.Seq.terminates_ofList _) :=
+            PE.probOf_congr _ _ (hrecon e) _ _
+        _ = PE.probOf (⟨e.1.init, Seq.ofList (preL e)⟩ : AlterSeq State Label)
+              (Stream'.Seq.terminates_ofList _)
+            * (⟨PMF.pure (nu e), Scheduler.expandCont sys pe' L' (nu e) l'⟩
+                : ProbabilisticExecution sys.toSystem).probOf
+                (⟨nu e, Seq.ofList (segL e)⟩ : AlterSeq State Label)
+                (Stream'.Seq.terminates_ofList _) := by rw [hPE]; exact hfactor
+        _ = PE.probOf (preExec e).1 (hpreExec e).1
+            * (⟨PMF.pure (nu e), Scheduler.expandCont sys pe' L' (nu e) l'⟩
+                : ProbabilisticExecution sys.toSystem).probOf (segExec e).1 (hsegExec e).1 := by
+            rw [PE.probOf_congr (⟨e.1.init, Seq.ofList (preL e)⟩ : AlterSeq State Label)
+                (preExec e).1 hpreVal.symm (Stream'.Seq.terminates_ofList _) (hpreExec e).1,
+              ProbabilisticExecution.probOf_congr _
+                (⟨nu e, Seq.ofList (segL e)⟩ : AlterSeq State Label) (segExec e).1 hsegVal.symm
+                (Stream'.Seq.terminates_ofList _) (hsegExec e).1]
+    rw [hprob]; ring
+  -- The split map.
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (i := fun x => ⟨preExec x.1, segExec x.1⟩) ?hinj ?hf ?hfg
+  case hfg =>
+    rintro ⟨e, he⟩
+    exact hval_gen e
+  case hinj =>
+    rintro ⟨e₁, hx₁⟩ ⟨e₂, hx₂⟩ heq
+    -- Recover `init`, `preL`, `segL` equalities from the sigma equality.
+    have hinit : e₁.1.init = e₂.1.init :=
+      congrArg (fun p => (p.1.1 : AlterSeq State Label).init) heq
+    have hpreEq : preL e₁ = preL e₂ := by
+      have h := congrArg (fun p => (p.1.1 : AlterSeq State Label).trans) heq
+      exact Stream'.Seq.ofList_injective h
+    have hsegEq : segL e₁ = segL e₂ := by
+      have h := congrArg (fun p => (p.2.1 : AlterSeq State Label).trans) heq
+      exact Stream'.Seq.ofList_injective h
+    -- Reconstruct: both are `⟨init, ofList (preL ++ segL)⟩`.
+    refine Subtype.ext (Subtype.ext ?_)
+    rw [hrecon e₁, hrecon e₂, hinit, hpreEq, hsegEq]
+  case hf =>
+    rintro ⟨b, seg⟩ hbseg
+    -- `fSig ≠ 0` forces `seg.init = b.end` (Dirac source `pure b.end`).
+    have hsegInit : seg.1.init = b.1.endState b.2.1 := by
+      by_contra hne
+      apply hbseg
+      simp only [hfSig]
+      have hz : (⟨PMF.pure (b.1.endState b.2.1),
+            Scheduler.expandCont sys pe' L' (b.1.endState b.2.1) l'⟩
+          : ProbabilisticExecution sys.toSystem).probOf seg.1 seg.2.1 = 0 := by
+        rw [ProbabilisticExecution.probOf_init_factor _ (PMF.pure (b.1.endState b.2.1))
+            seg.1 seg.2.1,
+          PMF.pure_apply_of_ne (b.1.endState b.2.1) seg.1.init hne, zero_mul]
+      rw [hz, zero_mul, mul_zero]
+    -- The concatenated execution `e := ⟨b.init, b.trans.append seg.trans⟩`.
+    have hABterm : (b.1.trans.append seg.1.trans).Terminates :=
+      ⟨Nat.find b.2.1 + Nat.find seg.2.1,
+        Stream'.Seq.terminatedAt_append_find b.2.1 (Nat.find_spec seg.2.1)⟩
+    have hseg_ne : seg.1.trans.toList seg.2.1 ≠ [] :=
+      sys.tight_singleton_trans_nonempty seg.1 seg.2.1 l seg.2.2.1
+    -- trace of the concatenation is `ofList (L' ++ [l])`.
+    have htr_e : sys.trace ⟨b.1.init, b.1.trans.append seg.1.trans⟩ = Seq.ofList (L' ++ [l]) := by
+      rw [sys.trace_append b.1.init seg.1.init b.1.trans seg.1.trans b.2.1,
+        b.2.2.1, seg.2.2.1, ← Stream'.Seq.ofList_append]
+    -- tightness of the concatenation.
+    have htight_e : sys.IsTight ⟨b.1.init, b.1.trans.append seg.1.trans⟩ :=
+      sys.isTight_append b.1.init b.1.trans seg.1.trans b.2.1 seg.2.1 hseg_ne
+        (sys.isTight_init_irrel seg.1.init b.1.init seg.1.trans seg.2.2.2)
+    set e : Top := ⟨⟨b.1.init, b.1.trans.append seg.1.trans⟩, hABterm, htr_e, htight_e⟩ with heDef
+    -- The transition list of `e` is `b.trans.toList ++ seg.trans.toList`.
+    have he_toList : e.1.trans.toList e.2.1
+        = b.1.trans.toList b.2.1 ++ seg.1.trans.toList seg.2.1 :=
+      Stream'.Seq.toList_append b.1.trans seg.1.trans b.2.1 seg.2.1 e.2.1
+    -- The chosen split of `e` coincides with `(b.trans.toList, seg.trans.toList)`.
+    set P : Label × State → Bool := fun p => decide (¬ sys.internal p.1) with hP
+    -- The `P`-filter of any `K` with trace-`τ` execution has fst-image `τ`.
+    have hPfilterMap : ∀ (s : State) (K : List (Label × State)) (τ : List Label),
+        sys.trace ⟨s, Seq.ofList K⟩ = Seq.ofList τ → (K.filter P).map Prod.fst = τ := by
+      intro s K τ hK
+      have : Seq.ofList ((K.filter P).map Prod.fst) = Seq.ofList τ := by
+        rw [← Seq.map_ofList_pub, hP, ← Stream'.Seq.filter_ofList_pub]; exact hK
+      exact Stream'.Seq.ofList_injective this
+    have hbtr : sys.trace ⟨b.1.init, Seq.ofList (b.1.trans.toList b.2.1)⟩ = Seq.ofList L' := by
+      rw [Stream'.Seq.ofList_toList]; exact b.2.2.1
+    have hbfilt_len : ((b.1.trans.toList b.2.1).filter P).length = L'.length := by
+      rw [← List.length_map (as := (b.1.trans.toList b.2.1).filter P) Prod.fst,
+        hPfilterMap b.1.init _ L' hbtr]
+    have hprefilt_len : ((preL e).filter P).length = L'.length := by
+      rw [← List.length_map (as := (preL e).filter P) Prod.fst,
+        hPfilterMap e.1.init _ L' (hspec e).2.2.1]
+    -- the two prefix `P`-filters agree (both are the first `|L'|` externals of `e.toList`).
+    have hfilt_eq : (b.1.trans.toList b.2.1).filter P = (preL e).filter P := by
+      have hcat : (b.1.trans.toList b.2.1).filter P ++ (seg.1.trans.toList seg.2.1).filter P
+          = (preL e).filter P ++ (segL e).filter P := by
+        rw [← List.filter_append, ← List.filter_append, ← he_toList, (hspec e).1]
+      exact List.append_inj_left hcat (by rw [hbfilt_len, hprefilt_len])
+    -- `b.toList` and `preL e` are tight prefixes (both end external).
+    have hb_ext : ∀ y, (b.1.trans.toList b.2.1).getLast? = some y → P y := by
+      intro y hy; simpa [hP] using sys.tight_getLast_external b.1 b.2.1 b.2.2.2 y hy
+    have hsplit_eq : b.1.trans.toList b.2.1 = preL e :=
+      List.filter_tight_split_unique P (b.1.trans.toList b.2.1) (seg.1.trans.toList seg.2.1)
+        (preL e) (segL e) (by rw [← he_toList, (hspec e).1]) hfilt_eq hb_ext
+        (by intro y hy; simpa [hP] using (hspec e).2.1 y hy)
+    -- hence `segL e = seg.toList` too.
+    have hsegL_eq : seg.1.trans.toList seg.2.1 = segL e := by
+      have hcat : b.1.trans.toList b.2.1 ++ seg.1.trans.toList seg.2.1 = preL e ++ segL e := by
+        rw [← he_toList, (hspec e).1]
+      rw [hsplit_eq] at hcat
+      exact List.append_cancel_left hcat
+    -- `preExec e = b` and `segExec e = seg`.
+    have hpreExec_eq : preExec e = b := by
+      refine Subtype.ext ?_
+      have : (preExec e).1 = (⟨b.1.init, Seq.ofList (preL e)⟩ : AlterSeq State Label) := rfl
+      rw [this, ← hsplit_eq, Stream'.Seq.ofList_toList]
+    have hnu_eq : nu e = b.1.endState b.2.1 := by
+      rw [hnu]
+      have : (preExec e).1.endState (preExec e).2.1 = b.1.endState b.2.1 :=
+        AlterSeq.endState_congr_pub (congrArg Subtype.val hpreExec_eq) _ _
+      exact this
+    have hsegExec_eq : segExec e = seg := by
+      refine Subtype.ext ?_
+      have hsv : (segExec e).1 = (⟨nu e, Seq.ofList (segL e)⟩ : AlterSeq State Label) := rfl
+      rw [hsv, hnu_eq, ← hsegL_eq, Stream'.Seq.ofList_toList, ← hsegInit]
+    -- `fTop e = fSig ⟨b, seg⟩` (unconditional value match, via `preExec e = b`, `segExec e = seg`).
+    have hval : fTop e = fSig ⟨b, seg⟩ := by
+      rw [← hval_gen e, hpreExec_eq, hsegExec_eq]
+    refine ⟨⟨e, ?_⟩, ?_⟩
+    · -- `e ∈ support fTop`: `fTop e = fSig ⟨b, seg⟩ ≠ 0`.
+      change fTop e ≠ 0
+      rw [hval]; exact hbseg
+    · -- the witness maps to `⟨b, seg⟩`.
+      simp only []
+      rw [hpreExec_eq, hsegExec_eq]
+
+/-- **`expand`'s emission at a trace-empty history is the empty-history `drawAndRun`'s** (the
+`none`-branch of `expand.next`). On a terminating history `e` whose external trace is empty, the
+expanded scheduler's emission equals `drawAndRun pe' ⟨sys.init, nil⟩`'s emission at the
+`internalSuffix` of `e`. (PEEL base case, nil analogue of `expand_next_eq_expandCont`.) -/
+theorem expand_next_eq_drawAndRun (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem)
+    (e : AlterSeq State Label) (hT : e.trans.Terminates)
+    (hgl : ((sys.trace e).toList (Stream'.Seq.terminates_map_iff.mpr
+        (Stream'.Seq.terminates_filter _ _ hT))).getLast? = none) :
+    (Scheduler.expand sys pe').next e
+      = (Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩).next (sys.internalSuffix e) := by
+  classical
+  unfold Scheduler.expand
+  simp only [dif_pos hT]
+  rw [hgl]
+
+open Classical in
+/-- **Kernel-agreement on a trace-empty internal prefix.** At an all-internal within-segment
+position `⟨sys.init, ofList pref₀⟩` (so the running external trace is empty), the expanded
+scheduler's one-step kernel coincides with that of `⟨pure sys.init, drawAndRun pe' ⟨sys.init,
+nil⟩⟩` at `⟨sys.init, ofList pref₀⟩`. The nil analogue of `expand_kernel_eq_expandCont` (with
+empty `preList`, source `sys.init`). -/
+theorem expand_kernel_eq_drawAndRun {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (pref₀ : List (Label × State)) (hpref_int : ∀ p ∈ pref₀, sys.internal p.1)
+    (step : Label × State) :
+    (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+        : ProbabilisticExecution sys.toSystem).kernel
+        ⟨sys.toSystem.init, Seq.ofList pref₀⟩ step
+      = (⟨PMF.pure sys.toSystem.init, Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩⟩
+          : ProbabilisticExecution sys.toSystem).kernel
+        ⟨sys.toSystem.init, Seq.ofList pref₀⟩ step := by
+  classical
+  set e : AlterSeq State Label := ⟨sys.toSystem.init, Seq.ofList pref₀⟩ with he
+  have heT : e.trans.Terminates := Stream'.Seq.terminates_ofList _
+  -- Running external trace is empty (all transitions internal).
+  have htr : sys.trace e = Seq.nil := by
+    rw [he, show (Seq.ofList pref₀ : Seq (Label × State)) = Seq.ofList ([] ++ pref₀)
+        by rw [List.nil_append],
+      sys.trace_append_internal sys.toSystem.init [] pref₀ hpref_int]
+    rw [Stream'.Seq.ofList_nil]
+    exact sys.trace_init sys.toSystem.init
+  -- The trace label list is empty, so getLast? = none.
+  have hgl : ((sys.trace e).toList
+      (Stream'.Seq.terminates_map_iff.mpr (Stream'.Seq.terminates_filter _ _ heT))).getLast?
+      = none := by
+    have hcongr : (sys.trace e).toList
+        (Stream'.Seq.terminates_map_iff.mpr (Stream'.Seq.terminates_filter _ _ heT)) = [] := by
+      apply Stream'.Seq.ofList_injective
+      rw [Stream'.Seq.ofList_toList, htr, Stream'.Seq.ofList_nil]
+    rw [hcongr]; rfl
+  -- The internal suffix is `⟨sys.init, ofList pref₀⟩ = e`.
+  have hsuf : sys.internalSuffix e = e := by
+    rw [he, show (Seq.ofList pref₀ : Seq (Label × State)) = Seq.ofList ([] ++ pref₀)
+        by rw [List.nil_append]]
+    rw [sys.internalSuffix_append_internal sys.toSystem.init [] pref₀ (by simp) hpref_int]
+    congr 1
+    rw [AlterSeq.endState_eq_getLast? _ (Stream'.Seq.terminates_ofList _)]
+    rw [Stream'.Seq.toList_ofList]; rfl
+  -- `expand.next e = drawAndRun.next e`.
+  have hnext : (Scheduler.expand sys pe').next e
+      = (Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩).next e := by
+    rw [expand_next_eq_drawAndRun sys pe' e heT hgl, hsuf]
+  -- Kernels are tsums of the (equal) `next`s.
+  unfold ProbabilisticExecution.kernel
+  refine tsum_congr (fun μ => ?_)
+  rw [show (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+        : ProbabilisticExecution sys.toSystem).scheduler = Scheduler.expand sys pe' from rfl,
+    show (⟨PMF.pure sys.toSystem.init, Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩⟩
+        : ProbabilisticExecution sys.toSystem).scheduler
+      = Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩ from rfl]
+  rw [hnext]
+
+open Classical in
+/-- **`probOf` agreement of `expand` and the empty-history `drawAndRun` on a tight trace-`[l]`
+execution.** A tight trace-`[l]` execution `⟨sys.init, ofList segList⟩` (whose only external
+transition is its last, `segList`'s prefixes-before-last all internal) has the same `expand`- and
+`drawAndRun ⟨sys.init,nil⟩`-probability. Fed `probOf_append_of_kernel_eq` with empty `preList`
+and the nil kernel-agreement `expand_kernel_eq_drawAndRun`. -/
+theorem expand_probOf_eq_drawAndRun {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (segList : List (Label × State))
+    (hseg_int : ∀ (pref : List (Label × State)) (stp : Label × State),
+      pref ++ [stp] <+: segList → ∀ q ∈ pref, sys.internal q.1) :
+    (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+        : ProbabilisticExecution sys.toSystem).probOf
+        ⟨sys.toSystem.init, Seq.ofList segList⟩ (Stream'.Seq.terminates_ofList _)
+      = (⟨PMF.pure sys.toSystem.init, Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩⟩
+          : ProbabilisticExecution sys.toSystem).probOf
+        ⟨sys.toSystem.init, Seq.ofList segList⟩ (Stream'.Seq.terminates_ofList _) := by
+  classical
+  have hfactor := (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+      : ProbabilisticExecution sys.toSystem).probOf_append_of_kernel_eq
+    (⟨PMF.pure sys.toSystem.init, Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩⟩
+      : ProbabilisticExecution sys.toSystem)
+    sys.toSystem.init sys.toSystem.init [] segList ?_ ?_
+  · -- `pe.probOf ⟨init, ofList ([] ++ segList)⟩ = probOf ⟨init, ofList []⟩ · drawAndRun.probOf …`.
+    rw [List.nil_append] at hfactor
+    have hempty : (⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩
+          : ProbabilisticExecution sys.toSystem).probOf ⟨sys.toSystem.init, Seq.ofList []⟩
+          (Stream'.Seq.terminates_ofList _) = 1 := by
+      rw [ProbabilisticExecution.probOf_congr _ ⟨sys.toSystem.init, Seq.ofList []⟩
+        ⟨sys.toSystem.init, Seq.nil⟩
+        (by rw [Stream'.Seq.ofList_nil]) (Stream'.Seq.terminates_ofList _)
+        Stream'.Seq.terminates_nil,
+        ProbabilisticExecution.probOf_nil]
+      exact PMF.pure_apply_self _
+    rw [hfactor, hempty, one_mul]
+  · -- `drawAndRun`'s init at `sys.init` is `1`.
+    rw [ProbabilisticExecution.init_eq_initState]; exact PMF.pure_apply_self _
+  · -- kernel agreement at every visited within-segment (all-internal) position.
+    intro pref stp hpf
+    have hpref_int : ∀ p ∈ pref, sys.internal p.1 := hseg_int pref stp hpf
+    rw [List.nil_append]
+    exact expand_kernel_eq_drawAndRun pe' pref hpref_int stp
 
 open Classical in
 /-- **The `L' = []` base step.** The trace-`[l]` external level mass of the expanded
-`sys`-execution equals `pe'`'s hyper-step-boundary mass at `[l]`. Here the expanded scheduler
-runs the empty-history `none`-branch `drawAndRun ⟨init, nil⟩`, whose trace-`[l]` slice
-(`drawAndRun_pushforward`) is exactly `hsLabMass [l] g`'s single-history (`E' = ⟨init, nil⟩`)
-summand.
-
-REMAINING BLOCKER: this is the empty-prefix special case of the same PEEL+ASSEMBLE machinery.
-The expand scheduler at `⟨init, nil⟩` takes the `getLast? = none` branch (running `drawAndRun
-pe' ⟨init, nil⟩`) for the first step, then — once the first external `l` is emitted — switches
-to the `expandCont` branch (with `l' = l`) for the trailing internal continuation. So even here
-the trace-[l] tight-exec sum factors through a `drawAndRun`-then-`expandCont` segment and reduces
-to `hsLabMass [l] g = ∑' μ_n, next ⟨init,nil⟩ (some (l, μ_n)) · hsExpect init l μ_n g` via the
-same `expand_probOf_segment_factor` + `drawAndRun_pushforward` route as the nonempty case (with
-an empty `preList`). Shares the PEEL haltMass↔probOf reconciliation blocker. -/
+`sys`-execution equals `pe'`'s hyper-step-boundary mass at `[l]`. The expanded scheduler at
+`⟨init, nil⟩` runs the empty-history `none`-branch `drawAndRun ⟨init, nil⟩` (kernel-agreeing on
+the all-internal prefix up to and including the `l`-emission, `expand_probOf_eq_drawAndRun`),
+whose trace-`[l]` slice (`drawAndRun_pushforward`) is exactly `hsLabMass [l] g`'s single-history
+(`E' = ⟨init, nil⟩`) summand (`hsLabMass_eq_Z_sum` route, here read directly off the definition). -/
 theorem expand_extLabMass_step_nil {State Label : Type}
     {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
     (h_init : pe'.initState = PMF.pure sys^w.toSystem.init)
@@ -7721,7 +8241,127 @@ theorem expand_extLabMass_step_nil {State Label : Type}
     (l : Label) (g : State → ENNReal) :
     sys.extLabMass ⟨PMF.pure sys.toSystem.init, Scheduler.expand sys pe'⟩ ([] ++ [l]) g
       = pe'.hsLabMass ([] ++ [l]) g := by
-  sorry
+  classical
+  rw [List.nil_append]
+  set ι := sys.toSystem.init with hι
+  -- STEP 1: replace `expand` by the empty-history `drawAndRun ⟨ι, nil⟩` (probOf-agree on
+  -- tight trace-`[l]` execs via `expand_probOf_eq_drawAndRun`).
+  have hreplace : sys.extLabMass ⟨PMF.pure ι, Scheduler.expand sys pe'⟩ [l] g
+      = sys.extLabMass ⟨PMF.pure ι, Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩⟩ [l] g := by
+    rw [sys.extLabMass_eq_tight_tsum ⟨PMF.pure ι, Scheduler.expand sys pe'⟩ [l] g,
+      sys.extLabMass_eq_tight_tsum ⟨PMF.pure ι, Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩⟩ [l] g]
+    refine tsum_congr (fun e => ?_)
+    by_cases hinit : e.1.init = ι
+    · -- on-support exec: rewrite `e.1` as `⟨ι, ofList (e.toList)⟩` and apply the probOf-agreement.
+      have he1 : e.1 = (⟨ι, Seq.ofList (e.1.trans.toList e.2.1)⟩ : AlterSeq State Label) := by
+        calc e.1 = ⟨e.1.init, e.1.trans⟩ := rfl
+          _ = ⟨ι, Seq.ofList (e.1.trans.toList e.2.1)⟩ := by
+              rw [hinit, Stream'.Seq.ofList_toList]
+      have hseg_int : ∀ (pref : List (Label × State)) (stp : Label × State),
+          pref ++ [stp] <+: e.1.trans.toList e.2.1 → ∀ q ∈ pref, sys.internal q.1 := by
+        intro pref stp hpf q hq
+        exact sys.tight_singleton_prefix_internal e.1 e.2.1 l e.2.2.1 e.2.2.2 pref stp hpf q hq
+      have hpe := expand_probOf_eq_drawAndRun pe' (e.1.trans.toList e.2.1) hseg_int
+      rw [show (⟨PMF.pure ι, Scheduler.expand sys pe'⟩
+            : ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1
+          = (⟨PMF.pure ι, Scheduler.expand sys pe'⟩
+              : ProbabilisticExecution sys.toSystem).probOf
+              ⟨ι, Seq.ofList (e.1.trans.toList e.2.1)⟩ (Stream'.Seq.terminates_ofList _) from
+        ProbabilisticExecution.probOf_congr _ _ _ he1 _ _]
+      rw [show (⟨PMF.pure ι, Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩⟩
+            : ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1
+          = (⟨PMF.pure ι, Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩⟩
+              : ProbabilisticExecution sys.toSystem).probOf
+              ⟨ι, Seq.ofList (e.1.trans.toList e.2.1)⟩ (Stream'.Seq.terminates_ofList _) from
+        ProbabilisticExecution.probOf_congr _ _ _ he1 _ _]
+      rw [hpe]
+    · -- off-support exec: both `probOf`s vanish (Dirac init factor).
+      rw [ProbabilisticExecution.probOf_init_factor (Scheduler.expand sys pe') (PMF.pure ι)
+          e.1 e.2.1,
+        ProbabilisticExecution.probOf_init_factor (Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩)
+          (PMF.pure ι) e.1 e.2.1,
+        PMF.pure_apply_of_ne ι e.1.init hinit, zero_mul, zero_mul, zero_mul, zero_mul]
+  rw [hreplace]
+  -- STEP 2: `drawAndRun`-bridge to the haltMass form (silence ⟹ tight) + `drawAndRun_pushforward`.
+  have hsilent : ∀ (e' : AlterSeq State Label), e'.trans.Terminates → sys.trace e' ≠ Seq.nil →
+      ∀ a : Label × PMF State, (Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩).next e' (some a) = 0 :=
+    fun e' heT htr a => Scheduler.drawAndRun_next_some_eq_zero pe' hExt ⟨ι, Seq.nil⟩
+      Stream'.Seq.terminates_nil e' heT htr a
+  rw [extLabMass_eq_haltMass_tsum_tight (Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩) (PMF.pure ι)
+    [l] g ?_ ?_]
+  · -- the haltMass sum is `drawAndRun_pushforward` at `E'' = ⟨ι, nil⟩` (end-state `ι`).
+    have hend : (⟨ι, Seq.nil⟩ : AlterSeq State Label).endState Stream'.Seq.terminates_nil = ι := by
+      rw [AlterSeq.endState_of_trans_nil _ rfl Stream'.Seq.terminates_nil]
+    rw [show (PMF.pure ι : PMF State)
+          = PMF.pure ((⟨ι, Seq.nil⟩ : AlterSeq State Label).endState Stream'.Seq.terminates_nil)
+        from by rw [hend]]
+    rw [Scheduler.drawAndRun_pushforward pe' hExt ⟨ι, Seq.nil⟩ Stream'.Seq.terminates_nil l g, hend]
+    -- RHS: `hsLabMass [l] g` over the single history `⟨ι, nil⟩`, read off the definition.
+    -- `map fst s = nil ⟹ s = nil`.
+    have hmapnil : ∀ s : Seq (Label × State), Seq.map Prod.fst s = Seq.nil → s = Seq.nil := by
+      intro s hs
+      have h0 : (Seq.map Prod.fst s).get? 0 = none := by rw [hs]; rfl
+      rw [Stream'.Seq.map_get?] at h0
+      have hs0 : s.get? 0 = none := by
+        cases hg : s.get? 0 with
+        | none => rfl
+        | some a => rw [hg] at h0; simp at h0
+      exact Stream'.Seq.terminatedAt_zero_iff.mp hs0
+    have hRHS : pe'.hsLabMass [l] g
+        = ∑' μ : PMF State,
+            pe'.scheduler.next ⟨ι, Seq.nil⟩ (some (l, μ)) * pe'.hsExpect ι l μ g := by
+      rw [ProbabilisticExecution.hsLabMass, List.getLast?_singleton]
+      simp only [List.dropLast_singleton]
+      -- only `E' = ⟨ι, nil⟩` survives the `dite` (map-fst = `ofList [] = nil` forces `trans = nil`,
+      -- and `probOf ⟨ι, nil⟩ = initState ι = 1`).
+      rw [tsum_eq_single (⟨ι, Seq.nil⟩ : AlterSeq State Label) ?_]
+      · rw [dif_pos ⟨Stream'.Seq.terminates_nil,
+            by rw [Stream'.Seq.map_nil, Stream'.Seq.ofList_nil]⟩]
+        have hpnil : pe'.probOf ⟨ι, Seq.nil⟩ Stream'.Seq.terminates_nil = 1 := by
+          rw [ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState, h_init]
+          exact PMF.pure_apply_self _
+        have hes : (⟨ι, Seq.nil⟩ : AlterSeq State Label).endState Stream'.Seq.terminates_nil = ι :=
+          by rw [AlterSeq.endState_of_trans_nil _ rfl Stream'.Seq.terminates_nil]
+        rw [hpnil, one_mul, hes]
+      · -- every other `E'` has summand `0`: either the `dite` fails (`map-fst ≠ nil`), or
+        -- `trans = nil` but `init ≠ ι`, so `probOf = (pure ι) init = 0`.
+        intro E' hne
+        by_cases hc : E'.trans.Terminates ∧ Seq.map Prod.fst E'.trans = Seq.ofList ([] : List Label)
+        · rw [dif_pos hc]
+          have htrans_nil : E'.trans = Seq.nil := by
+            rw [Stream'.Seq.ofList_nil] at hc
+            exact hmapnil E'.trans hc.2
+          have hinit_E' : E'.init ≠ ι := by
+            intro hii; apply hne
+            obtain ⟨ei, et⟩ := E'
+            simp only at htrans_nil hii
+            rw [htrans_nil, hii]
+          have hprob0 : pe'.probOf E' hc.1 = 0 := by
+            rw [show pe'.probOf E' hc.1
+                = pe'.initState E'.init * (⟨PMF.pure E'.init, pe'.scheduler⟩
+                    : ProbabilisticExecution sys^w.toSystem).probOf E' hc.1 from
+              ProbabilisticExecution.probOf_init_factor pe'.scheduler pe'.initState E' hc.1]
+            rw [h_init, PMF.pure_apply_of_ne sys^w.toSystem.init E'.init hinit_E', zero_mul]
+          rw [hprob0, zero_mul]
+        · rw [dif_neg hc]
+    rw [hRHS]
+  · -- H1 (tightness): positive-haltMass trace-`[l]` execs are tight.
+    intro e hne htr
+    have hprob : (⟨PMF.pure ι, Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩⟩
+        : ProbabilisticExecution sys.toSystem).probOf e.1 e.2 ≠ 0 := by
+      intro h0; apply hne
+      change (⟨PMF.pure ι, Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩⟩
+          : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
+            * (Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩).next e.1 none = 0
+      rw [h0, zero_mul]
+    refine sys.isTight_of_silent_past_trace (Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩) (PMF.pure ι)
+      hsilent e.1 e.2 ?_ hprob
+    rw [htr]; exact (by simp [Stream'.Seq.ofList_cons] : (Seq.ofList [l] : Seq Label) ≠ Seq.nil)
+  · -- H2: positive-probOf tight trace-`[l]` execs halt terminally.
+    intro e he htr _htight _hp
+    refine Scheduler.next_none_eq_one_of_next_some_zero
+      (Scheduler.drawAndRun pe' ⟨ι, Seq.nil⟩) e (fun a => ?_)
+    exact hsilent e he (by rw [htr]; simp [Stream'.Seq.ofList_cons]) a
 
 /-- **The inductive step of `expand_extLabMass_eq` (PEEL + ASSEMBLE).** Given the
 induction hypothesis (`extLabMass L' g' = hsLabMass L' g'` for every test `g'`), the
