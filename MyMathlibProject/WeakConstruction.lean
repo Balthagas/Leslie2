@@ -1705,13 +1705,11 @@ probOf(E') * next(E')(some (l, μ))` (since `postDist ν' ≤ 1` as a PMF value)
 summing `μ` out gives `≤ ∑' E' [label list L.dropLast], probOf(E') ≤ 1` by the
 level-sum bound `labMass_one_le_one`. Hence the normaliser is `≤ 1`, in
 particular `≠ ⊤` (for `PMF.normalize`). -/
-theorem ProbabilisticExecution.beliefExpandW_tsum_ne_top {State Label : Type}
+theorem ProbabilisticExecution.beliefExpandW_tsum_le_one {State Label : Type}
     {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
     (L : List Label) (ν' : State) :
-    (∑' p, pe'.beliefExpandW L ν' p) ≠ ⊤ := by
+    (∑' p, pe'.beliefExpandW L ν' p) ≤ 1 := by
   classical
-  suffices h : (∑' p, pe'.beliefExpandW L ν' p) ≤ 1 from
-    (lt_of_le_of_lt h ENNReal.one_lt_top).ne
   cases hL : L.getLast? with
   | none =>
       have hz : ∀ p : AlterSeq State Label × PMF State, pe'.beliefExpandW L ν' p = 0 := by
@@ -1755,6 +1753,14 @@ theorem ProbabilisticExecution.beliefExpandW_tsum_ne_top {State Label : Type}
                 (fun _ _ h => (Prod.mk.inj (Option.some.inj h)).2) _
           _ = 1 := (pe'.scheduler.next E').tsum_coe
       · rw [dif_neg hT]; simp only [dif_neg hT, tsum_zero]; exact bot_le
+
+/-- **Finiteness of the corrected-belief normaliser** (the `≠ ⊤` corollary of
+`beliefExpandW_tsum_le_one`, for `PMF.normalize`). -/
+theorem ProbabilisticExecution.beliefExpandW_tsum_ne_top {State Label : Type}
+    {sys : LabelledSystem State Label} (pe' : ProbabilisticExecution sys^w.toSystem)
+    (L : List Label) (ν' : State) :
+    (∑' p, pe'.beliefExpandW L ν' p) ≠ ⊤ :=
+  (lt_of_le_of_lt (pe'.beliefExpandW_tsum_le_one L ν') ENNReal.one_lt_top).ne
 
 open Classical in
 /-- **The corrected `expand` belief.** Normalisation of `beliefExpandW`; total
@@ -3251,6 +3257,423 @@ theorem Scheduler.segment_pushforward {sys : LabelledSystem State Label}
   rw [Scheduler.postTauDraw_pushforward pe' E' hT l ν' (Scheduler.segContPush pe' l E' g)]
 
 open Classical in
+/-- **Unnormalised weight of the POSTERIOR expand-segment draw** (the third posterior-bind
+weight, mirroring `drawAndRunW` / `postTauDrawW`). At a trace-`L'` boundary `ν'` with
+just-completed external label `l'`, and a running `sys`-history `h` (boundary `h.init = ν'`),
+the prior `pe'.beliefExpandW L' ν' p` (the unnormalised `beliefExpand` weight on the pair
+`p = (E', μ)`) is reweighted by the *likelihood* of `h` under the candidate segment scheduler
+`segmentScheduler pe' ν' l' E' μ`, run from the Dirac source `PMF.pure ν'`. Candidate pairs `p`
+whose segment scheduler *cannot* produce the observed trajectory `h` get likelihood `0` and drop
+out. This conditions the belief draw on the segment trajectory (the GAP-2 fix: the old OUTER
+belief was a constant mixture re-drawn each within-segment step, so `expandCont.probOf` was a
+product of mixtures, not a sum of products). -/
+noncomputable def Scheduler.expandContW (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (h : AlterSeq State Label) : AlterSeq State Label × PMF State → ENNReal := fun p =>
+  pe'.beliefExpandW L' ν' p *
+    (if hh : h.trans.Terminates then
+       (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+          : ProbabilisticExecution sys.toSystem).probOf h hh
+     else 0)
+
+/-- **Finiteness of the expand-segment posterior normaliser** (mirrors `postTauDrawW_tsum_ne_top`).
+Each likelihood factor is a `probOf ≤ pe.init ≤ 1`, so `∑' p, expandContW … p ≤ ∑' p,
+beliefExpandW L' ν' p ≤ 1` by `beliefExpandW_tsum_le_one`. -/
+theorem Scheduler.expandContW_tsum_ne_top (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (h : AlterSeq State Label) :
+    (∑' p, Scheduler.expandContW sys pe' L' ν' l' h p) ≠ ⊤ := by
+  classical
+  suffices hle : (∑' p, Scheduler.expandContW sys pe' L' ν' l' h p) ≤ 1 from
+    (lt_of_le_of_lt hle ENNReal.one_lt_top).ne
+  calc (∑' p, Scheduler.expandContW sys pe' L' ν' l' h p)
+      ≤ ∑' p, pe'.beliefExpandW L' ν' p := by
+        refine ENNReal.tsum_le_tsum (fun p => ?_)
+        unfold Scheduler.expandContW
+        refine mul_le_of_le_one_right' ?_
+        split
+        · exact le_trans (ProbabilisticExecution.probOf_le_init _ _ _) (PMF.coe_le_one _ _)
+        · exact zero_le_one
+    _ ≤ 1 := pe'.beliefExpandW_tsum_le_one L' ν'
+
+/-- **The expand-segment continuation scheduler (POSTERIOR-bind).** At a trace-`L'` boundary `ν'`
+with just-completed external label `l'`, and a running `sys`-history `d` (boundary `ν'`), reweight
+the prior `pe'.beliefExpandW L' ν' p` by the likelihood of `d` under each candidate segment
+scheduler (see `expandContW`) and *normalise* — conditioning the belief draw on the segment
+trajectory so off-path pairs `p` drop out (the GAP-2 fix). On a drawn `p = (E', μ)`, run
+`segmentScheduler pe' ν' l' E' μ` at `d`. If the posterior normaliser vanishes (no pair explains
+`d`), halt. Validity is inherited from each `segmentScheduler`. This is the scheduler that
+`Scheduler.expand` runs (at the `internalSuffix`) once the trace-`L'` prefix is committed and
+its last external label `l'` is observed (see `expand_next_eq_expandCont`). -/
+noncomputable def Scheduler.expandCont (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label) :
+    Scheduler sys.toSystem where
+  next d :=
+    if h0 : (∑' p, Scheduler.expandContW sys pe' L' ν' l' d p) ≠ 0 then
+      (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' d) h0
+          (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' d)).bind (fun p =>
+        (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next d)
+    else PMF.pure none
+  valid := by
+    classical
+    intro d n s' hterm hstate l μ h_supp
+    change some (l, μ) ∈
+      (if h0 : (∑' p, Scheduler.expandContW sys pe' L' ν' l' d p) ≠ 0 then
+        (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' d) h0
+            (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' d)).bind (fun p =>
+          (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next d)
+      else PMF.pure none).support at h_supp
+    by_cases h0 : (∑' p, Scheduler.expandContW sys pe' L' ν' l' d p) ≠ 0
+    · rw [dif_pos h0, PMF.mem_support_bind_iff] at h_supp
+      obtain ⟨p, _hp, h_supp⟩ := h_supp
+      exact (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).valid d n s' hterm hstate l μ h_supp
+    · rw [dif_neg h0, PMF.support_pure, Set.mem_singleton_iff] at h_supp
+      exact absurd h_supp (by simp)
+
+/-! ### `expandCont` filter-marginal (GAP-2 collapse, MULTIPLIED form like `postTauDraw`)
+
+The third instance of the posterior-bind keystone. The prior of `expandCont` is the
+`beliefExpandW L' ν'` weight (NOT a full PMF), so the base marginal `Z₀ = ∑' p, beliefExpandW
+L' ν' p` need not be `1`. We prove the filter-marginal in MULTIPLIED (division-free) form
+`Z₀ · probOf e = expandZ e`, mirroring `postTauZ`/`postTauZ_step`/`postTauZ_nil`/
+`postTauDraw_probOf_eq_postTauZ_ofList`. This is the GAP-2 collapse: `expandCont.probOf`
+factors through the per-`p` segment `probOf`, so the old constant-mixture pathology (product of
+re-drawn mixtures) is gone (the posterior reconditioning telescopes). -/
+
+open Classical in
+/-- **`expandContW` as `prior · witness probOf`.** For a running history `e'` with boundary
+`e'.init = ν'`, the unnormalised weight `expandContW` equals `beliefExpandW L' ν' p ·
+(⟨pure ν', segmentScheduler …⟩).probOf e'` (analogue of `postTauDrawW_eq`). -/
+theorem Scheduler.expandContW_eq (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e' : AlterSeq State Label) (he' : e'.trans.Terminates)
+    (p : AlterSeq State Label × PMF State) :
+    Scheduler.expandContW sys pe' L' ν' l' e' p
+      = pe'.beliefExpandW L' ν' p *
+          (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+            : ProbabilisticExecution sys.toSystem).probOf e' he' := by
+  classical
+  unfold Scheduler.expandContW
+  rw [dif_pos he']
+
+open Classical in
+/-- **The `some (l, μ)`-emission of `expandCont` as a posterior average** (analogue of
+`postTauDraw_next_some`). When the posterior normaliser does not vanish, the emission is the
+posterior-weighted sum of the per-`p` segment schedulers' emissions. -/
+theorem Scheduler.expandCont_next_some (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e' : AlterSeq State Label)
+    (h0 : (∑' p, Scheduler.expandContW sys pe' L' ν' l' e' p) ≠ 0) (l₁ : Label) (μ₁ : PMF State) :
+    (Scheduler.expandCont sys pe' L' ν' l').next e' (some (l₁, μ₁))
+      = ∑' p, (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' e') h0
+            (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e')) p *
+          (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next e' (some (l₁, μ₁)) := by
+  classical
+  change (if h0' : (∑' p, Scheduler.expandContW sys pe' L' ν' l' e' p) ≠ 0 then
+      (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' e') h0'
+          (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e')).bind (fun p =>
+        (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next e')
+    else PMF.pure none) (some (l₁, μ₁)) = _
+  rw [dif_pos h0, PMF.bind_apply]
+
+open Classical in
+/-- **The `none`-emission of `expandCont` as a posterior average** (analogue of
+`postTauDraw_next_none`). -/
+theorem Scheduler.expandCont_next_none (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e' : AlterSeq State Label)
+    (h0 : (∑' p, Scheduler.expandContW sys pe' L' ν' l' e' p) ≠ 0) :
+    (Scheduler.expandCont sys pe' L' ν' l').next e' none
+      = ∑' p, (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' e') h0
+            (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e')) p *
+          (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next e' none := by
+  classical
+  change (if h0' : (∑' p, Scheduler.expandContW sys pe' L' ν' l' e' p) ≠ 0 then
+      (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' e') h0'
+          (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e')).bind (fun p =>
+        (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next e')
+    else PMF.pure none) none = _
+  rw [dif_pos h0, PMF.bind_apply]
+
+/-- The **expand-segment posterior marginal** `expandZ e'` at a running history `e'` (boundary
+`ν'`): the prior-weighted sum of the per-`p` segment schedulers' `probOf` (the RHS of the
+filter-marginal). The third analogue of `drawZ`/`postTauZ`; here the prior is `beliefExpandW`. -/
+noncomputable def Scheduler.expandZ (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e' : AlterSeq State Label) (he' : e'.trans.Terminates) : ENNReal :=
+  ∑' p : AlterSeq State Label × PMF State,
+    pe'.beliefExpandW L' ν' p *
+      (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+        : ProbabilisticExecution sys.toSystem).probOf e' he'
+
+/-- `expandZ` depends only on the running history, not the termination proof. -/
+theorem Scheduler.expandZ_congr (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e e' : AlterSeq State Label) (h_eq : e = e')
+    (he : e.trans.Terminates) (he' : e'.trans.Terminates) :
+    Scheduler.expandZ sys pe' L' ν' l' e he = Scheduler.expandZ sys pe' L' ν' l' e' he' := by
+  subst h_eq; rfl
+
+/-- `expandZ` at a boundary-`ν'` history is exactly the posterior normaliser
+`∑' p, expandContW … p`. -/
+theorem Scheduler.expandZ_eq_tsum_expandContW (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e' : AlterSeq State Label) (he' : e'.trans.Terminates) :
+    Scheduler.expandZ sys pe' L' ν' l' e' he'
+      = ∑' p, Scheduler.expandContW sys pe' L' ν' l' e' p := by
+  unfold Scheduler.expandZ
+  exact (tsum_congr (fun p => (Scheduler.expandContW_eq sys pe' L' ν' l' e' he' p).symm))
+
+/-- **One-step kernel of `expandCont` as a posterior average** (analogue of
+`postTauDraw_kernel_eq`). -/
+theorem Scheduler.expandCont_kernel_eq (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e' : AlterSeq State Label)
+    (h0 : (∑' p, Scheduler.expandContW sys pe' L' ν' l' e' p) ≠ 0) (q : Label × State) :
+    (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+        : ProbabilisticExecution sys.toSystem).kernel e' q
+      = ∑' p, (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' e') h0
+            (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e')) p *
+          (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+            : ProbabilisticExecution sys.toSystem).kernel e' q := by
+  classical
+  obtain ⟨l₁, s'⟩ := q
+  unfold ProbabilisticExecution.kernel
+  have hexp : ∀ μ₁ : PMF State,
+      (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+          : ProbabilisticExecution sys.toSystem).scheduler.next e' (some (l₁, μ₁)) * μ₁ s'
+        = ∑' p, (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' e') h0
+              (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e')) p *
+            ((Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next e' (some (l₁, μ₁)) * μ₁ s') := by
+    intro μ₁
+    rw [show (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+            : ProbabilisticExecution sys.toSystem).scheduler.next e' (some (l₁, μ₁))
+          = (Scheduler.expandCont sys pe' L' ν' l').next e' (some (l₁, μ₁)) from rfl,
+      Scheduler.expandCont_next_some sys pe' L' ν' l' e' h0 l₁ μ₁, ← ENNReal.tsum_mul_right]
+    refine tsum_congr (fun p => ?_); rw [mul_assoc]
+  rw [tsum_congr hexp, ENNReal.tsum_comm]
+  refine tsum_congr (fun p => ?_)
+  rw [ENNReal.tsum_mul_left]
+
+/-- **Telescoping step (multiplicative kernel-ratio) for `expandZ`** (analogue of
+`postTauZ_step`). -/
+theorem Scheduler.expandZ_step (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (sq : Seq (Label × State)) (h_sq : sq.Terminates) (last : Label × State)
+    (h_app : (sq.append (Seq.cons last Seq.nil)).Terminates) :
+    Scheduler.expandZ sys pe' L' ν' l' ⟨ν', sq.append (Seq.cons last Seq.nil)⟩ h_app
+      = Scheduler.expandZ sys pe' L' ν' l' ⟨ν', sq⟩ h_sq
+        * (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+            : ProbabilisticExecution sys.toSystem).kernel ⟨ν', sq⟩ last := by
+  classical
+  set e' : AlterSeq State Label := ⟨ν', sq⟩ with he'_def
+  set e'' : AlterSeq State Label := ⟨ν', sq.append (Seq.cons last Seq.nil)⟩ with he''_def
+  have htel : ∀ p : AlterSeq State Label × PMF State,
+      (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+          : ProbabilisticExecution sys.toSystem).probOf e'' h_app
+        = (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+            : ProbabilisticExecution sys.toSystem).probOf e' h_sq
+          * (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+              : ProbabilisticExecution sys.toSystem).kernel e' last := by
+    intro p
+    exact (ProbabilisticExecution.probOf_append_singleton _ ν' sq h_sq last h_app)
+  by_cases h0 : Scheduler.expandZ sys pe' L' ν' l' e' h_sq = 0
+  · rw [h0, zero_mul]
+    have hz : ∀ p, pe'.beliefExpandW L' ν' p *
+        (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+          : ProbabilisticExecution sys.toSystem).probOf e' h_sq = 0 :=
+      ENNReal.tsum_eq_zero.mp h0
+    unfold Scheduler.expandZ
+    refine ENNReal.tsum_eq_zero.mpr (fun p => ?_)
+    rw [htel p, ← mul_assoc, hz p, zero_mul]
+  · have h0' : (∑' p, Scheduler.expandContW sys pe' L' ν' l' e' p) ≠ 0 := by
+      rwa [← Scheduler.expandZ_eq_tsum_expandContW sys pe' L' ν' l' e' h_sq]
+    rw [Scheduler.expandCont_kernel_eq sys pe' L' ν' l' e' h0' last]
+    rw [show Scheduler.expandZ sys pe' L' ν' l' e' h_sq
+          = ∑' p, Scheduler.expandContW sys pe' L' ν' l' e' p
+        from Scheduler.expandZ_eq_tsum_expandContW sys pe' L' ν' l' e' h_sq]
+    simp only [PMF.normalize_apply]
+    rw [ProbabilisticExecution.normalize_cancel _
+        (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e') _ h0']
+    unfold Scheduler.expandZ
+    refine tsum_congr (fun p => ?_)
+    rw [Scheduler.expandContW_eq sys pe' L' ν' l' e' h_sq p, htel p, mul_assoc]
+
+/-- **Base value `Z₀` for `expandZ`** (analogue of `postTauZ_nil`, NOT `1`). At the empty
+history `⟨ν', nil⟩`, every segment scheduler realizes the empty execution with mass `1` (Dirac
+source `pure ν'`), so the marginal collapses to the prior weight-sum `∑' p, beliefExpandW L' ν' p`
+— the prior here is the `beliefExpandW` weight, not a full PMF. -/
+theorem Scheduler.expandZ_nil (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label) :
+    Scheduler.expandZ sys pe' L' ν' l' ⟨ν', Stream'.Seq.nil⟩ Stream'.Seq.terminates_nil
+      = ∑' p, pe'.beliefExpandW L' ν' p := by
+  unfold Scheduler.expandZ
+  refine tsum_congr (fun p => ?_)
+  rw [ProbabilisticExecution.probOf_nil]
+  change pe'.beliefExpandW L' ν' p * (PMF.pure ν') ν' = _
+  rw [PMF.pure_apply_self, mul_one]
+
+/-- **Telescoping over `ofList`** (analogue of `postTauDraw_probOf_eq_postTauZ_ofList`): the
+MULTIPLIED filter-marginal `Z₀ · probOf e = expandZ e` for histories `⟨ν', ofList trans⟩`, by
+reverse induction. Base = `expandZ_nil` (= `Z₀`, `probOf nil = 1`); step =
+`probOf_append_singleton` + IH + `expandZ_step`. -/
+theorem Scheduler.expandCont_probOf_eq_expandZ_ofList (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (trans : List (Label × State))
+    (hFin : (Seq.ofList trans : Seq (Label × State)).Terminates) :
+    Scheduler.expandZ sys pe' L' ν' l' ⟨ν', Stream'.Seq.nil⟩ Stream'.Seq.terminates_nil
+        * (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+            : ProbabilisticExecution sys.toSystem).probOf ⟨ν', Seq.ofList trans⟩ hFin
+      = Scheduler.expandZ sys pe' L' ν' l' ⟨ν', Seq.ofList trans⟩ hFin := by
+  classical
+  induction trans using List.reverseRecOn with
+  | nil =>
+    have hnil : (⟨ν', Seq.ofList []⟩ : AlterSeq State Label)
+        = ⟨ν', Stream'.Seq.nil⟩ := by simp [Stream'.Seq.ofList_nil]
+    rw [ProbabilisticExecution.probOf_congr _ ⟨ν', Seq.ofList []⟩
+        ⟨ν', Stream'.Seq.nil⟩ hnil hFin Stream'.Seq.terminates_nil,
+      ProbabilisticExecution.probOf_nil,
+      Scheduler.expandZ_congr sys pe' L' ν' l' ⟨ν', Seq.ofList []⟩
+        ⟨ν', Stream'.Seq.nil⟩ hnil hFin Stream'.Seq.terminates_nil]
+    change Scheduler.expandZ sys pe' L' ν' l' ⟨ν', Stream'.Seq.nil⟩ Stream'.Seq.terminates_nil
+        * (PMF.pure ν') ν' = _
+    rw [PMF.pure_apply_self, mul_one]
+  | append_singleton rest last ih =>
+    have hrest_term : (Seq.ofList rest : Seq (Label × State)).Terminates :=
+      Stream'.Seq.terminates_ofList rest
+    have hsplit : (Seq.ofList (rest ++ [last]) : Seq (Label × State))
+        = (Seq.ofList rest).append (Seq.cons last Seq.nil) := by
+      rw [Stream'.Seq.ofList_append]
+      congr 1
+      rw [Stream'.Seq.ofList_cons]
+      simp [Stream'.Seq.ofList_nil]
+    have happ_term : ((Seq.ofList rest).append (Seq.cons last Seq.nil)
+        : Seq (Label × State)).Terminates := by rw [← hsplit]; exact hFin
+    have heq_ext : (⟨ν', Seq.ofList (rest ++ [last])⟩ : AlterSeq State Label)
+        = ⟨ν', (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩ := by rw [hsplit]
+    rw [ProbabilisticExecution.probOf_congr _
+        ⟨ν', Seq.ofList (rest ++ [last])⟩
+        ⟨ν', (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩
+        heq_ext hFin happ_term,
+      ProbabilisticExecution.probOf_append_singleton _ ν' (Seq.ofList rest)
+        hrest_term last happ_term,
+      ← mul_assoc, ih hrest_term,
+      ← Scheduler.expandZ_step sys pe' L' ν' l' (Seq.ofList rest) hrest_term last happ_term]
+    exact Scheduler.expandZ_congr sys pe' L' ν' l'
+      ⟨ν', (Seq.ofList rest).append (Seq.cons last Seq.nil)⟩
+      ⟨ν', Seq.ofList (rest ++ [last])⟩ heq_ext.symm happ_term hFin
+
+/-- **KEYSTONE: the `expandCont` filter-marginal, MULTIPLIED form (the GAP-2 collapse).** The
+prior weight-sum `Z₀ = ∑' p, beliefExpandW L' ν' p` times `expandCont.probOf e` (from `pure ν'`)
+equals the prior-weighted sum of the per-`p` segment schedulers' `probOf`:
+`Z₀ · expandCont.probOf e = ∑' p, beliefExpandW L' ν' p · (⟨pure ν', segmentScheduler …⟩).probOf
+e`. Division-free (the base normaliser `Z₀` need not be `1`). This makes `expandCont.probOf`
+factor through the per-`p` segment `probOf`, so the constant-mixture pathology (the OUTER belief
+re-drawn each within-segment step, giving a product of mixtures) is GONE: the posterior
+reconditioning telescopes (HMM/Bayes-filter `expandZ_step` kernel-ratio +
+`expandCont_probOf_eq_expandZ_ofList`). -/
+theorem Scheduler.expandCont_probOf_eq (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e : AlterSeq State Label) (he : e.trans.Terminates) (he_init : e.init = ν') :
+    (∑' p, pe'.beliefExpandW L' ν' p) *
+      (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+        : ProbabilisticExecution sys.toSystem).probOf e he
+      = ∑' p : AlterSeq State Label × PMF State,
+          pe'.beliefExpandW L' ν' p
+            * (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+                : ProbabilisticExecution sys.toSystem).probOf e he := by
+  classical
+  have he_ofList : e = ⟨ν', Seq.ofList (e.trans.toList he)⟩ := by
+    obtain ⟨ei, et⟩ := e
+    simp only at he_init
+    subst he_init
+    congr 1
+    exact (Stream'.Seq.ofList_toList et he).symm
+  have hFin' : (Seq.ofList (e.trans.toList he) : Seq (Label × State)).Terminates :=
+    Stream'.Seq.terminates_ofList _
+  rw [show (∑' p, pe'.beliefExpandW L' ν' p)
+        = Scheduler.expandZ sys pe' L' ν' l' ⟨ν', Stream'.Seq.nil⟩ Stream'.Seq.terminates_nil
+      from (Scheduler.expandZ_nil sys pe' L' ν' l').symm,
+    ProbabilisticExecution.probOf_congr _ e
+      ⟨ν', Seq.ofList (e.trans.toList he)⟩ he_ofList he hFin',
+    Scheduler.expandCont_probOf_eq_expandZ_ofList sys pe' L' ν' l' (e.trans.toList he) hFin']
+  unfold Scheduler.expandZ
+  refine tsum_congr (fun p => ?_)
+  rw [ProbabilisticExecution.probOf_congr _ e
+      ⟨ν', Seq.ofList (e.trans.toList he)⟩ he_ofList he hFin']
+
+/-- **Per-execution halt-mass marginal of `expandCont`, MULTIPLIED form** (the `haltMass`
+analogue of `expandCont_probOf_eq`, mirroring `postTauDraw_haltMass_marginal`). `Z₀ ·
+expandCont.haltMass e = ∑' p, beliefExpandW L' ν' p · (⟨pure ν', segmentScheduler … p⟩).haltMass
+e`. Proven by multiplying the MULTIPLIED probOf marginal by the `none`-emission posterior
+average; the `expandZ e` normaliser cancels. This is the GAP-2 collapse in halting-mass form
+(what the ASSEMBLE `expandK`-collapse reads off). -/
+theorem Scheduler.expandCont_haltMass_marginal (sys : LabelledSystem State Label)
+    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label)
+    (e : {e : AlterSeq State Label // e.trans.Terminates}) (he_init : e.1.init = ν') :
+    (∑' p, pe'.beliefExpandW L' ν' p) *
+        (Scheduler.expandCont sys pe' L' ν' l').haltMass (PMF.pure ν') e
+      = ∑' p : AlterSeq State Label × PMF State, pe'.beliefExpandW L' ν' p
+          * (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).haltMass (PMF.pure ν') e := by
+  classical
+  unfold Scheduler.haltMass
+  by_cases h0 : (∑' p, Scheduler.expandContW sys pe' L' ν' l' e.1 p) ≠ 0
+  · -- nonvanishing normaliser: expand `next none`, multiply by the MULTIPLIED probOf marginal
+    rw [Scheduler.expandCont_next_none sys pe' L' ν' l' e.1 h0]
+    rw [show (∑' p, pe'.beliefExpandW L' ν' p) *
+            ((⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+                : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
+              * ∑' p, (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' e.1) h0
+                  (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e.1)) p *
+                (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next e.1 none)
+          = ((∑' p, pe'.beliefExpandW L' ν' p) *
+              (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+                : ProbabilisticExecution sys.toSystem).probOf e.1 e.2)
+            * ∑' p, (PMF.normalize (Scheduler.expandContW sys pe' L' ν' l' e.1) h0
+                  (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e.1)) p *
+                (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next e.1 none by ring,
+      Scheduler.expandCont_probOf_eq sys pe' L' ν' l' e.1 e.2 he_init]
+    rw [show (∑' p : AlterSeq State Label × PMF State, pe'.beliefExpandW L' ν' p
+            * (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+                : ProbabilisticExecution sys.toSystem).probOf e.1 e.2)
+          = ∑' p, Scheduler.expandContW sys pe' L' ν' l' e.1 p from
+        tsum_congr (fun p =>
+          (Scheduler.expandContW_eq sys pe' L' ν' l' e.1 e.2 p).symm)]
+    simp only [PMF.normalize_apply]
+    rw [ProbabilisticExecution.normalize_cancel _
+        (Scheduler.expandContW_tsum_ne_top sys pe' L' ν' l' e.1) _ h0]
+    refine tsum_congr (fun p => ?_)
+    rw [Scheduler.expandContW_eq sys pe' L' ν' l' e.1 e.2 p, mul_assoc]
+  · -- vanishing normaliser: expandZ e = 0 ⟹ probOf e = 0 and every prior·probOf(e) = 0
+    push Not at h0
+    have hZ0 : Scheduler.expandZ sys pe' L' ν' l' e.1 e.2 = 0 := by
+      rw [Scheduler.expandZ_eq_tsum_expandContW sys pe' L' ν' l' e.1 e.2]; exact h0
+    rw [show (∑' p, pe'.beliefExpandW L' ν' p) *
+            ((⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+                : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
+              * (Scheduler.expandCont sys pe' L' ν' l').next e.1 none)
+          = ((∑' p, pe'.beliefExpandW L' ν' p) *
+              (⟨PMF.pure ν', Scheduler.expandCont sys pe' L' ν' l'⟩
+                : ProbabilisticExecution sys.toSystem).probOf e.1 e.2)
+            * (Scheduler.expandCont sys pe' L' ν' l').next e.1 none by ring,
+      Scheduler.expandCont_probOf_eq sys pe' L' ν' l' e.1 e.2 he_init,
+      show (∑' p : AlterSeq State Label × PMF State, pe'.beliefExpandW L' ν' p
+            * (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+                : ProbabilisticExecution sys.toSystem).probOf e.1 e.2)
+          = Scheduler.expandZ sys pe' L' ν' l' e.1 e.2 from rfl,
+      hZ0, zero_mul]
+    have hz : ∀ p, pe'.beliefExpandW L' ν' p *
+        (⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+          : ProbabilisticExecution sys.toSystem).probOf e.1 e.2 = 0 :=
+      ENNReal.tsum_eq_zero.mp hZ0
+    refine (ENNReal.tsum_eq_zero.mpr (fun p => ?_)).symm
+    change pe'.beliefExpandW L' ν' p *
+        ((⟨PMF.pure ν', Scheduler.segmentScheduler pe' ν' l' p.1 p.2⟩
+          : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
+            * (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next e.1 none) = 0
+    rw [← mul_assoc, hz p, zero_mul]
+
+open Classical in
 /-- **The rebuilt expand scheduler** (M2 witness, belief-draw design). At a terminating
 `sys`-history `e`: let `ν' := (sys.internalSuffix e).init` (the observable last
 external-target boundary) and `L := (sys.trace e).toList` (the external trace so far). On
@@ -3276,8 +3699,7 @@ noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
       match L.getLast? with
       | none => (Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩).next (sys.internalSuffix e)
       | some l =>
-          (pe'.beliefExpand L ν').bind (fun p =>
-            (Scheduler.segmentScheduler pe' ν' l p.1 p.2).next (sys.internalSuffix e))
+          (Scheduler.expandCont sys pe' L ν' l).next (sys.internalSuffix e)
     else
       PMF.pure none
   valid := by
@@ -3332,12 +3754,10 @@ noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
         | none =>
             (Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩).next (sys.internalSuffix e)
         | some l' =>
-            (pe'.beliefExpand
+            (Scheduler.expandCont sys pe'
                 ((sys.trace e).toList
                   (Stream'.Seq.terminates_map_iff.mpr (Stream'.Seq.terminates_filter _ _ hT)))
-                (sys.internalSuffix e).init).bind (fun p =>
-              (Scheduler.segmentScheduler pe' (sys.internalSuffix e).init l' p.1 p.2).next
-                (sys.internalSuffix e))
+                (sys.internalSuffix e).init l').next (sys.internalSuffix e)
       else PMF.pure none).support at h_supp
     rw [dif_pos h_term] at h_supp
     rw [← hd, ← hν', ← hL] at h_supp
@@ -3347,9 +3767,7 @@ noncomputable def Scheduler.expand (sys : LabelledSystem State Label)
       exact h_inner (Scheduler.drawAndRun pe' ⟨sys.toSystem.init, Seq.nil⟩) h_supp
     | some l' =>
       rw [hgl] at h_supp
-      rw [PMF.mem_support_bind_iff] at h_supp
-      obtain ⟨p, _hp, h_supp⟩ := h_supp
-      exact h_inner (Scheduler.segmentScheduler pe' ν' l' p.1 p.2) h_supp
+      exact h_inner (Scheduler.expandCont sys pe' L ν' l') h_supp
 
 /-- **A scheduler that emits nothing at `⟨s₀, nil⟩` halts immediately there.** If a valid
 `sys`-scheduler `σ` puts no mass on any `some` at the empty history `⟨s₀, nil⟩`, then from
@@ -4568,24 +4986,6 @@ theorem LabelledSystem.internalSuffix_append_internal (sys : LabelledSystem Stat
 
 /-! ### `expandCont`: the segment continuation scheduler (PEEL step 1b) -/
 
-/-- **The expand-segment continuation scheduler.** At a trace-`L'` boundary `ν'` with
-just-completed external label `l'`, this is the belief-mixed segment scheduler: draw a belief
-sample `p = (E', μ)` from `pe'.beliefExpand L' ν'` and run `segmentScheduler pe' ν' l' E' μ`.
-Validity is inherited from each `segmentScheduler`. This is the scheduler that
-`Scheduler.expand` runs (at the `internalSuffix`) once the trace-`L'` prefix is committed and
-its last external label `l'` is observed (see `expand_next_eq_expandCont`). -/
-noncomputable def Scheduler.expandCont (sys : LabelledSystem State Label)
-    (pe' : ProbabilisticExecution sys^w.toSystem) (L' : List Label) (ν' : State) (l' : Label) :
-    Scheduler sys.toSystem where
-  next d := (pe'.beliefExpand L' ν').bind (fun p =>
-    (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).next d)
-  valid := by
-    classical
-    intro d n s' hterm hstate l μ h_supp
-    rw [PMF.mem_support_bind_iff] at h_supp
-    obtain ⟨p, _hp, h_supp⟩ := h_supp
-    exact (Scheduler.segmentScheduler pe' ν' l' p.1 p.2).valid d n s' hterm hstate l μ h_supp
-
 /-- **`Scheduler.expand`'s emission factors through `expandCont` at the internal suffix.** On a
 terminating history `e` whose external trace label list ends with `l'` (the `some l'` branch of
 `expand.next`), the expanded scheduler's emission at `e` equals `expandCont`'s emission at the
@@ -4604,7 +5004,6 @@ theorem expand_next_eq_expandCont (sys : LabelledSystem State Label)
   unfold Scheduler.expand
   simp only [dif_pos hT]
   rw [hgl]
-  rfl
 
 open Classical in
 /-- **The expand-segment continuation `g`-mass, restricted to the new external label `l`.** The
@@ -4798,23 +5197,30 @@ theorem expand_extLabMass_step {State Label : Type}
   -- expandCont.probOf · g(end)` must be identified with `expandK` (likely by recasting `expandK` in
   -- the raw tight-tsum form, since a tight trace-`[l]` segment is a maximal/halting continuation).
   --
-  -- GAP 2 (ASSEMBLE `expandK`-collapse — GENUINELY OPEN, soundness-class). After IH +
-  -- `hsLabMass_eq_Z_sum`, the collapse needs `expandK L' l' l g ν' = ∑' p, beliefExpand L' ν' p ·
-  -- (single-draw segment trace-[l] g-mass of `segmentScheduler … p`)`. But `expandCont`'s emission
-  -- `(beliefExpand L' ν').bind (fun p => (segmentScheduler … p).next d)` is a *history-independent
-  -- (constant)* belief mixture — it re-draws `p` afresh at every prefix. `probOf` is a *product* of
-  -- mixture kernels, and for ≥2-transition execs (the `l'`-step pre-τ is multi-step internal) the
-  -- product of mixtures ≠ the mixture of products. This is the SAME constant-mixture re-draw
-  -- phenomenon flagged OPEN (bears on SOUNDNESS) in `Scheduler.drawAndRun_pushforward` (Lemma B2) —
-  -- with the crucial difference that `drawAndRun`'s mixture is *posterior-conditioned*
-  -- (`drawAndRunW`/`normalize` depends on the running prefix, which is exactly what makes its
-  -- marginal `drawAndRun_haltMass_marginal` — and hence B2 — go through), whereas `beliefExpand` is
-  -- NOT posterior-conditioned, so no analogous marginal exists. Establishing this collapse (or
-  -- refuting it with a randomized-`pe'` + multi-step-pre-τ counterexample, à la `FlawCheck`) is the
-  -- genuine remaining mathematical content; it cannot be discharged by rearrangement. (The proven
-  -- ASSEMBLE supporting pieces — `hsLabMass_eq_Z_sum`, `beliefExpand_normalize_cancel`,
-  -- `segment_pushforward`, `segContPush_split`, `postTau_marginal_collapse`, and
-  -- `drawAndRun_pushforward` — would finish the step the moment GAP 1 + GAP 2 are closed.)
+  -- GAP 2 (ASSEMBLE `expandK`-collapse — the prior soundness obstruction is now RESOLVED). After
+  -- IH + `hsLabMass_eq_Z_sum`, the collapse needs `expandK L' l' l g ν' = ∑' p, beliefExpand L' ν' p
+  -- · (single-draw segment trace-[l] g-mass of `segmentScheduler … p`)`. PREVIOUSLY `expandCont`'s
+  -- emission was the *history-independent (constant)* belief mixture `(beliefExpand L' ν').bind
+  -- (fun p => (segmentScheduler … p).next d)`, re-drawing `p` afresh at every prefix; its `probOf`
+  -- was a *product* of mixture kernels, and for ≥2-transition execs the product of mixtures ≠ the
+  -- mixture of products — the constant-mixture re-draw flaw (the same one fixed for `drawAndRun` /
+  -- `postTauDraw` by posterior-conditioning). `expandCont` is NOW a *posterior-bind*
+  -- (`expandContW`/`PMF.normalize` reconditioned on the running segment trajectory), exactly like
+  -- `drawAndRun` / `postTauDraw`, so the analogous marginal DOES exist and the collapse holds: the
+  -- keystone `Scheduler.expandCont_probOf_eq` (MULTIPLIED form, `Z₀ = ∑' p, beliefExpandW L' ν' p`)
+  -- gives `(∑' p, beliefExpandW L' ν' p) · expandCont.probOf e = ∑' p, beliefExpandW L' ν' p ·
+  -- (⟨pure ν', segmentScheduler … p⟩).probOf e`, i.e. `expandCont.probOf` factors through the per-`p`
+  -- segment `probOf`. So the GAP-2 collapse is no longer a soundness-class obstruction — it
+  -- telescopes through `expandCont_probOf_eq` (+ a `haltMass` analogue, built from
+  -- `expandCont_next_none` by multiplying the marginal, mirroring `postTauDraw_haltMass_marginal`).
+  --
+  -- WHAT REMAINS for this step is the GAP-1 bijection bookkeeping (above) plus the mechanical
+  -- reindex that recasts `expandK` (defined via `expandCont.haltMass`) into the per-`p` segment
+  -- trace-`[l]` `g`-mass form and reads off `expandCont_probOf_eq` — together with the proven
+  -- ASSEMBLE pieces (`hsLabMass_eq_Z_sum`, `beliefExpand_normalize_cancel`, `segment_pushforward`,
+  -- `segContPush_split`, `postTau_marginal_collapse`, `drawAndRun_pushforward`). That assembly is
+  -- left for the next pass; the soundness-critical collapse itself is now discharged by
+  -- `expandCont_probOf_eq`.
   sorry
 
 /-- **The expand-direction external level-mass identity** (under `hExt`). The
