@@ -128,20 +128,6 @@ theorem AlterSeq.endState_append
     | some bl => exact ⟨bl, rfl⟩
   rw [hbl]; rfl
 
-/-- **Dropping a terminating sequence past its length yields `nil`.** -/
-theorem Stream'.Seq.drop_length_eq_nil {α : Type} (s : Seq α) (h : s.Terminates) :
-    s.drop (s.length h) = Seq.nil := by
-  have hd : (s.drop (s.length h)).Terminates := Stream'.Seq.drop_terminates_pub h _
-  have htl : (s.drop (s.length h)).toList hd = (s.toList h).drop (s.length h) :=
-    Stream'.Seq.drop_toList_eq_pub s h _ hd
-  have hlen : (s.toList h).length = s.length h := Stream'.Seq.length_toList s h
-  have hnil : (s.toList h).drop (s.length h) = [] :=
-    List.drop_eq_nil_of_le (by rw [hlen])
-  rw [hnil] at htl
-  have := Stream'.Seq.ofList_toList (s.drop (s.length h)) hd
-  rw [htl, Stream'.Seq.ofList_nil] at this
-  exact this.symm
-
 /-- `Seq.filter` of `Seq.ofList` is `Seq.ofList` of the `List.filter`. -/
 theorem Stream'.Seq.filter_ofList_pub {α : Type} (p : α → Prop) [DecidablePred p]
     (L : List α) :
@@ -153,23 +139,6 @@ theorem Stream'.Seq.filter_ofList_pub {α : Type} (p : α → Prop) [DecidablePr
     by_cases hp : p a
     · rw [Seq.filter_cons_pos a _ hp, if_pos (by simpa using hp), Seq.ofList_cons, ih]
     · rw [Seq.filter_cons_neg a _ hp, if_neg (by simpa using hp), ih]
-
-/-- **`takeWhile` of a list ending with a `¬P`-element is empty after reversal.** If `L`'s
-last element fails `P`, then `L.reverse.takeWhile P = []` (the reversal's head is `L`'s last,
-which is consumed immediately). -/
-theorem List.takeWhile_reverse_eq_nil_of_getLast {α : Type} (L : List α) (P : α → Bool)
-    (hlast : ∀ x, L.getLast? = some x → ¬ P x) :
-    L.reverse.takeWhile P = [] := by
-  cases hL : L.reverse with
-  | nil => simp
-  | cons a t =>
-    rw [List.takeWhile_cons]
-    have hne : L ≠ [] := by intro h; rw [h] at hL; simp at hL
-    have ha : a = L.getLast hne := by
-      have h1 : L.reverse.head? = some a := by rw [hL]; rfl
-      rw [List.head?_reverse, List.getLast?_eq_some_getLast hne] at h1
-      exact (Option.some.injEq _ _).mp h1.symm
-    rw [if_neg (by rw [ha]; exact hlast _ (List.getLast?_eq_some_getLast hne))]
 
 /-- **`takeWhile` of an append whose prefix all satisfies `P` and suffix-head fails `P`.** -/
 theorem List.takeWhile_append_of_all {α : Type} (a b : List α) (P : α → Bool)
@@ -447,28 +416,6 @@ theorem LabelledSystem.internalSuffix_endState (ls : LabelledSystem State Label)
   exact AlterSeq.endState_drop_suffix e h m hmle
 
 /-! ### `internalSuffix` of tight / segment-extended histories -/
-
-/-- **`internalSuffix` of a tight execution is the empty suffix at its end-state.** A tight
-execution ends with an external transition, so its maximal trailing internal run is empty:
-`internalSuffix e = ⟨e.endState, nil⟩`. (PEEL step 1a, tight case.) -/
-theorem LabelledSystem.internalSuffix_of_tight (sys : LabelledSystem State Label)
-    (e : AlterSeq State Label) (h : e.trans.Terminates) (htight : sys.IsTight e) :
-    sys.internalSuffix e = ⟨e.endState h, Seq.nil⟩ := by
-  classical
-  set Ltr := e.trans.toList h with hLtr
-  have htw : (Ltr.reverse.takeWhile (fun p => decide (sys.internal p.1))) = [] := by
-    apply List.takeWhile_reverse_eq_nil_of_getLast
-    intro x hx
-    simpa using sys.tight_getLast_external e h htight x hx
-  have hlen : Ltr.length = e.trans.length h := Stream'.Seq.length_toList e.trans h
-  have hfind : Nat.find h = e.trans.length h := rfl
-  rw [LabelledSystem.internalSuffix, dif_pos h]
-  simp only [← hLtr, htw, List.length_nil, Nat.sub_zero]
-  have hstate : e.stateAt Ltr.length = some (e.endState h) := by
-    rw [hlen, ← hfind]; exact AlterSeq.stateAt_find_eq_endState e h
-  have hdrop : e.trans.drop Ltr.length = Seq.nil := by
-    rw [hlen]; exact Stream'.Seq.drop_length_eq_nil e.trans h
-  rw [hstate, hdrop, Option.getD_some]
 
 /-- **`internalSuffix` of a segment-extended history (within a segment).** Suppose `preList`
 ends with an external transition (`hpre_ext`) and `pref₀` is all-internal (`hpref_int`). Then

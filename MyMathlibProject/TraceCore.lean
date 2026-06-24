@@ -63,16 +63,6 @@ noncomputable def LabelledSystem.trace (ls : LabelledSystem State Label)
   unfold LabelledSystem.trace
   rw [Seq.filter_cons_pos (l, s') rest h, Seq.map_cons]
 
-/-- The trace of an execution whose first transition has an *internal* label
-`l` equals the trace from the rest of the execution (the internal label is
-dropped). -/
-@[simp] theorem LabelledSystem.trace_cons_internal
-    (ls : LabelledSystem State Label) (s : State) (l : Label) (s' : State)
-    (rest : Seq (Label × State)) (h : ls.internal l) :
-    ls.trace ⟨s, Seq.cons (l, s') rest⟩ = ls.trace ⟨s', rest⟩ := by
-  unfold LabelledSystem.trace
-  rw [Seq.filter_cons_neg (l, s') rest (fun h' => h' h)]
-
 /-- A finite execution is *trace-tight* under `ls` if either it has no
 transitions, or its last transition is external. Tight executions correspond
 to "trace cone boundaries": each trajectory has at most one tight prefix per
