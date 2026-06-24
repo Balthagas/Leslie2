@@ -6538,7 +6538,7 @@ theorem Scheduler.bind_compose_integrate_traceL {State Label : Type}
     have htr_concat : sys.trace (⟨WeakScheduler.concat f₁ f₂,
           WeakScheduler.concat_terminates f₁ f₂⟩ :
           {e : AlterSeq State Label // e.trans.Terminates}).1 = sys.trace f₂.1 := by
-      show sys.trace (WeakScheduler.concat f₁ f₂) = sys.trace f₂.1
+      change sys.trace (WeakScheduler.concat f₁ f₂) = sys.trace f₂.1
       have hpre_eq : sys.trace (⟨(WeakScheduler.concat f₁ f₂).init,
             Seq.ofList (f₁.1.trans.toList f₁.2)⟩ : AlterSeq State Label) = Seq.nil := by
         rw [show (⟨(WeakScheduler.concat f₁ f₂).init, Seq.ofList (f₁.1.trans.toList f₁.2)⟩
@@ -6927,7 +6927,8 @@ theorem hsLabMass_expandK_step {State Label : Type}
       ∑' μ_n : PMF State, pe'.scheduler.next E (some (l, μ_n))
         * pe'.hsExpect (E.endState hE) l μ_n g
     else 0 with hF
-  -- Reindex the RHS: `∑' E_full [tight L'] probOf · F = ∑' E' σ [tight L'.dropLast] probOf · kernel · F`.
+  -- Reindex the RHS: `∑' E_full [tight L'] probOf · F =
+  --   ∑' E' σ [tight L'.dropLast] probOf · kernel · F`.
   have hL'_eq : L'.dropLast ++ [l'] = L' :=
     List.dropLast_append_getLast? l' (by rw [hL']; rfl)
   rw [show (∑' (E' : AlterSeq State Label),
@@ -6994,7 +6995,7 @@ theorem hsLabMass_expandK_step {State Label : Type}
       rw [pe'.beliefExpandW_eq L' ν' l' hL' (E', μ)]
       dsimp only
       rw [dif_pos hT]
-      show _ = pe'.probOf E' hT.1 *
+      change _ = pe'.probOf E' hT.1 *
         ((pe'.scheduler.next E' (some (l', μ)) *
           (if hstep : (¬ sys.internal l') ∧ sys^w.step (E'.endState hT.1) l' μ then
             (((hstep.2).resolve_left (fun ha => hstep.1 ha.1)).2).postDist ν' else 0))
@@ -7093,6 +7094,58 @@ theorem hsLabMass_expandK_step {State Label : Type}
     refine ENNReal.tsum_eq_zero.mpr (fun μ => ?_)
     rw [pe'.beliefExpandW_eq L' ν' l' hL' (E', μ)]
     rw [dif_neg hT, zero_mul]
+
+open Classical in
+/-- **General bridge: tight `extLabMass` equals the `haltMass`-weighted trace mass.** For a
+scheduler `σ` run from the Dirac source `pure ν` such that (H1) every nonzero-haltMass execution
+has external trace `ofList τ` and is tight, and (H2) every tight, terminating, trace-`ofList τ`
+execution `e` halts terminally (`σ.next e none = 1`), the trace-`τ` external level mass equals the
+`haltMass`-weighted trace-`τ` `g`-mass. -/
+theorem extLabMass_eq_haltMass_tsum {State Label : Type}
+    {sys : LabelledSystem State Label} (σ : Scheduler sys.toSystem) (ν : PMF State)
+    (τ : List Label) (g : State → ENNReal)
+    (hHalt : ∀ e : {e : AlterSeq State Label // e.trans.Terminates},
+      σ.haltMass ν e ≠ 0 → sys.trace e.1 = Seq.ofList τ ∧ sys.IsTight e.1)
+    (hTight : ∀ e : AlterSeq State Label, (he : e.trans.Terminates) →
+      sys.trace e = Seq.ofList τ → sys.IsTight e →
+      (⟨ν, σ⟩ : ProbabilisticExecution sys.toSystem).probOf e he ≠ 0 →
+      σ.next e none = 1) :
+    sys.extLabMass ⟨ν, σ⟩ τ g
+      = ∑' e : {e : AlterSeq State Label // e.trans.Terminates},
+          σ.haltMass ν e * (if sys.trace e.1 = Seq.ofList τ then g (e.1.endState e.2) else 0) := by
+  classical
+  rw [sys.extLabMass_eq_tight_tsum ⟨ν, σ⟩ τ g]
+  -- The RHS summand (over all terminating execs), and the injection from the tight subtype.
+  set R : {e : AlterSeq State Label // e.trans.Terminates} → ENNReal :=
+    fun e => σ.haltMass ν e * (if sys.trace e.1 = Seq.ofList τ then g (e.1.endState e.2) else 0)
+    with hR
+  set i : {e : AlterSeq State Label // e.trans.Terminates ∧ sys.trace e = Seq.ofList τ
+        ∧ sys.IsTight e} → {e : AlterSeq State Label // e.trans.Terminates} :=
+    fun e => ⟨e.1, e.2.1⟩ with hi
+  have hinj : Function.Injective i := by
+    intro a b hab
+    have : (i a).1 = (i b).1 := congrArg Subtype.val hab
+    exact Subtype.ext this
+  have hsupp : Function.support R ⊆ Set.range i := by
+    intro e he
+    rw [Function.mem_support] at he
+    have hz : σ.haltMass ν e ≠ 0 := by
+      intro h0; apply he; rw [hR]; simp only [h0, zero_mul]
+    obtain ⟨htr, htight⟩ := hHalt e hz
+    exact ⟨⟨e.1, ⟨e.2, htr, htight⟩⟩, Subtype.ext rfl⟩
+  rw [← Function.Injective.tsum_eq hinj (f := R) hsupp]
+  -- On the image, `haltMass = probOf` (since `next none = 1` on tight trace-`τ` execs).
+  refine tsum_congr (fun e => ?_)
+  rw [hR, hi]
+  simp only []
+  rw [if_pos e.2.2.1]
+  -- `σ.haltMass ν e.1 = probOf · next none`; `next none = 1` (or `probOf = 0`).
+  rw [show σ.haltMass ν ⟨e.1, e.2.1⟩
+        = (⟨ν, σ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1
+            * σ.next e.1 none from rfl]
+  by_cases hp : (⟨ν, σ⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2.1 = 0
+  · rw [hp]; simp
+  · rw [hTight e.1 e.2.1 e.2.2.1 e.2.2.2 hp, mul_one]
 
 open Classical in
 /-- **PEEL half**: the trace-`(L' ++ [l])` external level mass of the expanded `sys`-execution
