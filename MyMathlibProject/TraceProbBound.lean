@@ -368,6 +368,307 @@ theorem ProbabilisticExecution.probOf_antichain {State Label : Type}
     _ ≤ ∑' s₀ : State, pe.init s₀ := ENNReal.sum_le_tsum _
     _ = 1 := by rw [pe.init_eq_initState]; exact pe.initState.tsum_coe
 
+/-- **`tsum` over an `Option` type splits** as the value at `none` plus the `tsum`
+over the `some`-fibres. (Local `ENNReal` specialisation; no such `tsum_option`
+exists in this Mathlib revision, and every `ENNReal` family is summable.) -/
+theorem ENNReal.tsum_option' {β : Type*} (f : Option β → ENNReal) :
+    (∑' x, f x) = f none + ∑' y, f (some y) := by
+  rw [_root_.ENNReal.tsum_eq_add_tsum_ite none]
+  congr 1
+  rw [tsum_eq_tsum_of_ne_zero_bij (i := fun y : {y : β // f (some y) ≠ 0} => some y.1)]
+  · intro a b hab; exact Subtype.ext (Option.some_injective β hab)
+  · intro x hx
+    cases hx2 : (x : Option β) with
+    | none => simp [Function.mem_support, hx2] at hx
+    | some y =>
+      refine ⟨⟨y, ?_⟩, ?_⟩
+      · simp only [Function.mem_support] at hx ⊢
+        rw [hx2] at hx; simpa using hx
+      · simp
+  · intro y; simp
+
+open Classical in
+/-- **Halting-mass Kraft bound (path-weight level).** For *any* finite set `F` of
+transition lists (no prefix-freeness needed — the per-list halting factor
+`next ⟨base.init, base.trans ++ ofList t⟩ none` absorbs overlaps), the total
+`pathWeight`-times-halt mass from any base is `≤ 1`. Mirrors
+`pathWeight_antichain` (induction on the length bound, grouped by `head?`), but
+the inductive bound is the *full* one-step mass `b` (kernel on `some`, halt on
+`none`), which sums to exactly `1`. -/
+theorem ProbabilisticExecution.pathWeight_halt_le_one {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (base : AlterSeq State Label) (F : Finset (List (Label × State))) :
+    (∑ t ∈ F, pe.pathWeight base t *
+        pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList t)⟩ none) ≤ 1 := by
+  classical
+  suffices aux : ∀ (N : ℕ) (base : AlterSeq State Label)
+      (F : Finset (List (Label × State))),
+      (∀ t ∈ F, t.length ≤ N) →
+      (∑ t ∈ F, pe.pathWeight base t *
+          pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList t)⟩ none) ≤ 1 by
+    exact aux (F.sup List.length) base F (fun t ht => Finset.le_sup ht)
+  intro N
+  induction N with
+  | zero =>
+    intro base F hlen
+    have hsub : F ⊆ {([] : List (Label × State))} := by
+      intro t ht
+      have : t = [] := List.eq_nil_of_length_eq_zero (Nat.le_zero.mp (hlen t ht))
+      simp [this]
+    calc (∑ t ∈ F, pe.pathWeight base t *
+            pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList t)⟩ none)
+        ≤ ∑ t ∈ ({([] : List (Label × State))} : Finset _),
+            pe.pathWeight base t *
+              pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList t)⟩ none :=
+          Finset.sum_le_sum_of_subset_of_nonneg hsub (fun _ _ _ => bot_le)
+      _ = pe.pathWeight base [] *
+            pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList [])⟩ none :=
+          Finset.sum_singleton _ _
+      _ ≤ 1 := by
+          rw [show pe.pathWeight base [] = 1 from by
+                unfold ProbabilisticExecution.pathWeight; rw [List.reverseRecOn_nil], one_mul,
+              Stream'.Seq.ofList_nil, Stream'.Seq.append_nil]
+          exact PMF.coe_le_one _ _
+  | succ N ih =>
+    intro base F hlen
+    set T : Finset (Option (Label × State)) := F.image List.head? with hT
+    have hmaps : ∀ t ∈ F, t.head? ∈ T := fun t ht => Finset.mem_image_of_mem _ ht
+    rw [← Finset.sum_fiberwise_of_maps_to hmaps
+      (fun t => pe.pathWeight base t *
+        pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList t)⟩ none)]
+    set b : Option (Label × State) → ENNReal :=
+      fun o => o.elim (pe.scheduler.next base none) (fun p => pe.kernel base p) with hb
+    have hfib : ∀ j ∈ T, (∑ i ∈ F with i.head? = j,
+        pe.pathWeight base i *
+          pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList i)⟩ none) ≤ b j := by
+      intro j hj
+      cases j with
+      | none =>
+        have hsubn : (F.filter (fun i => i.head? = none)) ⊆ {([] : List (Label × State))} := by
+          intro t ht
+          rw [Finset.mem_filter] at ht
+          have : t = [] := List.head?_eq_none_iff.mp ht.2
+          simp [this]
+        calc (∑ i ∈ F with i.head? = none,
+              pe.pathWeight base i *
+                pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList i)⟩ none)
+            ≤ ∑ i ∈ ({([] : List (Label × State))} : Finset _),
+                pe.pathWeight base i *
+                  pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList i)⟩ none :=
+              Finset.sum_le_sum_of_subset_of_nonneg hsubn (fun _ _ _ => bot_le)
+          _ = pe.pathWeight base [] *
+                pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList [])⟩ none :=
+              Finset.sum_singleton _ _
+          _ = b none := by
+              rw [show pe.pathWeight base [] = 1 from by
+                    unfold ProbabilisticExecution.pathWeight; rw [List.reverseRecOn_nil], one_mul,
+                  Stream'.Seq.ofList_nil, Stream'.Seq.append_nil]
+              rfl
+      | some p =>
+        obtain ⟨l, s'⟩ := p
+        set base' : AlterSeq State Label :=
+          ⟨base.init, base.trans.append (Seq.cons (l, s') Seq.nil)⟩ with hbase'
+        have hfiber_cons : ∀ t ∈ F.filter (fun i => i.head? = some (l, s')),
+            t = (l, s') :: t.tail := by
+          intro t ht
+          rw [Finset.mem_filter] at ht
+          exact (List.cons_head?_tail (a := (l, s')) ht.2).symm
+        set Ft : Finset (List (Label × State)) := F.filter (fun i => i.head? = some (l, s'))
+          with hFt
+        have hstep : (∑ i ∈ Ft,
+              pe.pathWeight base i *
+                pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList i)⟩ none)
+            = ∑ i ∈ Ft, pe.kernel base (l, s') *
+                (pe.pathWeight base' i.tail *
+                  pe.scheduler.next ⟨base'.init, base'.trans.append (Seq.ofList i.tail)⟩ none) := by
+          refine Finset.sum_congr rfl fun t ht => ?_
+          conv_lhs => rw [hfiber_cons t ht]
+          rw [pe.pathWeight_cons base l s' t.tail]
+          have hhist : base.trans.append (Seq.ofList ((l, s') :: t.tail))
+              = (base.trans.append (Seq.cons (l, s') Seq.nil)).append (Seq.ofList t.tail) := by
+            rw [Stream'.Seq.ofList_cons, Stream'.Seq.append_assoc, Stream'.Seq.cons_append,
+              Stream'.Seq.nil_append]
+          rw [hhist]
+          ring
+        rw [hstep, ← Finset.mul_sum]
+        set Gt : Finset (List (Label × State)) := Ft.image List.tail with hGt
+        have hinj : Set.InjOn List.tail (Ft : Set (List (Label × State))) := by
+          intro a ha b hb hab
+          have ea := hfiber_cons a ha
+          have eb := hfiber_cons b hb
+          rw [ea, eb, hab]
+        have hreindex : (∑ i ∈ Ft, pe.pathWeight base' i.tail *
+              pe.scheduler.next ⟨base'.init, base'.trans.append (Seq.ofList i.tail)⟩ none)
+            = ∑ u ∈ Gt, pe.pathWeight base' u *
+              pe.scheduler.next ⟨base'.init, base'.trans.append (Seq.ofList u)⟩ none := by
+          rw [hGt, Finset.sum_image hinj]
+        rw [hreindex]
+        have hbound : (∑ u ∈ Gt, pe.pathWeight base' u *
+            pe.scheduler.next ⟨base'.init, base'.trans.append (Seq.ofList u)⟩ none) ≤ 1 := by
+          apply ih base' Gt
+          intro u hu
+          rw [hGt, Finset.mem_image] at hu
+          obtain ⟨t, ht, rfl⟩ := hu
+          have htF : t ∈ F := (Finset.mem_filter.mp (hFt ▸ ht)).1
+          have htne : t = (l, s') :: t.tail := hfiber_cons t ht
+          have hlent : t.length = t.tail.length + 1 := by
+            conv_lhs => rw [htne]
+            simp
+          have hle := hlen t htF
+          omega
+        calc pe.kernel base (l, s') *
+              ∑ u ∈ Gt, pe.pathWeight base' u *
+                pe.scheduler.next ⟨base'.init, base'.trans.append (Seq.ofList u)⟩ none
+            ≤ pe.kernel base (l, s') * 1 := by gcongr
+          _ = b (some (l, s')) := by rw [mul_one, hb]; rfl
+    calc (∑ j ∈ T, ∑ i ∈ F with i.head? = j,
+            pe.pathWeight base i *
+              pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList i)⟩ none)
+        ≤ ∑ j ∈ T, b j := Finset.sum_le_sum hfib
+      _ ≤ ∑' j : Option (Label × State), b j := ENNReal.sum_le_tsum T
+      _ = 1 := by
+          rw [ENNReal.tsum_option' b]
+          have hkereq : (∑' p : Label × State, pe.kernel base p)
+              = ∑' lμ : Label × PMF State, pe.scheduler.next base (some lμ) := by
+            calc (∑' p : Label × State, pe.kernel base p)
+                = ∑' (l : Label) (s' : State), pe.kernel base (l, s') := by rw [ENNReal.tsum_prod']
+              _ = ∑' (l : Label) (s' : State) (μ : PMF State),
+                    pe.scheduler.next base (some (l, μ)) * μ s' := by rfl
+              _ = ∑' (l : Label) (μ : PMF State) (s' : State),
+                    pe.scheduler.next base (some (l, μ)) * μ s' := by
+                  refine tsum_congr fun l => ?_; exact ENNReal.tsum_comm
+              _ = ∑' (l : Label) (μ : PMF State), pe.scheduler.next base (some (l, μ)) := by
+                  refine tsum_congr fun l => tsum_congr fun μ => ?_
+                  rw [ENNReal.tsum_mul_left, μ.tsum_coe, mul_one]
+              _ = ∑' lμ : Label × PMF State, pe.scheduler.next base (some lμ) := by
+                  rw [ENNReal.tsum_prod']
+          have hsome : (∑' p : Label × State, b (some p))
+              = ∑' lμ : Label × PMF State, pe.scheduler.next base (some lμ) := by
+            rw [show (∑' p : Label × State, b (some p))
+                  = ∑' p : Label × State, pe.kernel base p from rfl, hkereq]
+          rw [hsome, show b none = pe.scheduler.next base none from rfl,
+            ← ENNReal.tsum_option' (fun opt => pe.scheduler.next base opt)]
+          exact (pe.scheduler.next base).tsum_coe
+
+open Classical in
+/-- **Halting-mass Kraft bound (execution level).** For *any* finite set `F` of
+terminating executions (no prefix-freeness needed — the per-execution halting
+factor `next e.1 none` absorbs overlaps), the total `probOf`-times-halt mass is
+`≤ 1`. Mirrors `probOf_antichain` (group by the initial state, reindex onto the
+transition lists), bounding each group by `pathWeight_halt_le_one`, then summing
+`∑ initState ≤ 1`. -/
+theorem ProbabilisticExecution.probOf_halt_le_one {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (F : Finset {e : AlterSeq State Label // e.trans.Terminates}) :
+    (∑ e ∈ F, pe.probOf e.1 e.2 * pe.scheduler.next e.1 none) ≤ 1 := by
+  classical
+  -- Per-element factorisation of `probOf` through `pathWeight`.
+  have hfactor : ∀ (s₀ : State) (sq : Seq (Label × State)) (h : sq.Terminates),
+      pe.probOf ⟨s₀, sq⟩ h
+        = pe.init s₀ * pe.pathWeight ⟨s₀, Seq.nil⟩ (sq.toList h) := by
+    intro s₀ sq h
+    have heq : (Seq.ofList (sq.toList h) : Seq (Label × State)) = sq :=
+      Stream'.Seq.ofList_toList sq h
+    generalize hL : sq.toList h = L
+    rw [hL] at heq
+    subst heq
+    exact pe.probOf_eq_pathWeight s₀ L h
+  -- The per-element body, in `pathWeight`-times-halt form with base `⟨init, nil⟩`.
+  set body : {e : AlterSeq State Label // e.trans.Terminates} → ENNReal :=
+    fun e => pe.init (e.1).init
+      * (pe.pathWeight ⟨(e.1).init, Seq.nil⟩ ((e.1).trans.toList e.2)
+        * pe.scheduler.next ⟨(e.1).init,
+            (Seq.nil : Seq (Label × State)).append (Seq.ofList ((e.1).trans.toList e.2))⟩ none)
+    with hbody
+  have hrw : (∑ e ∈ F, pe.probOf e.1 e.2 * pe.scheduler.next e.1 none) = ∑ e ∈ F, body e := by
+    refine Finset.sum_congr rfl fun e _ => ?_
+    rw [hbody]; simp only
+    rw [hfactor (e.1).init (e.1).trans e.2]
+    have hhalt : pe.scheduler.next e.1 none
+        = pe.scheduler.next ⟨(e.1).init,
+            (Seq.nil : Seq (Label × State)).append (Seq.ofList ((e.1).trans.toList e.2))⟩ none := by
+      congr 1
+      simp only [Stream'.Seq.nil_append]
+      rw [Stream'.Seq.ofList_toList]
+    rw [hhalt]; ring
+  rw [hrw]
+  -- Group by the initial state.
+  set g : {e // e ∈ F} → State := fun e => (e.1.1).init with hg
+  have hmaps : ∀ e ∈ F.attach, g e ∈ F.attach.image g :=
+    fun e he => Finset.mem_image_of_mem g he
+  rw [← Finset.sum_attach F body]
+  rw [← Finset.sum_fiberwise_of_maps_to hmaps (fun e => body e.1)]
+  -- Per-fiber bound: the `s₀`-fiber sum is `≤ pe.init s₀`.
+  have hfib : ∀ s₀ ∈ F.attach.image g,
+      (∑ i ∈ F.attach with g i = s₀, body i.1) ≤ pe.init s₀ := by
+    intro s₀ _
+    set Fs : Finset {e // e ∈ F} := F.attach.filter (fun i => g i = s₀) with hFs
+    have hinit : ∀ i ∈ Fs, (i.1.1).init = s₀ := by
+      intro i hi
+      rw [hFs, Finset.mem_filter] at hi
+      exact hi.2
+    set tl : {e // e ∈ F} → List (Label × State) :=
+      fun i => (i.1.1).trans.toList i.1.2 with htl
+    -- Halt-factor base, abbreviated to keep lines short.
+    set hbase : List (Label × State) → AlterSeq State Label :=
+      fun u => ⟨s₀, (Seq.nil : Seq (Label × State)).append (Seq.ofList u)⟩ with hhbase
+    have hsum_eq : (∑ i ∈ Fs, body i.1)
+        = pe.init s₀ * ∑ i ∈ Fs,
+            (pe.pathWeight ⟨s₀, Seq.nil⟩ (tl i)
+              * pe.scheduler.next (hbase (tl i)) none) := by
+      rw [Finset.mul_sum]
+      refine Finset.sum_congr rfl fun i hi => ?_
+      rw [hbody]; simp only
+      rw [hinit i hi]
+    rw [hsum_eq]
+    set Ts : Finset (List (Label × State)) := Fs.image tl with hTs
+    have hinj : Set.InjOn tl (Fs : Set {e // e ∈ F}) := by
+      intro a ha b hb hab
+      apply Subtype.ext
+      apply Subtype.ext
+      have hia := hinit a ha
+      have hib := hinit b hb
+      have htrans : a.1.1.trans = b.1.1.trans := by
+        have := congrArg Stream'.Seq.ofList hab
+        rw [htl] at this
+        rw [Stream'.Seq.ofList_toList, Stream'.Seq.ofList_toList] at this
+        exact this
+      have hi2 : a.1.1.init = b.1.1.init := by rw [hia, hib]
+      cases h1 : a.1.1; cases h2 : b.1.1
+      simp only [AlterSeq.mk.injEq]
+      rw [h1, h2] at hi2 htrans
+      exact ⟨hi2, htrans⟩
+    have hreindex : (∑ i ∈ Fs,
+          (pe.pathWeight ⟨s₀, Seq.nil⟩ (tl i) * pe.scheduler.next (hbase (tl i)) none))
+        = ∑ u ∈ Ts, (pe.pathWeight ⟨s₀, Seq.nil⟩ u * pe.scheduler.next (hbase u) none) := by
+      rw [hTs, Finset.sum_image hinj]
+    rw [hreindex]
+    have hbound : (∑ u ∈ Ts,
+        (pe.pathWeight ⟨s₀, Seq.nil⟩ u * pe.scheduler.next (hbase u) none)) ≤ 1 := by
+      have := pe.pathWeight_halt_le_one ⟨s₀, Seq.nil⟩ Ts
+      simpa [hhbase] using this
+    calc pe.init s₀ * ∑ u ∈ Ts,
+          (pe.pathWeight ⟨s₀, Seq.nil⟩ u * pe.scheduler.next (hbase u) none)
+        ≤ pe.init s₀ * 1 := by gcongr
+      _ = pe.init s₀ := mul_one _
+  calc (∑ j ∈ F.attach.image g, ∑ i ∈ F.attach with g i = j, body i.1)
+      ≤ ∑ j ∈ F.attach.image g, pe.init j := Finset.sum_le_sum hfib
+    _ ≤ ∑' s₀ : State, pe.init s₀ := ENNReal.sum_le_tsum _
+    _ = 1 := by rw [pe.init_eq_initState]; exact pe.initState.tsum_coe
+
+/-- **Total halting mass is `≤ 1`.** -/
+theorem WeakScheduler.haltMass_tsum_le_one {sys : LabelledSystem State Label}
+    (σ : WeakScheduler sys) (μ : PMF State) :
+    (∑' e, σ.haltMass μ e) ≤ 1 := by
+  rw [ENNReal.tsum_eq_iSup_sum]
+  refine iSup_le fun F => ?_
+  rw [show (∑ e ∈ F, σ.haltMass μ e)
+      = ∑ e ∈ F, (⟨μ, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf e.1 e.2
+          * (⟨μ, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).scheduler.next e.1 none
+        from Finset.sum_congr rfl fun e _ => rfl]
+  exact (⟨μ, σ.toScheduler⟩ : ProbabilisticExecution sys.toSystem).probOf_halt_le_one F
+
+
 /-- `Seq.filter` of an `ofList` is the `ofList` of the corresponding `List.filter`. -/
 theorem ofList_filter_helper {α : Type} (p : α → Prop) [DecidablePred p]
     (l : List α) :

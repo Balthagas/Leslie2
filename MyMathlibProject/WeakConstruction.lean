@@ -6,6 +6,7 @@ Authors: Gaspard Reghem
 
 import MyMathlibProject.WeakStep
 import MyMathlibProject.DistConstruction
+import MyMathlibProject.TraceMap
 import MyMathlibProject.TraceProbBound
 import MyMathlibProject.PostTauAccounting
 import MyMathlibProject.TightTrace
@@ -94,19 +95,10 @@ re-derived through `step_le_weakClosure_step`. Since `sys` and `sys^w` share
 their internal-label predicate, the `trace` / `IsTight` filters and `probOf`
 computation agree definitionally, so `traceProb` is unchanged. -/
 theorem weakClosure_traceProb_subset (sys : LabelledSystem State Label) :
-    achievableTraceDists sys ⊆ achievableTraceDists sys^w := by
-  rintro D ⟨pe, h_init, hpe⟩
-  refine ⟨
-    { initState := pe.initState
-      scheduler :=
-        { next := pe.scheduler.next
-          valid := fun e n s h_term h_state l μ h_supp =>
-            sys.step_le_weakClosure_step
-              (pe.scheduler.valid e n s h_term h_state l μ h_supp) } }, ?_, ?_⟩
-  · -- `sys^w.init = sys.init`, so the lifted execution starts at the same state.
-    exact h_init
-  · intro τ
-    exact hpe τ
+    achievableTraceDists sys ⊆ achievableTraceDists sys^w :=
+  achievableTraceDists_map (sys_X := sys) (sys_Y := sys^w) (f := id) rfl
+    (fun s l μ h => by rw [PMF.map_id]; exact sys.step_le_weakClosure_step h)
+    (fun _ => Iff.rfl)
 
 /-! ### External-trace level mass
 

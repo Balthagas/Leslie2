@@ -6,6 +6,7 @@ Authors: Gaspard Reghem
 
 import MyMathlibProject.PmfUtils
 import MyMathlibProject.WeakStep
+import MyMathlibProject.TraceMap
 
 /-!
 # Distribution-monad construction
@@ -696,38 +697,13 @@ theorem AlterSeq.dirac_isTight_iff (sys : LabelledSystem State Label)
 execution `pe` of `sys`, its Dirac-lift `pe.dist` is a probabilistic
 execution of `𝒟(sys)` achieving the same trace distribution. -/
 theorem dist_traceProb_subset (sys : LabelledSystem State Label) :
-    achievableTraceDists sys ⊆ achievableTraceDists 𝒟(sys) := by
-  classical
-  intro D ⟨pe, h_init, h_pe⟩
-  refine ⟨pe.dist, ?_, fun τ => ?_⟩
-  · -- The Dirac-lift `pe.dist` also starts at `𝒟(sys)`'s initial state.
-    have hD : (𝒟(sys)).toSystem.init = PMF.pure sys.toSystem.init := rfl
-    change pe.dist.initState = PMF.pure 𝒟(sys).toSystem.init
-    rw [hD, show pe.dist.initState = pe.initState.map PMF.pure from rfl, h_init,
-      PMF.pure_map]
-  rw [← h_pe τ]
-  unfold LabelledSystem.traceProb
-  refine tsum_eq_tsum_of_ne_zero_bij
-    (i := fun e => ⟨e.1.1.dirac,
-      (AlterSeq.dirac_trans_terminates_iff e.1.1).mpr e.1.2.1,
-      (AlterSeq.dirac_trace sys e.1.1).trans e.1.2.2.1,
-      (AlterSeq.dirac_isTight_iff sys e.1.1).mpr e.1.2.2.2⟩)
-    (fun _ _ h => Subtype.ext (Subtype.ext
-      (AlterSeq.dirac_injective (congr_arg Subtype.val h))))
-    ?_
-    (fun ⟨⟨e, he_fin, _, _⟩, _⟩ => pe.dist_probOf_dirac e he_fin)
-  rintro ⟨E, hE_fin, hE_trace, hE_tight⟩ hE_ne
-  change pe.dist.probOf E hE_fin ≠ 0 at hE_ne
-  rw [ProbabilisticExecution.dist_probOf] at hE_ne
-  split_ifs at hE_ne with h_im
-  · set e := h_im.choose
-    have he : e.dirac = E := h_im.choose_spec
-    rw [← he] at hE_fin hE_trace hE_tight
-    exact ⟨⟨⟨e, (AlterSeq.dirac_trans_terminates_iff e).mp hE_fin,
-      (AlterSeq.dirac_trace sys e) ▸ hE_trace,
-      (AlterSeq.dirac_isTight_iff sys e).mp hE_tight⟩, hE_ne⟩,
-      Subtype.ext he⟩
-  · exact absurd rfl hE_ne
+    achievableTraceDists sys ⊆ achievableTraceDists 𝒟(sys) :=
+  achievableTraceDists_map (sys_X := sys) (sys_Y := 𝒟(sys)) PMF.pure rfl
+    (fun s l μ h => by
+      have hbm : (μ.map PMF.pure).bind id = μ := by rw [PMF.bind_map]; exact PMF.bind_pure μ
+      change hyperStep sys (PMF.pure s) l ((μ.map PMF.pure).bind id)
+      rw [hbm]; exact hyperStep_pure_of_step h)
+    (fun _ => Iff.rfl)
 
 /-! ### Inverting the lift: from `𝒟(sys)`-execution back to `sys`-execution
 

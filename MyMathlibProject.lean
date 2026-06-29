@@ -6,8 +6,10 @@ import MyMathlibProject.PostTauAccounting
 import MyMathlibProject.SchedulerBind
 import MyMathlibProject.SeqHelper
 import MyMathlibProject.Simulation
+import MyMathlibProject.SimulationTrace
 import MyMathlibProject.TightTrace
 import MyMathlibProject.TraceCore
+import MyMathlibProject.TraceMap
 import MyMathlibProject.TraceProbBound
 import MyMathlibProject.WeakConstruction
 import MyMathlibProject.WeakStep
