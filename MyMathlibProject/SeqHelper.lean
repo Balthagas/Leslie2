@@ -429,6 +429,97 @@ theorem append_singleton_inj_left
     (Seq.ofList_toList _ _).symm
   rw [h_A_toL_eq, h_B_toL_eq, h_dropLast]
 
+/-- `map` and `drop` commute: dropping `n` elements from `s.map f` is the
+same as mapping `f` over `s.drop n`. -/
+theorem map_drop {β : Type*} (f : α → β) (s : Seq α) (n : ℕ) :
+    (s.map f).drop n = (s.drop n).map f := by
+  induction n generalizing s with
+  | zero => rfl
+  | succ k ih =>
+    change tail ((s.map f).drop k) = tail ((s.drop k).map f)
+    rw [ih]
+
+/-- Filter-map interchange: filtering after mapping equals mapping after
+filtering by the precomposed predicate. Proved by bisimulation with case
+analysis on whether `s` contains an element satisfying `p ∘ f`. -/
+theorem filter_map {β : Type*} (f : α → β) (p : β → Prop) (s : Seq α) :
+    (s.map f).filter p = (s.filter (p ∘ f)).map f := by
+  classical
+  apply Seq.eq_of_bisim
+    (R := fun t₁ t₂ => ∃ s : Seq α,
+      t₁ = (s.map f).filter p ∧ t₂ = (s.filter (p ∘ f)).map f)
+  · rintro t₁ t₂ ⟨s, rfl, rfl⟩
+    have h_ex_iff : (∃ n, ∃ b, (s.map f).get? n = some b ∧ p b)
+        ↔ (∃ n, ∃ a, s.get? n = some a ∧ (p ∘ f) a) := by
+      constructor
+      · rintro ⟨n, b, h_get, h_p⟩
+        rw [map_get?] at h_get
+        rcases h_s : s.get? n with - | a
+        · rw [h_s] at h_get; simp at h_get
+        · rw [h_s] at h_get
+          simp only [Option.map_some, Option.some_inj] at h_get
+          refine ⟨n, a, h_s, ?_⟩
+          change p (f a); rw [h_get]; exact h_p
+      · rintro ⟨n, a, h_get, h_p⟩
+        refine ⟨n, f a, ?_, h_p⟩
+        rw [map_get?, h_get]; rfl
+    by_cases h_ex : ∃ n, ∃ a, s.get? n = some a ∧ (p ∘ f) a
+    · have h_ex' : ∃ n, ∃ b, (s.map f).get? n = some b ∧ p b := h_ex_iff.mpr h_ex
+      have h_find_eq : Nat.find h_ex' = Nat.find h_ex := by
+        apply le_antisymm
+        · obtain ⟨a, h_get, h_p⟩ := Nat.find_spec h_ex
+          apply Nat.find_min' h_ex'
+          exact ⟨f a, by rw [map_get?, h_get]; rfl, h_p⟩
+        · obtain ⟨b, h_get, h_p⟩ := Nat.find_spec h_ex'
+          apply Nat.find_min' h_ex
+          rw [map_get?] at h_get
+          rcases h_s : s.get? (Nat.find h_ex') with - | a
+          · rw [h_s] at h_get; simp at h_get
+          · rw [h_s] at h_get
+            simp only [Option.map_some, Option.some_inj] at h_get
+            exact ⟨a, rfl, by change p (f a); rw [h_get]; exact h_p⟩
+      set cL := (Nat.find_spec h_ex').choose
+      set cR := (Nat.find_spec h_ex).choose
+      have h1 : (s.map f).get? (Nat.find h_ex') = some cL :=
+        (Nat.find_spec h_ex').choose_spec.1
+      have h2 : s.get? (Nat.find h_ex) = some cR :=
+        (Nat.find_spec h_ex).choose_spec.1
+      have h_LHS_destruct :
+          destruct ((s.map f).filter p) = some
+            (cL, ((s.map f).drop (Nat.find h_ex' + 1)).filter p) := by
+        unfold filter
+        rw [corec_eq, dif_pos h_ex']
+        rfl
+      have h_inner_destruct :
+          destruct (s.filter (p ∘ f)) = some
+            (cR, (s.drop (Nat.find h_ex + 1)).filter (p ∘ f)) := by
+        unfold filter
+        rw [corec_eq, dif_pos h_ex]
+        rfl
+      have h_inner_cons : s.filter (p ∘ f) = cons cR
+          ((s.drop (Nat.find h_ex + 1)).filter (p ∘ f)) :=
+        destruct_eq_cons h_inner_destruct
+      rw [h_inner_cons, map_cons, destruct_cons, h_LHS_destruct]
+      refine ⟨?_, ?_⟩
+      · have h3 : (s.map f).get? (Nat.find h_ex') = some (f cR) := by
+          rw [map_get?, h_find_eq, h2]; rfl
+        exact Option.some_inj.mp (h1.symm.trans h3)
+      · refine ⟨s.drop (Nat.find h_ex + 1), ?_, rfl⟩
+        rw [h_find_eq, map_drop]
+    · have h_ex_neg' : ¬ ∃ n, ∃ b, (s.map f).get? n = some b ∧ p b :=
+        fun h => h_ex (h_ex_iff.mp h)
+      have h_inner_nil : s.filter (p ∘ f) = nil := by
+        unfold filter
+        apply corec_nil
+        rw [dif_neg h_ex]
+      have h_LHS_nil : (s.map f).filter p = nil := by
+        unfold filter
+        apply corec_nil
+        rw [dif_neg h_ex_neg']
+      rw [h_inner_nil, h_LHS_nil, map_nil]
+      trivial
+  · exact ⟨s, rfl, rfl⟩
+
 /-- Filter preserves termination: a filter of a terminating sequence
 is itself terminating. -/
 theorem terminates_filter (p : α → Prop) (s : Seq α)

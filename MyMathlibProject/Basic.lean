@@ -33,7 +33,58 @@ structure AlterSeq (State : Type) (Label : Type) where
 
 namespace AlterSeq
 
-variable {State : Type} {Label : Type}
+variable {State State' : Type} {Label : Type}
+
+/-- Apply a state-transformation `f` pointwise to an `AlterSeq`, leaving labels
+untouched. -/
+def map (f : State → State') (e : AlterSeq State Label) : AlterSeq State' Label where
+  init := f e.init
+  trans := e.trans.map (fun lq => (lq.1, f lq.2))
+
+/-- `AlterSeq.map` preserves termination: an execution is finite iff its image
+under `map f` is. -/
+@[simp] theorem map_trans_terminates_iff (f : State → State') (e : AlterSeq State Label) :
+    (e.map f).trans.Terminates ↔ e.trans.Terminates :=
+  Stream'.Seq.terminates_map_iff
+
+/-- `AlterSeq.map f` is injective whenever `f` is. -/
+theorem map_injective {f : State → State'} (hf : Function.Injective f) :
+    Function.Injective (AlterSeq.map (Label := Label) f) := by
+  rintro ⟨i₁, t₁⟩ ⟨i₂, t₂⟩ h
+  have h_init : f i₁ = f i₂ := congr_arg AlterSeq.init h
+  have h_trans :
+      t₁.map (fun lq : Label × State => (lq.1, f lq.2))
+      = t₂.map (fun lq : Label × State => (lq.1, f lq.2)) :=
+    congr_arg AlterSeq.trans h
+  obtain rfl := hf h_init
+  congr 1
+  apply Stream'.Seq.ext
+  intro n
+  have hn := congr_arg (·.get? n) h_trans
+  rw [Stream'.Seq.map_get?, Stream'.Seq.map_get?] at hn
+  cases h1 : t₁.get? n with
+  | none =>
+    cases h2 : t₂.get? n with
+    | none => rfl
+    | some lq2 => rw [h1, h2] at hn; simp at hn
+  | some lq1 =>
+    cases h2 : t₂.get? n with
+    | none => rw [h1, h2] at hn; simp at hn
+    | some lq2 =>
+      rw [h1, h2] at hn
+      obtain ⟨l1, s1⟩ := lq1
+      obtain ⟨l2, s2⟩ := lq2
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hn
+      obtain ⟨rfl, h_f⟩ := hn
+      obtain rfl := hf h_f
+      rfl
+
+/-- `AlterSeq.map` commutes with appending a single transition. -/
+theorem map_append_singleton (f : State → State') (e : AlterSeq State Label)
+    (l : Label) (s : State) :
+    (⟨e.init, e.trans.append (Seq.cons (l, s) Seq.nil)⟩ : AlterSeq State Label).map f
+    = ⟨(e.map f).init, (e.map f).trans.append (Seq.cons (l, f s) Seq.nil)⟩ := by
+  simp [AlterSeq.map, Stream'.Seq.map_append, Stream'.Seq.map_cons, Stream'.Seq.map_nil]
 
 /-- The state reached after `n` transitions: position `0` is the initial state,
 position `n + 1` is the destination of the `n`-th transition (or `none` if the
@@ -306,6 +357,14 @@ theorem probOf_le_init (pe : ProbabilisticExecution sys)
             * pe.kernel ⟨e.init, Seq.ofList rest⟩ last
         ≤ pe.init e.init * 1 := by gcongr; exact pe.kernel_le_one _ _
       _ = pe.init e.init := mul_one _
+
+/-- `probOf` depends only on the execution, not on the chosen termination proof:
+equal executions have equal `probOf` (the `Terminates` proofs being irrelevant). -/
+theorem probOf_congr (pe : ProbabilisticExecution sys)
+    (e e' : AlterSeq State Label) (h_eq : e = e')
+    (hFin : e.trans.Terminates) (hFin' : e'.trans.Terminates) :
+    pe.probOf e hFin = pe.probOf e' hFin' := by
+  subst h_eq; rfl
 
 end ProbabilisticExecution
 
