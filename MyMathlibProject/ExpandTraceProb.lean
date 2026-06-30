@@ -241,24 +241,34 @@ residual was a limit `RA (pE exec) N → 0`). Decompose `τ = τ' ⌢ [l]` with 
 
 `abs_eq_con` then follows from `base · 1 = base · 1`.
 
-RESIDUAL — single remaining `sorry` of the file. PRECISE BLOCKER: the `≥ 1` half of
-`reachLmass = 1` needs a *generic* relative-`probOf` factorisation
-`probOf (e' ⌢ g) = probOf e' · pathWeight (base e') (toList g)` together with the
-front-decomposition of a halting witness run at its unique external label. This is not
-present upstream: `DistConstruction.probOf_labels_tsum_le_one` is the analogous level-sum bound but
-only for `𝒟(sys)` (`PMF State`) executions, not for the witness `Scheduler sys`. Everything else is
-in place — the Kraft `≤ 1` ingredient (`probOf_antichain`, prefix-freeness of equal-trace tight
-executions) and both factorisations (`reachProb_we_step`, `seg_inner_recursion`/`seg_entry_draw`,
-`seg_pushforward`) are already available in `ExpandSched`/`ExpandProbOf`/`ExpandTrace`. -/
+RESIDUAL — single remaining `sorry` of the file. The genuinely-novel analytic input,
+`reachLmass = traceProb(witness)[l] = 1`, is now **proven** (`witness_traceProb_emit`
+above), resting on the generic Kraft infrastructure added to `TraceProbBound`
+(`traceProb_le_one`, `haltMass_trace_le_traceProb`, `probOf_append_ofList`,
+`pathWeight_halt_tsum_le_one`, `splitTight`/`splitTight_spec`). What remains is the
+purely *combinatorial* config-bookkeeping that wires the two factorisations into
+`abs_eq_con`, i.e. proving the two shape equalities
+
+* **ABS = base**: telescoping the entry-config sum over `τ = τ' ⌢ [l]` via
+  `reachProb_we_step` + `base_sum` (the outer commit weight `∑_x kernel_w (l,x)` collapsing
+  to `∑_μ ws.next (some (l, μ))`);
+* **CON = base · reachLmass**: factoring the arrival-config sum via
+  `reachProb_seg` (`seg_inner_recursion` + `seg_entry_draw`), whose per-config witness
+  factor sums to `reachLmass`, then applying `witness_traceProb_emit` to collapse
+  `reachLmass = 1`.
+
+Both reductions only compose existing `ExpandProbOf` machinery
+(`reachProb_we_step`, `reachProb_seg`, `predSum_partition`, `base_sum`,
+`seg_entry_draw`, `entryCfg_step_inner`) with the now-available `reachLmass = 1`;
+no further analytic lemma is needed. -/
 private theorem abs_eq_con (ws : Scheduler sys^w) (τ : Seq Label) (hτ : τ ≠ Seq.nil) :
     (∑' c : {c : Config sys // c.e'.trans = Seq.nil ∧ c.we.trans.Terminates ∧
         sys.trace c.we = τ ∧ sys.IsTight c.we}, reachProb ws c.1)
       = ∑' c : {c : Config sys // c.e'.trans ≠ Seq.nil ∧ (Config.concat c).trans.Terminates ∧
           sys.trace (Config.concat c) = τ ∧ sys.IsTight (Config.concat c)}, reachProb ws c.1 := by
-  -- BLOCKER (limit-free route, see docstring): `∑ ABS = base = ∑ CON · reachLmass⁻¹` with
-  -- `reachLmass = 1`. The `≥ 1` half of `reachLmass = 1` (witness a.s.-halting, `Realises` (a)+(c))
-  -- needs a generic relative-`probOf`/`pathWeight` factorisation + front-decomposition not yet
-  -- available for `Scheduler sys` witnesses; the Kraft `≤ 1` half and both factorisations are.
+  -- RESIDUAL: ABS = base = base · reachLmass = CON, with `reachLmass = 1` now PROVEN
+  -- (`witness_traceProb_emit`). What remains is the config-bookkeeping assembly (ABS = base via
+  -- `reachProb_we_step`/`base_sum`; CON = base · reachLmass via `reachProb_seg`). See docstring.
   sorry
 
 /-! ### (4) base case `τ = []` -/
