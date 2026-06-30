@@ -122,6 +122,34 @@ theorem ProbabilisticExecution.pathWeight_cons {State Label : Type}
     rw [ih', hhist]
     ring
 
+/-- **Append split for `pathWeight`.** The path weight of `L₁ ++ L₂` from `base`
+factors as the path weight of `L₁` times the path weight of `L₂` from the base
+extended by `L₁`. -/
+theorem ProbabilisticExecution.pathWeight_append {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (base : AlterSeq State Label) (L₁ L₂ : List (Label × State)) :
+    pe.pathWeight base (L₁ ++ L₂)
+      = pe.pathWeight base L₁
+        * pe.pathWeight ⟨base.init, base.trans.append (Seq.ofList L₁)⟩ L₂ := by
+  induction L₂ using List.reverseRecOn with
+  | nil =>
+    rw [List.append_nil]
+    have : pe.pathWeight ⟨base.init, base.trans.append (Seq.ofList L₁)⟩ [] = 1 := by
+      unfold ProbabilisticExecution.pathWeight; rw [List.reverseRecOn_nil]
+    rw [this, mul_one]
+  | append_singleton rest last ih =>
+    rw [← List.append_assoc]
+    unfold ProbabilisticExecution.pathWeight
+    rw [List.reverseRecOn_concat, List.reverseRecOn_concat]
+    have ih' := ih
+    unfold ProbabilisticExecution.pathWeight at ih'
+    rw [ih']
+    have hhist : base.trans.append (Seq.ofList (L₁ ++ rest))
+        = (base.trans.append (Seq.ofList L₁)).append (Seq.ofList rest) := by
+      rw [Stream'.Seq.ofList_append, Stream'.Seq.append_assoc]
+    rw [hhist]
+    ring
+
 /-- **Finite-antichain Kraft bound.** For a prefix-free finite set `F` of
 transition lists, the total `pathWeight` from any base is `≤ 1`. (Distinct tight
 trace-cone executions are prefix-free, so this bounds the trace probability.) -/
@@ -668,6 +696,79 @@ theorem WeakScheduler.haltMass_tsum_le_one {sys : System State Label}
           * (⟨μ, σ.toScheduler⟩ : ProbabilisticExecution sys).scheduler.next e.1 none
         from Finset.sum_congr rfl fun e _ => rfl]
   exact (⟨μ, σ.toScheduler⟩ : ProbabilisticExecution sys).probOf_halt_le_one F
+
+/-! ### Tight-prefix split of a transition list
+
+`splitTight L = (L', G)` peels off the maximal trailing run `G` of internal
+(τ-labelled) transitions, leaving the *tight* prefix `L'` (empty or ending with
+an external transition). Used for the halting/trace lower bound: every halting
+run decomposes at its unique tight prefix. -/
+
+open Classical in
+/-- One `foldr` step of `splitTight`: prepend `p` to the current split. If the
+prefix is still empty we are inside the trailing internal run unless `p` is
+external. -/
+noncomputable def splitTightStep {State Label : Type} [Silent Label]
+    (p : Label × State) (acc : List (Label × State) × List (Label × State)) :
+    List (Label × State) × List (Label × State) :=
+  if acc.1 = [] then
+    (if p.1 = Silent.τ then ([], p :: acc.2) else ([p], acc.2))
+  else (p :: acc.1, acc.2)
+
+/-- Split a transition list into its tight prefix and trailing internal run. -/
+noncomputable def splitTight {State Label : Type} [Silent Label]
+    (L : List (Label × State)) : List (Label × State) × List (Label × State) :=
+  L.foldr splitTightStep ([], [])
+
+theorem splitTight_cons {State Label : Type} [Silent Label]
+    (p : Label × State) (L : List (Label × State)) :
+    splitTight (p :: L) = splitTightStep p (splitTight L) := rfl
+
+open Classical in
+/-- **Specification of `splitTight`.** The two parts concatenate to `L`, the
+trailing part is all-internal, and the prefix is empty or ends externally. -/
+theorem splitTight_spec {State Label : Type} [Silent Label]
+    (L : List (Label × State)) :
+    (splitTight L).1 ++ (splitTight L).2 = L
+      ∧ (∀ p ∈ (splitTight L).2, p.1 = Silent.τ)
+      ∧ (∀ q, (splitTight L).1.getLast? = some q → q.1 ≠ Silent.τ) := by
+  induction L with
+  | nil =>
+    refine ⟨rfl, ?_, ?_⟩
+    · intro p hp; simp [splitTight] at hp
+    · intro q hq; simp [splitTight] at hq
+  | cons p L ih =>
+    obtain ⟨hrec, hint, hlast⟩ := ih
+    rw [splitTight_cons, splitTightStep]
+    rcases hsplit : splitTight L with ⟨L', G⟩
+    rw [hsplit] at hrec hint hlast
+    simp only
+    cases L' with
+    | nil =>
+      rw [if_pos rfl]
+      by_cases hp : p.1 = Silent.τ
+      · rw [if_pos hp]
+        refine ⟨?_, ?_, ?_⟩
+        · rw [List.nil_append] at hrec; simpa using hrec
+        · intro q hq
+          rcases List.mem_cons.mp hq with rfl | hq'
+          · exact hp
+          · exact hint q hq'
+        · intro q hq; simp at hq
+      · rw [if_neg hp]
+        refine ⟨?_, hint, ?_⟩
+        · rw [List.nil_append] at hrec; simpa using hrec
+        · intro q hq
+          rw [List.getLast?_singleton] at hq
+          obtain rfl : q = p := (Option.some_inj.mp hq).symm
+          exact hp
+    | cons q L'' =>
+      rw [if_neg (by simp)]
+      refine ⟨?_, hint, ?_⟩
+      · rw [List.cons_append, hrec]
+      · intro r hr
+        rw [List.getLast?_cons_cons] at hr
+        exact hlast r hr
 
 /-! ### Generic trace-probability bound `traceProb_le_one`
 
