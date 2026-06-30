@@ -889,4 +889,194 @@ theorem Seq.map_ofList_pub {α β : Type} (f : α → β) (L : List α) :
   | cons a L ih =>
     rw [Stream'.Seq.ofList_cons, Stream'.Seq.map_cons, List.map_cons, Stream'.Seq.ofList_cons, ih]
 
+/-! ### Tight-prefix lower bound `haltMass_trace_le_traceProb`
+
+The total halting mass over terminating runs of a fixed trace `τ` is bounded by
+the trace probability: every halting run decomposes at its unique tight prefix
+(`splitTight`), and the halting mass below a tight prefix `y` is `≤ probOf y`
+(`pathWeight_halt_tsum_le_one`). -/
+
+/-- `tsum` version of the relative halting Kraft bound. -/
+theorem ProbabilisticExecution.pathWeight_halt_tsum_le_one {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (base : AlterSeq State Label) :
+    (∑' t : List (Label × State), pe.pathWeight base t *
+        pe.scheduler.next ⟨base.init, base.trans.append (Seq.ofList t)⟩ none) ≤ 1 := by
+  rw [ENNReal.tsum_eq_iSup_sum]
+  exact iSup_le fun F => pe.pathWeight_halt_le_one base F
+
+open Classical in
+/-- **Relative `probOf` factorisation.** Producing `base` then a continuation `G`
+factors as `probOf base` times the conditional path weight of `G` from `base`. -/
+theorem ProbabilisticExecution.probOf_append_ofList {State Label : Type}
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (base : AlterSeq State Label) (hb : base.trans.Terminates)
+    (G : List (Label × State))
+    (hterm : (base.trans.append (Seq.ofList G)).Terminates) :
+    pe.probOf ⟨base.init, base.trans.append (Seq.ofList G)⟩ hterm
+      = pe.probOf base hb * pe.pathWeight base G := by
+  have hM : base.trans = Seq.ofList (base.trans.toList hb) :=
+    (Stream'.Seq.ofList_toList base.trans hb).symm
+  set M := base.trans.toList hb with hMdef
+  have happ : base.trans.append (Seq.ofList G) = Seq.ofList (M ++ G) := by
+    rw [Stream'.Seq.ofList_append, ← hM]
+  rw [pe.probOf_congr ⟨base.init, base.trans.append (Seq.ofList G)⟩
+      ⟨base.init, Seq.ofList (M ++ G)⟩ (by rw [happ]) hterm (happ ▸ hterm)]
+  rw [pe.probOf_eq_pathWeight base.init (M ++ G) (happ ▸ hterm),
+    pe.pathWeight_append ⟨base.init, Seq.nil⟩ M G]
+  have hpw : pe.pathWeight ⟨base.init, (Seq.nil : Seq (Label × State)).append (Seq.ofList M)⟩ G
+      = pe.pathWeight base G := by
+    rw [Stream'.Seq.nil_append]
+    congr 1
+    rw [← hM]
+  rw [hpw]
+  have hpb : pe.probOf base hb = pe.init base.init * pe.pathWeight ⟨base.init, Seq.nil⟩ M := by
+    rw [pe.probOf_congr base ⟨base.init, Seq.ofList M⟩ (by rw [← hM]) hb
+        (Stream'.Seq.terminates_ofList M),
+      pe.probOf_eq_pathWeight base.init M (Stream'.Seq.terminates_ofList M)]
+  rw [hpb]; ring
+
+/-- An all-internal label list filters to the empty trace. -/
+private theorem ofList_filter_internal_nil {L : Type} [Silent L] (ls : List L)
+    (h : ∀ x ∈ ls, x = Silent.τ) :
+    (Seq.ofList ls).filter (fun l => ¬ l = Silent.τ) = Seq.nil := by
+  rw [Stream'.Seq.ofList_filter, ← Stream'.Seq.ofList_nil]
+  congr 1
+  rw [List.filter_eq_nil_iff]
+  intro x hx; simp [h x hx]
+
+/-- The trace of a terminating execution is the filtered `ofList` of its label list. -/
+private theorem trace_eq_extLabs {S L : Type} [Silent L] (ls : System S L)
+    (e : AlterSeq S L) (h : e.trans.Terminates) :
+    ls.trace e
+      = (Seq.ofList ((e.trans.toList h).map Prod.fst)).filter (fun l => ¬ l = Silent.τ) := by
+  have h1 : (Seq.ofList ((e.trans.toList h).map Prod.fst) : Seq L) = e.trans.map Prod.fst := by
+    rw [← Seq.map_ofList_pub, Stream'.Seq.ofList_toList]
+  rw [h1]
+  unfold System.trace
+  rw [Stream'.Seq.filter_map Prod.fst (fun l => ¬ (l = Silent.τ))]
+  rfl
+
+/-- The tight prefix of a terminating, trace-`τ` execution's label list is tight for `τ`. -/
+private theorem splitTight_traceTightLabs {S L : Type} [Silent L] (ls : System S L)
+    (e : AlterSeq S L) (h : e.trans.Terminates) :
+    ls.traceTightLabs (ls.trace e) ((splitTight (e.trans.toList h)).1.map Prod.fst) := by
+  obtain ⟨hrec, hint, hlast⟩ := splitTight_spec (e.trans.toList h)
+  set L₀ := e.trans.toList h with hL₀
+  set L' := (splitTight L₀).1 with hL'
+  set G := (splitTight L₀).2 with hG
+  refine ⟨?_, ?_⟩
+  · rw [trace_eq_extLabs ls e h, ← hL₀]
+    have hLmap : L₀.map Prod.fst = L'.map Prod.fst ++ G.map Prod.fst := by
+      rw [← List.map_append, hrec]
+    rw [hLmap, Stream'.Seq.ofList_append,
+      Stream'.Seq.filter_append (fun l => ¬ l = Silent.τ) _ _ (Stream'.Seq.terminates_ofList _),
+      ofList_filter_internal_nil (G.map Prod.fst) (by
+        intro x hx; obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hx; exact hint p hp),
+      Stream'.Seq.append_nil]
+  · intro l hl
+    rw [List.getLast?_map] at hl
+    cases hq : L'.getLast? with
+    | none => rw [hq] at hl; simp at hl
+    | some q =>
+      rw [hq] at hl
+      obtain rfl : q.1 = l := Option.some_inj.mp hl
+      exact hlast q hq
+
+open Classical in
+/-- **Trace halting lower bound.** The total halting mass over terminating runs
+of a fixed trace `τ` is bounded by the trace probability `traceProb τ`: each such
+run decomposes at its unique tight prefix `y`, and the halting mass below `y` is
+`≤ probOf y` (`pathWeight_halt_tsum_le_one`). -/
+theorem ProbabilisticExecution.haltMass_trace_le_traceProb {State Label : Type} [Silent Label]
+    {sys : System State Label} (pe : ProbabilisticExecution sys) (τ : Seq Label) :
+    (∑' e : {e : AlterSeq State Label // e.trans.Terminates ∧ sys.trace e = τ},
+       pe.probOf e.1 e.2.1 * pe.scheduler.next e.1 none) ≤ sys.traceProb pe τ := by
+  set A := {e : AlterSeq State Label // e.trans.Terminates ∧ sys.trace e = τ} with hA
+  set g : A → ENNReal := fun e => pe.probOf e.1 e.2.1 * pe.scheduler.next e.1 none with hg
+  -- the tight prefix as an `IsTight`, trace-`τ` execution
+  have hφ_spec : ∀ (E : AlterSeq State Label) (hEt : E.trans.Terminates) (hEtr : sys.trace E = τ),
+      sys.trace ⟨E.init, Seq.ofList (splitTight (E.trans.toList hEt)).1⟩ = τ
+        ∧ sys.IsTight ⟨E.init, Seq.ofList (splitTight (E.trans.toList hEt)).1⟩ := by
+    intro E hEt hEtr
+    refine (sys.tight_iff τ ⟨E.init, Seq.ofList (splitTight (E.trans.toList hEt)).1⟩
+      (Stream'.Seq.terminates_ofList _)).mpr ?_
+    rw [Stream'.Seq.toList_ofList]
+    have h2 := splitTight_traceTightLabs sys E hEt
+    rw [hEtr] at h2
+    exact h2
+  set φ : A → {e : AlterSeq State Label //
+      e.trans.Terminates ∧ sys.trace e = τ ∧ sys.IsTight e} := fun e =>
+    ⟨⟨e.1.init, Seq.ofList (splitTight (e.1.trans.toList e.2.1)).1⟩,
+      Stream'.Seq.terminates_ofList _, (hφ_spec e.1 e.2.1 e.2.2).1, (hφ_spec e.1 e.2.1 e.2.2).2⟩
+    with hφ
+  -- transition-list decomposition `e.trans = ofList L' ++ ofList G`
+  have hdecomp : ∀ e : A, e.1.trans
+      = (Seq.ofList (splitTight (e.1.trans.toList e.2.1)).1).append
+          (Seq.ofList (splitTight (e.1.trans.toList e.2.1)).2) := by
+    intro e
+    obtain ⟨hrec, _, _⟩ := splitTight_spec (e.1.trans.toList e.2.1)
+    rw [← Stream'.Seq.ofList_append, hrec, Stream'.Seq.ofList_toList]
+  -- per-fiber bound
+  have hfiber : ∀ y, (∑' e : {e : A // φ e = y}, g e.1) ≤ pe.probOf y.1 y.2.1 := by
+    intro y
+    set f : List (Label × State) → ENNReal :=
+      fun G₀ => pe.probOf y.1 y.2.1 * pe.pathWeight y.1 G₀ *
+        pe.scheduler.next ⟨y.1.init, y.1.trans.append (Seq.ofList G₀)⟩ none with hf
+    have he1 : ∀ e : {e : A // φ e = y}, e.1.1
+        = ⟨y.1.init, y.1.trans.append
+            (Seq.ofList (splitTight (e.1.1.trans.toList e.1.2.1)).2)⟩ := by
+      intro e
+      have hcfg : (φ e.1).1 = y.1 := by rw [e.2]
+      have hinit : e.1.1.init = y.1.init := by
+        have := congrArg AlterSeq.init hcfg; simpa [hφ] using this
+      have htrans : Seq.ofList (splitTight (e.1.1.trans.toList e.1.2.1)).1 = y.1.trans := by
+        have := congrArg AlterSeq.trans hcfg; simpa [hφ] using this
+      have hd := hdecomp e.1
+      rw [htrans] at hd
+      refine (Eq.symm ?_)
+      rw [← hinit, ← hd]
+    have htail_eq : ∀ e : {e : A // φ e = y},
+        g e.1 = f (splitTight (e.1.1.trans.toList e.1.2.1)).2 := by
+      intro e
+      set G₀ := (splitTight (e.1.1.trans.toList e.1.2.1)).2 with hG₀
+      have htr_e : e.1.1.trans = y.1.trans.append (Seq.ofList G₀) :=
+        congrArg AlterSeq.trans (he1 e)
+      simp only [hg]
+      rw [pe.probOf_congr e.1.1 ⟨y.1.init, y.1.trans.append (Seq.ofList G₀)⟩ (he1 e) e.1.2.1
+          (htr_e ▸ e.1.2.1),
+        show pe.scheduler.next e.1.1 none
+          = pe.scheduler.next ⟨y.1.init, y.1.trans.append (Seq.ofList G₀)⟩ none from by rw [he1 e],
+        pe.probOf_append_ofList y.1 y.2.1 G₀ (htr_e ▸ e.1.2.1)]
+    have hinj : Function.Injective
+        (fun e : {e : A // φ e = y} => (splitTight (e.1.1.trans.toList e.1.2.1)).2) := by
+      intro e e' heq
+      apply Subtype.ext
+      apply Subtype.ext
+      rw [he1 e, he1 e']
+      have heq' : (splitTight (e.1.1.trans.toList e.1.2.1)).2
+          = (splitTight (e'.1.1.trans.toList e'.1.2.1)).2 := heq
+      rw [heq']
+    calc (∑' e : {e : A // φ e = y}, g e.1)
+        = ∑' e : {e : A // φ e = y}, f ((splitTight (e.1.1.trans.toList e.1.2.1)).2) :=
+          tsum_congr htail_eq
+      _ ≤ ∑' G₀ : List (Label × State), f G₀ :=
+          ENNReal.tsum_comp_le_tsum_of_injective hinj f
+      _ = pe.probOf y.1 y.2.1 * ∑' G₀ : List (Label × State),
+            (pe.pathWeight y.1 G₀ *
+              pe.scheduler.next ⟨y.1.init, y.1.trans.append (Seq.ofList G₀)⟩ none) := by
+          rw [← ENNReal.tsum_mul_left]
+          refine tsum_congr (fun G₀ => ?_)
+          rw [hf]; ring
+      _ ≤ pe.probOf y.1 y.2.1 * 1 := by
+          gcongr; exact pe.pathWeight_halt_tsum_le_one y.1
+      _ = pe.probOf y.1 y.2.1 := mul_one _
+  -- assemble via the fibre partition of the tight-prefix map
+  calc (∑' e : A, g e)
+      = ∑' p : (Σ y, {e : A // φ e = y}), g (Equiv.sigmaFiberEquiv φ p) :=
+        (Equiv.tsum_eq (Equiv.sigmaFiberEquiv φ) g).symm
+    _ = ∑' y, ∑' e : {e : A // φ e = y}, g e.1 := by rw [ENNReal.tsum_sigma']; rfl
+    _ ≤ ∑' y, pe.probOf y.1 y.2.1 := ENNReal.tsum_le_tsum hfiber
+    _ = sys.traceProb pe τ := rfl
+
 end PLTS
