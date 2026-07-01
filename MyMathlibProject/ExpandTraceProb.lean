@@ -593,7 +593,8 @@ committed abstract execution `we` rooted at `sys.init`, and either an empty in-p
 (`e'.trans = nil`) or an active weak step (`wt = some p`). -/
 private theorem reachAfter_con_facts (ws : Scheduler sys^w) :
     ∀ (n : ℕ) (c : Config sys), reachAfter ws n c ≠ 0 →
-      c.we.init = sys.init ∧ (c.e'.trans = Seq.nil ∨ ∃ p, c.wt = some p) := by
+      c.we.init = sys.init ∧ c.we.trans.Terminates ∧
+        (c.e'.trans = Seq.nil ∨ ∃ p, c.wt = some p) := by
   intro n
   induction n with
   | zero =>
@@ -602,7 +603,8 @@ private theorem reachAfter_con_facts (ws : Scheduler sys^w) :
         c.e = ⟨sys.init, Seq.nil⟩ ∧ c.e' = ⟨sys.init, Seq.nil⟩ ∧
         (∀ p, c.wt = some p → c.s = schedOf sys sys.init p.1 p.2) ∧
         (c.wt = none → c.s = Scheduler.halt sys))
-    · exact ⟨by rw [hcond.1], Or.inl (by rw [hcond.2.2.1])⟩
+    · exact ⟨by rw [hcond.1], by rw [hcond.1]; exact Stream'.Seq.terminates_nil,
+        Or.inl (by rw [hcond.2.2.1])⟩
     · simp only [reachAfter] at hreach; rw [if_neg hcond] at hreach; exact absurd rfl hreach
   | succ n ih =>
     intro c hreach
@@ -611,7 +613,7 @@ private theorem reachAfter_con_facts (ws : Scheduler sys^w) :
       by_contra hcon; push Not at hcon; exact hreach (ENNReal.tsum_eq_zero.mpr hcon)
     rw [mul_ne_zero_iff] at hc₀
     obtain ⟨hreach₀, hstep⟩ := hc₀
-    have hinit₀ := (ih c₀ hreach₀).1
+    obtain ⟨hinit₀, hwefin₀, -⟩ := ih c₀ hreach₀
     obtain ⟨we₀, e₀, wt₀, s₀, e'₀, t₀⟩ := c₀
     cases wt₀ with
     | none => simp only [step] at hstep; exact absurd rfl hstep
@@ -621,17 +623,22 @@ private theorem reachAfter_con_facts (ws : Scheduler sys^w) :
       | none =>
         simp only [step] at hstep
         obtain ⟨hce, hcwe, hce', -, -⟩ := of_ite_ne_zero hstep
-        exact ⟨by rw [hcwe]; exact hinit₀, Or.inl (by rw [hce'])⟩
+        refine ⟨by rw [hcwe]; exact hinit₀, ?_, Or.inl (by rw [hce'])⟩
+        rw [hcwe]
+        exact ⟨_, Stream'.Seq.terminatedAt_append_find hwefin₀
+          (show (Seq.cons (lw, _) Seq.nil).TerminatedAt 1 from rfl)⟩
       | some tp =>
         obtain ⟨l', μ'⟩ := tp
         simp only [step] at hstep
         obtain ⟨hcwe, -, hcwt, -, -, -⟩ := of_ite_ne_zero hstep
-        exact ⟨by rw [hcwe]; exact hinit₀, Or.inr ⟨(lw, μw), hcwt⟩⟩
+        exact ⟨by rw [hcwe]; exact hinit₀, by rw [hcwe]; exact hwefin₀,
+          Or.inr ⟨(lw, μw), hcwt⟩⟩
 
 /-- Reachable form of `reachAfter_con_facts`. -/
 private theorem reachProb_con_facts (ws : Scheduler sys^w) (c : Config sys)
     (h : reachProb ws c ≠ 0) :
-    c.we.init = sys.init ∧ (c.e'.trans = Seq.nil ∨ ∃ p, c.wt = some p) := by
+    c.we.init = sys.init ∧ c.we.trans.Terminates ∧
+      (c.e'.trans = Seq.nil ∨ ∃ p, c.wt = some p) := by
   rw [reachProb] at h
   obtain ⟨n, hn⟩ : ∃ n, reachAfter ws n c ≠ 0 := by
     by_contra hcon; push Not at hcon; exact h (ENNReal.tsum_eq_zero.mpr hcon)
@@ -758,6 +765,117 @@ private theorem con_seg_collapse (ws : Scheduler sys^w) (L' : List (Label × Sta
         rw [c'.2.1, c'.2.2.2] at hend; exact hend
       rwa [hlastEq] at hweak
     rw [hz, zero_mul]
+
+/-- The full invariant holds at every reachable configuration. -/
+private theorem reachProb_Inv (ws : Scheduler sys^w) (c : Config sys) (h : reachProb ws c ≠ 0) :
+    Inv c := by
+  rw [reachProb] at h
+  obtain ⟨n, hn⟩ : ∃ n, reachAfter ws n c ≠ 0 := by
+    by_contra hcon; push Not at hcon; exact h (ENNReal.tsum_eq_zero.mpr hcon)
+  exact reachAfter_Inv ws n c hn
+
+omit [Silent Label] in
+/-- A terminating append has a terminating left part. -/
+private theorem terminates_of_append_left {α : Type*} (A B : Seq α)
+    (h : (A.append B).Terminates) : A.Terminates := by
+  by_contra hA
+  obtain ⟨N, hN⟩ := h
+  have hAk : ∀ k, ¬ A.TerminatedAt k := fun k hk => hA ⟨k, hk⟩
+  exact hAk N ((Stream'.Seq.get?_append_before_length (hAk N)).symm.trans hN)
+
+open Classical in
+/-- **CON extraction.** A reachable arrival config `c` (`e'` a nonempty segment, `concat c` tight
+with trace `τ' ⌢ [l]`) is the canonical config `canonCfg L' l c.e μw c.e'` for some entry list `L'`
+of trace `τ'` and weak-step target `μw`; its segment `c.e'` is tight, terminating, and has trace
+`[l]`. The active label equals `l` because the tight nonempty segment emits exactly `[l]`
+(`witness_seg_trace`) and appending it to `trace c.e = trace c.we` recovers `τ' ⌢ [l]`. -/
+private theorem con_config_shape (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label)
+    (c : Config sys) (hne : c.e'.trans ≠ Seq.nil)
+    (htr : sys.trace (Config.concat c) = τ'.append (Seq.cons l Seq.nil))
+    (htight : sys.IsTight (Config.concat c)) (hrp : reachProb ws c ≠ 0) :
+    ∃ (L' : List (Label × State)) (μw : PMF State),
+      c = {canonCfg sys L' l c.e μw c.e' with t := c.t} ∧
+      sys.trace ⟨sys.init, Seq.ofList L'⟩ = τ' ∧
+      c.e'.trans.Terminates ∧ sys.trace c.e' = Seq.cons l Seq.nil ∧ sys.IsTight c.e' := by
+  have hInv := reachProb_Inv ws c hrp
+  obtain ⟨hweinit, hwefin, hwtOr⟩ := reachProb_con_facts ws c hrp
+  obtain ⟨⟨lw, μw⟩, hwt⟩ : ∃ p, c.wt = some p := hwtOr.resolve_left hne
+  obtain ⟨hstepw, hsched, hprob⟩ := hInv.seg lw μw hwt
+  have hReal : Realises (schedOf sys (lastOf c.e) lw μw) (lastOf c.e) lw μw :=
+    schedOf_realises hstepw
+  have hprob' : (⟨PMF.pure (lastOf c.e), schedOf sys (lastOf c.e) lw μw⟩
+      : ProbabilisticExecution sys).probOf c.e' hInv.e'_fin ≠ 0 := hsched ▸ hprob
+  have happ_fin : (c.e.trans.append c.e'.trans).Terminates :=
+    ⟨_, Stream'.Seq.terminatedAt_append_find hInv.e_fin hInv.e'_fin.choose_spec⟩
+  have he'tight : sys.IsTight c.e' :=
+    (isTight_concat_iff c.e.trans c.e'.trans c.e.init c.e'.init hInv.e_fin hInv.e'_fin hne
+      happ_fin).mp htight
+  obtain ⟨htrace_seg, _⟩ :=
+    witness_seg_trace hReal c.e' hInv.e'_fin hInv.e'_init hne he'tight hprob'
+  -- Trace split: `trace concat = trace c.e ⌢ trace c.e' = trace c.e ⌢ [lw] = τ' ⌢ [l]`.
+  have hsplit : sys.trace (Config.concat c) = (sys.trace c.e).append (sys.trace c.e') :=
+    trace_append c.e.init c.e.trans c.e'.trans hInv.e_fin
+  have heq : (sys.trace c.e).append (Seq.cons lw Seq.nil) = τ'.append (Seq.cons l Seq.nil) := by
+    rw [← htrace_seg, ← hsplit]; exact htr
+  have hte : (sys.trace c.e).Terminates := by
+    rw [← filter_toList_eq_trace c.e hInv.e_fin]
+    exact Stream'.Seq.terminates_filter _ _ (Stream'.Seq.terminates_ofList _)
+  have hτ'term : τ'.Terminates := by
+    refine terminates_of_append_left τ' (Seq.cons l Seq.nil) ?_
+    rw [← heq]
+    exact ⟨_, Stream'.Seq.terminatedAt_append_find hte
+      (show (Seq.cons lw Seq.nil).TerminatedAt 1 from rfl)⟩
+  have hlweq : lw = l :=
+    Stream'.Seq.append_singleton_inj_right (sys.trace c.e) τ' hte hτ'term lw l heq
+  have htrace_e : sys.trace c.e = τ' :=
+    Stream'.Seq.append_singleton_inj_left (sys.trace c.e) τ' hte hτ'term lw l heq
+  rw [hlweq] at hwt hsched htrace_seg
+  obtain ⟨L', hwe_eq⟩ : ∃ L', c.we = ⟨sys.init, Seq.ofList L'⟩ :=
+    ⟨c.we.trans.toList hwefin, by rw [Stream'.Seq.ofList_toList c.we.trans hwefin, ← hweinit]⟩
+  refine ⟨L', μw, ?_, ?_, hInv.e'_fin, htrace_seg, he'tight⟩
+  · calc c = ⟨c.we, c.e, c.wt, c.s, c.e', c.t⟩ := rfl
+      _ = ⟨⟨sys.init, Seq.ofList L'⟩, c.e, some (l, μw),
+            schedOf sys (lastOf c.e) l μw, c.e', c.t⟩ := by rw [hwe_eq, hwt, hsched]
+      _ = {canonCfg sys L' l c.e μw c.e' with t := c.t} := rfl
+  · rw [← hwe_eq, reachProb_trace_eq ws c hrp]; exact htrace_e
+
+open Classical in
+/-- **CON construction.** The canonical config `canonCfg L' l E μ seg` (with any inner draw `t`) is a
+valid CON arrival config for the trace `τ' ⌢ [l]`, provided its entry list `L'` has trace `τ'` and
+its segment `seg` is tight, terminating, with trace `[l]`. -/
+private theorem canonCfg_con (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label)
+    (L' : List (Label × State)) (E seg : AlterSeq State Label) (μ : PMF State)
+    (t : Option (Label × PMF State))
+    (hL' : sys.trace ⟨sys.init, Seq.ofList L'⟩ = τ')
+    (hsegT : seg.trans.Terminates) (hsegtr : sys.trace seg = Seq.cons l Seq.nil)
+    (hsegtight : sys.IsTight seg)
+    (hrp : reachProb ws {canonCfg sys L' l E μ seg with t := t} ≠ 0) :
+    {canonCfg sys L' l E μ seg with t := t}.e'.trans ≠ Seq.nil ∧
+      (Config.concat {canonCfg sys L' l E μ seg with t := t}).trans.Terminates ∧
+      sys.trace (Config.concat {canonCfg sys L' l E μ seg with t := t})
+        = τ'.append (Seq.cons l Seq.nil) ∧
+      sys.IsTight (Config.concat {canonCfg sys L' l E μ seg with t := t}) := by
+  set cc := ({canonCfg sys L' l E μ seg with t := t} : Config sys) with hcc
+  have hccE : cc.e = E := rfl
+  have hccSeg : cc.e' = seg := rfl
+  have hEfin : cc.e.trans.Terminates := (reachProb_inv ws cc hrp).1
+  have hsegne : seg.trans ≠ Seq.nil := by
+    intro h0
+    have h1 : sys.trace seg = Seq.cons l Seq.nil := hsegtr
+    simp only [System.trace, h0, Stream'.Seq.filter_nil, Stream'.Seq.map_nil] at h1
+    exact Stream'.Seq.cons_ne_nil h1.symm
+  have hcatfin : (Config.concat cc).trans.Terminates :=
+    ⟨_, Stream'.Seq.terminatedAt_append_find hEfin hsegT.choose_spec⟩
+  have htraceE : sys.trace cc.e = τ' := by
+    rw [← reachProb_trace_eq ws cc hrp]; exact hL'
+  have htracecat : sys.trace (Config.concat cc) = τ'.append (Seq.cons l Seq.nil) := by
+    rw [show sys.trace (Config.concat cc) = (sys.trace cc.e).append (sys.trace cc.e') from
+        trace_append cc.e.init cc.e.trans cc.e'.trans hEfin,
+      show sys.trace cc.e' = Seq.cons l Seq.nil from hsegtr, htraceE]
+  have htightcat : sys.IsTight (Config.concat cc) :=
+    (isTight_concat_iff cc.e.trans cc.e'.trans cc.e.init cc.e'.init hEfin hsegT hsegne
+      hcatfin).mpr hsegtight
+  exact ⟨hsegne, hcatfin, htracecat, htightcat⟩
 
 /-- **CON = base.** Factoring the arrival-config sum via the per-config `con_factor` with the
 witness mass `reachLmass = 1`.
