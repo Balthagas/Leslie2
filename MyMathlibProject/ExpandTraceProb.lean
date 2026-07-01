@@ -557,6 +557,105 @@ private theorem witness_tight_trace {x : State} {l : Label} {μ : PMF State} {σ
       rw [ha, (append_eq_nil hs').1]
   exact key _ _ htr_g hAne
 
+/-- A nonzero guarded weight `if P then a else 0` forces its guard `P` (local copy). -/
+private theorem of_ite_ne_zero {P : Prop} [Decidable P] {a : ENNReal}
+    (h : (if P then a else 0) ≠ 0) : P := by
+  by_contra hP; rw [if_neg hP] at h; exact h rfl
+
+open Classical in
+/-- **Config-shape invariant for the CON reindexing.** Every reachable configuration has its
+committed abstract execution `we` rooted at `sys.init`, and either an empty in-progress segment
+(`e'.trans = nil`) or an active weak step (`wt = some p`). -/
+private theorem reachAfter_con_facts (ws : Scheduler sys^w) :
+    ∀ (n : ℕ) (c : Config sys), reachAfter ws n c ≠ 0 →
+      c.we.init = sys.init ∧ (c.e'.trans = Seq.nil ∨ ∃ p, c.wt = some p) := by
+  intro n
+  induction n with
+  | zero =>
+    intro c hreach
+    by_cases hcond : (c.we = (⟨sys.init, Seq.nil⟩ : AlterSeq State Label) ∧
+        c.e = ⟨sys.init, Seq.nil⟩ ∧ c.e' = ⟨sys.init, Seq.nil⟩ ∧
+        (∀ p, c.wt = some p → c.s = schedOf sys sys.init p.1 p.2) ∧
+        (c.wt = none → c.s = Scheduler.halt sys))
+    · exact ⟨by rw [hcond.1], Or.inl (by rw [hcond.2.2.1])⟩
+    · simp only [reachAfter] at hreach; rw [if_neg hcond] at hreach; exact absurd rfl hreach
+  | succ n ih =>
+    intro c hreach
+    rw [reachAfter] at hreach
+    obtain ⟨c₀, hc₀⟩ : ∃ c₀, reachAfter ws n c₀ * step ws c₀ c ≠ 0 := by
+      by_contra hcon; push Not at hcon; exact hreach (ENNReal.tsum_eq_zero.mpr hcon)
+    rw [mul_ne_zero_iff] at hc₀
+    obtain ⟨hreach₀, hstep⟩ := hc₀
+    have hinit₀ := (ih c₀ hreach₀).1
+    obtain ⟨we₀, e₀, wt₀, s₀, e'₀, t₀⟩ := c₀
+    cases wt₀ with
+    | none => simp only [step] at hstep; exact absurd rfl hstep
+    | some wtp =>
+      obtain ⟨lw, μw⟩ := wtp
+      cases t₀ with
+      | none =>
+        simp only [step] at hstep
+        obtain ⟨hce, hcwe, hce', -, -⟩ := of_ite_ne_zero hstep
+        exact ⟨by rw [hcwe]; exact hinit₀, Or.inl (by rw [hce'])⟩
+      | some tp =>
+        obtain ⟨l', μ'⟩ := tp
+        simp only [step] at hstep
+        obtain ⟨hcwe, -, hcwt, -, -, -⟩ := of_ite_ne_zero hstep
+        exact ⟨by rw [hcwe]; exact hinit₀, Or.inr ⟨(lw, μw), hcwt⟩⟩
+
+/-- Reachable form of `reachAfter_con_facts`. -/
+private theorem reachProb_con_facts (ws : Scheduler sys^w) (c : Config sys)
+    (h : reachProb ws c ≠ 0) :
+    c.we.init = sys.init ∧ (c.e'.trans = Seq.nil ∨ ∃ p, c.wt = some p) := by
+  rw [reachProb] at h
+  obtain ⟨n, hn⟩ : ∃ n, reachAfter ws n c ≠ 0 := by
+    by_contra hcon; push Not at hcon; exact h (ENNReal.tsum_eq_zero.mpr hcon)
+  exact reachAfter_con_facts ws n c hn
+
+/-- The τ-filter of an execution's label list is its external trace (init-independent form of
+`trace_ofList_eq_filter`). Supplies the first `traceTightLabs` clause. -/
+private theorem filter_toList_eq_trace (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    (Seq.ofList ((e.trans.toList h).map Prod.fst)).filter (fun a => ¬ a = Silent.τ)
+      = sys.trace e := by
+  rw [← Seq.map_ofList_pub Prod.fst (e.trans.toList h), Stream'.Seq.ofList_toList e.trans h,
+    Stream'.Seq.filter_map Prod.fst (fun a => ¬ a = Silent.τ) e.trans]
+  rfl
+
+open Classical in
+/-- **Tightness ⇔ last label external.** A terminating execution is tight exactly when its label
+list is empty or ends with an external label. -/
+private theorem isTight_iff_lastExt (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    sys.IsTight e ↔
+      ∀ lst, ((e.trans.toList h).map Prod.fst).getLast? = some lst → ¬ lst = Silent.τ := by
+  constructor
+  · intro ht
+    exact ((sys.tight_iff (sys.trace e) e h).mp ⟨rfl, ht⟩).2
+  · intro hlast
+    exact ((sys.tight_iff (sys.trace e) e h).mpr ⟨filter_toList_eq_trace e h, hlast⟩).2
+
+open Classical in
+/-- **Tightness of the concatenation ⇔ tightness of the (nonempty) segment.** Tightness depends
+only on the last transition, which — for a nonempty segment `B` — is the last transition of the
+concatenation `A ⌢ B`. -/
+private theorem isTight_concat_iff (A B : Seq (Label × State)) (i j : State)
+    (hA : A.Terminates) (hB : B.Terminates) (hBne : B ≠ Seq.nil)
+    (happ : (A.append B).Terminates) :
+    sys.IsTight (⟨i, A.append B⟩ : AlterSeq State Label)
+      ↔ sys.IsTight (⟨j, B⟩ : AlterSeq State Label) := by
+  have hBtoL_ne : B.toList hB ≠ [] := by
+    intro h0
+    exact hBne (by rw [← Stream'.Seq.ofList_toList B hB, h0, Stream'.Seq.ofList_nil])
+  have hBmap_ne : (B.toList hB).map Prod.fst ≠ [] := by
+    intro h0; exact hBtoL_ne (List.map_eq_nil_iff.mp h0)
+  rw [isTight_iff_lastExt ⟨i, A.append B⟩ happ, isTight_iff_lastExt ⟨j, B⟩ hB]
+  have hfull : ((⟨i, A.append B⟩ : AlterSeq State Label).trans.toList happ).map Prod.fst
+      = (A.toList hA).map Prod.fst ++ (B.toList hB).map Prod.fst := by
+    change ((A.append B).toList happ).map Prod.fst = _
+    rw [Stream'.Seq.toList_append A B hA hB happ, List.map_append]
+  rw [hfull, show ((⟨j, B⟩ : AlterSeq State Label).trans.toList hB).map Prod.fst
+        = (B.toList hB).map Prod.fst from rfl,
+    List.getLast?_append_of_ne_nil _ hBmap_ne]
+
 /-- **CON = base.** Factoring the arrival-config sum via the per-config `con_factor` with the
 witness mass `reachLmass = 1`.
 
