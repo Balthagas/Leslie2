@@ -206,7 +206,7 @@ theorem witness_traceProb_emit {x : State} {l : Label} {μ : PMF State}
   exact (⟨PMF.pure x, σ⟩ : ProbabilisticExecution sys).haltMass_trace_le_traceProb
     (Seq.cons l Seq.nil)
 
-/-- **(3) THE HARD CRUX — the unfolding-fidelity bridge (`τ ≠ []`).** The total `reachProb`
+/- **(3) THE HARD CRUX — the unfolding-fidelity bridge (`τ ≠ []`).** The total `reachProb`
 over the entry configs (ABS) equals the total over the arrival configs (CON). This identity is
 logically equivalent to the whole `traceProb_expandSched_eq` (each side is, by `(1)`/`(2)`, the
 abstract/concrete `traceProb`), so it carries the entire analytic weight of the unfolding fidelity.
@@ -261,15 +261,356 @@ Both reductions only compose existing `ExpandProbOf` machinery
 (`reachProb_we_step`, `reachProb_seg`, `predSum_partition`, `base_sum`,
 `seg_entry_draw`, `entryCfg_step_inner`) with the now-available `reachLmass = 1`;
 no further analytic lemma is needed. -/
+/-- The **common base** of the ABS = CON identity (for `τ = τ' ⌢ [l]`, `l` external). Indexed by
+the abstract weak-step lists `L'` whose committed execution `⟨init, ofList L'⟩` has external trace
+`τ'`: the entry-`L'` reach `predSum L'` times the total `ws`-mass of drawing the final external
+weak step `(l, ·)` at `⟨init, ofList L'⟩`. Both ABS (telescoped by `reachProb_we_step`) and CON
+(factored by `reachProb_seg` with the witness `reachLmass = 1`) reduce to this. -/
+private noncomputable def baseSum (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label) : ENNReal :=
+  ∑' L' : {L : List (Label × State) // sys.trace ⟨sys.init, Seq.ofList L⟩ = τ'},
+    (∑' c : {c : Config sys // c.we = ⟨sys.init, Seq.ofList L'.1⟩ ∧ c.e'.trans = Seq.nil},
+        reachProb ws c.1)
+      * (∑' μ : PMF State, ws.next ⟨sys.init, Seq.ofList L'.1⟩ (some (l, μ)))
+
+open Classical in
+/-- A terminating, trace-tight execution with nonempty external trace `τ` forces `τ` to end with
+an external label: `τ = τ' ⌢ [l]`, `l ≠ τ`. (The last transition of a tight nonempty execution is
+external — `traceTightLabs`'s second clause — and that label survives the trace filter as its
+last element.) -/
+private theorem exists_split_of_tight (τ : Seq Label) (e : AlterSeq State Label)
+    (hfin : e.trans.Terminates) (htr : sys.trace e = τ) (htight : sys.IsTight e)
+    (hτ : τ ≠ Seq.nil) :
+    ∃ (τ' : Seq Label) (l : Label),
+      ¬ l = Silent.τ ∧ τ = τ'.append (Seq.cons l Seq.nil) := by
+  have htt : sys.traceTightLabs τ ((e.trans.toList hfin).map Prod.fst) :=
+    (sys.tight_iff τ e hfin).mp ⟨htr, htight⟩
+  obtain ⟨hfilter, hlastext⟩ := htt
+  rcases List.eq_nil_or_concat ((e.trans.toList hfin).map Prod.fst) with h0 | ⟨pre, l, hlabseq⟩
+  · exfalso; apply hτ
+    rw [← hfilter, h0, Stream'.Seq.ofList_nil, Stream'.Seq.filter_nil]
+  · rw [List.concat_eq_append] at hlabseq
+    have hgl : (pre ++ [l]).getLast? = some l := by simp
+    have hl_ext : ¬ l = Silent.τ := hlastext l (by rw [hlabseq]; exact hgl)
+    refine ⟨(Seq.ofList pre).filter (fun a => ¬ a = Silent.τ), l, hl_ext, ?_⟩
+    rw [← hfilter, hlabseq, Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons,
+      Stream'.Seq.ofList_nil,
+      Stream'.Seq.filter_append (fun a => ¬ a = Silent.τ) (Seq.ofList pre) _
+        (Stream'.Seq.terminates_ofList pre),
+      Stream'.Seq.filter_cons_pos (p := fun a => ¬ a = Silent.τ) l Seq.nil hl_ext,
+      Stream'.Seq.filter_nil]
+
+/-- The external trace of `⟨init, ofList L'⟩` is the τ-filter of its label list. -/
+private theorem trace_ofList_eq_filter (L' : List (Label × State)) :
+    sys.trace ⟨sys.init, Seq.ofList L'⟩
+      = (Seq.ofList (L'.map Prod.fst)).filter (fun a => ¬ a = Silent.τ) := by
+  rw [← Seq.map_ofList_pub Prod.fst L',
+    Stream'.Seq.filter_map Prod.fst (fun a => ¬ a = Silent.τ) (Seq.ofList L')]
+  rfl
+
+/-- Appending one external transition `(l, x)` to `⟨init, ofList L'⟩` appends `l` to its trace. -/
+private theorem trace_ofList_append_ext (L' : List (Label × State)) (l : Label) (x : State)
+    (hl : ¬ l = Silent.τ) :
+    sys.trace ⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩
+      = (sys.trace ⟨sys.init, Seq.ofList L'⟩).append (Seq.cons l Seq.nil) := by
+  rw [trace_ofList_eq_filter, trace_ofList_eq_filter]
+  simp only [List.map_append, List.map_cons, List.map_nil]
+  rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil,
+    Stream'.Seq.filter_append (fun a => ¬ a = Silent.τ) _ _ (Stream'.Seq.terminates_ofList _),
+    Stream'.Seq.filter_cons_pos (p := fun a => ¬ a = Silent.τ) l Seq.nil hl,
+    Stream'.Seq.filter_nil]
+
+/-- The appended execution `⟨init, ofList (L' ++ [(l, x)])⟩` (where `⟨init, ofList L'⟩` has trace
+`τ'` and `l` is external) is terminating, has trace `τ' ⌢ [l]`, and is tight. -/
+private theorem target_Q (τ' : Seq Label) (l : Label) (hl : ¬ l = Silent.τ)
+    (L' : List (Label × State)) (x : State)
+    (hL' : sys.trace ⟨sys.init, Seq.ofList L'⟩ = τ') :
+    (⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩ : AlterSeq State Label).trans.Terminates ∧
+      sys.trace ⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩ = τ'.append (Seq.cons l Seq.nil) ∧
+      sys.IsTight ⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩ := by
+  have hfin : (⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩ : AlterSeq State Label).trans.Terminates :=
+    Stream'.Seq.terminates_ofList _
+  have htr : sys.trace ⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩
+      = τ'.append (Seq.cons l Seq.nil) := by rw [trace_ofList_append_ext L' l x hl, hL']
+  refine ⟨hfin, htr, ?_⟩
+  have htt : sys.traceTightLabs (τ'.append (Seq.cons l Seq.nil))
+      (((⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩ : AlterSeq State Label).trans.toList hfin).map
+        Prod.fst) := by
+    rw [show (⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩ : AlterSeq State Label).trans.toList hfin
+          = L' ++ [(l, x)] from Stream'.Seq.toList_ofList _]
+    refine ⟨?_, ?_⟩
+    · simp only [List.map_append, List.map_cons, List.map_nil]
+      rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil,
+        Stream'.Seq.filter_append (fun a => ¬ a = Silent.τ) _ _ (Stream'.Seq.terminates_ofList _),
+        Stream'.Seq.filter_cons_pos (p := fun a => ¬ a = Silent.τ) l Seq.nil hl,
+        Stream'.Seq.filter_nil, ← trace_ofList_eq_filter, hL']
+    · intro l₀ hl₀
+      have hlast : ((L' ++ [(l, x)]).map Prod.fst).getLast? = some l := by simp
+      rw [hlast] at hl₀
+      obtain rfl := Option.some_inj.mp hl₀
+      exact hl
+  exact ((sys.tight_iff _ _ hfin).mpr htt).2
+
+/-- **Per-prefix collapse (ABS side).** Summing `probOf_w ⟨init, ofList (L' ++ [(l, x)])⟩` over the
+final state `x` telescopes (via `reachProb_we_step`) to the entry-`L'` reach times the total
+`ws`-mass of drawing the final external weak step `(l, ·)`. -/
+private theorem abs_perL (ws : Scheduler sys^w) (l : Label) (L' : List (Label × State)) :
+    (∑' x : State, (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w).probOf
+        ⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩ (Stream'.Seq.terminates_ofList _))
+      = (∑' c : {c : Config sys // c.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c.e'.trans = Seq.nil},
+          reachProb ws c.1)
+        * ∑' μ : PMF State, ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) := by
+  have hstep : ∀ x : State, (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w).probOf
+        ⟨sys.init, Seq.ofList (L' ++ [(l, x)])⟩ (Stream'.Seq.terminates_ofList _)
+      = (∑' c : {c : Config sys // c.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c.e'.trans = Seq.nil},
+          reachProb ws c.1)
+        * (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w).kernel
+            ⟨sys.init, Seq.ofList L'⟩ (l, x) :=
+    fun x => by rw [aux ws (L' ++ [(l, x)]), reachProb_we_step ws L' l x]
+  rw [tsum_congr hstep, ENNReal.tsum_mul_left]
+  congr 1
+  calc (∑' x : State, (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w).kernel
+          ⟨sys.init, Seq.ofList L'⟩ (l, x))
+      = ∑' x : State, ∑' μ : PMF State,
+          ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) * μ x := rfl
+    _ = ∑' μ : PMF State, ∑' x : State,
+          ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) * μ x := ENNReal.tsum_comm
+    _ = ∑' μ : PMF State,
+          ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) * ∑' x : State, μ x :=
+        tsum_congr (fun μ => by rw [ENNReal.tsum_mul_left])
+    _ = ∑' μ : PMF State, ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) :=
+        tsum_congr (fun μ => by rw [PMF.tsum_coe, mul_one])
+
+open Classical in
+/-- **Bijection (ABS side).** The total `probOf_w` over tight, trace-`τ' ⌢ [l]` abstract executions
+equals the sum over pairs `(L', x)` — with `⟨init, ofList L'⟩` of trace `τ'` — of `probOf_w` of the
+one-external-step extension `⟨init, ofList (L' ++ [(l, x)])⟩`. -/
+private theorem abs_bij (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label)
+    (hl : ¬ l = Silent.τ) :
+    (∑' e : {e : AlterSeq State Label //
+        e.trans.Terminates ∧ sys.trace e = τ'.append (Seq.cons l Seq.nil) ∧ sys.IsTight e},
+        (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w).probOf e.1 e.2.1)
+      = ∑' p : {L : List (Label × State) // sys.trace ⟨sys.init, Seq.ofList L⟩ = τ'} × State,
+          (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w).probOf
+            ⟨sys.init, Seq.ofList (p.1.1 ++ [(l, p.2)])⟩ (Stream'.Seq.terminates_ofList _) := by
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (i := fun p => ⟨⟨sys.init, Seq.ofList (p.1.1.1 ++ [(l, p.1.2)])⟩,
+        target_Q τ' l hl p.1.1.1 p.1.2 p.1.1.2⟩) ?_ ?_ ?_
+  · -- injective on `support g`
+    intro a b hab
+    have hlist : a.1.1.1 ++ [(l, a.1.2)] = b.1.1.1 ++ [(l, b.1.2)] :=
+      Stream'.Seq.ofList_injective (congrArg AlterSeq.trans (congrArg Subtype.val hab))
+    have hL : a.1.1.1 = b.1.1.1 := by
+      have h := congrArg List.dropLast hlist
+      rwa [List.dropLast_concat, List.dropLast_concat] at h
+    have hx : a.1.2 = b.1.2 := by
+      have h := congrArg List.getLast? hlist
+      rw [List.getLast?_concat, List.getLast?_concat] at h
+      exact (Prod.mk.inj (Option.some_inj.mp h)).2
+    exact Subtype.ext (Prod.ext (Subtype.ext hL) hx)
+  · -- `support f ⊆ range i`
+    intro e he
+    have hpos : (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w).probOf e.1 e.2.1 ≠ 0 := he
+    have hinit : e.1.init = sys.init := by
+      by_contra hne
+      exact hpos (by rw [ProbabilisticExecution.probOf_init_factor ws (PMF.pure sys.init) e.1 e.2.1,
+        PMF.pure_apply_of_ne _ _ hne, zero_mul])
+    have he1trans : (⟨sys.init, e.1.trans⟩ : AlterSeq State Label) = e.1 := by rw [← hinit]
+    set M := e.1.trans.toList e.2.1 with hMdef
+    have hMtrans : e.1.trans = Seq.ofList M := (Stream'.Seq.ofList_toList e.1.trans e.2.1).symm
+    have hMne : M ≠ [] := by
+      intro h0
+      have htn : sys.trace e.1 = Seq.nil := by
+        have he0 : e.1.trans = Seq.nil := by rw [hMtrans, h0, Stream'.Seq.ofList_nil]
+        change (e.1.trans.filter (fun p => ¬ p.1 = Silent.τ)).map Prod.fst = Seq.nil
+        rw [he0, Stream'.Seq.filter_nil, Stream'.Seq.map_nil]
+      exact append_cons_ne_nil τ' l Seq.nil (e.2.2.1.symm.trans htn)
+    rcases List.eq_nil_or_concat M with h0 | ⟨M'', last, hMeq⟩
+    · exact absurd h0 hMne
+    · rw [List.concat_eq_append] at hMeq
+      obtain ⟨lₘ, x⟩ := last
+      obtain ⟨-, hlastext⟩ :=
+        (sys.tight_iff (τ'.append (Seq.cons l Seq.nil)) e.1 e.2.1).mp ⟨e.2.2.1, e.2.2.2⟩
+      have hlₘ : ¬ lₘ = Silent.τ := hlastext lₘ (by rw [← hMdef, hMeq]; simp)
+      have htrace_split : (sys.trace ⟨sys.init, Seq.ofList M''⟩).append (Seq.cons lₘ Seq.nil)
+          = τ'.append (Seq.cons l Seq.nil) := by
+        rw [← trace_ofList_append_ext M'' lₘ x hlₘ, ← hMeq, ← hMtrans, he1trans]; exact e.2.2.1
+      have hAterm : (sys.trace ⟨sys.init, Seq.ofList M''⟩).Terminates := by
+        rw [trace_ofList_eq_filter]
+        exact Stream'.Seq.terminates_filter _ _ (Stream'.Seq.terminates_ofList _)
+      have hτ'term : τ'.Terminates := by
+        have hbig : ((sys.trace ⟨sys.init, Seq.ofList M''⟩).append
+            (Seq.cons lₘ Seq.nil)).Terminates :=
+          ⟨_, Stream'.Seq.terminatedAt_append_find hAterm
+            (show (Seq.cons lₘ Seq.nil).TerminatedAt 1 from rfl)⟩
+        rw [htrace_split] at hbig
+        exact terminates_of_append_terminates hbig
+      have hlₘl : lₘ = l :=
+        Stream'.Seq.append_singleton_inj_right _ _ hAterm hτ'term lₘ l htrace_split
+      have htrM'' : sys.trace ⟨sys.init, Seq.ofList M''⟩ = τ' :=
+        Stream'.Seq.append_singleton_inj_left _ _ hAterm hτ'term lₘ l htrace_split
+      have htarget : (⟨sys.init, Seq.ofList (M'' ++ [(l, x)])⟩ : AlterSeq State Label) = e.1 := by
+        have h0 : (⟨sys.init, Seq.ofList (M'' ++ [(lₘ, x)])⟩ : AlterSeq State Label) = e.1 := by
+          rw [← hMeq, ← hMtrans]; exact he1trans
+        rwa [hlₘl] at h0
+      refine ⟨⟨(⟨M'', htrM''⟩, x), ?_⟩, Subtype.ext htarget⟩
+      change (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w).probOf
+          ⟨sys.init, Seq.ofList (M'' ++ [(l, x)])⟩ (Stream'.Seq.terminates_ofList _) ≠ 0
+      rw [ProbabilisticExecution.probOf_congr
+        (⟨PMF.pure sys.init, ws⟩ : ProbabilisticExecution sys^w)
+        ⟨sys.init, Seq.ofList (M'' ++ [(l, x)])⟩ e.1 htarget
+        (Stream'.Seq.terminates_ofList _) e.2.1]
+      exact hpos
+  · -- `hfg`
+    intro p; rfl
+
+/-- **ABS = base.** Telescoping the entry-config sum over `τ = τ' ⌢ [l]` via `reachProb_we_step`. -/
+private theorem abs_eq_baseSum (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label)
+    (hl : ¬ l = Silent.τ) :
+    (∑' c : {c : Config sys // c.e'.trans = Seq.nil ∧ c.we.trans.Terminates ∧
+        sys.trace c.we = τ'.append (Seq.cons l Seq.nil) ∧ sys.IsTight c.we}, reachProb ws c.1)
+      = baseSum ws τ' l := by
+  rw [← tsum_reindex_we ws
+      (fun e => e.trans.Terminates ∧ sys.trace e = τ'.append (Seq.cons l Seq.nil) ∧ sys.IsTight e)]
+  refine Eq.trans (tsum_congr (fun e => (probOf_eq_reachProb_we ws e.1 e.2.1).symm)) ?_
+  rw [abs_bij ws τ' l hl, ENNReal.tsum_prod']
+  exact tsum_congr (fun L' => abs_perL ws l L'.1)
+
+/-- **Per-config factor (CON side).** Marginalising the inner draw `t` of a configuration `c`
+with committed `we = ⟨init, ofList L'⟩`, active weak step `(l, μ)`, witness `schedOf (last e) l μ`,
+and completed segment `c.e'`, factors as the entry-`L'` reach over `c.e`, times the `ws`-mass of
+drawing `(l, μ)`, times the witness `probOf` of the segment `c.e'`. (`seg_inner_recursion` summed
+over `t` collapses the trailing `s.next`; `seg_entry_draw` supplies the entry marginal.) -/
+private theorem con_factor (ws : Scheduler sys^w) (L' : List (Label × State)) (l : Label)
+    (μ : PMF State) (c : Config sys) (he'fin : c.e'.trans.Terminates)
+    (hwe : c.we = ⟨sys.init, Seq.ofList L'⟩) (hwt : c.wt = some (l, μ))
+    (hs : c.s = schedOf sys (lastOf c.e) l μ) (hinit : c.e'.init = lastOf c.e) :
+    (∑' t : Option (Label × PMF State), reachProb ws {c with t := t})
+      = (∑' c' : {c' : Config sys //
+            c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = c.e},
+          reachProb ws c'.1)
+        * ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ))
+        * (⟨PMF.pure (lastOf c.e), schedOf sys (lastOf c.e) l μ⟩
+            : ProbabilisticExecution sys).probOf c.e' he'fin := by
+  have hsi : ∀ t : Option (Label × PMF State), reachProb ws {c with t := t}
+      = ((∑' t' : Option (Label × PMF State),
+            reachProb ws {c with e' := ⟨lastOf c.e, Seq.nil⟩, t := t'})
+          * (⟨PMF.pure (lastOf c.e), c.s⟩ : ProbabilisticExecution sys).probOf c.e' he'fin)
+        * c.s.next c.e' t := fun t =>
+    seg_inner_recursion ws l μ (c.e'.trans.toList he'fin) {c with t := t} he'fin
+      hwt hinit (Stream'.Seq.ofList_toList c.e'.trans he'fin).symm
+  rw [tsum_congr hsi, ENNReal.tsum_mul_left, (c.s.next c.e').tsum_coe, mul_one,
+    seg_entry_draw ws L' l μ c hwe hwt hs, hs]
+
+/-- **Witness segment trace.** A tight, terminating, nonempty segment `e'` produced with positive
+probability by a scheduler `σ` realising the external weak step `x ⤳[l] μ` (`l ≠ τ`) has trace
+exactly `[l]`. Under almost-sure halting (`Realises` (a)), `probOf e' ≠ 0` forces a halting
+continuation `g = e'⌢t` (via `probOf_eq_haltBelow`); every halting run has trace `[l]`
+(`Realises` (c)), so `sys.trace g = [l]`. As `e'` extends to `g`, `sys.trace e'` is a prefix of
+`[l]`; being nonempty (a tight nonempty exec has a nonempty trace) pins it to `[l]`. -/
+private theorem witness_tight_trace {x : State} {l : Label} {μ : PMF State} {σ : Scheduler sys}
+    (hR : Realises σ x l μ) (hl : ¬ l = Silent.τ)
+    (e' : AlterSeq State Label) (h' : e'.trans.Terminates) (hinit : e'.init = x)
+    (hne : e'.trans ≠ Seq.nil) (htight : sys.IsTight e')
+    (hpos : (⟨PMF.pure x, σ⟩ : ProbabilisticExecution sys).probOf e' h' ≠ 0) :
+    sys.trace e' = Seq.cons l Seq.nil := by
+  classical
+  set pe : ProbabilisticExecution sys := ⟨PMF.pure x, σ⟩ with hpe
+  -- Almost-sure halting is exactly the `hAS` hypothesis of `probOf_eq_haltBelow`.
+  have hAS : (∑' g : {g : AlterSeq State Label // g.trans.Terminates},
+      pe.probOf g.1 g.2 * pe.scheduler.next g.1 none) = 1 := hR.1
+  -- `probOf e' ≠ 0` ⟹ `haltBelow e' ≠ 0`, so some continuation halts with positive mass.
+  rw [pe.probOf_eq_haltBelow hAS e' h'] at hpos
+  unfold ProbabilisticExecution.haltBelow at hpos
+  have hex : ∃ t : List (Label × State),
+      pe.probOf ⟨e'.init, e'.trans.append (Seq.ofList t)⟩ (append_ofList_terminates h' t)
+        * pe.scheduler.next ⟨e'.init, e'.trans.append (Seq.ofList t)⟩ none ≠ 0 := by
+    by_contra hc
+    push Not at hc
+    exact hpos (ENNReal.tsum_eq_zero.mpr hc)
+  obtain ⟨t, ht⟩ := hex
+  rw [mul_ne_zero_iff] at ht
+  obtain ⟨hprob_g, hnext_g⟩ := ht
+  set g : AlterSeq State Label := ⟨e'.init, e'.trans.append (Seq.ofList t)⟩ with hg
+  have hgterm : g.trans.Terminates := append_ofList_terminates h' t
+  -- The continuation `g` halts with positive mass, hence has trace `[l]` (`Realises` (c)).
+  have hhalt : σ.haltMass (PMF.pure x) ⟨g, hgterm⟩ ≠ 0 := by
+    unfold Scheduler.haltMass
+    exact mul_ne_zero hprob_g hnext_g
+  have htr_g : sys.trace g = Seq.cons l Seq.nil := by
+    have := trace_of_halt hR ⟨g, hgterm⟩ hhalt
+    rwa [if_neg hl] at this
+  -- Split `trace g = trace e' ++ trace ⟨init, ofList t⟩`.
+  rw [hg, trace_append e'.init e'.trans (Seq.ofList t) h'] at htr_g
+  -- `trace e'` is nonempty (a tight nonempty exec has nonempty trace).
+  have hAne : sys.trace e' ≠ Seq.nil := by
+    intro hAnil
+    exact hne (trans_nil_of_trace_nil_tight e' h' hAnil htight)
+  -- A nonempty prefix of `[l]` is `[l]`.
+  have key : ∀ A W : Seq Label, A.append W = Seq.cons l Seq.nil → A ≠ Seq.nil →
+      A = Seq.cons l Seq.nil := by
+    intro A W hAW hAne'
+    cases A using Stream'.Seq.recOn with
+    | nil => exact absurd rfl hAne'
+    | cons a s' =>
+      rw [Stream'.Seq.cons_append] at hAW
+      obtain ⟨ha, hs'⟩ := Stream'.Seq.cons_eq_cons.mp hAW
+      rw [ha, (append_eq_nil hs').1]
+  exact key _ _ htr_g hAne
+
+/-- **CON = base.** Factoring the arrival-config sum via the per-config `con_factor` with the
+witness mass `reachLmass = 1`.
+
+RESIDUAL (the file's single remaining `sorry`). Unlike `abs_eq_baseSum` — which only re-expresses
+the *abstract* `traceProb_w (τ' ⌢ [l])` explicitly — `con_eq_baseSum` carries the genuine
+unfolding-fidelity content (it is equivalent to `traceProb_c (τ' ⌢ [l]) = traceProb_w (τ' ⌢ [l])`
+for this `τ`). `con_factor` (above) supplies the clean per-config piece: marginalising the inner
+draw `t` of a config with committed `we = ⟨init, ofList L'⟩`, active step `(l, μ)`, and segment
+`c.e'` gives `predSum_E(L', c.e) · ws.next (some (l, μ)) · probOf_{schedOf (last e) l μ}(c.e')`.
+
+What remains is the **arrival/segment convolution**. A `CON` config sits at an l-emission arrival:
+its segment `c.e' = seg` is tight (ends externally, since `concat` is tight), terminating, and
+starts at `lastOf c.e`, but `concat c = c.e ⌢ seg` tight with trace `τ' ⌢ [l]` only constrains
+`trace c.e ⌢ trace seg = τ' ⌢ [l]` — it does NOT force `trace seg = [l]` per config (the chosen
+realising witness `schedOf` may, on divergent paths, emit spurious/multiple externals). The
+identity therefore needs two further analytic inputs, neither yet packaged:
+  (1) the **cross-trace vanishing** `traceProb_{schedOf y lw μw} [t'] = 0` for every `t' ≠ [lw]`
+      (`lw ≠ τ`), which follows from `witness_traceProb_emit` (`traceProb [lw] = 1`) and a Kraft
+      *antichain-across-traces* bound (tight runs of incomparable traces are prefix-free), so the
+      spurious off-diagonal arrivals contribute `0`; and
+  (2) the **split reindexing** of `∑ CON` over the unique tight split
+      `concat = (committed E, trace τ') ⌢ (witness segment seg, trace [l])`, summing `con_factor`
+      over `(L', E, μw, seg)` and collapsing `∑_{seg tight, trace [l]} probOf_σ(seg) = 1`
+      (`witness_traceProb_emit`), then `predSum_partition` over `E` to rebuild `predSum L'`.
+This is the residual unfolding-fidelity bridge; the per-config algebra (`con_factor`) is done. -/
+private theorem con_eq_baseSum (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label)
+    (hl : ¬ l = Silent.τ) :
+    (∑' c : {c : Config sys // c.e'.trans ≠ Seq.nil ∧ (Config.concat c).trans.Terminates ∧
+        sys.trace (Config.concat c) = τ'.append (Seq.cons l Seq.nil) ∧
+        sys.IsTight (Config.concat c)}, reachProb ws c.1)
+      = baseSum ws τ' l := by
+  sorry
+
 private theorem abs_eq_con (ws : Scheduler sys^w) (τ : Seq Label) (hτ : τ ≠ Seq.nil) :
     (∑' c : {c : Config sys // c.e'.trans = Seq.nil ∧ c.we.trans.Terminates ∧
         sys.trace c.we = τ ∧ sys.IsTight c.we}, reachProb ws c.1)
       = ∑' c : {c : Config sys // c.e'.trans ≠ Seq.nil ∧ (Config.concat c).trans.Terminates ∧
           sys.trace (Config.concat c) = τ ∧ sys.IsTight (Config.concat c)}, reachProb ws c.1 := by
-  -- RESIDUAL: ABS = base = base · reachLmass = CON, with `reachLmass = 1` now PROVEN
-  -- (`witness_traceProb_emit`). What remains is the config-bookkeeping assembly (ABS = base via
-  -- `reachProb_we_step`/`base_sum`; CON = base · reachLmass via `reachProb_seg`). See docstring.
-  sorry
+  by_cases hsplit : ∃ (τ' : Seq Label) (l : Label),
+      ¬ l = Silent.τ ∧ τ = τ'.append (Seq.cons l Seq.nil)
+  · obtain ⟨τ', l, hl, hτeq⟩ := hsplit
+    subst hτeq
+    rw [abs_eq_baseSum ws τ' l hl, con_eq_baseSum ws τ' l hl]
+  · -- No external-final decomposition of `τ`: both sides are empty sums (`0`).
+    have hA : (∑' c : {c : Config sys // c.e'.trans = Seq.nil ∧ c.we.trans.Terminates ∧
+          sys.trace c.we = τ ∧ sys.IsTight c.we}, reachProb ws c.1) = 0 :=
+      ENNReal.tsum_eq_zero.mpr (fun c =>
+        (hsplit (exists_split_of_tight τ c.1.we c.2.2.1 c.2.2.2.1 c.2.2.2.2 hτ)).elim)
+    have hC : (∑' c : {c : Config sys // c.e'.trans ≠ Seq.nil ∧
+          (Config.concat c).trans.Terminates ∧ sys.trace (Config.concat c) = τ ∧
+          sys.IsTight (Config.concat c)}, reachProb ws c.1) = 0 :=
+      ENNReal.tsum_eq_zero.mpr (fun c =>
+        (hsplit (exists_split_of_tight τ (Config.concat c.1) c.2.2.1 c.2.2.2.1 c.2.2.2.2 hτ)).elim)
+    rw [hA, hC]
 
 /-! ### (4) base case `τ = []` -/
 
