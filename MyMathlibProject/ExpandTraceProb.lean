@@ -849,8 +849,8 @@ private theorem canonCfg_con (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label
     (hL' : sys.trace ⟨sys.init, Seq.ofList L'⟩ = τ')
     (hsegT : seg.trans.Terminates) (hsegtr : sys.trace seg = Seq.cons l Seq.nil)
     (hsegtight : sys.IsTight seg)
-    (hrp : reachProb ws {canonCfg sys L' l E μ seg with t := t} ≠ 0) :
-    {canonCfg sys L' l E μ seg with t := t}.e'.trans ≠ Seq.nil ∧
+    (hrp : reachProb ws { canonCfg sys L' l E μ seg with t := t } ≠ 0) :
+    { canonCfg sys L' l E μ seg with t := t }.e'.trans ≠ Seq.nil ∧
       (Config.concat {canonCfg sys L' l E μ seg with t := t}).trans.Terminates ∧
       sys.trace (Config.concat {canonCfg sys L' l E μ seg with t := t})
         = τ'.append (Seq.cons l Seq.nil) ∧
@@ -877,38 +877,93 @@ private theorem canonCfg_con (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label
       hcatfin).mpr hsegtight
   exact ⟨hsegne, hcatfin, htracecat, htightcat⟩
 
-/-- **CON = base.** Factoring the arrival-config sum via the per-config `con_factor` with the
-witness mass `reachLmass = 1`.
+open Classical in
+/-- **CON reindexing.** The arrival-config sum reindexes bijectively onto tuples `(L', E, μ, seg, t)`
+— entry list `L'` (trace `τ'`), committed concrete prefix `E`, weak-step target `μ`, tight trace-`[l]`
+segment `seg`, inner draw `t` — via the canonical config `canonCfg L' l E μ seg` (`con_config_shape`
+extracts the tuple from a reachable arrival config; `canonCfg_con` builds a CON config from a tuple). -/
+private theorem con_bij (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label) :
+    (∑' c : {c : Config sys // c.e'.trans ≠ Seq.nil ∧ (Config.concat c).trans.Terminates ∧
+        sys.trace (Config.concat c) = τ'.append (Seq.cons l Seq.nil) ∧
+        sys.IsTight (Config.concat c)}, reachProb ws c.1)
+      = ∑' q : {L : List (Label × State) // sys.trace ⟨sys.init, Seq.ofList L⟩ = τ'}
+          × AlterSeq State Label × PMF State
+          × {seg : AlterSeq State Label //
+              seg.trans.Terminates ∧ sys.trace seg = Seq.cons l Seq.nil ∧ sys.IsTight seg}
+          × Option (Label × PMF State),
+          reachProb ws {canonCfg sys q.1.1 l q.2.1 q.2.2.1 q.2.2.2.1.1 with t := q.2.2.2.2} := by
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (i := fun q => ⟨{canonCfg sys q.1.1.1 l q.1.2.1 q.1.2.2.1 q.1.2.2.2.1.1
+        with t := q.1.2.2.2.2},
+      canonCfg_con ws τ' l q.1.1.1 q.1.2.1 q.1.2.2.2.1.1 q.1.2.2.1 q.1.2.2.2.2
+        q.1.1.2 q.1.2.2.2.1.2.1 q.1.2.2.2.1.2.2.1 q.1.2.2.2.1.2.2.2 q.2⟩) ?_ ?_ ?_
+  · -- injective on support
+    rintro ⟨⟨⟨L'a, hL'a⟩, Ea, μa, ⟨sega, hsega⟩, ta⟩, hqa⟩
+      ⟨⟨⟨L'b, hL'b⟩, Eb, μb, ⟨segb, hsegb⟩, tb⟩, hqb⟩ hab
+    have hcfg := Subtype.ext_iff.mp hab
+    have hL'eq : L'a = L'b :=
+      Stream'.Seq.ofList_injective (congrArg AlterSeq.trans (congrArg Config.we hcfg))
+    have hEeq : Ea = Eb := congrArg Config.e hcfg
+    have hμeq : μa = μb :=
+      (Prod.mk.inj (Option.some.inj (congrArg Config.wt hcfg))).2
+    have hsegeq : sega = segb := congrArg Config.e' hcfg
+    have hteq : ta = tb := congrArg Config.t hcfg
+    subst hL'eq; subst hEeq; subst hμeq; subst hsegeq; subst hteq; rfl
+  · -- support ⊆ range
+    intro a ha
+    obtain ⟨L', μw, hceq, hL', hsegT, hsegtr, hsegtight⟩ :=
+      con_config_shape ws τ' l a.1 a.2.1 a.2.2.2.1 a.2.2.2.2 ha
+    have hq : reachProb ws {canonCfg sys L' l a.1.e μw a.1.e' with t := a.1.t} ≠ 0 := by
+      rw [← hceq]; exact ha
+    exact ⟨⟨⟨⟨L', hL'⟩, a.1.e, μw, ⟨a.1.e', hsegT, hsegtr, hsegtight⟩, a.1.t⟩, hq⟩,
+      Subtype.ext hceq.symm⟩
+  · -- values agree
+    rintro ⟨⟨⟨L', hL'⟩, E, μ, ⟨seg, hseg⟩, t⟩, hq⟩; rfl
 
-RESIDUAL (the file's single remaining `sorry`). Unlike `abs_eq_baseSum` — which only re-expresses
-the *abstract* `traceProb_w (τ' ⌢ [l])` explicitly — `con_eq_baseSum` carries the genuine
-unfolding-fidelity content (it is equivalent to `traceProb_c (τ' ⌢ [l]) = traceProb_w (τ' ⌢ [l])`
-for this `τ`). `con_factor` (above) supplies the clean per-config piece: marginalising the inner
-draw `t` of a config with committed `we = ⟨init, ofList L'⟩`, active step `(l, μ)`, and segment
-`c.e'` gives `predSum_E(L', c.e) · ws.next (some (l, μ)) · probOf_{schedOf (last e) l μ}(c.e')`.
+open Classical in
+/-- **Per-entry collapse (CON side).** Fixing the entry list `L'` (trace `τ'`), summing over the
+committed prefix `E`, weak-step target `μ`, tight trace-`[l]` segment, and inner draw `t` factors as
+the entry-`L'` reach times the total `(l, ·)`-mass: `con_seg_collapse` collapses each `(E, μ)`
+segment sum, and `predSum_partition` rebuilds `predSum L'` over `E`. -/
+private theorem con_perL (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label) (hl : ¬ l = Silent.τ)
+    (L' : {L : List (Label × State) // sys.trace ⟨sys.init, Seq.ofList L⟩ = τ'}) :
+    (∑' rest : AlterSeq State Label × PMF State
+        × {seg : AlterSeq State Label //
+            seg.trans.Terminates ∧ sys.trace seg = Seq.cons l Seq.nil ∧ sys.IsTight seg}
+        × Option (Label × PMF State),
+        reachProb ws {canonCfg sys L'.1 l rest.1 rest.2.1 rest.2.2.1.1 with t := rest.2.2.2})
+      = (∑' c : {c : Config sys //
+            c.we = ⟨sys.init, Seq.ofList L'.1⟩ ∧ c.e'.trans = Seq.nil}, reachProb ws c.1)
+        * ∑' μ : PMF State, ws.next ⟨sys.init, Seq.ofList L'.1⟩ (some (l, μ)) := by
+  rw [ENNReal.tsum_prod']
+  have hinner : ∀ E : AlterSeq State Label,
+      (∑' r : PMF State × {seg : AlterSeq State Label // seg.trans.Terminates ∧
+            sys.trace seg = Seq.cons l Seq.nil ∧ sys.IsTight seg} × Option (Label × PMF State),
+          reachProb ws {canonCfg sys L'.1 l E r.1 r.2.1.1 with t := r.2.2})
+        = ∑' μ : PMF State,
+            (∑' c : {c : Config sys // c.we = ⟨sys.init, Seq.ofList L'.1⟩ ∧
+                c.e'.trans = Seq.nil ∧ c.e = E}, reachProb ws c.1)
+              * ws.next ⟨sys.init, Seq.ofList L'.1⟩ (some (l, μ)) := by
+    intro E
+    rw [ENNReal.tsum_prod']
+    refine tsum_congr (fun μ => ?_)
+    rw [ENNReal.tsum_prod']
+    exact con_seg_collapse ws L'.1 l hl μ E
+  rw [tsum_congr hinner, ENNReal.tsum_comm,
+    tsum_congr (fun μ => by rw [ENNReal.tsum_mul_right, predSum_partition ws L'.1]),
+    ENNReal.tsum_mul_left]
 
-What remains is the **arrival/segment convolution**. A `CON` config sits at an l-emission arrival:
-its segment `c.e' = seg` is tight (ends externally, since `concat` is tight), terminating, and
-starts at `lastOf c.e`, but `concat c = c.e ⌢ seg` tight with trace `τ' ⌢ [l]` only constrains
-`trace c.e ⌢ trace seg = τ' ⌢ [l]` — it does NOT force `trace seg = [l]` per config (the chosen
-realising witness `schedOf` may, on divergent paths, emit spurious/multiple externals). The
-identity therefore needs two further analytic inputs, neither yet packaged:
-  (1) the **cross-trace vanishing** `traceProb_{schedOf y lw μw} [t'] = 0` for every `t' ≠ [lw]`
-      (`lw ≠ τ`), which follows from `witness_traceProb_emit` (`traceProb [lw] = 1`) and a Kraft
-      *antichain-across-traces* bound (tight runs of incomparable traces are prefix-free), so the
-      spurious off-diagonal arrivals contribute `0`; and
-  (2) the **split reindexing** of `∑ CON` over the unique tight split
-      `concat = (committed E, trace τ') ⌢ (witness segment seg, trace [l])`, summing `con_factor`
-      over `(L', E, μw, seg)` and collapsing `∑_{seg tight, trace [l]} probOf_σ(seg) = 1`
-      (`witness_traceProb_emit`), then `predSum_partition` over `E` to rebuild `predSum L'`.
-This is the residual unfolding-fidelity bridge; the per-config algebra (`con_factor`) is done. -/
+/-- **CON = base.** The arrival-config sum reindexes (`con_bij`) onto tuples `(L', E, μ, seg, t)`;
+summing out `(E, μ, seg, t)` per entry list `L'` (`con_perL`) rebuilds the common base `baseSum`. -/
 private theorem con_eq_baseSum (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label)
     (hl : ¬ l = Silent.τ) :
     (∑' c : {c : Config sys // c.e'.trans ≠ Seq.nil ∧ (Config.concat c).trans.Terminates ∧
         sys.trace (Config.concat c) = τ'.append (Seq.cons l Seq.nil) ∧
         sys.IsTight (Config.concat c)}, reachProb ws c.1)
       = baseSum ws τ' l := by
-  sorry
+  rw [con_bij ws τ' l, ENNReal.tsum_prod']
+  unfold baseSum
+  exact tsum_congr (fun L' => con_perL ws τ' l hl L')
 
 private theorem abs_eq_con (ws : Scheduler sys^w) (τ : Seq Label) (hτ : τ ≠ Seq.nil) :
     (∑' c : {c : Config sys // c.e'.trans = Seq.nil ∧ c.we.trans.Terminates ∧
