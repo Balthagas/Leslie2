@@ -241,26 +241,17 @@ residual was a limit `RA (pE exec) N → 0`). Decompose `τ = τ' ⌢ [l]` with 
 
 `abs_eq_con` then follows from `base · 1 = base · 1`.
 
-RESIDUAL — single remaining `sorry` of the file. The genuinely-novel analytic input,
-`reachLmass = traceProb(witness)[l] = 1`, is now **proven** (`witness_traceProb_emit`
-above), resting on the generic Kraft infrastructure added to `TraceProbBound`
-(`traceProb_le_one`, `haltMass_trace_le_traceProb`, `probOf_append_ofList`,
-`pathWeight_halt_tsum_le_one`, `splitTight`/`splitTight_spec`). What remains is the
-purely *combinatorial* config-bookkeeping that wires the two factorisations into
-`abs_eq_con`, i.e. proving the two shape equalities
+Both shape equalities are now **proven** (the file is `sorry`-free):
 
-* **ABS = base**: telescoping the entry-config sum over `τ = τ' ⌢ [l]` via
+* **ABS = base** (`abs_eq_baseSum`): telescoping the entry-config sum over `τ = τ' ⌢ [l]` via
   `reachProb_we_step` + `base_sum` (the outer commit weight `∑_x kernel_w (l,x)` collapsing
   to `∑_μ ws.next (some (l, μ))`);
-* **CON = base · reachLmass**: factoring the arrival-config sum via
-  `reachProb_seg` (`seg_inner_recursion` + `seg_entry_draw`), whose per-config witness
-  factor sums to `reachLmass`, then applying `witness_traceProb_emit` to collapse
-  `reachLmass = 1`.
-
-Both reductions only compose existing `ExpandProbOf` machinery
-(`reachProb_we_step`, `reachProb_seg`, `predSum_partition`, `base_sum`,
-`seg_entry_draw`, `entryCfg_step_inner`) with the now-available `reachLmass = 1`;
-no further analytic lemma is needed. -/
+* **CON = base** (`con_eq_baseSum`): reindexing the arrival-config sum (`con_bij`) onto tuples
+  `(L', E, μ, seg, t)` and summing them out per entry list `L'` (`con_perL`) — `con_seg_collapse`
+  collapses each `(E, μ)` segment sum to the witness `traceProb [l] = 1` (`witness_traceProb_emit`)
+  and `predSum_partition` rebuilds `predSum L'` over `E`. The active-label identification
+  `trace seg = [l]` per config comes from `witness_seg_trace` (a tight nonempty positive-probability
+  witness segment emits exactly `[l]`, via the halt-below identity `probOf_eq_haltBelow`). -/
 /-- The **common base** of the ABS = CON identity (for `τ = τ' ⌢ [l]`, `l` external). Indexed by
 the abstract weak-step lists `L'` whose committed execution `⟨init, ofList L'⟩` has external trace
 `τ'`: the entry-`L'` reach `predSum L'` times the total `ws`-mass of drawing the final external
