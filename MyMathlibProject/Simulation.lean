@@ -15,7 +15,7 @@ open Stream'
 
 namespace PLTS
 
-variable {α β State State_C State_A Label : Type}
+variable {α β State State_C State_A Label : Type} [Silent Label]
 
 /-- Lifting of a state relation `R : α → β → Prop` to a relation on PMFs.
 `PMFRel R μ₁ μ₂` holds iff there is a joint PMF `ω` on `α × β` whose first
@@ -62,14 +62,14 @@ internal/external label partition.
   in both cases the resulting abstract distribution `μ_A` must be related to
   `μ_C` by `PMFRel R`. -/
 structure WeakProbabilisticSimulation
-    (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
+    (sys_C : System State_C Label) (sys_A : System State_A Label)
     (R : State_C → State_A → Prop) where
   init : R sys_C.init sys_A.init
   step : ∀ s_C s_A, R s_C s_A →
     ∀ l μ_C, sys_C.step s_C l μ_C →
     ∃ μ_A : PMF State_A,
-      ((sys_C.internal l ∧ weakTau sys_A (PMF.pure s_A) μ_A) ∨
-       (¬ sys_C.internal l ∧ weakStep sys_A (PMF.pure s_A) l μ_A)) ∧
+      (((l = Silent.τ) ∧ weakTau sys_A (PMF.pure s_A) μ_A) ∨
+       (¬ (l = Silent.τ) ∧ weakStep sys_A (PMF.pure s_A) l μ_A)) ∧
       PMFRel R μ_C μ_A
 
 /-- A *probabilistic* forward simulation from `sys_C` to `sys_A`, parameterised
@@ -89,26 +89,26 @@ as in `WeakProbabilisticSimulation`).
 Modulo the typing of `R` (`State_C → PMF State_A → Prop` here vs.
 `State_C → State_A → Prop` there), the matching pattern is exactly the same as
 in `WeakProbabilisticSimulation`: `PMFRel R` couples the concrete outcome with
-the abstract outcome, and the case split on `sys_C.internal l` picks between
+the abstract outcome, and the case split on `(l = Silent.τ)` picks between
 the τ-only and the external weak transition. The notion is equivalent to
 `WeakProbabilisticSimulation` (the latter is the special case where each `μ_A`
 is concentrated on a single abstract state). -/
 structure ProbabilisticForwardSimulation
-    (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
+    (sys_C : System State_C Label) (sys_A : System State_A Label)
     (R : State_C → PMF State_A → Prop) where
   init : ∃ μ_A, (∀ s_A ∈ μ_A.support, s_A = sys_A.init) ∧ R sys_C.init μ_A
   step : ∀ s_C μ_A, R s_C μ_A →
     ∀ l μ_C, sys_C.step s_C l μ_C →
     ∃ ω : PMF (PMF State_A),
       PMFRel R μ_C ω ∧
-      ((sys_C.internal l ∧ weakTau sys_A μ_A (ω.bind id)) ∨
-       (¬ sys_C.internal l ∧ weakStep sys_A μ_A l (ω.bind id)))
+      (((l = Silent.τ) ∧ weakTau sys_A μ_A (ω.bind id)) ∨
+       (¬ (l = Silent.τ) ∧ weakStep sys_A μ_A l (ω.bind id)))
 
 /-- **Weak simulation = strong simulation into the weak closure of the abstract
 system.** A `WeakProbabilisticSimulation` of `sys` by `sys'` is the *same data*
 as a `StrongProbabilisticSimulation` of `sys` by `sys'^w` (the weak closure of
-the abstract system), provided the two systems agree on which labels are
-internal (`h_int`).
+the abstract system). The two systems agree on which labels are internal
+automatically — the silent label `τ` is canonical (from `Silent Label`).
 
 The reason this is purely definitional — with no weak-transition transfer
 argument — is that *both* notions match a **strong** concrete step
@@ -116,31 +116,31 @@ argument — is that *both* notions match a **strong** concrete step
 matches such a step by a `weakTau`/`weakStep` from `PMF.pure s_A`, which is
 exactly a strong step of `sys'^w`. The only bookkeeping is that
 `WeakProbabilisticSimulation` keys its `weakTau`/`weakStep` case split on
-`sys.internal` (the concrete predicate) whereas `sys'^w` keys it on
-`sys'.internal`; `h_int` aligns the two. -/
+`sys.internal` whereas `sys'^w` keys it on `sys'.internal`; these coincide
+because the internal/external classification is canonical (the silent label
+`τ`). -/
 theorem weakProbabilisticSimulation_iff_strong_weakClosure
-    (sys : LabelledSystem State_C Label) (sys' : LabelledSystem State_A Label)
-    (R : State_C → State_A → Prop)
-    (h_int : ∀ l, sys.internal l ↔ sys'.internal l) :
+    (sys : System State_C Label) (sys' : System State_A Label)
+    (R : State_C → State_A → Prop) :
     WeakProbabilisticSimulation sys sys' R ↔
-      StrongProbabilisticSimulation sys.toSystem (sys'^w).toSystem R := by
+      StrongProbabilisticSimulation sys (sys'^w) R := by
   constructor
   · intro h
     refine ⟨h.init, fun s_C s_A hR l μ_C hstep => ?_⟩
     obtain ⟨μ_A, hdisj, hrel⟩ := h.step s_C s_A hR l μ_C hstep
     refine ⟨μ_A, ?_, hrel⟩
-    change (sys'.internal l ∧ weakTau sys' (PMF.pure s_A) μ_A) ∨
-         (¬ sys'.internal l ∧ weakStep sys' (PMF.pure s_A) l μ_A)
+    change ((l = Silent.τ) ∧ weakTau sys' (PMF.pure s_A) μ_A) ∨
+         (¬ (l = Silent.τ) ∧ weakStep sys' (PMF.pure s_A) l μ_A)
     rcases hdisj with ⟨hi, hw⟩ | ⟨hi, hw⟩
-    · exact Or.inl ⟨(h_int l).mp hi, hw⟩
-    · exact Or.inr ⟨fun h' => hi ((h_int l).mpr h'), hw⟩
+    · exact Or.inl ⟨hi, hw⟩
+    · exact Or.inr ⟨hi, hw⟩
   · intro h
     refine ⟨h.init, fun s_C s_A hR l μ_C hstep => ?_⟩
     obtain ⟨μ_A, hdisj, hrel⟩ := h.step s_C s_A hR l μ_C hstep
     refine ⟨μ_A, ?_, hrel⟩
     rcases hdisj with ⟨hi, hw⟩ | ⟨hi, hw⟩
-    · exact Or.inl ⟨(h_int l).mpr hi, hw⟩
-    · exact Or.inr ⟨fun h' => hi ((h_int l).mp h'), hw⟩
+    · exact Or.inl ⟨hi, hw⟩
+    · exact Or.inr ⟨hi, hw⟩
 
 /-! ### Forward simulation = strong simulation into `𝒟(·^w)`
 
@@ -150,8 +150,8 @@ the distribution-monad lift of the weak closure of the abstract system.
 
 Both notions carry the *same* relation `R : State_C → PMF State_A → Prop`
 (`𝒟(sys'^w)`'s state type is `PMF State_A`, exactly the forward simulation's
-abstract-distribution type). After lining up `init` and the internal/external
-split (`h_int`), the entire content is the transition-level correspondence
+abstract-distribution type). After lining up `init` and the (canonical)
+internal/external split, the entire content is the transition-level correspondence
 
   `hyperStep sys'^w μ l ν  ↔  weakTau sys' μ ν` (internal `l`) /
                               `weakStep sys' μ l ν` (external `l`),
@@ -180,7 +180,7 @@ in `TraceProbBound.lean` alongside the other antichain bounds):
   (the genuine crux, needs a posterior-weighted mixing scheduler). -/
 
 /-- **Source-decomposition for `weakTau`.** -/
-theorem weakTau_exists_pointwise {sys : LabelledSystem State Label} {μ ν : PMF State}
+theorem weakTau_exists_pointwise {sys : System State Label} {μ ν : PMF State}
     (h : weakTau sys μ ν) :
     ∃ ρ : State → PMF State,
       (∀ s ∈ μ.support, weakTau sys (PMF.pure s) (ρ s)) ∧ ν = μ.bind ρ := by
@@ -268,7 +268,7 @@ theorem weakTau_exists_pointwise {sys : LabelledSystem State Label} {μ ν : PMF
       rfl
 
 /-- **Source-mixing for `weakTau`.** -/
-theorem weakTau_of_pointwise {sys : LabelledSystem State Label} {μ : PMF State}
+theorem weakTau_of_pointwise {sys : System State Label} {μ : PMF State}
     (ρ : State → PMF State) (h : ∀ s ∈ μ.support, weakTau sys (PMF.pure s) (ρ s)) :
     weakTau sys μ (μ.bind ρ) := by
   classical
@@ -282,9 +282,9 @@ theorem weakTau_of_pointwise {sys : LabelledSystem State Label} {μ : PMF State}
   have hprob_nonnil : ∀ (μ' : PMF State) (e' : AlterSeq State Label)
       (he : e'.trans.Terminates), e'.trans ≠ Seq.nil →
       (⟨μ', (WeakScheduler.stop sys).toScheduler⟩
-        : ProbabilisticExecution sys.toSystem).probOf e' he = 0 := by
+        : ProbabilisticExecution sys).probOf e' he = 0 := by
     intro μ' e' he hne
-    set pe : ProbabilisticExecution sys.toSystem :=
+    set pe : ProbabilisticExecution sys :=
       ⟨μ', (WeakScheduler.stop sys).toScheduler⟩ with hpe
     have hker : ∀ (e'' : AlterSeq State Label) (st : Label × State), pe.kernel e'' st = 0 := by
       intro e'' st
@@ -425,7 +425,7 @@ theorem weakTau_of_pointwise {sys : LabelledSystem State Label} {μ : PMF State}
     · rw [PMF.mem_support_iff, not_not] at hs; rw [hs, zero_mul, zero_mul]
 
 /-- **Source-decomposition for `weakStep`.** -/
-theorem weakStep_exists_pointwise {sys : LabelledSystem State Label}
+theorem weakStep_exists_pointwise {sys : System State Label}
     {μ ν : PMF State} {l : Label} (h : weakStep sys μ l ν) :
     ∃ ρ : State → PMF State,
       (∀ s ∈ μ.support, weakStep sys (PMF.pure s) l (ρ s)) ∧ ν = μ.bind ρ := by
@@ -458,7 +458,7 @@ theorem weakStep_exists_pointwise {sys : LabelledSystem State Label}
 source `q.bind m` to the mixed target `q.bind n`. The mixing kernel routes each
 end-state `t` through the Bayesian posterior over `x` given `t` (numerator
 `q x * (m x) t`, normalized by `(q.bind m) t`). -/
-private theorem hyperStep_mix {sys : LabelledSystem State Label} {X : Type}
+private theorem hyperStep_mix {sys : System State Label} {X : Type}
     {l : Label} (q : PMF X) (m n : X → PMF State)
     (H : ∀ x ∈ q.support, hyperStep sys (m x) l (n x)) :
     hyperStep sys (q.bind m) l (q.bind n) := by
@@ -533,7 +533,7 @@ private theorem hyperStep_mix {sys : LabelledSystem State Label} {X : Type}
       simp only [hx, zero_mul]
 
 /-- **Target-convexity for `weakTau`** (the crux). -/
-theorem weakTau_bind {sys : LabelledSystem State Label} {s : State}
+theorem weakTau_bind {sys : System State Label} {s : State}
     {q : PMF (PMF State)} (h : ∀ τ ∈ q.support, weakTau sys (PMF.pure s) τ) :
     weakTau sys (PMF.pure s) (q.bind id) := by
   classical
@@ -542,7 +542,7 @@ theorem weakTau_bind {sys : LabelledSystem State Label} {s : State}
     fun τ => if hτ : τ ∈ q.support then (h τ hτ).witnessScheduler else WeakScheduler.stop sys
     with hschOf
   -- The probabilistic execution from `pure s` under each per-target scheduler.
-  set peOf : PMF State → ProbabilisticExecution sys.toSystem :=
+  set peOf : PMF State → ProbabilisticExecution sys :=
     fun τ => ⟨PMF.pure s, (schOf τ).toScheduler⟩ with hpeOf
   -- Belief numerator: posterior-weighted, un-normalized emission weight at prefix `E`.
   set g : AlterSeq State Label → Option (Label × PMF State) → ENNReal :=
@@ -624,7 +624,7 @@ theorem weakTau_bind {sys : LabelledSystem State Label} {s : State}
           exact (schOf τ).internal_only e l μ ((PMF.mem_support_iff _ _).mpr hnext) }
     with hσ
   -- The composite probabilistic execution from `pure s`.
-  set pe : ProbabilisticExecution sys.toSystem := ⟨PMF.pure s, σ.toScheduler⟩ with hpe
+  set pe : ProbabilisticExecution sys := ⟨PMF.pure s, σ.toScheduler⟩ with hpe
   -- `next` of `σ` rewritten explicitly (no `dif` clutter).
   have hnext_def : ∀ E o, σ.next E o
       = if W E = 0 then (PMF.pure none) o else g E o * (W E)⁻¹ := by
@@ -816,7 +816,7 @@ theorem weakTau_bind {sys : LabelledSystem State Label} {s : State}
 `q.bind m` to the mixed target `q.bind ν`, via the same Bayesian-posterior
 mixing scheduler (composed with the per-point τ-witnesses through
 `weakTau_bind`). -/
-private theorem weakTau_mix {sys : LabelledSystem State Label} {X : Type}
+private theorem weakTau_mix {sys : System State Label} {X : Type}
     (q : PMF X) (m ν : X → PMF State)
     (H : ∀ x ∈ q.support, weakTau sys (m x) (ν x)) :
     weakTau sys (q.bind m) (q.bind ν) := by
@@ -903,7 +903,7 @@ private theorem weakTau_mix {sys : LabelledSystem State Label} {X : Type}
 single points recombines into one weak step from the mixed source `μ`. The three
 layers (τ-closure, hyper-step, τ-closure) are mixed separately via
 `weakTau_of_pointwise`, `hyperStep_mix` and `weakTau_mix`. -/
-theorem weakStep_of_pointwise {sys : LabelledSystem State Label} {μ : PMF State}
+theorem weakStep_of_pointwise {sys : System State Label} {μ : PMF State}
     {l : Label} (ρ : State → PMF State)
     (h : ∀ s ∈ μ.support, weakStep sys (PMF.pure s) l (ρ s)) :
     weakStep sys μ l (μ.bind ρ) := by
@@ -931,7 +931,7 @@ weak-step targets, all reached from the *same* single point `pure s`, is itself 
 weak-step target from `pure s`. The pre-τ-closure is recombined by the
 target-convexity lemma `weakTau_bind`; the hyper-step and post-τ-closure layers
 are mixed by `hyperStep_mix` and `weakTau_mix`. -/
-theorem weakStep_bind {sys : LabelledSystem State Label} {s : State} {l : Label}
+theorem weakStep_bind {sys : System State Label} {s : State} {l : Label}
     {q : PMF (PMF State)} (h : ∀ τ ∈ q.support, weakStep sys (PMF.pure s) l τ) :
     weakStep sys (PMF.pure s) l (q.bind id) := by
   classical
@@ -963,8 +963,8 @@ theorem weakStep_bind {sys : LabelledSystem State Label} {s : State} {l : Label}
 
 /-- **(A1).** A `weakTau` from a distribution `μ` is a `hyperStep` over the weak
 closure `sys^w`. -/
-theorem hyperStep_weakClosure_of_weakTau {sys : LabelledSystem State Label}
-    {μ ν : PMF State} {l : Label} (hl : sys.internal l) (h : weakTau sys μ ν) :
+theorem hyperStep_weakClosure_of_weakTau {sys : System State Label}
+    {μ ν : PMF State} {l : Label} (hl : (l = Silent.τ)) (h : weakTau sys μ ν) :
     hyperStep sys^w μ l ν := by
   obtain ⟨ρ, hρ, hν⟩ := weakTau_exists_pointwise h
   refine ⟨fun s => PMF.pure (ρ s), ?_, ?_⟩
@@ -975,8 +975,8 @@ theorem hyperStep_weakClosure_of_weakTau {sys : LabelledSystem State Label}
 
 /-- **(A2).** A `hyperStep` over `sys^w` at an internal label collapses to a
 single `weakTau` from the distribution. -/
-theorem weakTau_of_hyperStep_weakClosure {sys : LabelledSystem State Label}
-    {μ ν : PMF State} {l : Label} (hl : sys.internal l) (h : hyperStep sys^w μ l ν) :
+theorem weakTau_of_hyperStep_weakClosure {sys : System State Label}
+    {μ ν : PMF State} {l : Label} (hl : (l = Silent.τ)) (h : hyperStep sys^w μ l ν) :
     weakTau sys μ ν := by
   obtain ⟨p, hp, hν⟩ := h
   have hpt : ∀ s ∈ μ.support, weakTau sys (PMF.pure s) ((p s).bind id) := by
@@ -991,8 +991,8 @@ theorem weakTau_of_hyperStep_weakClosure {sys : LabelledSystem State Label}
 
 /-- **(B1).** A `weakStep` from a distribution `μ` is a `hyperStep` over the weak
 closure `sys^w`. -/
-theorem hyperStep_weakClosure_of_weakStep {sys : LabelledSystem State Label}
-    {μ ν : PMF State} {l : Label} (hl : ¬ sys.internal l) (h : weakStep sys μ l ν) :
+theorem hyperStep_weakClosure_of_weakStep {sys : System State Label}
+    {μ ν : PMF State} {l : Label} (hl : ¬ (l = Silent.τ)) (h : weakStep sys μ l ν) :
     hyperStep sys^w μ l ν := by
   obtain ⟨ρ, hρ, hν⟩ := weakStep_exists_pointwise h
   refine ⟨fun s => PMF.pure (ρ s), ?_, ?_⟩
@@ -1003,8 +1003,8 @@ theorem hyperStep_weakClosure_of_weakStep {sys : LabelledSystem State Label}
 
 /-- **(B2).** A `hyperStep` over `sys^w` at an external label collapses to a
 single `weakStep` from the distribution. -/
-theorem weakStep_of_hyperStep_weakClosure {sys : LabelledSystem State Label}
-    {μ ν : PMF State} {l : Label} (hl : ¬ sys.internal l) (h : hyperStep sys^w μ l ν) :
+theorem weakStep_of_hyperStep_weakClosure {sys : System State Label}
+    {μ ν : PMF State} {l : Label} (hl : ¬ (l = Silent.τ)) (h : hyperStep sys^w μ l ν) :
     weakStep sys μ l ν := by
   obtain ⟨p, hp, hν⟩ := h
   have hpt : ∀ s ∈ μ.support, weakStep sys (PMF.pure s) l ((p s).bind id) := by
@@ -1019,14 +1019,14 @@ theorem weakStep_of_hyperStep_weakClosure {sys : LabelledSystem State Label}
 
 /-- **Probabilistic forward simulation = strong simulation into `𝒟(·^w)`.**
 A `ProbabilisticForwardSimulation` of `sys` by `sys'` is the same data as a
-`StrongProbabilisticSimulation` of `sys` by `𝒟(sys'^w)`, given that the two
-systems agree on which labels are internal (`h_int`). -/
+`StrongProbabilisticSimulation` of `sys` by `𝒟(sys'^w)`. The two systems agree
+on which labels are internal automatically, since the internal/external
+classification is canonical (the silent label `τ`). -/
 theorem probabilisticForwardSimulation_iff_strong_dist_weakClosure
-    (sys : LabelledSystem State_C Label) (sys' : LabelledSystem State_A Label)
-    (R : State_C → PMF State_A → Prop)
-    (h_int : ∀ l, sys.internal l ↔ sys'.internal l) :
+    (sys : System State_C Label) (sys' : System State_A Label)
+    (R : State_C → PMF State_A → Prop) :
     ProbabilisticForwardSimulation sys sys' R ↔
-      StrongProbabilisticSimulation sys.toSystem (𝒟(sys'^w)).toSystem R := by
+      StrongProbabilisticSimulation sys (𝒟(sys'^w)) R := by
   constructor
   · intro h
     refine ⟨?_, fun s_C μ_A hR l μ_C hstep => ?_⟩
@@ -1051,8 +1051,8 @@ theorem probabilisticForwardSimulation_iff_strong_dist_weakClosure
       refine ⟨ω, ?_, hPMFRel⟩
       change hyperStep sys'^w μ_A l (ω.bind id)
       rcases hdisj with ⟨hi, hwt⟩ | ⟨hi, hws⟩
-      · exact hyperStep_weakClosure_of_weakTau ((h_int l).mp hi) hwt
-      · exact hyperStep_weakClosure_of_weakStep (fun h' => hi ((h_int l).mpr h')) hws
+      · exact hyperStep_weakClosure_of_weakTau hi hwt
+      · exact hyperStep_weakClosure_of_weakStep hi hws
   · intro h
     refine ⟨⟨PMF.pure sys'.init, ?_, h.init⟩, fun s_C μ_A hR l μ_C hstep => ?_⟩
     · intro s hs
@@ -1061,9 +1061,8 @@ theorem probabilisticForwardSimulation_iff_strong_dist_weakClosure
       obtain ⟨ω, hhyper, hPMFRel⟩ := h.step s_C μ_A hR l μ_C hstep
       refine ⟨ω, hPMFRel, ?_⟩
       change hyperStep sys'^w μ_A l (ω.bind id) at hhyper
-      by_cases hil : sys.internal l
-      · exact Or.inl ⟨hil, weakTau_of_hyperStep_weakClosure ((h_int l).mp hil) hhyper⟩
-      · exact Or.inr ⟨hil, weakStep_of_hyperStep_weakClosure
-          (fun h' => hil ((h_int l).mpr h')) hhyper⟩
+      by_cases hil : (l = Silent.τ)
+      · exact Or.inl ⟨hil, weakTau_of_hyperStep_weakClosure hil hhyper⟩
+      · exact Or.inr ⟨hil, weakStep_of_hyperStep_weakClosure hil hhyper⟩
 
 end PLTS

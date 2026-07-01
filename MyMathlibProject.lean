@@ -1,8 +1,12 @@
 import MyMathlibProject.Basic
 import MyMathlibProject.Composition
 import MyMathlibProject.DistConstruction
+import MyMathlibProject.Expand
+import MyMathlibProject.ExpandProbOf
+import MyMathlibProject.ExpandSched
+import MyMathlibProject.ExpandTrace
+import MyMathlibProject.ExpandTraceProb
 import MyMathlibProject.PmfUtils
-import MyMathlibProject.PostTauAccounting
 import MyMathlibProject.SchedulerBind
 import MyMathlibProject.SeqHelper
 import MyMathlibProject.Simulation

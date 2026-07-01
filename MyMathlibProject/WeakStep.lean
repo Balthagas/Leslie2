@@ -21,7 +21,11 @@ open Stream'
 
 namespace PLTS
 
-variable {α β State State_C State_A Label : Type}
+-- The canonical-`τ` instance `[Silent Label]` is threaded as a section variable
+-- but is unused by the pure helper lemmas; silence the over-inclusion linter.
+set_option linter.unusedSectionVars false
+
+variable {α β State State_C State_A Label : Type} [Silent Label]
 
 open Classical in
 /-- Weak (internal) transition `μ_init ⇒^τ μ`: there is a weak (internal-only)
@@ -34,7 +38,7 @@ the image of the halting distribution on executions under the last-state map
 This is the run-to-halt semantics of the τ-closure: the process takes
 internal steps until it spontaneously stops, and `μ` records where it stops. The
 "from a single state" case is recovered as `weakTau sys (PMF.pure s) μ`. -/
-def weakTau (sys : LabelledSystem State Label)
+def weakTau (sys : System State Label)
     (μ_init : PMF State) (μ : PMF State) : Prop :=
   ∃ σ : WeakScheduler sys,
     (∑' e, σ.haltMass μ_init e) = 1 ∧
@@ -42,7 +46,7 @@ def weakTau (sys : LabelledSystem State Label)
 
 namespace weakTau
 
-variable {sys : LabelledSystem State Label} {μ_init μ : PMF State}
+variable {sys : System State Label} {μ_init μ : PMF State}
 
 /-- Classical extraction of the witnessing a.s.-stopping weak scheduler. -/
 noncomputable def witnessScheduler (h : weakTau sys μ_init μ) : WeakScheduler sys :=
@@ -126,10 +130,10 @@ private theorem weakTau_reindex_fiber
 /-- Reflexivity of `weakTau`: every distribution is weak-τ-related to itself,
 witnessed by the stop-everywhere weak scheduler (it halts immediately, so its
 halting distribution is `μ` placed on the empty executions `⟨·, nil⟩`). -/
-theorem weakTau_refl (ls : LabelledSystem State Label) (μ : PMF State) :
+theorem weakTau_refl (ls : System State Label) (μ : PMF State) :
     weakTau ls μ μ := by
   classical
-  set pe : ProbabilisticExecution ls.toSystem := ⟨μ, (WeakScheduler.stop ls).toScheduler⟩ with hpe
+  set pe : ProbabilisticExecution ls := ⟨μ, (WeakScheduler.stop ls).toScheduler⟩ with hpe
   -- The stop scheduler's one-step kernel vanishes everywhere.
   have hker : ∀ (e' : AlterSeq State Label) (st : Label × State), pe.kernel e' st = 0 := by
     intro e' st
@@ -232,7 +236,7 @@ makes the relation closed under convex combinations of hyper-steps. In the
 singleton case `μ_pre = PMF.pure s` it reduces to: `μ_post` is in the convex
 hull of `{μ | sys.step s l μ}`. Every state in `μ_pre.support` must
 contribute a real step — there is no stutter freedom for internal labels. -/
-def hyperStep (sys : LabelledSystem State Label)
+def hyperStep (sys : System State Label)
     (μ_pre : PMF State) (l : Label) (μ_post : PMF State) : Prop :=
   ∃ p : State → PMF (PMF State),
     (∀ s ∈ μ_pre.support, ∀ μ ∈ (p s).support, sys.step s l μ) ∧
@@ -240,7 +244,7 @@ def hyperStep (sys : LabelledSystem State Label)
 
 namespace hyperStep
 
-variable {sys : LabelledSystem State Label} {μ_pre μ_post : PMF State} {l : Label}
+variable {sys : System State Label} {μ_pre μ_post : PMF State} {l : Label}
 
 /-- Classical extraction of the per-state successor kernel from a `hyperStep`
 proof. -/
@@ -262,7 +266,7 @@ end hyperStep
 /-- A strong system step lifts to a hyper-step on a singleton initial
 distribution: if `sys.step s l μ`, then `hyperStep sys (PMF.pure s) l μ`. -/
 theorem hyperStep_pure_of_step
-    {sys : LabelledSystem State Label} {s : State} {l : Label} {μ : PMF State}
+    {sys : System State Label} {s : State} {l : Label} {μ : PMF State}
     (h : sys.step s l μ) :
     hyperStep sys (PMF.pure s) l μ := by
   refine ⟨fun _ => PMF.pure μ, ?_, ?_⟩
@@ -285,7 +289,7 @@ Defined uniformly for any label `l`. For external (non-`internal`) labels this
 is the standard weak step; for internal labels it is one strictly forced
 internal hyper-step sandwiched between two τ-closures (which is *not* the same
 as `weakTau` — for τ-labels, prefer `weakTau` directly). -/
-def weakStep (sys : LabelledSystem State Label)
+def weakStep (sys : System State Label)
     (μ_init : PMF State) (l : Label) (μ_final : PMF State) : Prop :=
   ∃ μ μ' : PMF State,
     weakTau sys μ_init μ ∧
@@ -294,7 +298,7 @@ def weakStep (sys : LabelledSystem State Label)
 
 namespace weakStep
 
-variable {sys : LabelledSystem State Label} {μ_init μ_final : PMF State} {l : Label}
+variable {sys : System State Label} {μ_init μ_final : PMF State} {l : Label}
 
 /-- Classical extraction of the post-τ-closure intermediate distribution. -/
 noncomputable def preDist (h : weakStep sys μ_init l μ_final) : PMF State :=
@@ -324,7 +328,7 @@ end weakStep
 /-- A strong system step lifts to a weak step on a singleton initial
 distribution: if `sys.step s l μ`, then `weakStep sys (PMF.pure s) l μ`. Both
 τ-closure layers are trivial reflexivities. -/
-theorem weakStep_strong {ls : LabelledSystem State Label}
+theorem weakStep_strong {ls : System State Label}
     {s : State} {l : Label} {μ : PMF State}
     (h_step : ls.step s l μ) :
     weakStep ls (PMF.pure s) l μ :=
@@ -334,9 +338,9 @@ theorem weakStep_strong {ls : LabelledSystem State Label}
 /-- A strong system step at an *internal* label lifts to a `weakTau` from the
 Dirac source: a one-step WeakScheduler emitting `(l, μ)` then halting witnesses
 `weakTau ls (PMF.pure s) μ`. -/
-theorem weakTau_of_step {ls : LabelledSystem State Label}
+theorem weakTau_of_step {ls : System State Label}
     {s : State} {l : Label} {μ : PMF State}
-    (h_int : ls.internal l) (h_step : ls.step s l μ) :
+    (h_int : (l = Silent.τ)) (h_step : ls.step s l μ) :
     weakTau ls (PMF.pure s) μ := by
   classical
   let σ : WeakScheduler ls :=
@@ -369,7 +373,7 @@ theorem weakTau_of_step {ls : LabelledSystem State Label}
           rw [h_supp.1]; exact h_int
         · simp only [if_neg h_cond, PMF.mem_support_pure_iff] at h_supp
           exact absurd h_supp (by simp) }
-  set pe : ProbabilisticExecution ls.toSystem := ⟨PMF.pure s, σ.toScheduler⟩ with hpe
+  set pe : ProbabilisticExecution ls := ⟨PMF.pure s, σ.toScheduler⟩ with hpe
   -- The scheduler's emission at the empty prefix `⟨s, nil⟩` is `pure (some (l, μ))`.
   have hnext_nil : σ.next ⟨s, Seq.nil⟩ = PMF.pure (some (l, μ)) := by
     change (if (s = s ∧ (Seq.nil : Seq (Label × State)) = Seq.nil)
@@ -725,8 +729,8 @@ evaluated at the concatenation `concat f₁ f₂` of each prefix/suffix pair. Th
 reindexing is `(f₁, f₂) ↦ (concat f₁ f₂, |f₁|)`. This refines `bind_compose_integrate` (which is
 the end-state-test special case) and supports trace-restricted tests via `WeakScheduler.concat`'s
 trace decomposition. -/
-theorem Scheduler.bind_compose_integrate_gen {sys : LabelledSystem State Label}
-    (σ : Scheduler sys.toSystem) (k : State → Scheduler sys.toSystem)
+theorem Scheduler.bind_compose_integrate_gen {sys : System State Label}
+    (σ : Scheduler sys) (k : State → Scheduler sys)
     (μ_init : PMF State) (F : {e : AlterSeq State Label // e.trans.Terminates} → ENNReal) :
     (∑' e, (Scheduler.bind σ k).haltMass μ_init e * F e)
       = ∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
@@ -890,8 +894,8 @@ halting prefixes `f₁`, weighted by `k`'s halting suffix `f₂` from `f₁`'s
 end-state. This is `bind_haltMass` followed by the bijection
 `(f₁, f₂) ↦ (concat f₁ f₂, |f₁|)`; it is fully general in `σ`, the continuation
 `k`, the source `μ_init`, and the test `g`. -/
-theorem Scheduler.bind_compose_integrate {sys : LabelledSystem State Label}
-    (σ : Scheduler sys.toSystem) (k : State → Scheduler sys.toSystem)
+theorem Scheduler.bind_compose_integrate {sys : System State Label}
+    (σ : Scheduler sys) (k : State → Scheduler sys)
     (μ_init : PMF State) (g : State → ENNReal) :
     (∑' e, (Scheduler.bind σ k).haltMass μ_init e * g (e.1.endState e.2))
       = ∑' f₁ : {e : AlterSeq State Label // e.trans.Terminates},
@@ -1104,7 +1108,7 @@ theorem Scheduler.bind_compose_integrate {sys : LabelledSystem State Label}
 /-- **Master identity** for `weakTau` transitivity: integrating any `g` against
 the halting end-state of `bind σ₁ σ₂` (run from `a`) equals integrating `g`
 against `c`. Both conjuncts of `weakTau sys a c` are special cases. -/
-private theorem master_identity {sys : LabelledSystem State Label} {a b c : PMF State}
+private theorem master_identity {sys : System State Label} {a b c : PMF State}
     (h₁ : weakTau sys a b) (h₂ : weakTau sys b c) (g : State → ENNReal) :
     (∑' e, (WeakScheduler.bind h₁.witnessScheduler (fun _ => h₂.witnessScheduler)).haltMass a e
         * g (e.1.endState e.2))
@@ -1178,7 +1182,7 @@ private theorem master_identity {sys : LabelledSystem State Label} {a b c : PMF 
   exact tsum_congr fun f₂ => by ac_rfl
 
 /-- Transitivity of `weakTau` (via `WeakScheduler.bind` and `bind_haltMass`). -/
-theorem weakTau_trans {sys : LabelledSystem State Label} {a b c : PMF State}
+theorem weakTau_trans {sys : System State Label} {a b c : PMF State}
     (h₁ : weakTau sys a b) (h₂ : weakTau sys b c) : weakTau sys a c := by
   classical
   set σ₁ := h₁.witnessScheduler with hσ₁

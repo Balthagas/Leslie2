@@ -18,8 +18,8 @@ abstract system `sys_A`:
 
 This is the soundness direction of simulation. (Trace-distribution *equality*
 would additionally require a simulation in the reverse direction.) The two
-systems must agree on which labels are internal
-(`h_int : ∀ l, sys_C.internal l ↔ sys_A.internal l`).
+systems agree on which labels are internal automatically, since the
+internal/external classification is canonical (the silent label `τ`).
 
 ## Proof architecture
 
@@ -53,20 +53,24 @@ open Stream'
 
 namespace PLTS
 
-variable {State_C State_A Label : Type}
+-- The canonical-`τ` instance `[Silent Label]` is threaded as a section variable
+-- but is unused by some pure helper lemmas; silence the over-inclusion linter.
+set_option linter.unusedSectionVars false
+
+variable {State_C State_A Label : Type} [Silent Label]
 
 /-- The **coupled product** of two systems related by `R`: a labelled system on
 `State_C × State_A` whose steps carry a coupling `ω : PMF (State_C × State_A)`
-that projects to a valid step on each side and is supported in `R`. The internal
-predicate is inherited from the concrete system. -/
-def simProd (sys_C : LabelledSystem State_C Label) (sys_A : LabelledSystem State_A Label)
-    (R : State_C → State_A → Prop) : LabelledSystem (State_C × State_A) Label where
-  init := (sys_C.toSystem.init, sys_A.toSystem.init)
+that projects to a valid step on each side and is supported in `R`. The
+internal/external classification is canonical (the silent label `τ` from the
+`Silent Label` instance), shared by both factors. -/
+def simProd (sys_C : System State_C Label) (sys_A : System State_A Label)
+    (R : State_C → State_A → Prop) : System (State_C × State_A) Label where
+  init := (sys_C.init, sys_A.init)
   step p l ω :=
-    sys_C.toSystem.step p.1 l (ω.map Prod.fst) ∧
-    sys_A.toSystem.step p.2 l (ω.map Prod.snd) ∧
+    sys_C.step p.1 l (ω.map Prod.fst) ∧
+    sys_A.step p.2 l (ω.map Prod.snd) ∧
     (∀ q ∈ ω.support, R q.1 q.2)
-  internal := sys_C.internal
 
 
 /-! ### Infrastructure for the coupling lift
@@ -77,7 +81,7 @@ by `sim.step`. We assemble: a total current-state extractor `simLastState`; a
 classical coupling extractor `simCouple` (with its marginal/step facts); the
 joint scheduler `simJointSched`; and the joint execution `simJointExec`. -/
 
-variable {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+variable {sys_C : System State_C Label} {sys_A : System State_A Label}
   {R : State_C → State_A → Prop}
 
 /-- The current joint state of a finite history (its end-state), defaulting to
@@ -90,26 +94,26 @@ noncomputable def simLastState (E : AlterSeq (State_C × State_A) Label) :
 /-- The classical coupling extractor. When the guard `R p.1 p.2 ∧ sys_C.step p.1 l μ_C`
 holds, `sim.step` yields an abstract successor and a `PMFRel`-coupling `ω`; we
 return that `ω`. Otherwise the value is irrelevant (`PMF.pure p`). -/
-noncomputable def simCouple (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+noncomputable def simCouple (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (p : State_C × State_A) (l : Label) (μ_C : PMF State_C) : PMF (State_C × State_A) :=
   open Classical in
-  if h : R p.1 p.2 ∧ sys_C.toSystem.step p.1 l μ_C then
+  if h : R p.1 p.2 ∧ sys_C.step p.1 l μ_C then
     ((sim.step p.1 p.2 h.1 l μ_C h.2).choose_spec.2).choose
   else PMF.pure p
 
 /-- First marginal of the coupling is `μ_C`. -/
-theorem simCouple_map_fst (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+theorem simCouple_map_fst (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (p : State_C × State_A) (l : Label) (μ_C : PMF State_C)
-    (h : R p.1 p.2 ∧ sys_C.toSystem.step p.1 l μ_C) :
+    (h : R p.1 p.2 ∧ sys_C.step p.1 l μ_C) :
     (simCouple sim p l μ_C).map Prod.fst = μ_C := by
   rw [simCouple, dif_pos h]
   exact ((sim.step p.1 p.2 h.1 l μ_C h.2).choose_spec.2).choose_spec.1
 
 /-- The coupling realises a valid `simProd`-step from `p`. -/
-theorem simCouple_step (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+theorem simCouple_step (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (p : State_C × State_A) (l : Label) (μ_C : PMF State_C)
-    (h : R p.1 p.2 ∧ sys_C.toSystem.step p.1 l μ_C) :
-    (simProd sys_C sys_A R).toSystem.step p l (simCouple sim p l μ_C) := by
+    (h : R p.1 p.2 ∧ sys_C.step p.1 l μ_C) :
+    (simProd sys_C sys_A R).step p l (simCouple sim p l μ_C) := by
   have hspec := (sim.step p.1 p.2 h.1 l μ_C h.2).choose_spec
   have hrel := hspec.2.choose_spec
   refine ⟨?_, ?_, ?_⟩
@@ -123,9 +127,9 @@ current joint state `simLastState E` holds, emit `(l, simCouple …)`, else halt
 The guard makes `valid` provable universally: any emitted `(l, ω)` forces the
 guard, so `ω` is a genuine coupling realising a `simProd`-step. -/
 noncomputable def simJointSched
-    (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R) :
-    Scheduler (simProd sys_C sys_A R).toSystem where
+    (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R) :
+    Scheduler (simProd sys_C sys_A R) where
   next E :=
     open Classical in
     (pe_C.scheduler.next (E.map Prod.fst)).bind (fun o =>
@@ -133,7 +137,7 @@ noncomputable def simJointSched
       | none => PMF.pure none
       | some (l, μ_C) =>
         if h : R (simLastState E).1 (simLastState E).2 ∧
-            sys_C.toSystem.step (simLastState E).1 l μ_C then
+            sys_C.step (simLastState E).1 l μ_C then
           PMF.pure (some (l, simCouple sim (simLastState E) l μ_C))
         else PMF.pure none)
   valid := by
@@ -167,7 +171,7 @@ noncomputable def simJointSched
       | none => PMF.pure none
       | some (l', μ_C) =>
         if h : R (simLastState E).1 (simLastState E).2 ∧
-            sys_C.toSystem.step (simLastState E).1 l' μ_C then
+            sys_C.step (simLastState E).1 l' μ_C then
           PMF.pure (some (l', simCouple sim (simLastState E) l' μ_C))
         else PMF.pure none)).support at h_supp
     rw [PMF.mem_support_bind_iff] at h_supp
@@ -180,7 +184,7 @@ noncomputable def simJointSched
       obtain ⟨l', μ_C⟩ := lμ
       simp only at h_supp
       by_cases hg : R (simLastState E).1 (simLastState E).2 ∧
-          sys_C.toSystem.step (simLastState E).1 l' μ_C
+          sys_C.step (simLastState E).1 l' μ_C
       · rw [dif_pos hg, PMF.mem_support_pure_iff] at h_supp
         rw [Option.some.injEq, Prod.mk.injEq] at h_supp
         obtain ⟨rfl, rfl⟩ := h_supp
@@ -192,21 +196,21 @@ noncomputable def simJointSched
 /-- The joint probabilistic execution: Dirac on the joint initial state, driven
 by the joint scheduler. -/
 noncomputable def simJointExec
-    (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R) :
-    ProbabilisticExecution (simProd sys_C sys_A R).toSystem where
-  initState := PMF.pure (simProd sys_C sys_A R).toSystem.init
+    (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R) :
+    ProbabilisticExecution (simProd sys_C sys_A R) where
+  initState := PMF.pure (simProd sys_C sys_A R).init
   scheduler := simJointSched pe_C sim
 
 /-- Membership of `some (l, ω)` in `simJointSched.next E`'s support forces the
 guard at `simLastState E` and identifies `ω` as the coupling. -/
 private theorem simJointSched_next_support
-    (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+    (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (E : AlterSeq (State_C × State_A) Label) (l : Label) (ω : PMF (State_C × State_A))
     (h_supp : some (l, ω) ∈ ((simJointSched pe_C sim).next E).support) :
     ∃ μ_C, R (simLastState E).1 (simLastState E).2 ∧
-      sys_C.toSystem.step (simLastState E).1 l μ_C ∧
+      sys_C.step (simLastState E).1 l μ_C ∧
       ω = simCouple sim (simLastState E) l μ_C := by
   classical
   change some (l, ω) ∈ ((pe_C.scheduler.next (E.map Prod.fst)).bind (fun o =>
@@ -214,7 +218,7 @@ private theorem simJointSched_next_support
     | none => PMF.pure none
     | some (l', μ_C) =>
       if h : R (simLastState E).1 (simLastState E).2 ∧
-          sys_C.toSystem.step (simLastState E).1 l' μ_C then
+          sys_C.step (simLastState E).1 l' μ_C then
         PMF.pure (some (l', simCouple sim (simLastState E) l' μ_C))
       else PMF.pure none)).support at h_supp
   rw [PMF.mem_support_bind_iff] at h_supp
@@ -227,7 +231,7 @@ private theorem simJointSched_next_support
     obtain ⟨l', μ_C⟩ := lμ
     simp only at h_supp
     by_cases hg : R (simLastState E).1 (simLastState E).2 ∧
-        sys_C.toSystem.step (simLastState E).1 l' μ_C
+        sys_C.step (simLastState E).1 l' μ_C
     · rw [dif_pos hg, PMF.mem_support_pure_iff] at h_supp
       rw [Option.some.injEq, Prod.mk.injEq] at h_supp
       obtain ⟨rfl, rfl⟩ := h_supp
@@ -237,8 +241,8 @@ private theorem simJointSched_next_support
 
 /-- **R-invariant** (over `Seq.ofList`-form histories). -/
 private theorem simJointExec_probOf_R_ofList
-    (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+    (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (L : List (Label × (State_C × State_A))) (s₀ : State_C × State_A)
     (hFin : (Seq.ofList L : Seq (Label × (State_C × State_A))).Terminates)
     (hne : (simJointExec pe_C sim).probOf ⟨s₀, Seq.ofList L⟩ hFin ≠ 0) :
@@ -251,9 +255,9 @@ private theorem simJointExec_probOf_R_ofList
     rw [ProbabilisticExecution.probOf_congr (simJointExec pe_C sim)
       ⟨s₀, Seq.ofList []⟩ ⟨s₀, Seq.nil⟩ (by rw [Stream'.Seq.ofList_nil]) hFin
       Stream'.Seq.terminates_nil, ProbabilisticExecution.probOf_nil] at hne
-    change (PMF.pure (simProd sys_C sys_A R).toSystem.init) s₀ ≠ 0 at hne
+    change (PMF.pure (simProd sys_C sys_A R).init) s₀ ≠ 0 at hne
     rw [PMF.pure_apply] at hne
-    have : s₀ = (simProd sys_C sys_A R).toSystem.init := by
+    have : s₀ = (simProd sys_C sys_A R).init := by
       by_contra hc; rw [if_neg hc] at hne; exact hne rfl
     rw [this]; exact sim.init
   | append_singleton rest last ih =>
@@ -302,8 +306,8 @@ private theorem simJointExec_probOf_R_ofList
 /-- **R-invariant.** Every joint history with positive `simJointExec`-probability
 ends in an `R`-related pair. -/
 private theorem simJointExec_probOf_R
-    (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+    (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (E : AlterSeq (State_C × State_A) Label) (hT : E.trans.Terminates)
     (hne : (simJointExec pe_C sim).probOf E hT ≠ 0) :
     R (E.endState hT).1 (E.endState hT).2 := by
@@ -350,20 +354,20 @@ open Classical in
 coupling-emission weights over `(l', μ_C)` and joint successors `ω`, weighted by
 the first marginal, recovers the concrete kernel (the R-guard always holds on the
 support of `pe_C.next` by validity, and `simCouple`'s first marginal is `μ_C`). -/
-private theorem simKernelCollapse (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+private theorem simKernelCollapse (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (E : AlterSeq (State_C × State_A) Label) (l : Label) (s_C' : State_C)
     (hR : R (simLastState E).1 (simLastState E).2)
     (hvalid : ∀ μ_C : PMF State_C,
       pe_C.scheduler.next (E.map Prod.fst) (some (l, μ_C)) ≠ 0 →
-      sys_C.toSystem.step (simLastState E).1 l μ_C)
+      sys_C.step (simLastState E).1 l μ_C)
     (hcpl : ∀ μ_C : PMF State_C, R (simLastState E).1 (simLastState E).2 ∧
-        sys_C.toSystem.step (simLastState E).1 l μ_C →
+        sys_C.step (simLastState E).1 l μ_C →
         (simCouple sim (simLastState E) l μ_C).map Prod.fst = μ_C) :
     (∑' (y : Label × PMF State_C) (ω : PMF (State_C × State_A)),
           (pe_C.scheduler.next (E.map Prod.fst)) (some y) *
             ((if _ : R (simLastState E).1 (simLastState E).2 ∧
-                sys_C.toSystem.step (simLastState E).1 y.1 y.2 then
+                sys_C.step (simLastState E).1 y.1 y.2 then
               PMF.pure (some (y.1, simCouple sim (simLastState E) y.1 y.2))
             else PMF.pure none) : PMF (Option (Label × PMF (State_C × State_A)))) (some (l, ω))
             * (ω.map Prod.fst) s_C')
@@ -373,7 +377,7 @@ private theorem simKernelCollapse (pe_C : ProbabilisticExecution sys_C.toSystem)
     ∑' (ω : PMF (State_C × State_A)),
           (pe_C.scheduler.next (E.map Prod.fst)) (some y) *
             ((if h : R (simLastState E).1 (simLastState E).2 ∧
-                sys_C.toSystem.step (simLastState E).1 y.1 y.2 then
+                sys_C.step (simLastState E).1 y.1 y.2 then
               PMF.pure (some (y.1, simCouple sim (simLastState E) y.1 y.2))
             else PMF.pure none) : PMF (Option (Label × PMF (State_C × State_A)))) (some (l, ω))
             * (ω.map Prod.fst) s_C' with hF
@@ -385,23 +389,23 @@ private theorem simKernelCollapse (pe_C : ProbabilisticExecution sys_C.toSystem)
     have hFval : F (l, μ_C) = ∑' (ω : PMF (State_C × State_A)),
           (pe_C.scheduler.next (E.map Prod.fst)) (some (l, μ_C)) *
             ((if h : R (simLastState E).1 (simLastState E).2 ∧
-                sys_C.toSystem.step (simLastState E).1 l μ_C then
+                sys_C.step (simLastState E).1 l μ_C then
               PMF.pure (some (l, simCouple sim (simLastState E) l μ_C))
             else PMF.pure none) : PMF (Option (Label × PMF (State_C × State_A)))) (some (l, ω))
             * (ω.map Prod.fst) s_C' := by rw [hF]
     rw [hFval]
     by_cases hg : R (simLastState E).1 (simLastState E).2 ∧
-        sys_C.toSystem.step (simLastState E).1 l μ_C
+        sys_C.step (simLastState E).1 l μ_C
     · rw [show (fun (ω : PMF (State_C × State_A)) =>
             (pe_C.scheduler.next (E.map Prod.fst)) (some (l, μ_C)) *
               ((if h : R (simLastState E).1 (simLastState E).2 ∧
-                  sys_C.toSystem.step (simLastState E).1 l μ_C then
+                  sys_C.step (simLastState E).1 l μ_C then
                 PMF.pure (some (l, simCouple sim (simLastState E) l μ_C))
               else PMF.pure none) : PMF (Option (Label × PMF (State_C × State_A)))) (some (l, ω))
               * (ω.map Prod.fst) s_C')
           = (fun ω => (pe_C.scheduler.next (E.map Prod.fst)) (some (l, μ_C)) *
               (((if h : R (simLastState E).1 (simLastState E).2 ∧
-                  sys_C.toSystem.step (simLastState E).1 l μ_C then
+                  sys_C.step (simLastState E).1 l μ_C then
                 PMF.pure (some (l, simCouple sim (simLastState E) l μ_C))
               else PMF.pure none) : PMF (Option (Label × PMF (State_C × State_A)))) (some (l, ω))
               * (ω.map Prod.fst) s_C')) from funext (fun ω => by ring)]
@@ -409,7 +413,7 @@ private theorem simKernelCollapse (pe_C : ProbabilisticExecution sys_C.toSystem)
       congr 1
       rw [show (∑' ω : PMF (State_C × State_A),
             ((if h : R (simLastState E).1 (simLastState E).2 ∧
-                sys_C.toSystem.step (simLastState E).1 l μ_C then
+                sys_C.step (simLastState E).1 l μ_C then
               PMF.pure (some (l, simCouple sim (simLastState E) l μ_C))
             else PMF.pure none) : PMF (Option (Label × PMF (State_C × State_A)))) (some (l, ω))
             * (ω.map Prod.fst) s_C')
@@ -434,14 +438,14 @@ private theorem simKernelCollapse (pe_C : ProbabilisticExecution sys_C.toSystem)
     have hFy : F y = ∑' (ω : PMF (State_C × State_A)),
           (pe_C.scheduler.next (E.map Prod.fst)) (some y) *
             ((if h : R (simLastState E).1 (simLastState E).2 ∧
-                sys_C.toSystem.step (simLastState E).1 y.1 y.2 then
+                sys_C.step (simLastState E).1 y.1 y.2 then
               PMF.pure (some (y.1, simCouple sim (simLastState E) y.1 y.2))
             else PMF.pure none) : PMF (Option (Label × PMF (State_C × State_A)))) (some (l, ω))
             * (ω.map Prod.fst) s_C' := by rw [hF]
     rw [hFy]
     refine ENNReal.tsum_eq_zero.mpr (fun ω => ?_)
     by_cases hg : R (simLastState E).1 (simLastState E).2 ∧
-        sys_C.toSystem.step (simLastState E).1 y.1 y.2
+        sys_C.step (simLastState E).1 y.1 y.2
     · rw [dif_pos hg, PMF.pure_apply_of_ne (some (y.1, simCouple sim (simLastState E) y.1 y.2))
         (some (l, ω)) (fun hc' => hc (by
           rw [((Prod.mk.injEq ..).mp ((Option.some.injEq ..).mp hc')).1])),
@@ -451,8 +455,8 @@ private theorem simKernelCollapse (pe_C : ProbabilisticExecution sys_C.toSystem)
 /-- **Kernel marginal.** Summing the joint one-step kernel over the abstract
 successor recovers the concrete one-step kernel of the projected history (needs
 the `R`-invariant `hR` at the current joint state). -/
-private theorem simKernelMarginal (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+private theorem simKernelMarginal (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (E : AlterSeq (State_C × State_A) Label) (hT : E.trans.Terminates)
     (hR : R (simLastState E).1 (simLastState E).2)
     (l : Label) (s_C' : State_C) :
@@ -464,7 +468,7 @@ private theorem simKernelMarginal (pe_C : ProbabilisticExecution sys_C.toSystem)
     rw [simLastState, dif_pos hT, AlterSeq.map_endState Prod.fst E hT]
   have hvalid : ∀ μ_C : PMF State_C,
       pe_C.scheduler.next (E.map Prod.fst) (some (l, μ_C)) ≠ 0 →
-      sys_C.toSystem.step (simLastState E).1 l μ_C := by
+      sys_C.step (simLastState E).1 l μ_C := by
     intro μ_C hne
     rw [hlast1]
     exact pe_C.scheduler.valid (E.map Prod.fst) (Nat.find hC_term)
@@ -484,7 +488,7 @@ private theorem simKernelMarginal (pe_C : ProbabilisticExecution sys_C.toSystem)
       = ∑' (y : Label × PMF State_C) (ω : PMF (State_C × State_A)),
           (pe_C.scheduler.next (E.map Prod.fst)) (some y) *
             ((if h : R (simLastState E).1 (simLastState E).2 ∧
-                sys_C.toSystem.step (simLastState E).1 y.1 y.2 then
+                sys_C.step (simLastState E).1 y.1 y.2 then
               PMF.pure (some (y.1, simCouple sim (simLastState E) y.1 y.2))
             else PMF.pure none) : PMF (Option (Label × PMF (State_C × State_A)))) (some (l, ω))
             * (ω.map Prod.fst) s_C' from by
@@ -504,8 +508,8 @@ open Classical in
 /-- **Append reindex for the marginal.** A joint execution projecting to
 `⟨i_C, (ofList rest).append [(l,s_C')]⟩` is exactly the append, by a free abstract
 component `s_A'`, of a joint prefix projecting to `⟨i_C, ofList rest⟩`. -/
-private theorem simExecMarginal_reindex (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+private theorem simExecMarginal_reindex (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (i_C : State_C) (rest : List (Label × State_C)) (l : Label) (s_C' : State_C) :
     (∑' E : AlterSeq (State_C × State_A) Label,
         dite (E.trans.Terminates ∧ E.map Prod.fst
@@ -668,9 +672,9 @@ joint histories projecting (via `Prod.fst`) to a fixed concrete history `e_C`
 recovers `pe_C.probOf e_C`. Proved by `reverseRecOn` on `e_C`'s transition list:
 the append step reindexes the joint fibre as a prefix fibre paired with a free
 abstract successor, then collapses that successor via `simKernelMarginal`. -/
-private theorem simExecMarginal (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
-    (h_init : pe_C.initState = PMF.pure sys_C.toSystem.init)
+private theorem simExecMarginal (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
+    (h_init : pe_C.initState = PMF.pure sys_C.init)
     (L_C : List (Label × State_C)) (i_C : State_C) :
     (∑' E : AlterSeq (State_C × State_A) Label,
         dite (E.trans.Terminates ∧ E.map Prod.fst = ⟨i_C, Seq.ofList L_C⟩)
@@ -725,21 +729,21 @@ private theorem simExecMarginal (pe_C : ProbabilisticExecution sys_C.toSystem)
     rw [tsum_congr hGval, ProbabilisticExecution.probOf_nil]
     have hJval : ∀ s_A : State_A, (simJointExec pe_C sim).probOf
         ⟨(i_C, s_A), Seq.nil⟩ Stream'.Seq.terminates_nil
-        = (if (i_C, s_A) = ((sys_C.toSystem.init, sys_A.toSystem.init) : State_C × State_A)
+        = (if (i_C, s_A) = ((sys_C.init, sys_A.init) : State_C × State_A)
             then (1 : ENNReal) else 0) := by
       intro s_A
       rw [ProbabilisticExecution.probOf_nil]
-      change (PMF.pure (simProd sys_C sys_A R).toSystem.init) (i_C, s_A) = _
+      change (PMF.pure (simProd sys_C sys_A R).init) (i_C, s_A) = _
       rw [PMF.pure_apply]
       congr 1
     rw [tsum_congr hJval]
     rw [show (∑' s_A : State_A, (if (i_C, s_A)
-          = ((sys_C.toSystem.init, sys_A.toSystem.init) : State_C × State_A)
+          = ((sys_C.init, sys_A.init) : State_C × State_A)
           then (1 : ENNReal) else 0))
-        = (if i_C = sys_C.toSystem.init then (1 : ENNReal) else 0) from by
-      by_cases hia : i_C = sys_C.toSystem.init
+        = (if i_C = sys_C.init then (1 : ENNReal) else 0) from by
+      by_cases hia : i_C = sys_C.init
       · subst hia
-        rw [tsum_eq_single sys_A.toSystem.init
+        rw [tsum_eq_single sys_A.init
           (fun s_A hs => by rw [if_neg (by simp only [Prod.mk.injEq]; tauto)]),
           if_pos rfl, if_pos rfl]
       · rw [if_neg hia]
@@ -825,8 +829,8 @@ open Classical in
 /-- **Per-projection-fibre marginal.** Within the joint histories that map (via
 `Prod.fst`) to a fixed concrete history `e_C`, the label-list-restricted joint
 sum equals the corresponding `Prod.fst`-fibre constraint of the joint sum. -/
-private theorem simPerEC (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
+private theorem simPerEC (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (labs : List Label) (e_C : AlterSeq State_C Label) :
     (∑' (b : ↑((fun E : AlterSeq (State_C × State_A) Label => E.map Prod.fst) ⁻¹' {e_C})),
         dite ((b : AlterSeq (State_C × State_A) Label).trans.Terminates
@@ -878,9 +882,9 @@ open Classical in
 /-- **Per-label-list marginal.** The joint and concrete `probOf`-masses over
 histories with a fixed label list `labs` agree (regroup the joint sum by the
 `Prod.fst` state-projection; each fibre collapses by `simExecMarginal`). -/
-private theorem simPerLabs (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
-    (h_init : pe_C.initState = PMF.pure sys_C.toSystem.init) (labs : List Label) :
+private theorem simPerLabs (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
+    (h_init : pe_C.initState = PMF.pure sys_C.init) (labs : List Label) :
     (∑' E : AlterSeq (State_C × State_A) Label,
         dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList labs)
           (fun h => (simJointExec pe_C sim).probOf E h.1) (fun _ => 0))
@@ -944,13 +948,13 @@ open Classical in
 /-- **Trace-probability transfer.** The joint execution `simJointExec pe_C sim`
 realises the same trace distribution as `pe_C` (both systems share the internal
 predicate, so `traceProb_eq_labProb_sum` reduces this to `simPerLabs`). -/
-private theorem simProd_traceProb_eq (pe_C : ProbabilisticExecution sys_C.toSystem)
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
-    (h_init : pe_C.initState = PMF.pure sys_C.toSystem.init) (τ : Seq Label) :
+private theorem simProd_traceProb_eq (pe_C : ProbabilisticExecution sys_C)
+    (sim : StrongProbabilisticSimulation sys_C sys_A R)
+    (h_init : pe_C.initState = PMF.pure sys_C.init) (τ : Seq Label) :
     (simProd sys_C sys_A R).traceProb (simJointExec pe_C sim) τ = sys_C.traceProb pe_C τ := by
   classical
-  rw [LabelledSystem.traceProb_eq_labProb_sum (simProd sys_C sys_A R) (simJointExec pe_C sim) τ,
-    LabelledSystem.traceProb_eq_labProb_sum sys_C pe_C τ]
+  rw [System.traceProb_eq_labProb_sum (simProd sys_C sys_A R) (simJointExec pe_C sim) τ,
+    System.traceProb_eq_labProb_sum sys_C pe_C τ]
   refine tsum_congr (fun labs => ?_)
   by_cases htt : sys_C.traceTightLabs τ labs
   · rw [if_pos htt, if_pos (show (simProd sys_C sys_A R).traceTightLabs τ labs from htt)]
@@ -962,9 +966,9 @@ achievable by the coupled product `simProd sys_C sys_A R`, using the simulation
 to supply, step by step, a coupling of the concrete successor with an abstract
 successor. -/
 theorem simProd_achievableTraceDists_superset
-    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {sys_C : System State_C Label} {sys_A : System State_A Label}
     {R : State_C → State_A → Prop}
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R) :
+    (sim : StrongProbabilisticSimulation sys_C sys_A R) :
     achievableTraceDists sys_C ⊆ achievableTraceDists (simProd sys_C sys_A R) := by
   rintro D ⟨pe_C, h_init_C, h_trace_C⟩
   refine ⟨simJointExec pe_C sim, rfl, fun τ => ?_⟩
@@ -973,12 +977,11 @@ theorem simProd_achievableTraceDists_superset
 
 /-- **Strong simulation preserves achievable trace distributions** (soundness). -/
 theorem StrongProbabilisticSimulation.achievableTraceDists_subset
-    {sys_C : LabelledSystem State_C Label} {sys_A : LabelledSystem State_A Label}
+    {sys_C : System State_C Label} {sys_A : System State_A Label}
     {R : State_C → State_A → Prop}
-    (sim : StrongProbabilisticSimulation sys_C.toSystem sys_A.toSystem R)
-    (h_int : ∀ l, sys_C.internal l ↔ sys_A.internal l) :
+    (sim : StrongProbabilisticSimulation sys_C sys_A R) :
     achievableTraceDists sys_C ⊆ achievableTraceDists sys_A :=
   (simProd_achievableTraceDists_superset sim).trans
-    (achievableTraceDists_map Prod.snd rfl (fun _ _ _ h => h.2.1) h_int)
+    (achievableTraceDists_map Prod.snd rfl (fun _ _ _ h => h.2.1))
 
 end PLTS

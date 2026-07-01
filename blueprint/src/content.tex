@@ -1,7 +1,19 @@
-% In this file you should put the actual content of the blueprint.
-% It will be used both by the web and the print version.
-% It should *not* include the \begin{document}
-%
-% If you want to split the blueprint content into several files then
-% the current file can be a simple sequence of \input. Otherwise It
-% can start with a \section or \chapter for instance.
+\begin{algorithm}
+    \caption{Simulating a scheduler on $sys^w$}
+    \begin{algorithmic}
+        \State \textbf{Input:} a PLTS $sys$ and a scheduler $ws$ on $sys^w$
+        \medskip
+        \State $we, e \gets sys^w.init, sys.init$
+        \State $wt \gets ws(we)$
+        \State \textbf{while} $wt \ne \bot$:
+        \State\quad $s \gets wt.choose$ \Comment{get the scheduler inducing $wt$}
+        \State\quad $e' \gets last(e)$
+        \State\quad $t \gets s(e')$
+        \State\quad \textbf{while} $t \ne \bot$:
+        \State\quad\quad $e' \gets e'.lbl(t).out(t)$
+        \State\quad\quad $t \gets s(e')$
+        \State\quad $e \gets e^\frown e'$
+        \State\quad $we \gets we.lbl(wt).last(e)$
+        \State\quad $wt \gets ws(we)$
+    \end{algorithmic}
+\end{algorithm}

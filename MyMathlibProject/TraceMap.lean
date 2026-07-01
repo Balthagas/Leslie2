@@ -32,6 +32,11 @@ open Stream'
 
 namespace PLTS
 
+-- The canonical-`τ` instance `[Silent L]` is threaded as a section variable but
+-- is unused by the pure `AlterSeq.map` infrastructure / kernel lemmas below;
+-- silence the over-inclusion linter for both sections in this file.
+set_option linter.unusedSectionVars false
+
 /-! ### Generic `AlterSeq.map` infrastructure (for `achievableTraceDists_map`)
 
 The pushforward of an execution along `f : X → Y` keeps the *labels* untouched, so
@@ -39,7 +44,8 @@ the label list `trans.map Prod.fst` is preserved, and `stateAt`/`endState` commu
 with `f`. -/
 
 section MapInfra
-variable {X Y L : Type}
+
+variable {X Y L : Type} [Silent L]
 
 /-- The length of `(ofList rest).append (cons x nil)` is `rest.length + 1`. -/
 theorem Stream'.Seq.append_singleton_length' {γ : Type} (rest : List γ) (x : γ) :
@@ -100,32 +106,32 @@ private theorem AlterSeq.mapFib_terminatedAt (f : X → Y) (e : AlterSeq X L) (n
   | none => simp
   | some lq => simp
 
-/-- **Functional pushforward preserves traces** (traces only see labels and the
-shared `internal` partition). -/
-private theorem AlterSeq.trace_map {sys_X : LabelledSystem X L} {sys_Y : LabelledSystem Y L}
-    (f : X → Y) (h_int : ∀ l, sys_X.internal l ↔ sys_Y.internal l) (e : AlterSeq X L) :
+/-- **Functional pushforward preserves traces** (traces only see labels, and the
+internal/external classification is canonical — the silent label `τ`). -/
+private theorem AlterSeq.trace_map {sys_X : System X L} {sys_Y : System Y L}
+    (f : X → Y) (e : AlterSeq X L) :
     sys_Y.trace (e.map f) = sys_X.trace e := by
   classical
-  unfold LabelledSystem.trace
+  unfold System.trace
   change ((e.trans.map (fun lq : L × X => (lq.1, f lq.2))).filter
-      (fun p => ¬ sys_Y.internal p.1)).map Prod.fst
-    = (e.trans.filter (fun p => ¬ sys_X.internal p.1)).map Prod.fst
+      (fun p => ¬ (p.1 = Silent.τ))).map Prod.fst
+    = (e.trans.filter (fun p => ¬ (p.1 = Silent.τ))).map Prod.fst
   rw [Stream'.Seq.filter_map (fun lq : L × X => (lq.1, f lq.2))
-      (fun p : L × Y => ¬ sys_Y.internal p.1) e.trans]
-  have hpred : (fun p : L × Y => ¬ sys_Y.internal p.1) ∘ (fun lq : L × X => (lq.1, f lq.2))
-      = (fun p : L × X => ¬ sys_X.internal p.1) := by
-    funext p; simp only [Function.comp]; rw [eq_iff_iff, h_int p.1]
+      (fun p : L × Y => ¬ (p.1 = Silent.τ)) e.trans]
+  have hpred : (fun p : L × Y => ¬ (p.1 = Silent.τ)) ∘ (fun lq : L × X => (lq.1, f lq.2))
+      = (fun p : L × X => ¬ (p.1 = Silent.τ)) := by
+    funext p; rfl
   rw [hpred, ← Stream'.Seq.map_comp,
     show (Prod.fst : L × Y → L) ∘ (fun lq : L × X => (lq.1, f lq.2))
       = (Prod.fst : L × X → L) from rfl]
 
-/-- **Functional pushforward preserves tightness** (tightness only sees labels
-and the shared `internal` partition). -/
-private theorem AlterSeq.isTight_map {sys_X : LabelledSystem X L} {sys_Y : LabelledSystem Y L}
-    (f : X → Y) (h_int : ∀ l, sys_X.internal l ↔ sys_Y.internal l) (e : AlterSeq X L) :
+/-- **Functional pushforward preserves tightness** (tightness only sees labels,
+and the internal/external classification is canonical — the silent label `τ`). -/
+private theorem AlterSeq.isTight_map {sys_X : System X L} {sys_Y : System Y L}
+    (f : X → Y) (e : AlterSeq X L) :
     sys_Y.IsTight (e.map f) ↔ sys_X.IsTight e := by
   classical
-  unfold LabelledSystem.IsTight
+  unfold System.IsTight
   constructor
   · rintro (h0 | ⟨n, l, s, hget_n, hterm_n1, hnint⟩)
     · left; exact (AlterSeq.mapFib_terminatedAt f e 0).mp h0
@@ -139,7 +145,7 @@ private theorem AlterSeq.isTight_map {sys_X : LabelledSystem X L} {sys_Y : Label
       simp only at hl'
       subst hl'
       exact ⟨n, l', x', hx, (AlterSeq.mapFib_terminatedAt f e (n + 1)).mp hterm_n1,
-        (h_int l').not.mpr hnint⟩
+        hnint⟩
   · rintro (h0 | ⟨n, l, s, hget_n, hterm_n1, hnint⟩)
     · left; exact (AlterSeq.mapFib_terminatedAt f e 0).mpr h0
     · right
@@ -147,7 +153,7 @@ private theorem AlterSeq.isTight_map {sys_X : LabelledSystem X L} {sys_Y : Label
         change (e.trans.map (fun lq : L × X => (lq.1, f lq.2))).get? n = _
         rw [Stream'.Seq.map_get?, hget_n]; rfl
       exact ⟨n, l, f s, hmapget, (AlterSeq.mapFib_terminatedAt f e (n + 1)).mpr hterm_n1,
-        (h_int l).not.mp hnint⟩
+        hnint⟩
 
 /-- Two terminating executions mapping (via `f`) to the same `Y`-execution have
 equal-length transition lists. -/
@@ -188,7 +194,7 @@ collapses to the `pe_Y`-path-measure (`hprob`), and traces/tightness are
 
 section MapConstruction
 
-variable {X Y L : Type} {sys_X : LabelledSystem X L} {sys_Y : LabelledSystem Y L}
+variable {X Y L : Type} [Silent L] {sys_X : System X L} {sys_Y : System Y L}
 
 /-- The pushforward map on scheduler emissions: keep the label, push the
 distribution forward along `f`. -/
@@ -199,7 +205,7 @@ private noncomputable def mapEmit (f : X → Y) : Option (L × PMF X) → Option
 pushforward emission weight against the `Y`-successor mass `ν y'` recovers the
 total `pe_X`-kernel mass over the `f`-fibre of `y'` (via `map_apply`, fibre
 collapse and a kernel unfold). -/
-private theorem mappedKernel_eq (pe_X : ProbabilisticExecution sys_X.toSystem) (f : X → Y)
+private theorem mappedKernel_eq (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
     (E_X : AlterSeq X L) (l : L) (y' : Y) :
     (∑' ν : PMF Y,
         ((pe_X.scheduler.next E_X).map (mapEmit f)) (some (l, ν)) * ν y')
@@ -242,7 +248,7 @@ open Classical in
 /-- **Fibre Kraft bound.** The total `pe_X`-mass over the `f`-fibre of a
 `Y`-history `E_Y` is `≤ 1`: all fibre members are equal-length terminating
 executions, hence prefix-incomparable, so the antichain Kraft bound applies. -/
-private theorem W_le_one (pe_X : ProbabilisticExecution sys_X.toSystem) (f : X → Y)
+private theorem W_le_one (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
     (E_Y : AlterSeq Y L) :
     (∑' E_X : AlterSeq X L,
       dite (E_X.trans.Terminates ∧ E_X.map f = E_Y)
@@ -290,7 +296,7 @@ open Classical in
 appended `Y`-history `⟨y₀, (ofList rest) ++ [(l, y')]⟩` reindexes as a sum over a
 prefix in the `f`-fibre of `⟨y₀, ofList rest⟩` paired with a fibre point
 `x' : {x // f x = y'}` of the appended `Y`-state. -/
-private theorem fibre_append_reindex (pe_X : ProbabilisticExecution sys_X.toSystem) (f : X → Y)
+private theorem fibre_append_reindex (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
     (y₀ : Y) (rest : List (L × Y)) (l : L) (y' : Y) :
     (∑' E_X : AlterSeq X L,
         dite (E_X.trans.Terminates ∧ E_X.map f
@@ -437,11 +443,10 @@ by a posterior over the `f`-fibres of abstract histories.
 The proof builds a marginal scheduler via a posterior over `f`-fibres and a
 `reverseRecOn` path-measure identity (hence the raised heartbeat budget for the
 heavy nested `tsum` reindexings). -/
-theorem achievableTraceDists_map {X Y L : Type}
-    {sys_X : LabelledSystem X L} {sys_Y : LabelledSystem Y L} (f : X → Y)
-    (h_init : f sys_X.toSystem.init = sys_Y.toSystem.init)
-    (h_step : ∀ s l μ, sys_X.toSystem.step s l μ → sys_Y.toSystem.step (f s) l (μ.map f))
-    (h_int : ∀ l, sys_X.internal l ↔ sys_Y.internal l) :
+theorem achievableTraceDists_map {X Y L : Type} [Silent L]
+    {sys_X : System X L} {sys_Y : System Y L} (f : X → Y)
+    (h_init : f sys_X.init = sys_Y.init)
+    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f)) :
     achievableTraceDists sys_X ⊆ achievableTraceDists sys_Y := by
   classical
   rintro D ⟨pe_X, h_init_X, h_trace_X⟩
@@ -464,7 +469,7 @@ theorem achievableTraceDists_map {X Y L : Type}
   have hWle : ∀ E_Y, W E_Y ≤ 1 := fun E_Y => W_le_one pe_X f E_Y
   have hWtop : ∀ E_Y, W E_Y ≠ ⊤ := fun E_Y => ne_top_of_le_ne_top ENNReal.one_ne_top (hWle E_Y)
   -- The marginal scheduler `σ_Y`.
-  set σ_Y : Scheduler sys_Y.toSystem :=
+  set σ_Y : Scheduler sys_Y :=
     { next := fun E_Y => if hW0 : W E_Y = 0 then PMF.pure none
         else PMF.normalize (g E_Y) (by rw [hgsum]; exact hW0) (by rw [hgsum]; exact hWtop E_Y)
       valid := by
@@ -509,14 +514,14 @@ theorem achievableTraceDists_map {X Y L : Type}
             | some x => rw [hc] at hstateX; exact ⟨x, rfl, by simpa using hstateX⟩
           have htermX : E_X.trans.TerminatedAt n :=
             (AlterSeq.mapFib_terminatedAt f E_X n).mp (hguard.2 ▸ hterm)
-          have hstepX : sys_X.toSystem.step x l μ :=
+          have hstepX : sys_X.step x l μ :=
             pe_X.scheduler.valid E_X n x htermX hxn l μ ((PMF.mem_support_iff _ _).mpr hμne)
           have hres := h_step x l μ hstepX
           rw [hfx, ← hνeq] at hres
           exact hres }
     with hσ
   -- The marginal probabilistic execution.
-  set pe_Y : ProbabilisticExecution sys_Y.toSystem := ⟨PMF.pure sys_Y.toSystem.init, σ_Y⟩ with hpe_Y
+  set pe_Y : ProbabilisticExecution sys_Y := ⟨PMF.pure sys_Y.init, σ_Y⟩ with hpe_Y
   -- `σ_Y.next` written explicitly.
   have hnext_def : ∀ E_Y o, σ_Y.next E_Y o
       = if W E_Y = 0 then (PMF.pure none) o else g E_Y o * (W E_Y)⁻¹ := by
@@ -563,7 +568,7 @@ theorem achievableTraceDists_map {X Y L : Type}
       rw [pe_Y.probOf_congr ⟨y₀, Seq.ofList ([] : List (L × Y))⟩ ⟨y₀, Seq.nil⟩
         (by rw [Stream'.Seq.ofList_nil]) hFin Stream'.Seq.terminates_nil,
         ProbabilisticExecution.probOf_nil]
-      change (PMF.pure sys_Y.toSystem.init) y₀
+      change (PMF.pure sys_Y.init) y₀
         = ∑' E_X : AlterSeq X L, gnum ⟨y₀, Seq.ofList ([] : List (L × Y))⟩ E_X
       -- `W ⟨y₀, nil⟩ = ∑' E_X (E_X.map f = ⟨y₀,nil⟩), probOf = (pure sys_Y.init) y₀`.
       rw [tsum_congr (fun E_X => by rw [hgnum]), Stream'.Seq.ofList_nil]
@@ -574,9 +579,9 @@ theorem achievableTraceDists_map {X Y L : Type}
           (f := fun E_X : AlterSeq X L =>
             dite (E_X.trans.Terminates ∧ E_X.map f = (⟨y₀, Seq.nil⟩ : AlterSeq Y L))
               (fun h => pe_X.probOf E_X h.1) (fun _ => 0)) ?suppNil]
-      · rw [show (PMF.pure sys_Y.toSystem.init) y₀
-            = ((PMF.pure sys_X.toSystem.init).map f) y₀ from by rw [PMF.pure_map, h_init],
-          AlterSeq.map_apply_fibre f (PMF.pure sys_X.toSystem.init) y₀]
+      · rw [show (PMF.pure sys_Y.init) y₀
+            = ((PMF.pure sys_X.init).map f) y₀ from by rw [PMF.pure_map, h_init],
+          AlterSeq.map_apply_fibre f (PMF.pure sys_X.init) y₀]
         refine tsum_congr (fun x => ?_)
         rw [dif_pos ⟨Stream'.Seq.terminates_nil, by
           change (⟨f x.1, Stream'.Seq.map _ Seq.nil⟩ : AlterSeq Y L) = ⟨y₀, Seq.nil⟩
@@ -650,7 +655,7 @@ theorem achievableTraceDists_map {X Y L : Type}
   refine ⟨pe_Y, rfl, fun τ => ?_⟩
   rw [show D τ = sys_X.traceProb pe_X τ from (h_trace_X τ).symm]
   -- Unfold both `traceProb`s; substitute `hprob`; biject `f`-fibres of tight execs.
-  unfold LabelledSystem.traceProb
+  unfold System.traceProb
   -- LHS: substitute `hprob`, then combine tight-`Y` sum and fibre sum into a product.
   refine Eq.trans (tsum_congr (fun E_Y => hprob E_Y.1 E_Y.2.1)) ?_
   refine Eq.trans
@@ -667,8 +672,8 @@ theorem achievableTraceDists_map {X Y L : Type}
           pe_X.probOf x.1 x.2.1 ≠ 0} =>
       (⟨⟨x.1.1.map f,
           ⟨(AlterSeq.map_trans_terminates_iff f x.1.1).mpr x.1.2.1,
-            by rw [AlterSeq.trace_map f h_int x.1.1]; exact x.1.2.2.1,
-            (AlterSeq.isTight_map f h_int x.1.1).mpr x.1.2.2.2⟩⟩,
+            by rw [AlterSeq.trace_map f x.1.1]; exact x.1.2.2.1,
+            (AlterSeq.isTight_map f x.1.1).mpr x.1.2.2.2⟩⟩,
           x.1.1⟩ :
         {e : AlterSeq Y L // e.trans.Terminates ∧ sys_Y.trace e = τ ∧ sys_Y.IsTight e}
           × AlterSeq X L))
@@ -688,8 +693,8 @@ theorem achievableTraceDists_map {X Y L : Type}
       intro h0; rw [dif_pos hc, h0] at hp; exact hp rfl
     have hXtight : p.2.trans.Terminates ∧ sys_X.trace p.2 = τ ∧ sys_X.IsTight p.2 := by
       refine ⟨hc.1, ?_, ?_⟩
-      · rw [← AlterSeq.trace_map f h_int p.2, hc.2]; exact p.1.2.2.1
-      · rw [← AlterSeq.isTight_map f h_int p.2, hc.2]; exact p.1.2.2.2
+      · rw [← AlterSeq.trace_map f p.2, hc.2]; exact p.1.2.2.1
+      · rw [← AlterSeq.isTight_map f p.2, hc.2]; exact p.1.2.2.2
     refine ⟨⟨⟨p.2, hXtight⟩, ?_⟩, ?_⟩
     · change pe_X.probOf p.2 hXtight.1 ≠ 0; exact hpe
     · -- the image pair equals `p` (the `Y`-component is forced by `p.2.map f = p.1.1`).
