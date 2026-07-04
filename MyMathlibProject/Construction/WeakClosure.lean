@@ -4,18 +4,18 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import MyMathlibProject.WeakStep
-import MyMathlibProject.DistConstruction
-import MyMathlibProject.TraceMap
-import MyMathlibProject.TraceProbBound
-import MyMathlibProject.TightTrace
+import MyMathlibProject.Weak.Step
+import MyMathlibProject.Construction.DistMonad
+import MyMathlibProject.Construction.TraceMap
+import MyMathlibProject.Weak.Bounds
+import MyMathlibProject.Construction.EndState
 
 /-!
 # Constructions on PLTSs
 
 This file collects constructions that build new probabilistic labelled
 transition systems from existing ones, using the weak-step infrastructure
-from `WeakStep.lean`.
+from `Weak/Step.lean`.
 -/
 
 open Stream'
@@ -106,10 +106,10 @@ theorem weakClosure_traceProb_subset (sys : System State Label) :
 
 `weakClosure_traceProb_superset` — every trace distribution achievable by
 `sys^w` is achievable by `sys` — and the resulting equality
-`weakClosure_traceProb_eq` are proved in `ExpandTraceProb.lean`. Their proof
+`weakClosure_traceProb_eq` are proved in `Expansion/TraceProb.lean`. Their proof
 unfolds each `sys^w` weak step `τ*·l·τ*` into a concrete `sys`-path (the
 "unfold a `sys^w`-scheduler" algorithm of `blueprint/src/content.tex`), which
-lives in `Expand`/`ExpandTrace`/`ExpandProbOf`/`ExpandSched` — all of which
+lives in `Expansion/Algorithm`/`Trace`/`ProbOf`/`Scheduler` — all of which
 import this file, so the theorem cannot be stated here without an import cycle. -/
 
 end PLTS

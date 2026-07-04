@@ -4,8 +4,10 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import MyMathlibProject.SimulationTrace
-import MyMathlibProject.ExpandTraceProb
+import MyMathlibProject.Simulation.Trace
+import MyMathlibProject.Simulation.Equivalences
+import MyMathlibProject.Construction.DistTrace
+import MyMathlibProject.Expansion.TraceProb
 
 /-!
 # Trace soundness of weak and forward probabilistic simulation

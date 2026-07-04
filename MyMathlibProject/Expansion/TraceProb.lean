@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import MyMathlibProject.ExpandSched
+import MyMathlibProject.Expansion.Scheduler
 
 /-!
 # Trace-distribution preservation of the weak closure (the hard direction)
@@ -544,7 +544,7 @@ exactly `[l]`. Its trace is a prefix of `[l]` (`witness_halt_cont`); being nonem
 nonempty exec has a nonempty trace) pins it to `[l]`. -/
 private theorem witness_tight_trace {x : State} {l : Label} {μ : PMF State} {σ : Scheduler sys}
     (hR : Realises σ x l μ) (hl : ¬ l = Silent.τ)
-    (e' : AlterSeq State Label) (h' : e'.trans.Terminates) (hinit : e'.init = x)
+    (e' : AlterSeq State Label) (h' : e'.trans.Terminates) (_hinit : e'.init = x)
     (hne : e'.trans ≠ Seq.nil) (htight : sys.IsTight e')
     (hpos : (⟨PMF.pure x, σ⟩ : ProbabilisticExecution sys).probOf e' h' ≠ 0) :
     sys.trace e' = Seq.cons l Seq.nil := by
@@ -831,8 +831,8 @@ private theorem con_config_shape (ws : Scheduler sys^w) (τ' : Seq Label) (l : L
   · rw [← hwe_eq, reachProb_trace_eq ws c hrp]; exact htrace_e
 
 open Classical in
-/-- **CON construction.** The canonical config `canonCfg L' l E μ seg` (with any inner draw `t`) is a
-valid CON arrival config for the trace `τ' ⌢ [l]`, provided its entry list `L'` has trace `τ'` and
+/-- **CON construction.** The canonical config `canonCfg L' l E μ seg` (with any inner draw `t`) is
+a valid CON arrival config for the trace `τ' ⌢ [l]`, provided its entry list `L'` has trace `τ'` and
 its segment `seg` is tight, terminating, with trace `[l]`. -/
 private theorem canonCfg_con (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label)
     (L' : List (Label × State)) (E seg : AlterSeq State Label) (μ : PMF State)
@@ -869,10 +869,11 @@ private theorem canonCfg_con (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label
   exact ⟨hsegne, hcatfin, htracecat, htightcat⟩
 
 open Classical in
-/-- **CON reindexing.** The arrival-config sum reindexes bijectively onto tuples `(L', E, μ, seg, t)`
-— entry list `L'` (trace `τ'`), committed concrete prefix `E`, weak-step target `μ`, tight trace-`[l]`
-segment `seg`, inner draw `t` — via the canonical config `canonCfg L' l E μ seg` (`con_config_shape`
-extracts the tuple from a reachable arrival config; `canonCfg_con` builds a CON config from a tuple). -/
+/-- **CON reindexing.** The arrival-config sum reindexes bijectively onto tuples
+`(L', E, μ, seg, t)` — entry list `L'` (trace `τ'`), committed concrete prefix `E`, weak-step target
+`μ`, tight trace-`[l]` segment `seg`, inner draw `t` — via the canonical config
+`canonCfg L' l E μ seg` (`con_config_shape` extracts the tuple from a reachable arrival config;
+`canonCfg_con` builds a CON config from a tuple). -/
 private theorem con_bij (ws : Scheduler sys^w) (τ' : Seq Label) (l : Label) :
     (∑' c : {c : Config sys // c.e'.trans ≠ Seq.nil ∧ (Config.concat c).trans.Terminates ∧
         sys.trace (Config.concat c) = τ'.append (Seq.cons l Seq.nil) ∧

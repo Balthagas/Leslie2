@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import MyMathlibProject.TightTrace
+import MyMathlibProject.Construction.EndState
 
 /-!
 # Trace-distribution transfer along a functional simulation
@@ -21,7 +21,7 @@ probabilistic simulation soundness (where the abstract successor is a *function*
 of the concrete one, i.e. the coupling is the graph of `f`). It is **not**
 specific to any particular simulation and is reused to prove the "subset" (easy)
 directions of the `𝒟`- and `·^w`-constructions, and to project the coupled
-product in `SimulationTrace.lean`.
+product in `Simulation/Trace.lean`.
 
 The witnessing `sys_Y`-execution is the pushforward of the `sys_X`-execution
 along `f`, whose scheduler is recovered by a posterior over the `f`-fibres of
@@ -198,14 +198,14 @@ variable {X Y L : Type} [Silent L] {sys_X : System X L} {sys_Y : System Y L}
 
 /-- The pushforward map on scheduler emissions: keep the label, push the
 distribution forward along `f`. -/
-private noncomputable def mapEmit (f : X → Y) : Option (L × PMF X) → Option (L × PMF Y) :=
+noncomputable def mapEmit (f : X → Y) : Option (L × PMF X) → Option (L × PMF Y) :=
   Option.map (fun lμ => (lμ.1, lμ.2.map f))
 
 /-- **Mapped-kernel collapse.** For a fixed `X`-prefix `E_X`, summing the
 pushforward emission weight against the `Y`-successor mass `ν y'` recovers the
 total `pe_X`-kernel mass over the `f`-fibre of `y'` (via `map_apply`, fibre
 collapse and a kernel unfold). -/
-private theorem mappedKernel_eq (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
+theorem mappedKernel_eq (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
     (E_X : AlterSeq X L) (l : L) (y' : Y) :
     (∑' ν : PMF Y,
         ((pe_X.scheduler.next E_X).map (mapEmit f)) (some (l, ν)) * ν y')
@@ -248,7 +248,7 @@ open Classical in
 /-- **Fibre Kraft bound.** The total `pe_X`-mass over the `f`-fibre of a
 `Y`-history `E_Y` is `≤ 1`: all fibre members are equal-length terminating
 executions, hence prefix-incomparable, so the antichain Kraft bound applies. -/
-private theorem W_le_one (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
+theorem W_le_one (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
     (E_Y : AlterSeq Y L) :
     (∑' E_X : AlterSeq X L,
       dite (E_X.trans.Terminates ∧ E_X.map f = E_Y)
@@ -296,7 +296,7 @@ open Classical in
 appended `Y`-history `⟨y₀, (ofList rest) ++ [(l, y')]⟩` reindexes as a sum over a
 prefix in the `f`-fibre of `⟨y₀, ofList rest⟩` paired with a fibre point
 `x' : {x // f x = y'}` of the appended `Y`-state. -/
-private theorem fibre_append_reindex (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
+theorem fibre_append_reindex (pe_X : ProbabilisticExecution sys_X) (f : X → Y)
     (y₀ : Y) (rest : List (L × Y)) (l : L) (y' : Y) :
     (∑' E_X : AlterSeq X L,
         dite (E_X.trans.Terminates ∧ E_X.map f
@@ -430,230 +430,277 @@ private theorem fibre_append_reindex (pe_X : ProbabilisticExecution sys_X) (f : 
         by rw [AlterSeq.map_append_singleton f E1 l a1, hg.2, ha1]⟩
     rw [dif_pos hcondF, dif_pos hg]
 
-/-- **Functional simulation preserves achievable trace distributions.** If
-`f : X → Y` maps the initial state to the initial state, lifts every `sys_X` step
-`s -[l]→ μ` to a `sys_Y` step `f s -[l]→ μ.map f`, and the two systems agree on
-internal labels, then every trace distribution achievable by `sys_X` is
-achievable by `sys_Y`.
+open Classical in
+/-- Total `pe_X`-mass over the `f`-fibre of `E_Y`. -/
+noncomputable def mapWeight (f : X → Y) (pe_X : ProbabilisticExecution sys_X)
+    (E_Y : AlterSeq Y L) : ENNReal :=
+  ∑' E_X : AlterSeq X L,
+    dite (E_X.trans.Terminates ∧ E_X.map f = E_Y) (fun h => pe_X.probOf E_X h.1) (fun _ => 0)
 
-This is the marginalisation crux: the `sys_Y`-execution witnessing membership is
-the pushforward of the `sys_X`-execution along `f`, whose scheduler is recovered
-by a posterior over the `f`-fibres of abstract histories.
+open Classical in
+/-- Belief numerator (fibre-weighted pushforward of emissions). -/
+noncomputable def mapBeliefNum (f : X → Y) (pe_X : ProbabilisticExecution sys_X)
+    (E_Y : AlterSeq Y L) (o : Option (L × PMF Y)) : ENNReal :=
+  ∑' E_X : AlterSeq X L,
+    (dite (E_X.trans.Terminates ∧ E_X.map f = E_Y) (fun h => pe_X.probOf E_X h.1) (fun _ => 0))
+      * ((pe_X.scheduler.next E_X).map (mapEmit f)) o
 
-The proof builds a marginal scheduler via a posterior over `f`-fibres and a
-`reverseRecOn` path-measure identity (hence the raised heartbeat budget for the
-heavy nested `tsum` reindexings). -/
-theorem achievableTraceDists_map {X Y L : Type} [Silent L]
-    {sys_X : System X L} {sys_Y : System Y L} (f : X → Y)
-    (h_init : f sys_X.init = sys_Y.init)
-    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f)) :
-    achievableTraceDists sys_X ⊆ achievableTraceDists sys_Y := by
+/-- `∑' o, mapBeliefNum … o = mapWeight …` (the pushforward emission PMF sums to 1). -/
+private theorem mapBeliefNum_tsum (f : X → Y) (pe_X : ProbabilisticExecution sys_X)
+    (E_Y : AlterSeq Y L) :
+    (∑' o, mapBeliefNum f pe_X E_Y o) = mapWeight f pe_X E_Y := by
   classical
-  rintro D ⟨pe_X, h_init_X, h_trace_X⟩
-  -- The fibre weight on a `Y`-prefix `E_Y`: `pe_X.probOf` over `f`-fibre members.
+  simp only [mapBeliefNum, mapWeight]
+  rw [ENNReal.tsum_comm]
+  refine tsum_congr (fun E_X => ?_)
+  rw [ENNReal.tsum_mul_left, ((pe_X.scheduler.next E_X).map (mapEmit f)).tsum_coe, mul_one]
+
+/-- `mapWeight` never equals `⊤` (it is bounded by `1` via the Kraft antichain bound). -/
+private theorem mapWeight_ne_top (f : X → Y) (pe_X : ProbabilisticExecution sys_X)
+    (E_Y : AlterSeq Y L) : mapWeight f pe_X E_Y ≠ ⊤ :=
+  ne_top_of_le_ne_top ENNReal.one_ne_top (W_le_one pe_X f E_Y)
+
+/-- The marginal (belief) scheduler on `sys_Y`: on a `Y`-history `E_Y` it emits the
+`mapWeight`-normalised belief-weighted pushforward `mapBeliefNum` of the `pe_X`
+emissions over the `f`-fibre of `E_Y` (or stops if the fibre has zero mass). -/
+noncomputable def mapBeliefSched (f : X → Y)
+    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f))
+    (pe_X : ProbabilisticExecution sys_X) : Scheduler sys_Y :=
+  { next := fun E_Y => if hW0 : mapWeight f pe_X E_Y = 0 then PMF.pure none
+      else PMF.normalize (mapBeliefNum f pe_X E_Y) (by rw [mapBeliefNum_tsum]; exact hW0)
+        (by rw [mapBeliefNum_tsum]; exact mapWeight_ne_top f pe_X E_Y)
+    valid := by
+      classical
+      intro E_Y n s hterm hstate l ν hsupp
+      by_cases hW0 : mapWeight f pe_X E_Y = 0
+      · rw [dif_pos hW0, PMF.mem_support_iff, PMF.pure_apply_of_ne _ _ (by simp)] at hsupp
+        exact absurd rfl hsupp
+      · simp only [dif_neg hW0, PMF.mem_support_normalize_iff] at hsupp
+        -- `hsupp : mapBeliefNum … (some (l, ν)) ≠ 0`; extract a fibre witness `E_X`.
+        have hgne : (∑' E_X : AlterSeq X L,
+            (dite (E_X.trans.Terminates ∧ E_X.map f = E_Y)
+                (fun h => pe_X.probOf E_X h.1) (fun _ => 0))
+              * ((pe_X.scheduler.next E_X).map (mapEmit f)) (some (l, ν))) ≠ 0 := hsupp
+        have hex := mt ENNReal.tsum_eq_zero.mpr hgne
+        push Not at hex
+        obtain ⟨E_X, hEX⟩ := hex
+        have hguard : E_X.trans.Terminates ∧ E_X.map f = E_Y := by
+          by_contra hc
+          rw [dif_neg hc, zero_mul] at hEX; exact hEX rfl
+        have hmapne : ((pe_X.scheduler.next E_X).map (mapEmit f)) (some (l, ν)) ≠ 0 := by
+          intro h0; rw [h0, mul_zero] at hEX; exact hEX rfl
+        obtain ⟨μ, hμne, hνeq⟩ :
+            ∃ μ : PMF X, pe_X.scheduler.next E_X (some (l, μ)) ≠ 0 ∧ ν = μ.map f := by
+          rw [mapEmit, PMF.map_apply] at hmapne
+          have hex2 := mt ENNReal.tsum_eq_zero.mpr hmapne
+          push Not at hex2
+          obtain ⟨o, ho⟩ := hex2
+          by_cases hc : some (l, ν) = Option.map (fun lμ : L × PMF X => (lμ.1, lμ.2.map f)) o
+          · cases o with
+            | none => simp at hc
+            | some lμ =>
+              obtain ⟨l', μ⟩ := lμ
+              simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hc
+              obtain ⟨rfl, rfl⟩ := hc
+              exact ⟨μ, fun h0 => by rw [h0] at ho; simp at ho, rfl⟩
+          · rw [if_neg hc] at ho; exact absurd rfl ho
+        -- the current `X`-state at `n` maps to `s`.
+        have hstateX : (E_X.stateAt n).map f = some s := by
+          rw [← AlterSeq.mapFib_stateAt f E_X n, hguard.2, hstate]
+        obtain ⟨x, hxn, hfx⟩ : ∃ x : X, E_X.stateAt n = some x ∧ f x = s := by
+          cases hc : E_X.stateAt n with
+          | none => rw [hc] at hstateX; simp at hstateX
+          | some x => rw [hc] at hstateX; exact ⟨x, rfl, by simpa using hstateX⟩
+        have htermX : E_X.trans.TerminatedAt n :=
+          (AlterSeq.mapFib_terminatedAt f E_X n).mp (hguard.2 ▸ hterm)
+        have hstepX : sys_X.step x l μ :=
+          pe_X.scheduler.valid E_X n x htermX hxn l μ ((PMF.mem_support_iff _ _).mpr hμne)
+        have hres := h_step x l μ hstepX
+        rw [hfx, ← hνeq] at hres
+        exact hres }
+
+/-- The pushforward probabilistic execution (Dirac init + belief scheduler). -/
+noncomputable def mapBeliefExec (f : X → Y)
+    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f))
+    (pe_X : ProbabilisticExecution sys_X) : ProbabilisticExecution sys_Y :=
+  ⟨PMF.pure sys_Y.init, mapBeliefSched f h_step pe_X⟩
+
+@[simp] theorem mapBeliefExec_initState (f : X → Y)
+    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f))
+    (pe_X : ProbabilisticExecution sys_X) :
+    (mapBeliefExec f h_step pe_X).initState = PMF.pure sys_Y.init := rfl
+
+/-- **Cancellation:** `mapWeight · belief-scheduler-emission = mapBeliefNum`. -/
+theorem mapWeight_mul_next (f : X → Y)
+    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f))
+    (pe_X : ProbabilisticExecution sys_X) (E_Y : AlterSeq Y L) (o : Option (L × PMF Y)) :
+    mapWeight f pe_X E_Y * (mapBeliefSched f h_step pe_X).next E_Y o
+      = mapBeliefNum f pe_X E_Y o := by
+  classical
+  by_cases hW0 : mapWeight f pe_X E_Y = 0
+  · have hnext : (mapBeliefSched f h_step pe_X).next E_Y = PMF.pure none := by
+      simp only [mapBeliefSched]; exact dif_pos hW0
+    rw [hnext, hW0, zero_mul]
+    have hall : ∀ o', mapBeliefNum f pe_X E_Y o' = 0 := by
+      rw [← ENNReal.tsum_eq_zero, mapBeliefNum_tsum]; exact hW0
+    exact (hall o).symm
+  · have hnext : (mapBeliefSched f h_step pe_X).next E_Y o
+        = mapBeliefNum f pe_X E_Y o * (mapWeight f pe_X E_Y)⁻¹ := by
+      have h1 : (mapBeliefSched f h_step pe_X).next E_Y
+          = PMF.normalize (mapBeliefNum f pe_X E_Y) (by rw [mapBeliefNum_tsum]; exact hW0)
+            (by rw [mapBeliefNum_tsum]; exact mapWeight_ne_top f pe_X E_Y) := by
+        simp only [mapBeliefSched]; exact dif_neg hW0
+      rw [h1, PMF.normalize_apply, mapBeliefNum_tsum]
+    rw [hnext, ← mul_assoc, mul_comm (mapWeight f pe_X E_Y) (mapBeliefNum f pe_X E_Y o),
+      mul_assoc, ENNReal.mul_inv_cancel hW0 (mapWeight_ne_top f pe_X E_Y), mul_one]
+
+/-- **Path-measure identity.** The `mapBeliefExec`-probability of a terminating
+`Y`-history `E_Y` collapses to the total `f`-fibre mass `mapWeight … E_Y`. Proven
+by cons-end (`reverseRecOn`) induction on the label list, using the cancellation
+`mapWeight_mul_next`, the mapped-kernel collapse and the split-last fibre reindex. -/
+theorem mapBeliefExec_probOf (f : X → Y)
+    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f))
+    (pe_X : ProbabilisticExecution sys_X) (h_init : f sys_X.init = sys_Y.init)
+    (h_init_X : pe_X.initState = PMF.pure sys_X.init)
+    (E_Y : AlterSeq Y L) (hFin : E_Y.trans.Terminates) :
+    (mapBeliefExec f h_step pe_X).probOf E_Y hFin = mapWeight f pe_X E_Y := by
+  classical
+  -- Rebind the pushforward pieces to the short names used in the path-measure proof.
   set gnum : AlterSeq Y L → AlterSeq X L → ENNReal := fun E_Y E_X =>
     dite (E_X.trans.Terminates ∧ E_X.map f = E_Y) (fun h => pe_X.probOf E_X h.1) (fun _ => 0)
     with hgnum
-  -- The belief numerator: pushforward of `pe_X`-emissions, weighted by `gnum`.
   set g : AlterSeq Y L → Option (L × PMF Y) → ENNReal := fun E_Y o =>
     ∑' E_X : AlterSeq X L, gnum E_Y E_X * ((pe_X.scheduler.next E_X).map (mapEmit f)) o with hg
-  -- Total fibre mass (the normaliser).
   set W : AlterSeq Y L → ENNReal := fun E_Y => ∑' E_X : AlterSeq X L, gnum E_Y E_X with hW
-  -- `∑' o, g E_Y o = W E_Y` (the pushforward PMF sums to 1).
-  have hgsum : ∀ E_Y, (∑' o, g E_Y o) = W E_Y := by
-    intro E_Y
-    rw [hg, hW]
-    rw [ENNReal.tsum_comm]
-    refine tsum_congr (fun E_X => ?_)
-    rw [ENNReal.tsum_mul_left, ((pe_X.scheduler.next E_X).map (mapEmit f)).tsum_coe, mul_one]
-  have hWle : ∀ E_Y, W E_Y ≤ 1 := fun E_Y => W_le_one pe_X f E_Y
-  have hWtop : ∀ E_Y, W E_Y ≠ ⊤ := fun E_Y => ne_top_of_le_ne_top ENNReal.one_ne_top (hWle E_Y)
-  -- The marginal scheduler `σ_Y`.
-  set σ_Y : Scheduler sys_Y :=
-    { next := fun E_Y => if hW0 : W E_Y = 0 then PMF.pure none
-        else PMF.normalize (g E_Y) (by rw [hgsum]; exact hW0) (by rw [hgsum]; exact hWtop E_Y)
-      valid := by
-        intro E_Y n s hterm hstate l ν hsupp
-        by_cases hW0 : W E_Y = 0
-        · rw [dif_pos hW0, PMF.mem_support_iff, PMF.pure_apply_of_ne _ _ (by simp)] at hsupp
-          exact absurd rfl hsupp
-        · simp only [dif_neg hW0, PMF.mem_support_normalize_iff] at hsupp
-          -- `hsupp : g E_Y (some (l, ν)) ≠ 0`; extract a fibre witness `E_X`.
-          have hgne : (∑' E_X : AlterSeq X L,
-              gnum E_Y E_X * ((pe_X.scheduler.next E_X).map (mapEmit f)) (some (l, ν))) ≠ 0 := hsupp
-          have hex := mt ENNReal.tsum_eq_zero.mpr hgne
-          push Not at hex
-          obtain ⟨E_X, hEX⟩ := hex
-          have hguard : E_X.trans.Terminates ∧ E_X.map f = E_Y := by
-            by_contra hc
-            have hz : gnum E_Y E_X = 0 := by rw [hgnum]; exact dif_neg hc
-            rw [hz, zero_mul] at hEX; exact hEX rfl
-          have hmapne : ((pe_X.scheduler.next E_X).map (mapEmit f)) (some (l, ν)) ≠ 0 := by
-            intro h0; rw [h0, mul_zero] at hEX; exact hEX rfl
-          obtain ⟨μ, hμne, hνeq⟩ :
-              ∃ μ : PMF X, pe_X.scheduler.next E_X (some (l, μ)) ≠ 0 ∧ ν = μ.map f := by
-            rw [mapEmit, PMF.map_apply] at hmapne
-            have hex2 := mt ENNReal.tsum_eq_zero.mpr hmapne
-            push Not at hex2
-            obtain ⟨o, ho⟩ := hex2
-            by_cases hc : some (l, ν) = Option.map (fun lμ : L × PMF X => (lμ.1, lμ.2.map f)) o
-            · cases o with
-              | none => simp at hc
-              | some lμ =>
-                obtain ⟨l', μ⟩ := lμ
-                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hc
-                obtain ⟨rfl, rfl⟩ := hc
-                exact ⟨μ, fun h0 => by rw [h0] at ho; simp at ho, rfl⟩
-            · rw [if_neg hc] at ho; exact absurd rfl ho
-          -- the current `X`-state at `n` maps to `s`.
-          have hstateX : (E_X.stateAt n).map f = some s := by
-            rw [← AlterSeq.mapFib_stateAt f E_X n, hguard.2, hstate]
-          obtain ⟨x, hxn, hfx⟩ : ∃ x : X, E_X.stateAt n = some x ∧ f x = s := by
-            cases hc : E_X.stateAt n with
-            | none => rw [hc] at hstateX; simp at hstateX
-            | some x => rw [hc] at hstateX; exact ⟨x, rfl, by simpa using hstateX⟩
-          have htermX : E_X.trans.TerminatedAt n :=
-            (AlterSeq.mapFib_terminatedAt f E_X n).mp (hguard.2 ▸ hterm)
-          have hstepX : sys_X.step x l μ :=
-            pe_X.scheduler.valid E_X n x htermX hxn l μ ((PMF.mem_support_iff _ _).mpr hμne)
-          have hres := h_step x l μ hstepX
-          rw [hfx, ← hνeq] at hres
-          exact hres }
-    with hσ
-  -- The marginal probabilistic execution.
-  set pe_Y : ProbabilisticExecution sys_Y := ⟨PMF.pure sys_Y.init, σ_Y⟩ with hpe_Y
-  -- `σ_Y.next` written explicitly.
-  have hnext_def : ∀ E_Y o, σ_Y.next E_Y o
-      = if W E_Y = 0 then (PMF.pure none) o else g E_Y o * (W E_Y)⁻¹ := by
-    intro E_Y o
-    by_cases hW0 : W E_Y = 0
-    · rw [if_pos hW0]
-      have : σ_Y.next E_Y = PMF.pure none := by rw [hσ]; exact dif_pos hW0
-      rw [this]
-    · rw [if_neg hW0]
-      have : σ_Y.next E_Y = PMF.normalize (g E_Y) (by rw [hgsum]; exact hW0)
-          (by rw [hgsum]; exact hWtop E_Y) := by rw [hσ]; exact dif_neg hW0
-      rw [this, PMF.normalize_apply, hgsum]
-  -- **Cancellation:** `W E_Y * σ_Y.next E_Y o = g E_Y o`.
-  have hcancel : ∀ E_Y o, W E_Y * σ_Y.next E_Y o = g E_Y o := by
-    intro E_Y o
-    rw [hnext_def]
-    by_cases hW0 : W E_Y = 0
-    · rw [if_pos hW0, hW0, zero_mul]
-      have hall : ∀ o', g E_Y o' = 0 := by rw [← ENNReal.tsum_eq_zero, hgsum]; exact hW0
-      exact (hall o).symm
-    · rw [if_neg hW0, ← mul_assoc, mul_comm (W E_Y) (g E_Y o), mul_assoc,
-        ENNReal.mul_inv_cancel hW0 (hWtop E_Y), mul_one]
-  -- **Path-measure identity:** `pe_Y.probOf E_Y = W E_Y`.
+  set σ_Y : Scheduler sys_Y := mapBeliefSched f h_step pe_X with hσ
+  set pe_Y : ProbabilisticExecution sys_Y := mapBeliefExec f h_step pe_X with hpe_Y
+  -- **Cancellation:** `W E_Y * σ_Y.next E_Y o = g E_Y o` (from `mapWeight_mul_next`).
+  have hcancel : ∀ E_Y o, W E_Y * σ_Y.next E_Y o = g E_Y o :=
+    fun E_Y o => mapWeight_mul_next f h_step pe_X E_Y o
+  change pe_Y.probOf E_Y hFin = W E_Y
+  suffices hgen : ∀ (LY : List (L × Y)) (y₀ : Y)
+      (hFin : (Seq.ofList LY : Seq (L × Y)).Terminates),
+      pe_Y.probOf ⟨y₀, Seq.ofList LY⟩ hFin = W ⟨y₀, Seq.ofList LY⟩ by
+    have hofl : (Seq.ofList (E_Y.trans.toList hFin) : Seq (L × Y)) = E_Y.trans :=
+      Stream'.Seq.ofList_toList E_Y.trans hFin
+    have hFin' : (Seq.ofList (E_Y.trans.toList hFin) : Seq (L × Y)).Terminates := by
+      rw [hofl]; exact hFin
+    have hEeq : (⟨E_Y.init, Seq.ofList (E_Y.trans.toList hFin)⟩ : AlterSeq Y L) = E_Y := by
+      cases E_Y; simp only [hofl]
+    have hkey := hgen (E_Y.trans.toList hFin) E_Y.init hFin'
+    rw [pe_Y.probOf_congr ⟨E_Y.init, Seq.ofList (E_Y.trans.toList hFin)⟩ E_Y hEeq hFin' hFin]
+      at hkey
+    rw [hkey, hEeq]
+  intro LY
+  induction LY using List.reverseRecOn with
+  | nil =>
+    intro y₀ hFin
+    rw [pe_Y.probOf_congr ⟨y₀, Seq.ofList ([] : List (L × Y))⟩ ⟨y₀, Seq.nil⟩
+      (by rw [Stream'.Seq.ofList_nil]) hFin Stream'.Seq.terminates_nil,
+      ProbabilisticExecution.probOf_nil]
+    change (PMF.pure sys_Y.init) y₀
+      = ∑' E_X : AlterSeq X L, gnum ⟨y₀, Seq.ofList ([] : List (L × Y))⟩ E_X
+    -- `W ⟨y₀, nil⟩ = ∑' E_X (E_X.map f = ⟨y₀,nil⟩), probOf = (pure sys_Y.init) y₀`.
+    rw [tsum_congr (fun E_X => by rw [hgnum]), Stream'.Seq.ofList_nil]
+    rw [← Function.Injective.tsum_eq (g := fun x : {x : X // f x = y₀} =>
+        (⟨x.1, Seq.nil⟩ : AlterSeq X L))
+        (fun a b hab => by
+          have := congr_arg (·.init) hab; simp only at this; exact Subtype.ext this)
+        (f := fun E_X : AlterSeq X L =>
+          dite (E_X.trans.Terminates ∧ E_X.map f = (⟨y₀, Seq.nil⟩ : AlterSeq Y L))
+            (fun h => pe_X.probOf E_X h.1) (fun _ => 0)) ?suppNil]
+    · rw [show (PMF.pure sys_Y.init) y₀
+          = ((PMF.pure sys_X.init).map f) y₀ from by rw [PMF.pure_map, h_init],
+        AlterSeq.map_apply_fibre f (PMF.pure sys_X.init) y₀]
+      refine tsum_congr (fun x => ?_)
+      rw [dif_pos ⟨Stream'.Seq.terminates_nil, by
+        change (⟨f x.1, Stream'.Seq.map _ Seq.nil⟩ : AlterSeq Y L) = ⟨y₀, Seq.nil⟩
+        rw [Stream'.Seq.map_nil, x.2]⟩,
+        ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState, h_init_X]
+    case suppNil =>
+      intro E_X hE
+      rw [Function.mem_support] at hE
+      have hc : E_X.trans.Terminates ∧ E_X.map f = (⟨y₀, Seq.nil⟩ : AlterSeq Y L) := by
+        by_contra hcon; exact hE (dif_neg hcon)
+      obtain ⟨hT, hmap⟩ := hc
+      have hinit : f E_X.init = y₀ := congr_arg (·.init) hmap
+      have htrans : E_X.trans.map (fun lq => (lq.1, f lq.2)) = Seq.nil := congr_arg (·.trans) hmap
+      have hEtrans : E_X.trans = Seq.nil := by
+        have hlen := congr_arg Stream'.Seq.length' htrans
+        rw [Stream'.Seq.length'_map, Stream'.Seq.length'_nil] at hlen
+        exact (Stream'.Seq.length'_eq_zero_iff_nil E_X.trans).mp hlen
+      refine ⟨⟨E_X.init, hinit⟩, ?_⟩
+      obtain ⟨ei, et⟩ := E_X; simp only at hEtrans ⊢; rw [hEtrans]
+  | append_singleton rest last ih =>
+    intro y₀ hFin
+    obtain ⟨l, y'⟩ := last
+    have hsplit : (Seq.ofList (rest ++ [(l, y')]) : Seq (L × Y))
+        = (Seq.ofList rest).append (Seq.cons (l, y') Seq.nil) := by
+      rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+    have hrest_fin : (Seq.ofList rest : Seq (L × Y)).Terminates :=
+      Stream'.Seq.terminates_ofList _
+    have hFinS : ((Seq.ofList rest).append (Seq.cons (l, y') Seq.nil)).Terminates := by
+      rw [← hsplit]; exact hFin
+    set E_Y' : AlterSeq Y L := ⟨y₀, Seq.ofList rest⟩ with hE_Y'
+    -- The common middle expression.
+    set Mid : ENNReal := ∑' E_X' : AlterSeq X L,
+      gnum E_Y' E_X' * ∑' x' : {x : X // f x = y'}, pe_X.kernel E_X' (l, x'.1) with hMid
+    -- **LHS = Mid.**
+    have hLHS : pe_Y.probOf ⟨y₀, Seq.ofList (rest ++ [(l, y')])⟩ hFin = Mid := by
+      rw [pe_Y.probOf_congr ⟨y₀, Seq.ofList (rest ++ [(l, y')])⟩
+          ⟨y₀, (Seq.ofList rest).append (Seq.cons (l, y') Seq.nil)⟩ (by rw [hsplit]) hFin hFinS,
+        pe_Y.probOf_append_singleton y₀ (Seq.ofList rest) hrest_fin (l, y') hFinS,
+        show pe_Y.probOf E_Y' hrest_fin = W E_Y' from ih y₀ hrest_fin]
+      -- `W E_Y' * kernel_Y = ∑' ν, g E_Y' (some(l,ν)) * ν y'`.
+      rw [ProbabilisticExecution.kernel]
+      change W E_Y' * (∑' ν, σ_Y.next E_Y' (some (l, ν)) * ν y') = Mid
+      rw [← ENNReal.tsum_mul_left]
+      rw [tsum_congr (fun ν => by rw [← mul_assoc, hcancel E_Y' (some (l, ν))])]
+      -- `g E_Y' (some(l,ν)) = ∑' E_X', gnum E_Y' E_X' * mappedNext E_X' (some(l,ν))`.
+      rw [tsum_congr (fun ν => by rw [hg]), hMid]
+      -- swap and factor: push `* ν y'` inside, swap `ν`/`E_X'`, then factor `gnum`.
+      rw [tsum_congr (fun ν => ENNReal.tsum_mul_right.symm), ENNReal.tsum_comm]
+      refine tsum_congr (fun E_X' => ?_)
+      rw [tsum_congr (fun ν => mul_assoc _ _ _), ENNReal.tsum_mul_left,
+        mappedKernel_eq pe_X f E_X' l y']
+    -- **RHS = Mid.**
+    have hRHS : W ⟨y₀, Seq.ofList (rest ++ [(l, y')])⟩ = Mid := by
+      rw [hW]
+      change (∑' E_X, gnum ⟨y₀, Seq.ofList (rest ++ [(l, y')])⟩ E_X) = Mid
+      rw [tsum_congr (fun E_X => by rw [hgnum]), hsplit]
+      rw [fibre_append_reindex pe_X f y₀ rest l y', ENNReal.tsum_prod']
+      rw [hMid]
+      refine tsum_congr (fun E_X' => ?_)
+      simp only
+      by_cases hc : E_X'.trans.Terminates ∧ E_X'.map f = ⟨y₀, Seq.ofList rest⟩
+      · rw [tsum_congr (fun x' => dif_pos hc)]
+        rw [tsum_congr (fun x' : {x : X // f x = y'} =>
+            ProbabilisticExecution.probOf_append_singleton pe_X E_X'.init
+              E_X'.trans hc.1 (l, x'.1) _), ENNReal.tsum_mul_left]
+        rw [show gnum E_Y' E_X' = pe_X.probOf E_X' hc.1 from by rw [hgnum]; exact dif_pos hc]
+      · rw [tsum_congr (fun x' => dif_neg hc), tsum_zero]
+        rw [show gnum E_Y' E_X' = 0 from by rw [hgnum]; exact dif_neg hc, zero_mul]
+    rw [hLHS, hRHS]
+
+/-- **Trace transfer along the pushforward.** The `sys_Y`-trace distribution of
+`mapBeliefExec … pe_X` equals the `sys_X`-trace distribution of `pe_X`: traces and
+tightness are `f`-invariant, and the path-measure collapses to the fibre mass
+(`mapBeliefExec_probOf`), so the tight-`X` executions biject onto the (tight-`Y`,
+fibre) product support. -/
+theorem mapBeliefExec_traceProb (f : X → Y)
+    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f))
+    (pe_X : ProbabilisticExecution sys_X) (h_init : f sys_X.init = sys_Y.init)
+    (h_init_X : pe_X.initState = PMF.pure sys_X.init) (τ : Seq L) :
+    sys_Y.traceProb (mapBeliefExec f h_step pe_X) τ = sys_X.traceProb pe_X τ := by
+  classical
+  set gnum : AlterSeq Y L → AlterSeq X L → ENNReal := fun E_Y E_X =>
+    dite (E_X.trans.Terminates ∧ E_X.map f = E_Y) (fun h => pe_X.probOf E_X h.1) (fun _ => 0)
+    with hgnum
+  set W : AlterSeq Y L → ENNReal := fun E_Y => ∑' E_X : AlterSeq X L, gnum E_Y E_X with hW
+  set pe_Y : ProbabilisticExecution sys_Y := mapBeliefExec f h_step pe_X with hpe_Y
   have hprob : ∀ (E_Y : AlterSeq Y L) (hFin : E_Y.trans.Terminates),
-      pe_Y.probOf E_Y hFin = W E_Y := by
-    suffices hgen : ∀ (LY : List (L × Y)) (y₀ : Y)
-        (hFin : (Seq.ofList LY : Seq (L × Y)).Terminates),
-        pe_Y.probOf ⟨y₀, Seq.ofList LY⟩ hFin = W ⟨y₀, Seq.ofList LY⟩ by
-      intro E_Y hFin
-      have hofl : (Seq.ofList (E_Y.trans.toList hFin) : Seq (L × Y)) = E_Y.trans :=
-        Stream'.Seq.ofList_toList E_Y.trans hFin
-      have hFin' : (Seq.ofList (E_Y.trans.toList hFin) : Seq (L × Y)).Terminates := by
-        rw [hofl]; exact hFin
-      have hEeq : (⟨E_Y.init, Seq.ofList (E_Y.trans.toList hFin)⟩ : AlterSeq Y L) = E_Y := by
-        cases E_Y; simp only [hofl]
-      have hkey := hgen (E_Y.trans.toList hFin) E_Y.init hFin'
-      rw [pe_Y.probOf_congr ⟨E_Y.init, Seq.ofList (E_Y.trans.toList hFin)⟩ E_Y hEeq hFin' hFin]
-        at hkey
-      rw [hkey, hEeq]
-    intro LY
-    induction LY using List.reverseRecOn with
-    | nil =>
-      intro y₀ hFin
-      rw [pe_Y.probOf_congr ⟨y₀, Seq.ofList ([] : List (L × Y))⟩ ⟨y₀, Seq.nil⟩
-        (by rw [Stream'.Seq.ofList_nil]) hFin Stream'.Seq.terminates_nil,
-        ProbabilisticExecution.probOf_nil]
-      change (PMF.pure sys_Y.init) y₀
-        = ∑' E_X : AlterSeq X L, gnum ⟨y₀, Seq.ofList ([] : List (L × Y))⟩ E_X
-      -- `W ⟨y₀, nil⟩ = ∑' E_X (E_X.map f = ⟨y₀,nil⟩), probOf = (pure sys_Y.init) y₀`.
-      rw [tsum_congr (fun E_X => by rw [hgnum]), Stream'.Seq.ofList_nil]
-      rw [← Function.Injective.tsum_eq (g := fun x : {x : X // f x = y₀} =>
-          (⟨x.1, Seq.nil⟩ : AlterSeq X L))
-          (fun a b hab => by
-            have := congr_arg (·.init) hab; simp only at this; exact Subtype.ext this)
-          (f := fun E_X : AlterSeq X L =>
-            dite (E_X.trans.Terminates ∧ E_X.map f = (⟨y₀, Seq.nil⟩ : AlterSeq Y L))
-              (fun h => pe_X.probOf E_X h.1) (fun _ => 0)) ?suppNil]
-      · rw [show (PMF.pure sys_Y.init) y₀
-            = ((PMF.pure sys_X.init).map f) y₀ from by rw [PMF.pure_map, h_init],
-          AlterSeq.map_apply_fibre f (PMF.pure sys_X.init) y₀]
-        refine tsum_congr (fun x => ?_)
-        rw [dif_pos ⟨Stream'.Seq.terminates_nil, by
-          change (⟨f x.1, Stream'.Seq.map _ Seq.nil⟩ : AlterSeq Y L) = ⟨y₀, Seq.nil⟩
-          rw [Stream'.Seq.map_nil, x.2]⟩,
-          ProbabilisticExecution.probOf_nil, ProbabilisticExecution.init_eq_initState, h_init_X]
-      case suppNil =>
-        intro E_X hE
-        rw [Function.mem_support] at hE
-        have hc : E_X.trans.Terminates ∧ E_X.map f = (⟨y₀, Seq.nil⟩ : AlterSeq Y L) := by
-          by_contra hcon; exact hE (dif_neg hcon)
-        obtain ⟨hT, hmap⟩ := hc
-        have hinit : f E_X.init = y₀ := congr_arg (·.init) hmap
-        have htrans : E_X.trans.map (fun lq => (lq.1, f lq.2)) = Seq.nil := congr_arg (·.trans) hmap
-        have hEtrans : E_X.trans = Seq.nil := by
-          have hlen := congr_arg Stream'.Seq.length' htrans
-          rw [Stream'.Seq.length'_map, Stream'.Seq.length'_nil] at hlen
-          exact (Stream'.Seq.length'_eq_zero_iff_nil E_X.trans).mp hlen
-        refine ⟨⟨E_X.init, hinit⟩, ?_⟩
-        obtain ⟨ei, et⟩ := E_X; simp only at hEtrans ⊢; rw [hEtrans]
-    | append_singleton rest last ih =>
-      intro y₀ hFin
-      obtain ⟨l, y'⟩ := last
-      have hsplit : (Seq.ofList (rest ++ [(l, y')]) : Seq (L × Y))
-          = (Seq.ofList rest).append (Seq.cons (l, y') Seq.nil) := by
-        rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
-      have hrest_fin : (Seq.ofList rest : Seq (L × Y)).Terminates :=
-        Stream'.Seq.terminates_ofList _
-      have hFinS : ((Seq.ofList rest).append (Seq.cons (l, y') Seq.nil)).Terminates := by
-        rw [← hsplit]; exact hFin
-      set E_Y' : AlterSeq Y L := ⟨y₀, Seq.ofList rest⟩ with hE_Y'
-      -- The common middle expression.
-      set Mid : ENNReal := ∑' E_X' : AlterSeq X L,
-        gnum E_Y' E_X' * ∑' x' : {x : X // f x = y'}, pe_X.kernel E_X' (l, x'.1) with hMid
-      -- **LHS = Mid.**
-      have hLHS : pe_Y.probOf ⟨y₀, Seq.ofList (rest ++ [(l, y')])⟩ hFin = Mid := by
-        rw [pe_Y.probOf_congr ⟨y₀, Seq.ofList (rest ++ [(l, y')])⟩
-            ⟨y₀, (Seq.ofList rest).append (Seq.cons (l, y') Seq.nil)⟩ (by rw [hsplit]) hFin hFinS,
-          pe_Y.probOf_append_singleton y₀ (Seq.ofList rest) hrest_fin (l, y') hFinS,
-          show pe_Y.probOf E_Y' hrest_fin = W E_Y' from ih y₀ hrest_fin]
-        -- `W E_Y' * kernel_Y = ∑' ν, g E_Y' (some(l,ν)) * ν y'`.
-        rw [ProbabilisticExecution.kernel]
-        change W E_Y' * (∑' ν, σ_Y.next E_Y' (some (l, ν)) * ν y') = Mid
-        rw [← ENNReal.tsum_mul_left]
-        rw [tsum_congr (fun ν => by rw [← mul_assoc, hcancel E_Y' (some (l, ν))])]
-        -- `g E_Y' (some(l,ν)) = ∑' E_X', gnum E_Y' E_X' * mappedNext E_X' (some(l,ν))`.
-        rw [tsum_congr (fun ν => by rw [hg]), hMid]
-        -- swap and factor: push `* ν y'` inside, swap `ν`/`E_X'`, then factor `gnum`.
-        rw [tsum_congr (fun ν => ENNReal.tsum_mul_right.symm), ENNReal.tsum_comm]
-        refine tsum_congr (fun E_X' => ?_)
-        rw [tsum_congr (fun ν => mul_assoc _ _ _), ENNReal.tsum_mul_left,
-          mappedKernel_eq pe_X f E_X' l y']
-      -- **RHS = Mid.**
-      have hRHS : W ⟨y₀, Seq.ofList (rest ++ [(l, y')])⟩ = Mid := by
-        rw [hW]
-        change (∑' E_X, gnum ⟨y₀, Seq.ofList (rest ++ [(l, y')])⟩ E_X) = Mid
-        rw [tsum_congr (fun E_X => by rw [hgnum]), hsplit]
-        rw [fibre_append_reindex pe_X f y₀ rest l y', ENNReal.tsum_prod']
-        rw [hMid]
-        refine tsum_congr (fun E_X' => ?_)
-        simp only
-        by_cases hc : E_X'.trans.Terminates ∧ E_X'.map f = ⟨y₀, Seq.ofList rest⟩
-        · rw [tsum_congr (fun x' => dif_pos hc)]
-          rw [tsum_congr (fun x' : {x : X // f x = y'} =>
-              ProbabilisticExecution.probOf_append_singleton pe_X E_X'.init
-                E_X'.trans hc.1 (l, x'.1) _), ENNReal.tsum_mul_left]
-          rw [show gnum E_Y' E_X' = pe_X.probOf E_X' hc.1 from by rw [hgnum]; exact dif_pos hc]
-        · rw [tsum_congr (fun x' => dif_neg hc), tsum_zero]
-          rw [show gnum E_Y' E_X' = 0 from by rw [hgnum]; exact dif_neg hc, zero_mul]
-      rw [hLHS, hRHS]
-  -- **Trace transfer.**
-  refine ⟨pe_Y, rfl, fun τ => ?_⟩
-  rw [show D τ = sys_X.traceProb pe_X τ from (h_trace_X τ).symm]
+      pe_Y.probOf E_Y hFin = W E_Y :=
+    fun E_Y hFin => mapBeliefExec_probOf f h_step pe_X h_init h_init_X E_Y hFin
   -- Unfold both `traceProb`s; substitute `hprob`; biject `f`-fibres of tight execs.
   unfold System.traceProb
   -- LHS: substitute `hprob`, then combine tight-`Y` sum and fibre sum into a product.
@@ -704,6 +751,28 @@ theorem achievableTraceDists_map {X Y L : Type} [Silent L]
     change gnum (E_X.map f) E_X = pe_X.probOf E_X hX.1
     simp only [hgnum]
     rw [dif_pos (show E_X.trans.Terminates ∧ True from ⟨hX.1, trivial⟩)]
+
+/-- **Functional simulation preserves achievable trace distributions.** If
+`f : X → Y` maps the initial state to the initial state, lifts every `sys_X` step
+`s -[l]→ μ` to a `sys_Y` step `f s -[l]→ μ.map f`, and the two systems agree on
+internal labels, then every trace distribution achievable by `sys_X` is
+achievable by `sys_Y`.
+
+This is the marginalisation crux: the `sys_Y`-execution witnessing membership is
+the pushforward of the `sys_X`-execution along `f`, whose scheduler is recovered
+by a posterior over the `f`-fibres of abstract histories.
+
+The proof builds a marginal scheduler via a posterior over `f`-fibres and a
+`reverseRecOn` path-measure identity (hence the raised heartbeat budget for the
+heavy nested `tsum` reindexings). -/
+theorem achievableTraceDists_map {X Y L : Type} [Silent L]
+    {sys_X : System X L} {sys_Y : System Y L} (f : X → Y)
+    (h_init : f sys_X.init = sys_Y.init)
+    (h_step : ∀ s l μ, sys_X.step s l μ → sys_Y.step (f s) l (μ.map f)) :
+    achievableTraceDists sys_X ⊆ achievableTraceDists sys_Y := by
+  rintro D ⟨pe_X, h_init_X, h_trace_X⟩
+  exact ⟨mapBeliefExec f h_step pe_X, mapBeliefExec_initState f h_step pe_X,
+    fun τ => by rw [mapBeliefExec_traceProb f h_step pe_X h_init h_init_X τ]; exact h_trace_X τ⟩
 
 end MapConstruction
 

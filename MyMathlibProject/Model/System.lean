@@ -8,7 +8,7 @@ import Mathlib.Probability.ProbabilityMassFunction.Monad
 import Mathlib.Probability.ProbabilityMassFunction.Constructions
 import Mathlib.Data.Seq.Defs
 import Mathlib.Data.Seq.Basic
-import MyMathlibProject.SeqHelper
+import MyMathlibProject.Util.Seq
 
 /-!
 # Probabilistic Labelled Transition System (PLTS)

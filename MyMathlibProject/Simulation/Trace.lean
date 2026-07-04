@@ -4,8 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import MyMathlibProject.Simulation
-import MyMathlibProject.TraceMap
+import MyMathlibProject.Simulation.Defs
+import MyMathlibProject.Construction.TraceMap
 
 /-!
 # Strong simulation is sound for trace distributions
@@ -44,7 +44,7 @@ whose steps carry a `PMFRel R`-style coupling, in two inclusions:
   `f = Prod.snd` this projects the joint system onto `sys_A`. Realising the
   pushed-forward execution by a single `sys_Y`-scheduler is a
   marginalisation/disintegration (posterior over `f`-fibres of histories), in the
-  same family as `dist_traceProb` and the posterior-mixing in `Simulation.lean`.
+  same family as `dist_traceProb` and the posterior-mixing in `Simulation/WeakChar.lean`.
 
 The main theorem is then `lift.trans (map Prod.snd …)`.
 -/
@@ -204,7 +204,7 @@ noncomputable def simJointExec
 
 /-- Membership of `some (l, ω)` in `simJointSched.next E`'s support forces the
 guard at `simLastState E` and identifies `ω` as the coupling. -/
-private theorem simJointSched_next_support
+theorem simJointSched_next_support
     (pe_C : ProbabilisticExecution sys_C)
     (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (E : AlterSeq (State_C × State_A) Label) (l : Label) (ω : PMF (State_C × State_A))
@@ -305,7 +305,7 @@ private theorem simJointExec_probOf_R_ofList
 
 /-- **R-invariant.** Every joint history with positive `simJointExec`-probability
 ends in an `R`-related pair. -/
-private theorem simJointExec_probOf_R
+theorem simJointExec_probOf_R
     (pe_C : ProbabilisticExecution sys_C)
     (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (E : AlterSeq (State_C × State_A) Label) (hT : E.trans.Terminates)
@@ -672,7 +672,7 @@ joint histories projecting (via `Prod.fst`) to a fixed concrete history `e_C`
 recovers `pe_C.probOf e_C`. Proved by `reverseRecOn` on `e_C`'s transition list:
 the append step reindexes the joint fibre as a prefix fibre paired with a free
 abstract successor, then collapses that successor via `simKernelMarginal`. -/
-private theorem simExecMarginal (pe_C : ProbabilisticExecution sys_C)
+theorem simExecMarginal (pe_C : ProbabilisticExecution sys_C)
     (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (h_init : pe_C.initState = PMF.pure sys_C.init)
     (L_C : List (Label × State_C)) (i_C : State_C) :
@@ -947,8 +947,12 @@ private theorem simPerLabs (pe_C : ProbabilisticExecution sys_C)
 open Classical in
 /-- **Trace-probability transfer.** The joint execution `simJointExec pe_C sim`
 realises the same trace distribution as `pe_C` (both systems share the internal
-predicate, so `traceProb_eq_labProb_sum` reduces this to `simPerLabs`). -/
-private theorem simProd_traceProb_eq (pe_C : ProbabilisticExecution sys_C)
+predicate, so `traceProb_eq_labProb_sum` reduces this to `simPerLabs`).
+
+Public so that per-execution developments (e.g. the fairness lift in
+`Simulation/FairLift.lean`) can reuse the trace equality for the specific joint
+execution, rather than only the set-level `simProd_achievableTraceDists_superset`. -/
+theorem simProd_traceProb_eq (pe_C : ProbabilisticExecution sys_C)
     (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (h_init : pe_C.initState = PMF.pure sys_C.init) (τ : Seq Label) :
     (simProd sys_C sys_A R).traceProb (simJointExec pe_C sim) τ = sys_C.traceProb pe_C τ := by

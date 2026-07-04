@@ -1,2 +1,15 @@
 .lake/
 shell.nix
+
+# Blueprint build outputs
+blueprint/lean_decls
+blueprint/print/
+blueprint/web/
+blueprint/src/*.aux
+blueprint/src/*.fdb_latexmk
+blueprint/src/*.fls
+blueprint/src/*.log
+blueprint/src/*.out
+blueprint/src/*.pdf
+blueprint/src/*.synctex.gz
+blueprint/src/*.paux

@@ -4,11 +4,18 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import MyMathlibProject.WeakStep
-import MyMathlibProject.WeakConstruction
+import MyMathlibProject.Weak.Step
+import MyMathlibProject.Construction.WeakClosure
 
 /-!
-# Simulations
+# Weak-transition characterizations
+
+Analytic "workhorse" lemmas relating the weak transitions `weakTau` /
+`weakStep` to the hyper-steps of the weak closure `sys^w`. These are the
+transition-level content behind the simulation equivalences in
+`Simulation/Equivalences.lean`, and are independent of the simulation
+definitions in `Simulation/Defs.lean`. See the section note below for the
+three lemma families (source-decomposition, source-mixing, target-convexity).
 -/
 
 open Stream'
@@ -17,157 +24,11 @@ namespace PLTS
 
 variable {α β State State_C State_A Label : Type} [Silent Label]
 
-/-- Lifting of a state relation `R : α → β → Prop` to a relation on PMFs.
-`PMFRel R μ₁ μ₂` holds iff there is a joint PMF `ω` on `α × β` whose first
-marginal is `μ₁`, second marginal is `μ₂`, and whose support is contained
-in `R`. -/
-def PMFRel (R : α → β → Prop) (μ₁ : PMF α) (μ₂ : PMF β) : Prop :=
-  ∃ ω : PMF (α × β),
-    PMF.map Prod.fst ω = μ₁ ∧
-    PMF.map Prod.snd ω = μ₂ ∧
-    ∀ p ∈ ω.support, R p.1 p.2
-
-/-- A *strong* probabilistic forward simulation from `sys_C` to `sys_A` along
-the state relation `R : State_C → State_A → Prop`:
-
-* `init`: every initial concrete state is matched by some initial abstract
-  state with which it is `R`-related;
-* `step`: every concrete transition `s_C -[l]→ μ_C` from an `R`-related pair
-  `(s_C, s_A)` can be matched by an abstract *strong* transition
-  `s_A -[l]→ μ_A` such that `μ_C` and `μ_A` are related by the PMF-lifting of
-  `R`. -/
-structure StrongProbabilisticSimulation
-    (sys_C : System State_C Label) (sys_A : System State_A Label)
-    (R : State_C → State_A → Prop) where
-  init : R sys_C.init sys_A.init
-  step : ∀ s_C s_A, R s_C s_A →
-    ∀ l μ_C, sys_C.step s_C l μ_C →
-    ∃ μ_A, sys_A.step s_A l μ_A ∧ PMFRel R μ_C μ_A
-
-/-- A *weak* probabilistic forward simulation from `sys_C` to `sys_A` along the
-state relation `R : State_C → State_A → Prop`. Both systems carry an
-internal/external label partition.
-
-* `init`: every initial concrete state is matched by some initial abstract
-  state with which it is `R`-related;
-* `step`: every concrete transition `s_C -[l]→ μ_C` from an `R`-related pair
-  `(s_C, s_A)` is matched on the abstract side by:
-  - a `weakTau` (a τ-closure from `PMF.pure s_A`) when `l` is *internal* in
-    `sys_C` — the concrete invisible step is matched by zero-or-more invisible
-    abstract steps;
-  - a `weakStep` with the same label `l` from `PMF.pure s_A` when `l` is
-    *external* in `sys_C` — the concrete visible step is matched by
-    τ-closure + one strong `l`-step + τ-closure on the abstract side;
-
-  in both cases the resulting abstract distribution `μ_A` must be related to
-  `μ_C` by `PMFRel R`. -/
-structure WeakProbabilisticSimulation
-    (sys_C : System State_C Label) (sys_A : System State_A Label)
-    (R : State_C → State_A → Prop) where
-  init : R sys_C.init sys_A.init
-  step : ∀ s_C s_A, R s_C s_A →
-    ∀ l μ_C, sys_C.step s_C l μ_C →
-    ∃ μ_A : PMF State_A,
-      (((l = Silent.τ) ∧ weakTau sys_A (PMF.pure s_A) μ_A) ∨
-       (¬ (l = Silent.τ) ∧ weakStep sys_A (PMF.pure s_A) l μ_A)) ∧
-      PMFRel R μ_C μ_A
-
-/-- A *probabilistic* forward simulation from `sys_C` to `sys_A`, parameterised
-by a relation `R : State_C → PMF State_A → Prop` linking each concrete state to
-a *distribution* over abstract states (rather than to a single abstract state
-as in `WeakProbabilisticSimulation`).
-
-* `init`: every initial concrete state is matched by some abstract distribution
-  supported on initial abstract states;
-* `step`: from an `R`-related pair `(s_C, μ_A)` with `μ_A : PMF State_A`, every
-  concrete transition `s_C -[l]→ μ_C` is matched on the abstract side by a
-  weak transition from `μ_A` to `ω.bind id`, where `ω : PMF (PMF State_A)` is
-  a coupling of `μ_C` with `R`-related abstract distributions (i.e.
-  `PMFRel R μ_C ω`). The choice between `weakTau` and `weakStep` depends, as
-  in `WeakProbabilisticSimulation`, on whether `l` is internal in `sys_C`.
-
-Modulo the typing of `R` (`State_C → PMF State_A → Prop` here vs.
-`State_C → State_A → Prop` there), the matching pattern is exactly the same as
-in `WeakProbabilisticSimulation`: `PMFRel R` couples the concrete outcome with
-the abstract outcome, and the case split on `(l = Silent.τ)` picks between
-the τ-only and the external weak transition. The notion is equivalent to
-`WeakProbabilisticSimulation` (the latter is the special case where each `μ_A`
-is concentrated on a single abstract state). -/
-structure ProbabilisticForwardSimulation
-    (sys_C : System State_C Label) (sys_A : System State_A Label)
-    (R : State_C → PMF State_A → Prop) where
-  init : ∃ μ_A, (∀ s_A ∈ μ_A.support, s_A = sys_A.init) ∧ R sys_C.init μ_A
-  step : ∀ s_C μ_A, R s_C μ_A →
-    ∀ l μ_C, sys_C.step s_C l μ_C →
-    ∃ ω : PMF (PMF State_A),
-      PMFRel R μ_C ω ∧
-      (((l = Silent.τ) ∧ weakTau sys_A μ_A (ω.bind id)) ∨
-       (¬ (l = Silent.τ) ∧ weakStep sys_A μ_A l (ω.bind id)))
-
-/-- **Weak simulation = strong simulation into the weak closure of the abstract
-system.** A `WeakProbabilisticSimulation` of `sys` by `sys'` is the *same data*
-as a `StrongProbabilisticSimulation` of `sys` by `sys'^w` (the weak closure of
-the abstract system). The two systems agree on which labels are internal
-automatically — the silent label `τ` is canonical (from `Silent Label`).
-
-The reason this is purely definitional — with no weak-transition transfer
-argument — is that *both* notions match a **strong** concrete step
-`sys.step s_C l μ_C`: the concrete system is left unclosed. A weak simulation
-matches such a step by a `weakTau`/`weakStep` from `PMF.pure s_A`, which is
-exactly a strong step of `sys'^w`. The only bookkeeping is that
-`WeakProbabilisticSimulation` keys its `weakTau`/`weakStep` case split on
-`sys.internal` whereas `sys'^w` keys it on `sys'.internal`; these coincide
-because the internal/external classification is canonical (the silent label
-`τ`). -/
-theorem weakProbabilisticSimulation_iff_strong_weakClosure
-    (sys : System State_C Label) (sys' : System State_A Label)
-    (R : State_C → State_A → Prop) :
-    WeakProbabilisticSimulation sys sys' R ↔
-      StrongProbabilisticSimulation sys (sys'^w) R := by
-  constructor
-  · intro h
-    refine ⟨h.init, fun s_C s_A hR l μ_C hstep => ?_⟩
-    obtain ⟨μ_A, hdisj, hrel⟩ := h.step s_C s_A hR l μ_C hstep
-    refine ⟨μ_A, ?_, hrel⟩
-    change ((l = Silent.τ) ∧ weakTau sys' (PMF.pure s_A) μ_A) ∨
-         (¬ (l = Silent.τ) ∧ weakStep sys' (PMF.pure s_A) l μ_A)
-    rcases hdisj with ⟨hi, hw⟩ | ⟨hi, hw⟩
-    · exact Or.inl ⟨hi, hw⟩
-    · exact Or.inr ⟨hi, hw⟩
-  · intro h
-    refine ⟨h.init, fun s_C s_A hR l μ_C hstep => ?_⟩
-    obtain ⟨μ_A, hdisj, hrel⟩ := h.step s_C s_A hR l μ_C hstep
-    refine ⟨μ_A, ?_, hrel⟩
-    rcases hdisj with ⟨hi, hw⟩ | ⟨hi, hw⟩
-    · exact Or.inl ⟨hi, hw⟩
-    · exact Or.inr ⟨hi, hw⟩
-
-/-! ### Forward simulation = strong simulation into `𝒟(·^w)`
-
-The next block proves that a `ProbabilisticForwardSimulation` of `sys` by `sys'`
-is the same data as a `StrongProbabilisticSimulation` of `sys` by `𝒟(sys'^w)`,
-the distribution-monad lift of the weak closure of the abstract system.
-
-Both notions carry the *same* relation `R : State_C → PMF State_A → Prop`
-(`𝒟(sys'^w)`'s state type is `PMF State_A`, exactly the forward simulation's
-abstract-distribution type). After lining up `init` and the (canonical)
-internal/external split, the entire content is the transition-level correspondence
-
-  `hyperStep sys'^w μ l ν  ↔  weakTau sys' μ ν` (internal `l`) /
-                              `weakStep sys' μ l ν` (external `l`),
-
-i.e. a weak transition from a distribution `μ` is exactly a convex combination
-(`hyperStep` over `sys'^w`) of per-point weak transitions of `sys'`. The four
-lemmas below are that correspondence; the `of_weak*` directions are
-source-decomposition, the `weak*_of` directions need source-mixing plus the
-target-convexity of `weakTau`/`weakStep` (closure under mixing schedulers from a
-single point). -/
-
 /-! #### Analytic workhorses
 
 The four transition-level lemmas reduce to these. They isolate the genuine
 content (the Kraft bound `WeakScheduler.haltMass_tsum_le_one` they rely on lives
-in `TraceProbBound.lean` alongside the other antichain bounds):
+in `Weak/Bounds.lean` alongside the other antichain bounds):
 
 * `weakTau_exists_pointwise` / `weakStep_exists_pointwise` — **source-
   decomposition**: a weak transition from a distribution `μ` splits, via its
@@ -1016,53 +877,5 @@ theorem weakStep_of_hyperStep_weakClosure {sys : System State Label}
     · exact hws
   rw [hν]
   exact weakStep_of_pointwise _ hpt
-
-/-- **Probabilistic forward simulation = strong simulation into `𝒟(·^w)`.**
-A `ProbabilisticForwardSimulation` of `sys` by `sys'` is the same data as a
-`StrongProbabilisticSimulation` of `sys` by `𝒟(sys'^w)`. The two systems agree
-on which labels are internal automatically, since the internal/external
-classification is canonical (the silent label `τ`). -/
-theorem probabilisticForwardSimulation_iff_strong_dist_weakClosure
-    (sys : System State_C Label) (sys' : System State_A Label)
-    (R : State_C → PMF State_A → Prop) :
-    ProbabilisticForwardSimulation sys sys' R ↔
-      StrongProbabilisticSimulation sys (𝒟(sys'^w)) R := by
-  constructor
-  · intro h
-    refine ⟨?_, fun s_C μ_A hR l μ_C hstep => ?_⟩
-    · -- init: the forward simulation's initial distribution is `pure sys'.init`.
-      obtain ⟨μ_init, hsupp, hR⟩ := h.init
-      have hμ : μ_init = PMF.pure sys'.init := by
-        refine PMF.ext fun x => ?_
-        by_cases hx : x = sys'.init
-        · subst hx
-          rw [PMF.pure_apply, if_pos rfl,
-            ← μ_init.tsum_coe, tsum_eq_single sys'.init]
-          intro b hb
-          by_contra hbne
-          exact hb (hsupp b hbne)
-        · rw [PMF.pure_apply, if_neg hx]
-          by_contra hbne
-          exact hx (hsupp x hbne)
-      rw [hμ] at hR
-      exact hR
-    · -- step: convert the forward weak transition into a `𝒟(sys'^w)` strong step.
-      obtain ⟨ω, hPMFRel, hdisj⟩ := h.step s_C μ_A hR l μ_C hstep
-      refine ⟨ω, ?_, hPMFRel⟩
-      change hyperStep sys'^w μ_A l (ω.bind id)
-      rcases hdisj with ⟨hi, hwt⟩ | ⟨hi, hws⟩
-      · exact hyperStep_weakClosure_of_weakTau hi hwt
-      · exact hyperStep_weakClosure_of_weakStep hi hws
-  · intro h
-    refine ⟨⟨PMF.pure sys'.init, ?_, h.init⟩, fun s_C μ_A hR l μ_C hstep => ?_⟩
-    · intro s hs
-      rwa [PMF.mem_support_pure_iff] at hs
-    · -- step: convert the `𝒟(sys'^w)` strong step into a forward weak transition.
-      obtain ⟨ω, hhyper, hPMFRel⟩ := h.step s_C μ_A hR l μ_C hstep
-      refine ⟨ω, hPMFRel, ?_⟩
-      change hyperStep sys'^w μ_A l (ω.bind id) at hhyper
-      by_cases hil : (l = Silent.τ)
-      · exact Or.inl ⟨hil, weakTau_of_hyperStep_weakClosure hil hhyper⟩
-      · exact Or.inr ⟨hil, weakStep_of_hyperStep_weakClosure hil hhyper⟩
 
 end PLTS

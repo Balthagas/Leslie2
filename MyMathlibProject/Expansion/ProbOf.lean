@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import MyMathlibProject.ExpandTrace
+import MyMathlibProject.Expansion.Trace
 
 /-!
 # Abstract-side fidelity of the unfolding algorithm
@@ -957,8 +957,8 @@ private theorem entryStep_collapse (ws : Scheduler sys^w)
         have htrans2 : we₀.trans.append (Seq.cons (lw,
             lastOf (⟨e₀.init, e₀.trans.append e'₀.trans⟩ : AlterSeq State Label)) Seq.nil)
             = Seq.ofList (L' ++ [(l, x)]) := congrArg AlterSeq.trans hwwe
-        have happ_term : (we₀.trans.append (Seq.cons (lw,
-            lastOf (⟨e₀.init, e₀.trans.append e'₀.trans⟩ : AlterSeq State Label)) Seq.nil)).Terminates := by
+        have happ_term : (we₀.trans.append (Seq.cons (lw, lastOf
+          (⟨e₀.init, e₀.trans.append e'₀.trans⟩ : AlterSeq State Label)) Seq.nil)).Terminates := by
           rw [htrans2]; exact Stream'.Seq.terminates_ofList _
         have hwt2 : we₀.trans.Terminates := terminates_of_append_terminates happ_term
         have hL'term : (Seq.ofList L' : Seq (Label × State)).Terminates :=

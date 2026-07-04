@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import MyMathlibProject.ExpandProbOf
+import MyMathlibProject.Expansion.ProbOf
 
 /-!
 # The concrete scheduler of the unfolding algorithm
