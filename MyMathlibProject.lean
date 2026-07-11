@@ -1,6 +1,9 @@
+import MyMathlibProject.Construction.DistFair
+import MyMathlibProject.Construction.DistFairLower
 import MyMathlibProject.Construction.DistMonad
 import MyMathlibProject.Construction.DistTrace
 import MyMathlibProject.Construction.EndState
+import MyMathlibProject.Construction.LowerGen
 import MyMathlibProject.Construction.TraceMap
 import MyMathlibProject.Construction.WeakClosure
 import MyMathlibProject.Expansion.Algorithm
@@ -22,6 +25,12 @@ import MyMathlibProject.Model.System
 import MyMathlibProject.Model.Trace
 import MyMathlibProject.Simulation.Defs
 import MyMathlibProject.Simulation.Equivalences
+import MyMathlibProject.Simulation.Fair.AbstractMarginal
+import MyMathlibProject.Simulation.Fair.ConcreteMarginal
+import MyMathlibProject.Simulation.Fair.Defs
+import MyMathlibProject.Simulation.Fair.Descent
+import MyMathlibProject.Simulation.Fair.Soundness
+import MyMathlibProject.Simulation.Fair.Trace
 import MyMathlibProject.Simulation.Soundness
 import MyMathlibProject.Simulation.Trace
 import MyMathlibProject.Simulation.WeakChar

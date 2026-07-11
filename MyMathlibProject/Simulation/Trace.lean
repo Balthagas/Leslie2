@@ -949,9 +949,9 @@ open Classical in
 realises the same trace distribution as `pe_C` (both systems share the internal
 predicate, so `traceProb_eq_labProb_sum` reduces this to `simPerLabs`).
 
-Public so that per-execution developments (e.g. the fairness lift in
-`Simulation/FairLift.lean`) can reuse the trace equality for the specific joint
-execution, rather than only the set-level `simProd_achievableTraceDists_superset`. -/
+Public so that per-execution developments can reuse the trace equality for the
+specific joint execution, rather than only the set-level
+`simProd_achievableTraceDists_superset`. -/
 theorem simProd_traceProb_eq (pe_C : ProbabilisticExecution sys_C)
     (sim : StrongProbabilisticSimulation sys_C sys_A R)
     (h_init : pe_C.initState = PMF.pure sys_C.init) (τ : Seq Label) :

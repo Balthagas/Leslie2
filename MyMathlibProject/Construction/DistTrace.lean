@@ -131,7 +131,7 @@ Proof outline: from `pe'.scheduler.valid` extract a hyperStep witness for
 classically-chosen `distHyperKernel` with the scheduler-extracted kernel
 via `Subsingleton.elim` on `Terminates` proofs (as in
 `distHyperKernel_step`). -/
-private theorem ProbabilisticExecution.hyperStep_marginal_decomp
+theorem ProbabilisticExecution.hyperStep_marginal_decomp
     {sys : System State Label} [Silent Label]
     (pe' : ProbabilisticExecution 𝒟(sys))
     {E : AlterSeq (PMF State) Label} (hE : E.trans.Terminates)

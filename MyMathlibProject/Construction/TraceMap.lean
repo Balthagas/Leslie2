@@ -108,7 +108,7 @@ private theorem AlterSeq.mapFib_terminatedAt (f : X → Y) (e : AlterSeq X L) (n
 
 /-- **Functional pushforward preserves traces** (traces only see labels, and the
 internal/external classification is canonical — the silent label `τ`). -/
-private theorem AlterSeq.trace_map {sys_X : System X L} {sys_Y : System Y L}
+theorem AlterSeq.trace_map {sys_X : System X L} {sys_Y : System Y L}
     (f : X → Y) (e : AlterSeq X L) :
     sys_Y.trace (e.map f) = sys_X.trace e := by
   classical
@@ -127,7 +127,7 @@ private theorem AlterSeq.trace_map {sys_X : System X L} {sys_Y : System Y L}
 
 /-- **Functional pushforward preserves tightness** (tightness only sees labels,
 and the internal/external classification is canonical — the silent label `τ`). -/
-private theorem AlterSeq.isTight_map {sys_X : System X L} {sys_Y : System Y L}
+theorem AlterSeq.isTight_map {sys_X : System X L} {sys_Y : System Y L}
     (f : X → Y) (e : AlterSeq X L) :
     sys_Y.IsTight (e.map f) ↔ sys_X.IsTight e := by
   classical

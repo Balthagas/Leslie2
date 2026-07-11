@@ -1,5 +1,338 @@
+% Blueprint content for leslie2.
+% This document builds up to the soundness of probabilistic forward simulation:
+% if a system C is forward-simulated by a system A, then every trace distribution
+% achievable by C is achievable by A.
+
+\section{Systems, executions, and trace distributions}
+
+Throughout, $Label$ is a fixed label type carrying a distinguished \emph{silent}
+label $\tau$ (the type class \texttt{Silent}). A label is \emph{internal} when
+it equals $\tau$ and \emph{external} otherwise; this partition depends only on the
+label type, not on any individual system.
+
+\begin{definition}[Probabilistic labelled transition system]
+  \label{def:system}
+  \lean{PLTS.System}\leanok
+  A \emph{PLTS} over a state type $State$ and label type $Label$ is a designated
+  initial state $init : State$ together with a step relation
+  $step : State \to Label \to \operatorname{PMF} State \to \mathrm{Prop}$. We write
+  $s \xrightarrow{l} \mu$ for $step\ s\ l\ \mu$: from $s$, on label $l$, the system
+  may move to the probability distribution $\mu$ over successor states.
+\end{definition}
+
+\begin{definition}[Execution]
+  \label{def:exec}
+  \lean{PLTS.AlterSeq}\leanok
+  An \emph{execution} is an alternating sequence $e = \langle init, trans\rangle$:
+  an initial state followed by a possibly infinite sequence
+  $trans : \operatorname{Seq}(Label \times State)$ of $(label, next\ state)$ pairs.
+  Its \emph{trace} keeps only the external labels.
+\end{definition}
+
+\begin{definition}[Trace]
+  \label{def:trace}
+  \lean{PLTS.System.trace}\leanok
+  \uses{def:exec}
+  The trace of an execution $e$ is the sequence of labels obtained from $trans$ by
+  deleting every internal ($\tau$) transition and projecting to the label
+  component. Executions that differ only by trailing $\tau$-transitions have the
+  same trace.
+\end{definition}
+
+\begin{definition}[Probabilistic execution and its path measure]
+  \label{def:probexec}
+  \lean{PLTS.ProbabilisticExecution}\leanok
+  \uses{def:system, def:exec}
+  A \emph{probabilistic execution} of $sys$ is an initial distribution
+  $initState : \operatorname{PMF} State$ together with a \emph{scheduler} that, at
+  each finite history, returns a sub-distribution over the next $(l, \mu)$ move (or
+  halts). For a finite execution $e$ it induces a mass
+  $probOf(e) \in [0, \infty]$
+  (\lean{PLTS.ProbabilisticExecution.probOf}), the probability that the
+  scheduler, started from $initState$, follows exactly the path $e$: the initial
+  mass on $e.init$ times the product of the one-step kernels along $trans$.
+\end{definition}
+
+The trace probability collapses the path measure onto observable behaviour. To
+avoid counting a single trajectory once for every trailing block of
+$\tau$-transitions, we sum only over \emph{tight} executions.
+
+\begin{definition}[Tight execution]
+  \label{def:istight}
+  \lean{PLTS.System.IsTight}\leanok
+  \uses{def:exec}
+  A finite execution is \emph{tight} if it has no transitions, or its last
+  transition is external. Each trajectory has, for a given finite trace, a unique
+  tight prefix: the shortest prefix with that trace (ending right after its last
+  external transition).
+\end{definition}
+
+\begin{definition}[Trace probability]
+  \label{def:traceprob}
+  \lean{PLTS.System.traceProb}\leanok
+  \uses{def:probexec, def:trace, def:istight}
+  For a probabilistic execution $pe$ and a finite trace $\sigma$, the trace
+  probability $traceProb(pe, \sigma)$ is the sum of $probOf(e)$ over all tight
+  finite executions $e$ with trace $\sigma$. Tightness makes the summands
+  correspond to disjoint cylinders, so this is the standard trace-cone
+  probability: the chance that the run's external labels begin with $\sigma$.
+\end{definition}
+
+\begin{definition}[Achievable trace distributions]
+  \label{def:achievable}
+  \lean{PLTS.achievableTraceDists}\leanok
+  \uses{def:traceprob}
+  The set $\operatorname{ATD}(sys)$ of \emph{achievable trace distributions} of
+  $sys$ is the set of functions $\sigma \mapsto traceProb(pe, \sigma)$ obtained
+  from probabilistic executions $pe$ whose initial distribution is the Dirac
+  $\delta_{sys.init}$ (genuine runs from the designated start state). Two systems
+  are trace-distribution equivalent when these sets coincide.
+\end{definition}
+
+The Dirac-init restriction is essential: it is exactly what makes the
+distribution-monad construction below trace-preserving, and it is the semantics in
+which all of the soundness statements are phrased.
+
+\section{Weak transitions and the two constructions}
+
+Weak transitions let internal ($\tau$) computation be absorbed. All three are
+distribution-to-distribution, run-to-halt notions.
+
+\begin{definition}[Silent weak transition]
+  \label{def:weaktau}
+  \lean{PLTS.weakTau}\leanok
+  \uses{def:system}
+  $weakTau\ sys\ \mu_0\ \mu$ holds when there is an internal-only scheduler that,
+  started from $\mu_0$, halts almost surely and whose distribution of final states
+  is $\mu$. Intuitively $\mu_0 \Rightarrow_\tau \mu$: run $\tau$-steps until
+  spontaneous termination, and $\mu$ records where you stop.
+\end{definition}
+
+\begin{definition}[Hyper-step]
+  \label{def:hyperstep}
+  \lean{PLTS.hyperStep}\leanok
+  \uses{def:system}
+  $hyperStep\ sys\ \mu_{\mathrm{pre}}\ l\ \mu_{\mathrm{post}}$ holds when
+  $\mu_{\mathrm{post}}$ is a convex combination of one-step $l$-successors of the
+  points of $\mu_{\mathrm{pre}}$: there is $p : State \to \operatorname{PMF}(\operatorname{PMF} State)$
+  with $s \xrightarrow{l} \mu$ for every $s \in \operatorname{supp}\mu_{\mathrm{pre}}$
+  and $\mu \in \operatorname{supp}(p\,s)$, and
+  $\mu_{\mathrm{post}} = \mu_{\mathrm{pre}} \mathbin{\gg\!=} (s \mapsto (p\,s)\mathbin{\gg\!=}\mathrm{id})$.
+\end{definition}
+
+\begin{definition}[External weak transition]
+  \label{def:weakstep}
+  \lean{PLTS.weakStep}\leanok
+  \uses{def:weaktau, def:hyperstep}
+  $weakStep\ sys\ \mu_0\ l\ \mu_f$ is a $\tau^\ast\!\cdot l\cdot\tau^\ast$ chain:
+  there exist $\mu, \mu'$ with $\mu_0 \Rightarrow_\tau \mu$, a hyper-step
+  $\mu \xrightarrow{l} \mu'$, and $\mu' \Rightarrow_\tau \mu_f$.
+\end{definition}
+
+\begin{definition}[Weak closure $sys^w$]
+  \label{def:weakclosure}
+  \lean{PLTS.System.weakClosure}\leanok
+  \uses{def:weaktau, def:weakstep}
+  The \emph{weak closure} $sys^w$ has the same state space and initial state as
+  $sys$, but replaces its steps by weak transitions from a Dirac: for internal $l$,
+  $s \xrightarrow{l} \mu$ iff $weakTau\ sys\ \delta_s\ \mu$; for external $l$,
+  $s \xrightarrow{l} \mu$ iff $weakStep\ sys\ \delta_s\ l\ \mu$.
+\end{definition}
+
+\begin{definition}[Distribution-monad lift $\mathcal{D}(sys)$]
+  \label{def:dist}
+  \lean{PLTS.System.dist}\leanok
+  \uses{def:hyperstep}
+  The \emph{distribution-monad lift} $\mathcal{D}(sys)$ has state space
+  $\operatorname{PMF} State$, initial state $\delta_{sys.init}$, and steps
+  $\mu \xrightarrow{l} \omega$ (with $\omega : \operatorname{PMF}(\operatorname{PMF} State)$)
+  exactly when $hyperStep\ sys\ \mu\ l\ (\omega \mathbin{\gg\!=}\mathrm{id})$. It
+  packages ``a distribution over states'' as a single state.
+\end{definition}
+
+\section{Probabilistic simulations}
+
+A simulation of a \emph{concrete} system $sys_C$ by an \emph{abstract} system
+$sys_A$ is carried by a relation $R$ and a step-matching condition, phrased via a
+coupling of the resulting distributions.
+
+\begin{definition}[Coupling of distributions]
+  \label{def:pmfrel}
+  \lean{PLTS.PMFRel}\leanok
+  For $R : \alpha \to \beta \to \mathrm{Prop}$, the lifted relation
+  $\operatorname{PMFRel} R\ \mu_1\ \mu_2$ holds when there is a joint distribution
+  $\omega$ on $\alpha \times \beta$ with marginals $\mu_1, \mu_2$ and support
+  contained in $R$.
+\end{definition}
+
+\begin{definition}[Strong probabilistic simulation]
+  \label{def:strongsim}
+  \lean{PLTS.StrongProbabilisticSimulation}\leanok
+  \uses{def:system, def:pmfrel}
+  $R : State_C \to State_A \to \mathrm{Prop}$ is a \emph{strong} simulation of
+  $sys_C$ by $sys_A$ when $R\ sys_C.init\ sys_A.init$, and every concrete step
+  $s_C \xrightarrow{l} \mu_C$ from an $R$-related pair $(s_C, s_A)$ is matched by a
+  single strong abstract step $s_A \xrightarrow{l} \mu_A$ (same label, no
+  stuttering) with $\operatorname{PMFRel} R\ \mu_C\ \mu_A$.
+\end{definition}
+
+\begin{definition}[Weak probabilistic simulation]
+  \label{def:weaksim}
+  \lean{PLTS.WeakProbabilisticSimulation}\leanok
+  \uses{def:weaktau, def:weakstep, def:pmfrel}
+  As above, but the abstract side may stutter: a concrete step is matched from
+  $\delta_{s_A}$ by a $weakTau$ (internal $l$) or a $weakStep$ with the same label
+  (external $l$), again with $\operatorname{PMFRel} R\ \mu_C\ \mu_A$.
+\end{definition}
+
+\begin{definition}[Probabilistic forward simulation]
+  \label{def:forwardsim}
+  \lean{PLTS.ProbabilisticForwardSimulation}\leanok
+  \uses{def:weaktau, def:weakstep, def:pmfrel}
+  Here $R : State_C \to \operatorname{PMF} State_A \to \mathrm{Prop}$ relates each
+  concrete state to a \emph{distribution} over abstract states. The initial
+  concrete state is related to some distribution supported on $sys_A.init$, and
+  from an $R$-related pair $(s_C, \mu_A)$ every concrete step
+  $s_C \xrightarrow{l} \mu_C$ is matched by a weak transition
+  $\mu_A \Rightarrow (\omega \mathbin{\gg\!=}\mathrm{id})$
+  ($weakTau$ for internal $l$, $weakStep$ for external $l$), where
+  $\omega : \operatorname{PMF}(\operatorname{PMF} State_A)$ couples $\mu_C$ with
+  $R$-related abstract distributions, i.e. $\operatorname{PMFRel} R\ \mu_C\ \omega$.
+\end{definition}
+
+Forward simulation generalises weak simulation: it lets the abstract state be
+tracked only up to a \emph{belief} distribution, which is precisely what the state
+space $\operatorname{PMF} State_A$ of $\mathcal{D}(sys_A^w)$ records.
+
+\section{Building blocks: functional simulation and the constructions}
+
+The soundness proof rests on one reusable engine and three preservation results.
+
+\begin{lemma}[Functional simulation is trace-sound]
+  \label{lem:map}
+  \lean{PLTS.achievableTraceDists_map}\leanok
+  \uses{def:achievable}
+  Let $f : X \to Y$ be a label-preserving \emph{functional} simulation between
+  systems: $f(sys_X.init) = sys_Y.init$ and every step $s \xrightarrow{l} \mu$
+  lifts to $f(s) \xrightarrow{l} f_\ast\mu$ (the pushforward $\mu.map\ f$). Then
+  $\operatorname{ATD}(sys_X) \subseteq \operatorname{ATD}(sys_Y)$.
+\end{lemma}
+
+\begin{proof}\leanok
+  Fix a probabilistic execution $pe_X$ of $sys_X$ with initial distribution
+  $\delta_{sys_X.init}$ realising $D$. Since $f$ preserves labels, pushing each
+  $X$-history $E_X$ forward to the $Y$-history $f_\ast E_X$ (apply $f$ to every
+  state, leave labels alone) preserves the label sequence, hence the trace and the
+  tightness status. What must be produced is a \emph{single} $sys_Y$-scheduler
+  realising this pushforward, and it is recovered by \emph{disintegration}. To a
+  finite $Y$-history $E_Y$ attach the fibre weight
+  \[
+    g(E_Y, E_X) \;=\; pe_X.probOf(E_X)
+    \qquad\text{for } E_X \text{ in the fibre } f_\ast E_X = E_Y,
+  \]
+  and let the $Y$-scheduler at $E_Y$ emit each next move with probability
+  proportional to the total $g$-weight of the fibre members emitting a preimage of
+  that move. This is exactly the posterior over the $f$-fibre of $E_Y$ weighted by
+  path mass --- it averages $pe_X$'s next-step law over all $X$-histories that $f$
+  collapses onto $E_Y$. Because labels are untouched, the induced $sys_Y$-execution
+  assigns each tight $Y$-history the summed $probOf$-mass of its fibre, so
+  $traceProb$ is preserved cone by cone and the realised trace distribution is
+  again $D$.
+\end{proof}
+
+\begin{theorem}[Soundness of strong simulation]
+  \label{thm:strongsound}
+  \lean{PLTS.StrongProbabilisticSimulation.achievableTraceDists_subset}\leanok
+  \uses{def:strongsim, lem:map}
+  If $R$ is a strong simulation of $sys_C$ by $sys_A$, then
+  $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A)$.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:strongsim, lem:map}
+  A strong simulation is \emph{lockstep} --- each concrete step is matched by an
+  abstract step with the same label, no stuttering --- so the proof factors through
+  the \emph{coupled product} $\operatorname{simProd} sys_C\ sys_A\ R$
+  (\lean{PLTS.simProd}) over $State_C \times State_A$. Its step relation
+  $(s_C, s_A) \xrightarrow{l} \omega$ requires that the two marginals
+  $\omega.map\ \pi_1$ and $\omega.map\ \pi_2$ be valid $sys_C$- and $sys_A$-steps
+  and that $\operatorname{supp}\omega \subseteq R$; its initial state
+  $(sys_C.init, sys_A.init)$ is $R$-related by the simulation's $init$ clause. Two
+  inclusions compose.
+
+  \emph{Lift} (\lean{PLTS.simProd_achievableTraceDists_superset}):
+  $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(\operatorname{simProd}\,sys_C\,sys_A\,R)$.
+  From a $sys_C$-execution $pe_C$ build the joint execution
+  \lean{PLTS.simJointExec}: drive $pe_C$ on the concrete component, and whenever it
+  emits $(l, \mu_C)$ from a joint history whose current pair $(s_C, s_A)$ is
+  $R$-related, apply $sim.step$ to $s_C \xrightarrow{l} \mu_C$ to obtain a coupling
+  $\omega$ with $\omega.map\ \pi_1 = \mu_C$, a valid abstract step
+  $\omega.map\ \pi_2$, and $\operatorname{supp}\omega \subseteq R$; emit
+  $(l, \omega)$. By construction the concrete projection of the joint execution is
+  exactly $pe_C$ and labels are shared, so their trace distributions agree. This
+  direction is purely forward (no marginalisation).
+
+  \emph{Project}: the second projection $\pi_2$ is a functional, label-preserving
+  simulation of $\operatorname{simProd} sys_C\ sys_A\ R$ by $sys_A$ --- it sends the
+  joint init to $sys_A.init$, and the marginal condition makes every joint step map
+  to a genuine $sys_A$-step $\pi_2(p) \xrightarrow{l} \omega.map\ \pi_2$ --- so
+  Lemma~\ref{lem:map} gives
+  $\operatorname{ATD}(\operatorname{simProd}\,sys_C\,sys_A\,R) \subseteq \operatorname{ATD}(sys_A)$.
+  Compose the two inclusions.
+\end{proof}
+
+\begin{theorem}[The weak closure preserves trace distributions]
+  \label{thm:weakclosure-eq}
+  \lean{PLTS.weakClosure_traceProb_eq}\leanok
+  \uses{def:achievable, def:weakclosure}
+  $\operatorname{ATD}(sys) = \operatorname{ATD}(sys^w)$.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{lem:map}
+  The easy inclusion $\operatorname{ATD}(sys) \subseteq \operatorname{ATD}(sys^w)$
+  (\lean{PLTS.weakClosure_traceProb_subset}) is Lemma~\ref{lem:map} with $f = id$:
+  every strong $sys$-step is, in particular, a (degenerate) weak step of $sys^w$.
+
+  The hard inclusion (\lean{PLTS.weakClosure_traceProb_superset}) turns an abstract
+  scheduler $ws$ on $sys^w$ into a concrete scheduler on $sys$ with the same trace
+  distribution. Algorithm~\ref{alg:expand} is the unfolding: it maintains an
+  abstract execution $we$ on $sys^w$ and a concrete execution $e$ on $sys$; each
+  outer iteration draws a weak transition $wt = (l, \mu)$ from $ws(we)$, takes a
+  \emph{witness} scheduler realising it (\lean{PLTS.Realises}: run from
+  $\delta_{last(e)}$ it halts almost surely, its halting end-state distribution is
+  exactly $\mu$, and every halting trajectory has external trace $[l]$, or $[]$ when
+  $l = \tau$), runs that witness to produce the concrete segment
+  $e' = \tau^\ast\!\cdot l\cdot\tau^\ast$, and appends it. The control flow is
+  deterministic but the draws are random, so each reachable \emph{configuration}
+  $c$ is reached with a well-defined probability $reachProb(c)$
+  (\lean{PLTS.reachProb}); the induced memoryless concrete scheduler is
+  $expandSched\ ws$ (\lean{PLTS.expandSched}), whose next-move law at a concrete
+  history is the Bayesian posterior over the next inner draw given that history.
+
+  The fidelity equality \lean{PLTS.traceProb_expandSched_eq} is proved
+  configuration by configuration (for $\tau \ne []$; $\tau = []$ is $1 = 1$). Each
+  side reduces to a sum of $reachProb$:
+  \begin{itemize}
+    \item the abstract $traceProb$ collects the \emph{entry} configurations
+      $\{\,c \mid c.e'.trans = nil,\ IsTight(c.we),\ trace(c.we) = \tau\,\}$
+      (a fresh weak step has just committed);
+    \item the concrete $traceProb$ collects the \emph{arrival} configurations
+      $\{\,c \mid c.e'.trans \ne nil,\ IsTight(c.e),\ trace(c.e) = \tau\,\}$
+      (the concrete run has just emitted the external $l$).
+  \end{itemize}
+  These are the \emph{same} external weak step measured one moment apart: between an
+  arrival and its matching entry lies only the post-$l$ $\tau$-run and the outer
+  commit, which change $last(e)$ but not the external trace. Their $reachProb$
+  masses are \emph{equal} --- not merely $\le$ --- because the witness's post-$\tau$
+  run halts almost surely (the $\sum haltMass = 1$ clause of $Realises$), so no mass
+  leaks to divergence inside a witness run and $reachProb$ is conserved across the
+  post-$\tau$ sojourn. Hence the entry- and arrival-sums agree.
+\end{proof}
+
 \begin{algorithm}
     \caption{Simulating a scheduler on $sys^w$}
+    \label{alg:expand}
     \begin{algorithmic}
         \State \textbf{Input:} a PLTS $sys$ and a scheduler $ws$ on $sys^w$
         \medskip
@@ -17,3 +350,202 @@
         \State\quad $wt \gets ws(we)$
     \end{algorithmic}
 \end{algorithm}
+
+\begin{theorem}[The distribution-monad lift preserves trace distributions]
+  \label{thm:dist-eq}
+  \lean{PLTS.dist_traceProb_eq}\leanok
+  \uses{def:achievable, def:dist}
+  $\operatorname{ATD}(sys) = \operatorname{ATD}(\mathcal{D}(sys))$.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{lem:map}
+  The easy inclusion
+  $\operatorname{ATD}(sys) \subseteq \operatorname{ATD}(\mathcal{D}(sys))$
+  (\lean{PLTS.dist_traceProb_subset}) is Lemma~\ref{lem:map} for the Dirac
+  embedding $s \mapsto \delta_s$: a step $s \xrightarrow{l} \mu$ lifts to the
+  hyper-step $\delta_s \xrightarrow{l} \delta_\mu$, whose flattening is $\mu$.
+
+  The hard inclusion (\lean{PLTS.dist_traceProb_superset}) flattens the genuine
+  $\operatorname{PMF}(\operatorname{PMF} State)$-randomness of a
+  $\mathcal{D}(sys)$-execution $pe'$ back to an ordinary $sys$-execution. Its
+  initial distribution is $pe'.initState \mathbin{\gg\!=}\mathrm{id}$ and its
+  scheduler is the \emph{lowering} \lean{PLTS.ProbabilisticExecution.lower}: at a
+  concrete history $e$ with label list $labs$ and current state $s$, it forms the
+  \emph{trace-cone belief} \lean{PLTS.ProbabilisticExecution.beliefTC} --- the
+  posterior over those $\mathcal{D}(sys)$-histories $E$ whose full label list is
+  $labs$, weighted by the mass that $E$'s current distribution places on $s$ --- and
+  emits the corresponding average of $pe'$'s hyper-steps, each split into per-state
+  $sys$-steps by \lean{PLTS.ProbabilisticExecution.distHyperKernel}. Conditioning on
+  the \emph{full} label list (internal labels included, not just the external trace)
+  keeps the belief normalizer finite --- it is a level sum --- and makes the step a
+  genuine posterior. The resulting $sys$-execution has the same trace distribution as
+  $pe'$. The Dirac-init clause of $\operatorname{ATD}$ is exactly what makes this
+  reconstruction sound: a mixture initial distribution over
+  $\operatorname{PMF} State$ need not be realised by any single $sys$-execution, and
+  the belief reconstruction would then be unsound.
+\end{proof}
+
+\section{Soundness of probabilistic forward simulation}
+
+The engine of the reduction is that forward simulation is not a new proof
+obligation at all: it is \emph{definitionally} a strong simulation into
+$\mathcal{D}(sys_A^w)$. The one non-formal ingredient is the transition-level
+correspondence below.
+
+\subsection{The transition-level correspondence}
+
+A step of $\mathcal{D}(sys_A^w)$ from a distribution $\mu$ is a hyper-step of
+$sys_A^w$, and it must be identified with a single weak transition of $sys_A$ from
+$\mu$. That identification rests on three families of ``workhorse'' lemmas about
+how weak transitions interact with mixing (the concrete/abstract subscripts are
+dropped; $sys$ is an arbitrary system).
+
+\begin{lemma}[Source decomposition]
+  \label{lem:decomp}
+  \lean{PLTS.weakTau_exists_pointwise, PLTS.weakStep_exists_pointwise}\leanok
+  \uses{def:weaktau, def:weakstep}
+  A weak transition out of a distribution factors pointwise: if
+  $weakTau\ sys\ \mu\ \nu$ then there is
+  $\rho : State \to \operatorname{PMF} State$ with
+  $\nu = \mu \mathbin{\gg\!=} \rho$ and $weakTau\ sys\ \delta_s\ (\rho\,s)$ for every
+  $s \in \operatorname{supp}\mu$; likewise for $weakStep$.
+\end{lemma}
+
+\begin{proof}\leanok
+  Dispatch the single witness scheduler on the (observable) start state: run from
+  $\delta_s$ it defines $\rho\,s$, and averaging over $\mu$ recovers $\nu$.
+\end{proof}
+
+\begin{lemma}[Source mixing]
+  \label{lem:mix}
+  \lean{PLTS.weakTau_of_pointwise, PLTS.weakStep_of_pointwise}\leanok
+  \uses{def:weaktau, def:weakstep}
+  The converse recombination: given per-point weak transitions
+  $weakTau\ sys\ \delta_s\ (\rho\,s)$ for $s \in \operatorname{supp}\mu$, a single
+  scheduler dispatching on the start state witnesses
+  $weakTau\ sys\ \mu\ (\mu \mathbin{\gg\!=} \rho)$; likewise for $weakStep$.
+\end{lemma}
+
+\begin{lemma}[Target convexity]
+  \label{lem:bind}
+  \lean{PLTS.weakTau_bind, PLTS.weakStep_bind}\leanok
+  \uses{def:weaktau, def:weakstep}
+  A \emph{mixture of targets from a single point} is again a weak transition: if
+  $q : \operatorname{PMF}(\operatorname{PMF} State)$ satisfies
+  $weakTau\ sys\ \delta_s\ \sigma$ for every $\sigma \in \operatorname{supp} q$,
+  then $weakTau\ sys\ \delta_s\ (q \mathbin{\gg\!=} \mathrm{id})$; likewise for
+  $weakStep$.
+\end{lemma}
+
+\begin{proof}\leanok
+  The crux. Use a posterior-weighted mixing scheduler: from $\delta_s$ first draw a
+  target $\sigma \sim q$ and then run $\sigma$'s witness scheduler. Almost-sure
+  halting of each witness gives almost-sure halting of the mixture, and its halting
+  end-state distribution is $q \mathbin{\gg\!=} \mathrm{id}$.
+\end{proof}
+
+\begin{lemma}[Hyper-step / weak-transition bridge]
+  \label{lem:bridge}
+  \lean{PLTS.hyperStep_weakClosure_of_weakTau, PLTS.weakTau_of_hyperStep_weakClosure, PLTS.hyperStep_weakClosure_of_weakStep, PLTS.weakStep_of_hyperStep_weakClosure}\leanok
+  \uses{def:hyperstep, def:weakclosure, lem:decomp, lem:mix, lem:bind}
+  For a distribution $\mu$ over states,
+  \[
+    hyperStep\ sys^w\ \mu\ l\ \nu
+    \iff
+    \begin{cases}
+      weakTau\ sys\ \mu\ \nu & (l = \tau),\\
+      weakStep\ sys\ \mu\ l\ \nu & (l \ne \tau).
+    \end{cases}
+  \]
+  Equivalently: a step of $\mathcal{D}(sys^w)$ out of $\mu$ is exactly a weak
+  transition of $sys$ out of $\mu$.
+\end{lemma}
+
+\begin{proof}\leanok
+  \uses{lem:decomp, lem:mix, lem:bind}
+  ($\Leftarrow$) Decompose the weak transition out of $\mu$ into per-point weak
+  transitions (Lemma~\ref{lem:decomp}); each is precisely a step of $sys^w$ out of a
+  Dirac, so their $\mu$-average is a hyper-step $hyperStep\ sys^w\ \mu\ l\ \nu$.
+  ($\Rightarrow$) A hyper-step provides, for each $s \in \operatorname{supp}\mu$, a
+  distribution $p\,s$ over $sys^w$-successors of $s$ --- i.e.\ a \emph{mixture of
+  weak transitions out of $\delta_s$}. Collapse that mixture to a single per-point
+  weak transition with Lemma~\ref{lem:bind}, then recombine over the source with
+  Lemma~\ref{lem:mix}.
+\end{proof}
+
+\subsection{The reduction}
+
+\begin{theorem}[Forward simulation $=$ strong simulation into $\mathcal{D}(\cdot^w)$]
+  \label{thm:forward-equiv}
+  \lean{PLTS.probabilisticForwardSimulation_iff_strong_dist_weakClosure}\leanok
+  \uses{def:forwardsim, def:strongsim, def:dist, def:weakclosure, lem:bridge}
+  For any relation $R : State_C \to \operatorname{PMF} State_A \to \mathrm{Prop}$,
+  \[
+    \text{$R$ is a forward simulation of $sys_C$ by $sys_A$}
+    \iff
+    \text{$R$ is a strong simulation of $sys_C$ by $\mathcal{D}(sys_A^w)$.}
+  \]
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{lem:bridge}
+  Both notions carry the \emph{same} relation $R$: the state type of
+  $\mathcal{D}(sys_A^w)$ is $\operatorname{PMF} State_A$, exactly the type of the
+  forward simulation's abstract argument. On initial states, the forward
+  simulation's ``distribution supported on $sys_A.init$'' is forced to be the Dirac
+  $\delta_{sys_A.init}$, which is the initial state of $\mathcal{D}(sys_A^w)$; and
+  the internal vs.\ external case split coincides because $\tau$ is canonical. The
+  step clauses then match verbatim under the bridge (Lemma~\ref{lem:bridge}): a
+  forward step matches $s_C \xrightarrow{l} \mu_C$ by a weak transition
+  $\mu_A \Rightarrow (\omega \mathbin{\gg\!=} \mathrm{id})$, while a
+  $\mathcal{D}(sys_A^w)$ strong step matches it by a hyper-step
+  $\mu_A \xrightarrow{l} \omega$, i.e.\
+  $hyperStep\ sys_A^w\ \mu_A\ l\ (\omega \mathbin{\gg\!=}\mathrm{id})$ --- and these
+  are equivalent, with the \emph{same} coupling $\omega$ and the same
+  $\operatorname{PMFRel} R\ \mu_C\ \omega$ witnessing both.
+\end{proof}
+
+\begin{theorem}[Soundness of probabilistic forward simulation]
+  \label{thm:forward-sound}
+  \lean{PLTS.ProbabilisticForwardSimulation.achievableTraceDists_subset}\leanok
+  \uses{def:forwardsim, def:achievable, thm:forward-equiv, thm:strongsound,
+        thm:dist-eq, thm:weakclosure-eq}
+  If $sys_C$ is forward-simulated by $sys_A$ (along some
+  $R : State_C \to \operatorname{PMF} State_A \to \mathrm{Prop}$), then
+  \[
+    \operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A).
+  \]
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:forward-equiv, thm:strongsound, thm:dist-eq, thm:weakclosure-eq}
+  Chain the four building blocks. By Theorem~\ref{thm:forward-equiv} the forward
+  simulation $R$ is a strong simulation of $sys_C$ by $\mathcal{D}(sys_A^w)$, so
+  Theorem~\ref{thm:strongsound} gives
+  \[
+    \operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(\mathcal{D}(sys_A^w)).
+  \]
+  Theorem~\ref{thm:dist-eq}, applied to the system $sys_A^w$, gives
+  $\operatorname{ATD}(\mathcal{D}(sys_A^w)) = \operatorname{ATD}(sys_A^w)$, and
+  Theorem~\ref{thm:weakclosure-eq}, applied to $sys_A$, gives
+  $\operatorname{ATD}(sys_A^w) = \operatorname{ATD}(sys_A)$. Composing,
+  \[
+    \operatorname{ATD}(sys_C)
+      \subseteq \operatorname{ATD}(\mathcal{D}(sys_A^w))
+      = \operatorname{ATD}(sys_A^w)
+      = \operatorname{ATD}(sys_A). \qedhere
+  \]
+\end{proof}
+
+The two transformations do all the work: $\cdot^w$ turns the stuttering allowed by
+a weak/forward simulation into ordinary strong steps, and $\mathcal{D}(\cdot)$
+turns the ``distribution over abstract states'' bookkeeping of a forward
+simulation into ordinary states --- and, crucially,
+Theorems~\ref{thm:weakclosure-eq} and~\ref{thm:dist-eq} guarantee that neither
+transformation changes the observable trace distributions. The analogous soundness
+statement for \emph{weak} simulation
+(\lean{PLTS.WeakProbabilisticSimulation.achievableTraceDists_subset}) is the same
+argument using only $\cdot^w$ (Theorem~\ref{thm:weakclosure-eq}), since a weak
+simulation is a strong simulation into $sys_A^w$.
+
