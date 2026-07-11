@@ -15,6 +15,9 @@ import MyMathlibProject.Measure.Examples.InfiniteTraceExample
 import MyMathlibProject.Measure.Trace
 import MyMathlibProject.Measure.Trajectory
 import MyMathlibProject.Model.Composition
+import MyMathlibProject.Model.Fairness
+import MyMathlibProject.Model.ResolvedGap
+import MyMathlibProject.Model.ResolvedScheduler
 import MyMathlibProject.Model.System
 import MyMathlibProject.Model.Trace
 import MyMathlibProject.Simulation.Defs
