@@ -368,7 +368,7 @@ The construction preserves `traceProbR`, with **no finiteness assumption**, in t
   `avgWeight = (mapBeliefExec Prod.snd _ peJ.average).probOf`), reducing to the existing plain
   `mapBeliefExec_traceProb` + `traceProb_average`.
 
-* **Coupled-lift half — the sole remaining trace `sorry`:** `simJointExecR_traceProbR`
+* **Coupled-lift half:** `simJointExecR_traceProbR`
   (`simJointExecR.traceProbR = pe_C.traceProbR`). This one does **not** de-resolve per-history (see
   the ⚠ note below); it needs the abstract successor marginalised within each label class (the plain
   `simExecMarginal`/`simKernelMarginal` route, or the concrete-marginal packaging). -/
@@ -387,7 +387,7 @@ abstract successors, so on a fixed product history `E` (which pins the *joint* s
 `13/24`. The *trace* equality `simJointExecR.traceProbR = pe_C.traceProbR` still holds — the deficit
 sums out over abstract successors — but its proof must marginalise the abstract successor **before**
 comparing (the plain `simExecMarginal`/`simKernelMarginal` argument), not compare per history. See
-`simJointExecR_traceProbR` below (currently the sole trace `sorry`). -/
+`simJointExecR_traceProbR` (proven in `Simulation/Fair/Trace.lean`). -/
 
 omit [Silent Label] in
 /-- The per-fibre identity powering `abstractMarginal_probOfR`'s cons-end step: for one product

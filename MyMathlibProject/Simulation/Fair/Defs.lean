@@ -28,9 +28,10 @@ across the simulation we equip the two systems with fairness markings `F_C`, `F_
 A `FairStrongProbabilisticSimulation F_C F_A R` keeps the two predicates `init` and `step` of an
 ordinary strong simulation and additionally carries:
 
-* a **well-founded pre-order on concrete states** — a pre-order `le` (`le_refl`, `le_trans`)
-  together with a well-founded strict companion `lt` (`lt_wf`) compatible with it
-  (`lt_of_le_of_lt`); and
+* a **pre-order `le` on concrete states** (`le_refl`, `le_trans`) whose **strict part**
+  `lt a b := le a b ∧ ¬ le b a` is required to be well-founded (`lt_wf`). Only `le` and `lt_wf` are
+  data; the strict order `lt` is *derived* from `le`, so `le_of_lt` and `lt_of_le_of_lt` are free
+  lemmas rather than fields; and
 * a **rank condition** folded into `step`: whenever the abstract transition `t_A := s_A -[l]→ μ_A`
   chosen to match a concrete transition `t_C := s_C -[l]→ μ_C` is *unfair* in `F_A`, the concrete
   successors must descend in the order — **strictly** (`lt s'_C s_C`) if `t_C` is *fair* in `F_C`,
@@ -67,14 +68,16 @@ resolved-history execution `pe_C` of `sys_C`, and marginalise onto `sys_A`. On a
 Thus every maximal run of the marginalised abstract execution is fair, i.e. the abstract execution
 is fair, and (sharing labels with the concrete run) realises the same trace distribution.
 
-## Proof plan for `fairAchievableTraceDists_subset` (proven modulo the König lift)
+## Proof architecture for `fairAchievableTraceDists_subset`
 
-`fairAchievableTraceDists_subset` is now **proven**: trace/initial preservation, the halt clause
-(`pe_A_halt_fairDeadlock`), and the infinite clause (`pe_A_inf_fair`, including the well-founded
-descent) are all `sorry`-free. The **only** remaining `sorry` is the König lift
-`exists_infinite_coupled_lift` (step 4 for infinite runs) — the finitely-branching-tree construction
+`fairAchievableTraceDists_subset` is **fully proven and axiom-clean** (`propext`,
+`Classical.choice`, `Quot.sound`; no `sorryAx`): trace/initial preservation, the halt clause
+(`pe_A_halt_fairDeadlock`),
+the infinite clause (`pe_A_inf_fair`, including the well-founded descent), and the König lift
+`exists_infinite_coupled_lift` (step 4 for infinite runs — the finitely-branching-tree construction
 that turns an infinite consistent abstract run into an infinite consistent coupled run under
-`sys_C.ImageFinite`. The intended architecture, reusing the existing resolved-scheduler machinery:
+`sys_C.ImageFinite`) are all `sorry`-free. The architecture, reusing the existing resolved-scheduler
+machinery:
 
 1. **Resolved coupling lift.** Build a `ResolvedProbabilisticExecution (simProd sys_C sys_A R)`
    driven by `pe_C`'s resolved scheduler, emitting at each step the coupling `ω` supplied by
@@ -91,7 +94,7 @@ that turns an infinite consistent abstract run into an infinite consistent coupl
    whose `Prod.fst` projection is a `pe_C`-consistent run of `sys_C` with the recorded abstract
    distributions (the resolved analogue of `simJointExec_probOf_R` + `average` support reasoning).
    For *infinite* runs this is where **finite branching** enters: the coupled scheduler commits to a
-   *single* coupling `simCouple …` per concrete transition, so — although `simProd` has a continuum
+   *single* coupling `simCoupleF …` per concrete transition, so — although `simProd` has a continuum
    of couplings as a step *relation* — the *consistent coupled tree* is finitely branching under
    `sys_C.ImageFinite` (finitely many valid `(l, μ_C)` by image-finiteness, one `ω` each, finite
    `ω`-support). König's lemma (`exists_infinite_chain`, `Model/System.lean`) then assembles a
@@ -128,7 +131,7 @@ variable {State_C State_A Label : Type} [Silent Label]
 The resolved analogue of `simJointExec` (`Simulation/Trace.lean`): drive the coupled product
 `simProd sys_C sys_A R` by a *resolved* execution `pe_C` of `sys_C`, consulting `pe_C` on the
 *concrete resolved projection* of the product history and emitting, per concrete transition, the
-single coupling `simCouple`. -/
+single coupling `simCoupleF`. -/
 
 /-- Project a coupled-product resolved history onto its concrete resolved history: states via
 `Prod.fst`, and each recorded coupling `ω` via its concrete marginal `ω.map Prod.fst`. This is the

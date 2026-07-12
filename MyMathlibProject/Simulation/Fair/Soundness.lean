@@ -15,15 +15,143 @@ builds the two fairness clauses for the abstract witness `pe_A := abstractMargin
 pe_C sim)`: the halt clause `pe_A_halt_fairDeadlock` (via `sim.fair_deadlock` on the concrete fair
 deadlock, no finiteness) and the infinite clause `pe_A_inf_fair` (via the well-founded descent
 `descent_of_infinitely_often` and the rank clause of `sim.step`). It includes the finite-prefix
-(`take`) API and the König lift `exists_infinite_coupled_lift` (historically the last open step) for
-the infinite case, and concludes with the main soundness theorem
-`fairAchievableTraceDists_subset`
+(`take`) API and the König lift `exists_infinite_coupled_lift` (the finitely-branching-tree
+construction, the single point where `sys_C.ImageFinite` enters) for the infinite case, and
+concludes with the main soundness theorem `fairAchievableTraceDists_subset`
 (`fairAchievableTraceDists F_C ⊆ fairAchievableTraceDists F_A`).
 -/
 
 open Stream'
 
 namespace PLTS
+
+/-! ### Finite branching of the constructed abstract scheduler (a corollary of `ImageFinite`)
+
+Two reusable finiteness facts and the corollary they give: under `sys_C.ImageFinite`, the abstract
+scheduler `abstractMarginal (simJointExecR pe_C sim)` built by the soundness construction is
+finitely branching — at every terminating history it schedules only finitely many transitions
+with positive probability. This is not used by `fairAchievableTraceDists_subset`; it records, as
+an explicit theorem, the finite-branching intuition behind the König lift. -/
+
+namespace ResolvedScheduler
+
+variable {S Label : Type} {sys : System S Label}
+
+/-- Under image-finiteness, a resolved-history scheduler emits only finitely many transitions with
+positive probability at any terminating history: its `next`-support is finite. Every emission in the
+support is, by `valid`, a `sys`-step from the current end-state, of which `ImageFinite` supplies
+only finitely many. -/
+theorem next_support_finite (sch : ResolvedScheduler sys)
+    (hfin : sys.ImageFinite) (r : ResolvedExec S Label) (hT : r.trans.Terminates) :
+    (sch.next r).support.Finite := by
+  classical
+  have hstate : r.stateAt (Nat.find hT) = some (r.endState hT) :=
+    AlterSeq.stateAt_find_eq_endState r hT
+  have hterm : r.trans.TerminatedAt (Nat.find hT) := Nat.find_spec hT
+  apply Set.Finite.subset
+    (Set.Finite.insert none ((hfin.1 (r.endState hT)).image (fun p => some p)))
+  intro x hx
+  cases x with
+  | none => exact Set.mem_insert _ _
+  | some lμ =>
+    obtain ⟨l, μ⟩ := lμ
+    have hstep : sys.step (r.endState hT) l μ :=
+      sch.valid r (Nat.find hT) (r.endState hT) hterm hstate l μ hx
+    exact Set.mem_insert_of_mem _ ⟨(l, μ), hstep, rfl⟩
+
+end ResolvedScheduler
+
+namespace ResolvedProbabilisticExecution
+
+variable {S Label : Type} {sys : System S Label}
+
+/-- The current state of a terminating resolved history, defaulting to the initial state on the
+(never-used) non-terminating branch. A namespace-local helper mirroring `simLastStateR`. -/
+noncomputable def lastStateAux (r : ResolvedExec S Label) : S :=
+  open Classical in if h : r.trans.Terminates then r.endState h else r.init
+
+/-- **Positive-mass histories of a fixed length form a finite set**, under image-finiteness (with a
+finite initial support). This is the finitely-branching-tree fact behind König, packaged as a
+standalone finiteness statement about a single resolved execution: a length-`(k+1)` positive history
+is its length-`k` positive prefix extended by one step, and the extensions are finite by
+`ImageFinite` (finitely many enabled transitions, each finitely supported). -/
+theorem positive_histories_finite
+    (pe : ResolvedProbabilisticExecution sys) (hfin : sys.ImageFinite)
+    (hinitFin : pe.initState.support.Finite) (n : ℕ) :
+    {r : ResolvedExec S Label | ∃ hT : r.trans.Terminates,
+       (r.trans.toList hT).length = n ∧ pe.probOfR r hT ≠ 0}.Finite := by
+  classical
+  induction n with
+  | zero =>
+    apply Set.Finite.subset (hinitFin.image (fun i => (⟨i, Seq.nil⟩ : ResolvedExec S Label)))
+    rintro r ⟨hT, hlen, hpm⟩
+    have htoList : r.trans.toList hT = [] := List.length_eq_zero_iff.mp hlen
+    obtain ⟨i, t⟩ := r
+    have h_nil : t = Seq.nil := by
+      have h := Stream'.Seq.ofList_toList t hT
+      rw [htoList, Stream'.Seq.ofList_nil] at h; exact h.symm
+    subst h_nil
+    rw [pe.probOfR_nil i] at hpm
+    exact ⟨i, (PMF.mem_support_iff _ _).mpr hpm, rfl⟩
+  | succ k ih =>
+    have hchild : ∀ r' : ResolvedExec S Label,
+        {last : (Label × PMF S) × S |
+          sys.step (lastStateAux r') last.1.1 last.1.2 ∧ last.2 ∈ last.1.2.support}.Finite := by
+      intro r'
+      apply Set.Finite.subset
+        (Set.Finite.biUnion (hfin.1 (lastStateAux r'))
+          (fun p hp => (hfin.2 (lastStateAux r') p.1 p.2 hp).image (fun s' => (p, s'))))
+      rintro ⟨⟨l, μ⟩, s'⟩ ⟨hstep, hs'⟩
+      exact Set.mem_biUnion hstep ⟨s', hs', rfl⟩
+    apply Set.Finite.subset
+      (Set.Finite.biUnion ih (fun r' _ =>
+        Set.Finite.image
+          (fun last => (⟨r'.init, r'.trans.append (Seq.cons last Seq.nil)⟩ : ResolvedExec S Label))
+          (hchild r')))
+    rintro r ⟨hT, hlen, hpm⟩
+    have hne : r.trans.toList hT ≠ [] := by
+      intro h; rw [h, List.length_nil] at hlen; exact Nat.succ_ne_zero k hlen.symm
+    obtain ⟨prev, last, hprev, hsplit, hprevlist, -⟩ :=
+      Stream'.Seq.exists_split_last r.trans hT hne
+    have happ : (prev.append (Seq.cons last Seq.nil)).Terminates := hsplit ▸ hT
+    have hr_eq : r = ⟨r.init, prev.append (Seq.cons last Seq.nil)⟩ := by
+      obtain ⟨ri, rt⟩ := r; exact congrArg (AlterSeq.mk ri) hsplit
+    have hlen_prev : (prev.toList hprev).length = k := by
+      have h1 : (prev.toList hprev).length = (r.trans.toList hT).length - 1 := by
+        rw [hprevlist, List.length_dropLast]
+      omega
+    have hcongr : pe.probOfR r hT
+        = pe.probOfR ⟨r.init, prev.append (Seq.cons last Seq.nil)⟩ happ := by
+      cases r; cases hr_eq; rfl
+    rw [hcongr, pe.probOfR_append_singleton r.init prev hprev last happ] at hpm
+    have hpm_prev : pe.probOfR ⟨r.init, prev⟩ hprev ≠ 0 := fun h => hpm (by rw [h, zero_mul])
+    have hker : pe.rkernel ⟨r.init, prev⟩ last ≠ 0 := fun h => hpm (by rw [h, mul_zero])
+    have hr'mem : (⟨r.init, prev⟩ : ResolvedExec S Label) ∈
+        {r : ResolvedExec S Label | ∃ hT : r.trans.Terminates,
+          (r.trans.toList hT).length = k ∧ pe.probOfR r hT ≠ 0} :=
+      ⟨hprev, hlen_prev, hpm_prev⟩
+    obtain ⟨la, qa⟩ := last
+    obtain ⟨ll, μμ⟩ := la
+    have hnext_ne : pe.scheduler.next ⟨r.init, prev⟩ (some (ll, μμ)) ≠ 0 := by
+      unfold ResolvedProbabilisticExecution.rkernel at hker
+      exact fun h => hker (by rw [h, zero_mul])
+    have hμ_ne : μμ qa ≠ 0 := by
+      unfold ResolvedProbabilisticExecution.rkernel at hker
+      exact fun h => hker (by rw [h, mul_zero])
+    have hlast_eq : lastStateAux (⟨r.init, prev⟩ : ResolvedExec S Label)
+        = (⟨r.init, prev⟩ : ResolvedExec S Label).endState hprev := by
+      rw [lastStateAux, dif_pos hprev]
+    have hstate : (⟨r.init, prev⟩ : ResolvedExec S Label).stateAt (Nat.find hprev)
+        = some ((⟨r.init, prev⟩ : ResolvedExec S Label).endState hprev) :=
+      AlterSeq.stateAt_find_eq_endState _ hprev
+    have hstep : sys.step (lastStateAux (⟨r.init, prev⟩ : ResolvedExec S Label)) ll μμ := by
+      rw [hlast_eq]
+      exact pe.scheduler.valid ⟨r.init, prev⟩ (Nat.find hprev) _ (Nat.find_spec hprev) hstate
+        ll μμ ((PMF.mem_support_iff _ _).mpr hnext_ne)
+    refine Set.mem_biUnion hr'mem ⟨((ll, μμ), qa), ⟨hstep, (PMF.mem_support_iff _ _).mpr hμ_ne⟩, ?_⟩
+    rw [hr_eq]
+
+end ResolvedProbabilisticExecution
 
 variable {State_C State_A Label : Type} [Silent Label]
 
@@ -897,12 +1025,12 @@ private theorem exists_positive_coupled_prefix
   obtain ⟨w, hw⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hpm)
   exact ⟨w.1, w.2, terminates_of_absProjR_eq hTA w.2, hw⟩
 
-/-- **König lift (the sole remaining `sorry`).** An infinite
+/-- **König lift.** An infinite
 `abstractMarginal (simJointExecR pe_C sim)`-consistent abstract run `r_A` lifts to an infinite
 `simJointExecR pe_C sim`-consistent coupled run `r_J` with `absProjR r_J = r_A`.
 
-This is the single point where `sys_C.ImageFinite` is used, and the only deferred step of the whole
-fair-soundness development. The intended proof drives `exists_infinite_chain` (König) on the tree of
+This is the single point where `sys_C.ImageFinite` is used in the fair-soundness development. The
+proof drives `exists_infinite_chain` (König) on the tree of
 *consistent coupled prefixes projecting onto `r_A`'s prefixes* (`exists_positive_coupled_prefix`
 supplies the arbitrary-length chains):
 
@@ -1327,9 +1455,9 @@ The `sys_C.ImageFinite` hypothesis is what makes the fairness half go through: i
 branching of the *consistent* coupled tree so König's lemma lifts an infinite consistent abstract
 run to an infinite consistent coupled run whose concrete projection is a fair `pe_C`-run. (The trace
 half needs no finiteness. The unconditional statement — dropping `ImageFinite` — is left open; see
-the module docstring.) The proof is complete except for the König lift
-`exists_infinite_coupled_lift` (the single remaining `sorry`, used only by the infinite-run fairness
-clause); see its docstring and
+the module docstring.) The proof is complete and axiom-clean; the König lift
+`exists_infinite_coupled_lift` (used only by the infinite-run fairness clause) is the single point
+where `ImageFinite` enters — see its docstring and
 the module docstring for the full, finiteness-analysed plan.
 
 Proof sketch:
@@ -1365,6 +1493,124 @@ theorem fairAchievableTraceDists_subset
           pe_A_inf_fair pe_C sim hfin h_init hfair_C r_A hinf hcons N }
   · -- Trace preservation, composed with the source's `traceProbR = D`.
     exact fun τ => (abstractMarginal_simJointExecR_traceProbR pe_C sim h_init τ).trans (htr τ)
+
+open ResolvedProbabilisticExecution in
+/-- **The abstract scheduler built by the fair-soundness construction is finitely branching.** Under
+`sys_C.ImageFinite`, at every terminating resolved history `r_A` the marginalised abstract scheduler
+`abstractMarginal (simJointExecR pe_C sim)` schedules only finitely many transitions with positive
+probability (its `next`-support is finite).
+
+The two ingredients — matching the informal intuition — are both consequences of `ImageFinite`: each
+abstract history simulates only finitely many concrete histories (`positive_histories_finite`, via
+the finitely-branching consistent coupled tree), and on each the concrete scheduler emits only
+finitely many transitions with positive probability (`ResolvedScheduler.next_support_finite`), each
+mapping (through `simCoupleF`/`Prod.snd`) to a single abstract transition. Fairness of `pe_C` plays
+no role; finite branching of `pe_C` is automatic from `ImageFinite` and resolved-scheduler validity.
+
+Not needed for `fairAchievableTraceDists_subset` — an explicit record of the finite-branching fact
+behind the König lift `exists_infinite_coupled_lift`. -/
+theorem abstractMarginal_simJointExecR_next_support_finite
+    (pe_C : ResolvedProbabilisticExecution sys_C)
+    (sim : FairStrongProbabilisticSimulation F_C F_A R)
+    (hfin : sys_C.ImageFinite) (h_init : pe_C.initState = PMF.pure sys_C.init)
+    (r_A : ResolvedExec State_A Label) (hT : r_A.trans.Terminates) :
+    ((abstractMarginal (simJointExecR pe_C sim)).scheduler.next r_A).support.Finite := by
+  classical
+  have hinitFin : pe_C.initState.support.Finite := by
+    rw [h_init, PMF.support_pure]; exact Set.finite_singleton _
+  set n := (r_A.trans.toList hT).length with hn
+  have hposCfin : {r_C : ResolvedExec State_C Label | ∃ hTc : r_C.trans.Terminates,
+      (r_C.trans.toList hTc).length = n ∧ pe_C.probOfR r_C hTc ≠ 0}.Finite :=
+    ResolvedProbabilisticExecution.positive_histories_finite pe_C hfin hinitFin n
+  -- the abstract emission read off a concrete history and its `pe_C`-emission
+  set g : ResolvedExec State_C Label → Option (Label × PMF State_C) →
+      Option (Label × PMF State_A) :=
+    fun r_C o => o.map (fun lμ =>
+      (lμ.1, (simCoupleF sim (lastStateAux r_C, r_A.endState hT) lμ.1 lμ.2).map Prod.snd)) with hg
+  apply Set.Finite.subset (Set.Finite.insert none
+    (Set.Finite.biUnion hposCfin (fun r_C hr_C =>
+      Set.Finite.image (g r_C)
+        (ResolvedScheduler.next_support_finite pe_C.scheduler hfin r_C hr_C.choose))))
+  intro x hx
+  cases x with
+  | none => exact Set.mem_insert _ _
+  | some lν =>
+    obtain ⟨l, ν⟩ := lν
+    apply Set.mem_insert_of_mem
+    -- extract a positive fibre element and its pushed-forward emission
+    have hval := abstractMarginal_next_some (simJointExecR pe_C sim) r_A hT l ν
+    rw [PMF.mem_support_iff, hval] at hx
+    have hnum : (∑' r : {r : ResolvedExec (State_C × State_A) Label // absProjR r = r_A},
+        (simJointExecR pe_C sim).probOfR r.1 (terminates_of_absProjR_eq hT r.2)
+          * (((simJointExecR pe_C sim).scheduler.next r.1).map (mapEmit Prod.snd))
+              (some (l, ν))) ≠ 0 :=
+      (mul_ne_zero_iff.mp hx).1
+    obtain ⟨r, hr⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hnum)
+    have hTr : r.1.trans.Terminates := terminates_of_absProjR_eq hT r.2
+    have hprob : (simJointExecR pe_C sim).probOfR r.1 hTr ≠ 0 := fun h => hr (by rw [h, zero_mul])
+    have hpush : (((simJointExecR pe_C sim).scheduler.next r.1).map (mapEmit Prod.snd))
+        (some (l, ν)) ≠ 0 := fun h => hr (by rw [h, mul_zero])
+    -- unpick the coupling `ω` over `ν`
+    obtain ⟨ω, hωne, hνeq⟩ :
+        ∃ ω : PMF (State_C × State_A),
+          (simJointExecR pe_C sim).scheduler.next r.1 (some (l, ω)) ≠ 0 ∧ ν = ω.map Prod.snd := by
+      rw [mapEmit, PMF.map_apply] at hpush
+      obtain ⟨o, ho⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hpush)
+      by_cases hc : some (l, ν) = Option.map
+          (fun lμ : Label × PMF (State_C × State_A) => (lμ.1, lμ.2.map Prod.snd)) o
+      · cases o with
+        | none => simp at hc
+        | some lμ =>
+          obtain ⟨l', ω⟩ := lμ
+          simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hc
+          obtain ⟨rfl, rfl⟩ := hc
+          exact ⟨ω, fun h0 => by rw [h0] at ho; simp at ho, rfl⟩
+      · rw [if_neg hc] at ho; exact absurd rfl ho
+    -- identify `ω` as `simCoupleF` and read off the underlying `pe_C`-emission
+    obtain ⟨μ_C, hRpre, hstep, hωeq⟩ :=
+      simJointSchedR_next_support pe_C sim r.1 l ω ((PMF.mem_support_iff _ _).mpr hωne)
+    obtain ⟨μ_C', hnextC, _, _, hfstμ⟩ :=
+      simJointSchedR_next_support_concrete pe_C sim r.1 l ω ((PMF.mem_support_iff _ _).mpr hωne)
+    have hμeq : μ_C' = μ_C := by
+      rw [← hfstμ, hωeq]
+      exact simCoupleF_map_fst sim (simLastStateR r.1) l μ_C ⟨hRpre, hstep⟩
+    rw [hμeq] at hnextC
+    -- the concrete projection is a positive length-`n` `pe_C`-history
+    have hTrC : (concreteProjR r.1).trans.Terminates := (concreteProjR_terminates_iff r.1).mpr hTr
+    have hlenC : ((concreteProjR r.1).trans.toList hTrC).length = n := by
+      have e1 : ((concreteProjR r.1).trans.toList hTrC).length = Nat.find hTrC :=
+        Stream'.Seq.length_toList _ _
+      have e2 : (r_A.trans.toList hT).length = Nat.find hT := Stream'.Seq.length_toList _ _
+      have hfind1 : Nat.find hTrC = Nat.find hTr := by
+        apply Nat.find_congr'; intro m; exact concreteProjR_terminatedAt_iff r.1 m
+      have hfind2 : Nat.find hTr = Nat.find hT := by
+        apply Nat.find_congr'; intro m; rw [← absProjR_terminatedAt_iff r.1 m, r.2]
+      rw [hn, e1, e2, hfind1, hfind2]
+    have hconsJ : (simJointExecR pe_C sim).Consistent r.1 :=
+      probOfR_ne_zero_imp_consistent (simJointExecR pe_C sim) r.1 hTr hprob
+    have hconsC : pe_C.Consistent (concreteProjR r.1) :=
+      concreteProjR_consistent pe_C sim h_init r.1 hconsJ
+    have hpmC : pe_C.probOfR (concreteProjR r.1) hTrC ≠ 0 :=
+      consistent_imp_probOfR_ne_zero pe_C (concreteProjR r.1) hconsC hTrC
+    have hr_Cmem : (concreteProjR r.1) ∈ {r_C : ResolvedExec State_C Label |
+        ∃ hTc : r_C.trans.Terminates,
+          (r_C.trans.toList hTc).length = n ∧ pe_C.probOfR r_C hTc ≠ 0} := ⟨hTrC, hlenC, hpmC⟩
+    -- `simLastStateR r.1 = (lastStateAux (concreteProjR r.1), r_A.endState hT)`
+    have hTrA : (absProjR r.1).trans.Terminates := by rw [r.2]; exact hT
+    have hlast : simLastStateR r.1 = (lastStateAux (concreteProjR r.1), r_A.endState hT) := by
+      rw [simLastStateR_eq_endState r.1 hTr]
+      apply Prod.ext
+      · rw [show (r.1.endState hTr).1 = (concreteProjR r.1).endState hTrC from
+            (concreteProjR_endState r.1 hTr hTrC).symm, lastStateAux, dif_pos hTrC]
+      · rw [show (r.1.endState hTr).2 = (absProjR r.1).endState hTrA from
+            (absProjR_endState r.1 hTr hTrA).symm]
+        exact AlterSeq.endState_congr_pub r.2 hTrA hT
+    -- `some (l, ν) = g (concreteProjR r.1) (some (l, μ_C))`, whose input is a `pe_C`-emission
+    refine Set.mem_biUnion hr_Cmem ⟨some (l, μ_C), (PMF.mem_support_iff _ _).mpr hnextC, ?_⟩
+    have hνX : ν = (simCoupleF sim (lastStateAux (concreteProjR r.1), r_A.endState hT) l μ_C).map
+        Prod.snd := by rw [hνeq, hωeq, hlast]
+    simp only [hg, Option.map_some]
+    rw [hνX]
 
 end FairStrongProbabilisticSimulation
 
