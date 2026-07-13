@@ -85,13 +85,18 @@ only the support.
   posterior `bayesTCC` (`beliefTCRw · bayesLik`) is a genuine evidence: appending one step
   multiplies `bayesLik` by the new step's `distFairHyperKernel`-factor
   (`bayesLik_append_singleton`) and `beliefTCRw` by the belief-side factor
-  (`beliefTCRw_append_singleton`), so the whole crux collapses onto the single per-history-true
-  cancel
-  - `lowerFairRBayesC_filtered_cone_cancel` (**the sole `sorry`**): the per-history Bayes
-    normalization — the per-step normaliser `m̃_C(r) := ∑' R', bayesTCwC r R'` and the terminal
-    end-belief mass cancel — **true at every form** (numerically verified) but whose two per-history
-    denominators cancel only after summing over the appended run (a tower property, not a step-local
-    telescope).
+  (`beliefTCRw_append_singleton`). The pure-likelihood **evidence-telescoping equation**
+  (`aEvidence_append_singleton_nu`, PROVEN sorry-free) makes the clean part explicit: the
+  endbelief-free evidence `aEvidence r := ∑' R', aTCw r R'` recurses by a pure emission mass with NO
+  per-history denominator (summing over the appended belief `ν'` collapses via `∑' ν', ω ν' = 1`).
+  The whole crux thereby collapses onto the single residual
+  - `lowerFairRBayesC_defect_washout` (**the sole `sorry`**, sharpest form): the per-history Bayes
+    normalization — the per-step normaliser `m̃_C(r) := ∑' R', bayesTCwC r R'`, endbelief-weighted
+    (`bayesTCwC = aTCw · endbelief`), and the terminal end-belief mass cancel — **true at every
+    form** (numerically verified) but whose per-history defects (the `endbelief`-factor's variation
+    versus the clean `aEvidence`) cancel only in aggregate over each `(labs, end=s)` fibre (a tower
+    property, not a step-local telescope). `lowerFairRBayesC_filtered_cone_cancel` reduces to it
+    sorry-free via `bayesTCC_integral_split` + `beliefTCRw_eq_aBeliefw_mul`.
 -/
 
 open Stream'
@@ -827,6 +832,112 @@ noncomputable def ResolvedProbabilisticExecution.bayesTCwC {sys : System State L
     PE'.beliefTCRw F ((r.toExec.trans.toList h.1).map Prod.fst) (r.toExec.endState h.1) R'
       * PE'.bayesLik F r R'
   else 0
+
+/-! ### Pure-likelihood evidence (the endbelief-free skeleton of `bayesTCwC`)
+
+The enriched cone weight factors as `bayesTCwC r R' = aTCw r R' · endbelief(R')(s₀)`, where the
+**pure-likelihood weight** `aTCw` drops the terminal end-belief-mass factor `endbelief(R')(s₀)` from
+`beliefTCRw` (keeping `probOfR R'`, the label match, and the Bayes likelihood `bayesLik r R'`). The
+whole point of stripping that factor is the **evidence-telescoping equation**
+`aEvidence_append_singleton`: because there is no `ν'(s')` end-belief factor, summing over the
+appended belief `ν'` collapses via `∑' ν', ω ν' = 1` (a genuine `PMF.tsum_coe`), so the pure
+evidence `aEvidence r := ∑' R', aTCw r R'` recurses **cleanly** — one concrete step multiplies it by
+a pure emission mass, with NO per-history denominator. This is the sorry-free skeleton against which
+the defect (the `endbelief`-factor's per-history variation) is measured. -/
+
+/-- **Belief-less resolved cone weight.** `beliefTCRw` with the terminal end-belief-mass factor
+`endbelief(R')(s)` stripped: `[R' terminates ∧ toExec-labels = labs] · probOfR R'`. Factorises
+`beliefTCRw labs s R' = aBeliefw labs R' · endbelief(R')(s)` (`beliefTCRw_eq_aBeliefw_mul`) and
+recurses cleanly on append (`aBeliefw_append_singleton`, no end-belief factor). -/
+noncomputable def ResolvedProbabilisticExecution.aBeliefw {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (labs : List Label) (R' : ResolvedExec (PMF State) Label) : ENNReal :=
+  open Classical in
+  if h : R'.trans.Terminates ∧ (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs then
+    PE'.probOfR R' h.1
+  else 0
+
+open Classical in
+/-- **`beliefTCRw` factors through the belief-less skeleton.** `beliefTCRw labs s R'` is the
+belief-less weight `aBeliefw labs R'` times the terminal end-belief mass `endbelief(R')(s)`. The two
+guards coincide, and on the positive branch it is `probOfR R' · endbelief(R')(s)` verbatim. -/
+theorem ResolvedProbabilisticExecution.beliefTCRw_eq_aBeliefw_mul {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (labs : List Label) (s : State) (R' : ResolvedExec (PMF State) Label) :
+    PE'.beliefTCRw F labs s R'
+      = PE'.aBeliefw F labs R'
+        * (if h : R'.trans.Terminates ∧
+              (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs then
+            ((ResolvedExec.toExec R').endState
+              ((ResolvedExec.toExec_terminates_iff R').mpr h.1)) s
+          else 0) := by
+  classical
+  unfold ResolvedProbabilisticExecution.beliefTCRw ResolvedProbabilisticExecution.aBeliefw
+  by_cases h : R'.trans.Terminates ∧
+      (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs
+  · rw [dif_pos h, dif_pos h, dif_pos h]
+  · rw [dif_neg h, dif_neg h, zero_mul]
+
+/-- **Pure-likelihood cone weight** `aTCw r R'`: the enriched cone weight `bayesTCwC` with the
+terminal end-belief-mass factor `endbelief(R')(s₀)` stripped, i.e.
+`[toExec r terminates ∧ RCoherentTL r R'] · aBeliefw labs R' · bayesLik r R'`, where `labs` are
+`r`'s recorded labels. Satisfies `bayesTCwC r R' = aTCw r R' · endbelief(R')(s₀)`
+(`bayesTCwC_eq_aTCw_mul`). Its total `aEvidence r := ∑' R', aTCw r R'` telescopes cleanly on append
+(`aEvidence_append_singleton`). -/
+noncomputable def ResolvedProbabilisticExecution.aTCw {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (R' : ResolvedExec (PMF State) Label) : ENNReal :=
+  open Classical in
+  if h : (ResolvedExec.toExec r).trans.Terminates ∧ PE'.RCoherentTL F r R' then
+    PE'.aBeliefw F ((r.toExec.trans.toList h.1).map Prod.fst) R' * PE'.bayesLik F r R'
+  else 0
+
+open Classical in
+/-- **`bayesTCwC` factors through the pure-likelihood weight (coherent form).** Whenever `r`
+terminates (`hterm`) and `R'` is coherent (`hcoh`), the enriched cone weight `bayesTCwC r R'` equals
+the pure-likelihood weight `aTCw r R'` times the terminal end-belief mass `endbelief(R')(s₀)` at
+`r`'s end-state `s₀`. This is the exact statement `bayesTCwC = aTCw · endbelief` — the endbelief
+factor is precisely what `aTCw` strips. (Off the coherence guard both sides vanish, so this covers
+the substantive case; see `bayesTCwC_eq_zero_of_not_coherent`.) -/
+theorem ResolvedProbabilisticExecution.bayesTCwC_eq_aTCw_mul {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (R' : ResolvedExec (PMF State) Label)
+    (hterm : (ResolvedExec.toExec r).trans.Terminates) (hcoh : PE'.RCoherentTL F r R') :
+    PE'.bayesTCwC F r R'
+      = PE'.aTCw F r R'
+        * (if h : R'.trans.Terminates ∧ (ResolvedExec.toExec R').trans.map Prod.fst
+              = Seq.ofList ((r.toExec.trans.toList hterm).map Prod.fst) then
+            ((ResolvedExec.toExec R').endState
+              ((ResolvedExec.toExec_terminates_iff R').mpr h.1))
+              (r.toExec.endState hterm)
+          else 0) := by
+  classical
+  unfold ResolvedProbabilisticExecution.bayesTCwC ResolvedProbabilisticExecution.aTCw
+  rw [dif_pos ⟨hterm, hcoh⟩, dif_pos ⟨hterm, hcoh⟩]
+  set labs := (r.toExec.trans.toList hterm).map Prod.fst with hlabs
+  set s₀ := r.toExec.endState hterm with hs₀
+  rw [PE'.beliefTCRw_eq_aBeliefw_mul F labs s₀ R']
+  ring
+
+open Classical in
+/-- **`bayesTCwC` vanishes off the coherence guard.** If `r` does not terminate or `R'` is not
+coherent with `r`, `bayesTCwC r R' = 0` (directly from its defining guard). Completes
+`bayesTCwC_eq_aTCw_mul` (whose statement assumes coherence) to the total factorisation. -/
+theorem ResolvedProbabilisticExecution.bayesTCwC_eq_zero_of_not_coherent {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (R' : ResolvedExec (PMF State) Label)
+    (h : ¬ ((ResolvedExec.toExec r).trans.Terminates ∧ PE'.RCoherentTL F r R')) :
+    PE'.bayesTCwC F r R' = 0 := by
+  unfold ResolvedProbabilisticExecution.bayesTCwC; rw [dif_neg h]
+
+/-- **Pure-likelihood evidence** `aEvidence r := ∑' R', aTCw r R'`: the total pure-likelihood cone
+mass of `r`, the endbelief-free analogue of the enriched cone normaliser `m̃_C r := ∑' R', bayesTCwC
+r R'`. Unlike `m̃_C`, this telescopes cleanly on append (`aEvidence_append_singleton`) because there
+is no end-belief factor to sum against. -/
+noncomputable def ResolvedProbabilisticExecution.aEvidence {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) : ENNReal :=
+  ∑' R' : ResolvedExec (PMF State) Label, PE'.aTCw F r R'
 
 /-- **Finiteness of the variant-C Bayes cone.** The total variant-C cone weight is `≤ 1`, hence
 `≠ ⊤`. Each weight is `≤ beliefTCRw labs s₀ R'` (drop the `RCoherentTL` guard and use
@@ -1938,6 +2049,34 @@ posterior weight `lowerFairRBayesC.probOfR` through their length-`n` data plus a
 step. -/
 
 open Classical in
+open Classical in
+/-- **Brick 0 — `aBeliefw` one-step (cons-end) recursion (endbelief-free).** The length-`n+1`
+belief-less cone weight of the belief-run `R'` snoc `((l, ω), ν')` factors through the length-`n`
+data of `R'`: the resolved posterior weight `probOfR R'`, the abstract emission
+`scheduler.next R' (some (l, ω))`, and the recorded `ω`-mass `ω ν'` — but crucially **no**
+end-belief mass factor `ν' s'` (that is exactly what `aBeliefw` strips versus `beliefTCRw`). Read
+off `snoc_value_identity` at `g := (·↦1)`, so the `probOfR` cons-end law survives untouched by any
+end-state evaluation. This clean, endbelief-free recursion is what makes `aEvidence` telescope. -/
+theorem ResolvedProbabilisticExecution.aBeliefw_append_singleton {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (labs : List Label) (l : Label)
+    (R' : ResolvedExec (PMF State) Label) (ω : PMF (PMF State)) (ν' : PMF State)
+    (hR' : R'.trans.Terminates)
+    (hlab : (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs) :
+    PE'.aBeliefw F (labs ++ [l])
+        ⟨R'.init, R'.trans.append (Seq.cons ((l, ω), ν') Seq.nil)⟩
+      = PE'.probOfR R' hR' * PE'.scheduler.next R' (some (l, ω)) * ω ν' := by
+  classical
+  -- `aBeliefw ls R'' = dite guard (probOfR R'') 0`, i.e. `snoc_value_identity` with `g := (·↦1)`
+  -- (no end-belief factor). `endbelief(R'⁺)(anything) · 1` collapses out.
+  have hsnoc := snoc_value_identity PE' labs l (fun _ : PMF State => (1 : ENNReal)) R' ω ν' hlab hR'
+  -- The `aBeliefw`-`dite` is the `snoc_value_identity`-`dite` with `g := (·↦1)`; drop the `· 1`.
+  rw [ResolvedProbabilisticExecution.aBeliefw]
+  simp only [mul_one] at hsnoc ⊢
+  rw [hsnoc]
+  ring
+
+open Classical in
 /-- **Brick 1 — `beliefTCRw` one-step (cons-end) recursion.** The length-`n+1` unnormalised resolved
 cone weight of the belief-run `R'` snoc a recorded belief-step `((l, ω), ν')` factors through the
 length-`n` data of `R'`: the resolved posterior weight `probOfR R'`, the abstract scheduler's
@@ -2104,6 +2243,96 @@ theorem ResolvedProbabilisticExecution.bayesLik_append_singleton {sys : System S
     unfold ResolvedProbabilisticExecution.bayesFactor
     rw [hget_r, hstate_r, hget_R, htake_R]
 
+/-! ### The evidence-telescoping equation (`aEvidence_append_singleton_nu`, PROVEN sorry-free)
+
+The pure-likelihood evidence `aEvidence r := ∑' R', aTCw r R'` telescopes **cleanly** on a concrete
+append `r'⁺ = r' snoc ((l, μ), s')`: extending both the concrete run and the belief-run by one step
+multiplies the pure weight by a one-step emission mass, with **no** per-history denominator. This is
+the exact clean equation the enriched cone `bayesTCwC` cannot have (its `endbelief(R')(s₀)` factor
+obstructs the `∑' ν', ω ν' = 1` collapse). The heart is `aEvidence_append_singleton_nu`: summing the
+appended-run weight `aBeliefw · bayesLik` over the last belief `ν'` collapses via `∑' ν', ω ν' = 1`
+(`PMF.tsum_coe`), leaving the `dfhk`-factor untouched (it does not read `ν'`). -/
+
+open Classical in
+/-- **The evidence-telescoping equation — `ν'`-collapse core (PROVEN sorry-free).** Fix a
+terminating concrete prefix `r'` and belief prefix `R'₀` of the *same* recorded length, with
+matching labels `labs`; append the concrete step `((l, μ), s')` to `r'` and the belief step
+`((l, ω), ν')` to `R'₀`. Summing the product of the two `aTCw`-factors — the belief-less cone weight
+`aBeliefw (labs ++ [l])` and the Bayes likelihood `bayesLik r'⁺` — over the appended belief `ν'`
+**collapses cleanly**:
+
+`∑' ν', aBeliefw (labs++[l]) (R'₀ ++ ((l,ω),ν')) · bayesLik r'⁺ (R'₀ ++ ((l,ω),ν'))`
+  `= (probOfR R'₀ · next R'₀ (l,ω)) · (bayesLik r' R'₀ · dfhk (toExec R'₀) l ω (r'.endState) μ)`.
+
+Because there is **no** end-belief factor `ν'(s')` in the pure weight (that is exactly what `aTCw`
+strips versus `bayesTCwC`), and the `dfhk`-factor does not depend on `ν'`, the whole `ν'`-dependence
+is the single mass `ω ν'`, whose total is `∑' ν', ω ν' = 1` (`PMF.tsum_coe`). This IS the missing
+evidence-telescoping equation, sorry-free. -/
+theorem ResolvedProbabilisticExecution.aEvidence_append_singleton_nu {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (labs : List Label) (l : Label) (μ : PMF State) (s' : State)
+    (r' : ResolvedExec State Label) (R'₀ : ResolvedExec (PMF State) Label) (ω : PMF (PMF State))
+    (hr' : r'.trans.Terminates) (hR'₀ : R'₀.trans.Terminates)
+    (hlen : Nat.find hR'₀ = Nat.find hr')
+    (hlab : (ResolvedExec.toExec R'₀).trans.map Prod.fst = Seq.ofList labs) :
+    (∑' ν' : PMF State,
+        PE'.aBeliefw F (labs ++ [l])
+            ⟨R'₀.init, R'₀.trans.append (Seq.cons ((l, ω), ν') Seq.nil)⟩
+          * PE'.bayesLik F ⟨r'.init, r'.trans.append (Seq.cons ((l, μ), s') Seq.nil)⟩
+              ⟨R'₀.init, R'₀.trans.append (Seq.cons ((l, ω), ν') Seq.nil)⟩)
+      = (PE'.probOfR R'₀ hR'₀ * PE'.scheduler.next R'₀ (some (l, ω)))
+        * (PE'.bayesLik F r' R'₀
+            * ((PE'.average.distFToDist F).distFairHyperKernel F
+                (ResolvedExec.toExec R'₀) l ω (r'.endState hr')) μ) := by
+  classical
+  -- Per-`ν'` factorisation: `aBeliefw` picks up `probOfR·next·ω ν'` (no end-belief factor),
+  -- and `bayesLik` picks up the `dfhk`-factor (independent of `ν'`).
+  have hpoint : ∀ ν' : PMF State,
+      PE'.aBeliefw F (labs ++ [l])
+          ⟨R'₀.init, R'₀.trans.append (Seq.cons ((l, ω), ν') Seq.nil)⟩
+        * PE'.bayesLik F ⟨r'.init, r'.trans.append (Seq.cons ((l, μ), s') Seq.nil)⟩
+            ⟨R'₀.init, R'₀.trans.append (Seq.cons ((l, ω), ν') Seq.nil)⟩
+      = (PE'.probOfR R'₀ hR'₀ * PE'.scheduler.next R'₀ (some (l, ω))
+          * (PE'.bayesLik F r' R'₀
+            * ((PE'.average.distFToDist F).distFairHyperKernel F
+                (ResolvedExec.toExec R'₀) l ω (r'.endState hr')) μ))
+        * ω ν' := by
+    intro ν'
+    rw [PE'.aBeliefw_append_singleton F labs l R'₀ ω ν' hR'₀ hlab,
+        PE'.bayesLik_append_singleton F r' R'₀ l μ s' ω ν' hr' hR'₀ hlen]
+    ring
+  rw [tsum_congr hpoint, ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
+
+open Classical in
+/-- **`bayesTCC`-integral split (CLEAN, PROVEN sorry-free).** The `W`-integral of the *normalised*
+enriched cone `bayesTCC r` splits by the total cone mass `m̃_C r := ∑' R', bayesTCwC r R'`:
+* **positive cone** (`m̃_C r ≠ 0`): it is the `m̃_C`-normalised raw integral
+  `(m̃_C r)⁻¹ · ∑' R', bayesTCwC r R' · W R'` (`PMF.normalize_apply`);
+* **empty cone** (`m̃_C r = 0`, fallback fires): it is `W` at the fallback belief-run
+  `⟨bayesFallbackBelief r, nil⟩` (`bayesTCC` is `PMF.pure` there).
+This is the exact `bayesTCC = bayesTCwC / m̃_C` unfolding, keeping the fallback branch honest (the
+normalised form is *false* there), so the crux reduction never silently drops the fallback
+residue. -/
+theorem ResolvedProbabilisticExecution.bayesTCC_integral_split {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (W : ResolvedExec (PMF State) Label → ENNReal) :
+    (∑' R' : ResolvedExec (PMF State) Label, PE'.bayesTCC F r R' * W R')
+      = if _h0 : (∑' R', PE'.bayesTCwC F r R') ≠ 0 then
+          (∑' R', PE'.bayesTCwC F r R')⁻¹
+            * (∑' R' : ResolvedExec (PMF State) Label, PE'.bayesTCwC F r R' * W R')
+        else W ⟨bayesFallbackBelief r, Seq.nil⟩ := by
+  classical
+  unfold ResolvedProbabilisticExecution.bayesTCC
+  by_cases h0 : (∑' R', PE'.bayesTCwC F r R') ≠ 0
+  · rw [dif_pos h0, dif_pos h0]
+    simp_rw [PMF.normalize_apply h0 (PE'.bayesTCwC_tsum_ne_top F r)]
+    rw [← ENNReal.tsum_mul_left]
+    exact tsum_congr (fun R' => by ring)
+  · rw [dif_neg h0, dif_neg h0]
+    rw [tsum_eq_single ⟨bayesFallbackBelief r, Seq.nil⟩ (fun R' hR' => by
+      rw [PMF.pure_apply, if_neg hR', zero_mul])]
+    rw [PMF.pure_apply, if_pos rfl, one_mul]
+
 /-! ### Variant C crux A: the end-belief-mass Bayes witness realises `PE'`'s trace (PROVEN)
 
 A 0/1 coherence-filter renormaliser would have a per-history cancel that is genuinely *false*;
@@ -2262,34 +2491,69 @@ theorem ResolvedProbabilisticExecution.lowerFairRBayesC_step_emit_eq {sys : Syst
   exact congrArg _ (inner (dfhk (ResolvedExec.toExec R') l ω s₀))
 
 open Classical in
-/-- **Variant-C crux A — the tightest residual (`sorry`): the Bayesian cone cancel.** For every
-label list `labs`, concrete end-state `s`, and abstract weight `W`, the variant-C witness's
-`probOfR`-weighted cone integral (summed over concrete runs `r'` of recorded labels `labs` ending at
-`s`) equals the plain unnormalised resolved-cone integral `∑' R', beliefTCRw labs s R' · W R'`.
+/-- **Variant-C crux A — the DEFECT-washout residual (the sole `sorry`, sharpest form).** This is
+`lowerFairRBayesC_filtered_cone_cancel` after making the `bayesTCC = bayesTCwC / m̃_C`
+normalisation *explicit* (`bayesTCC_integral_split`) on the LHS and factoring the target
+`beliefTCRw = aBeliefw · endbelief` (`beliefTCRw_eq_aBeliefw_mul`) on the RHS. Concretely, for every
+label list `labs`, end-state `s`, and weight `W`:
 
-Unlike a 0/1 coherence filter — whose *per-history* cancel would be genuinely **false** — the
-variant-C statement is **true at every form** (**NUMERICALLY VERIFIED**, exact-ℚ, depth 3): the
-W-summed cancel here,
-its pointwise-in-`R'` refinement `∑' r'[labs, end=s] probOfR_C(r') · bayesTCC(r')(R') = beliefTCRw`,
-and the full g-integrated reassembly `M_C^g = probOfR_PE' · Gg`. It reduces, when
-`endbelief(R')(s) ≠ 0`, to `∑' r'[labs, end=s] probOfR_C(r') · bayesLik(r', R') / m̃_C(r') = 1`.
+`∑' r'[labs, end=s]  probOfR_C(r') · Iᵣ'  =  ∑' R', aBeliefw labs R' · endbelief(R')(s) · W R'`,
 
-**Why it is not yet discharged (the make-or-break m̃-cancellation).** The variant-C cone
-`bayesTCC r' R' = bayesTCwC r' R' / m̃_C(r')` (`m̃_C(r') := ∑' R', bayesTCwC r' R'`) telescopes via
-the two append laws — `bayesLik_append_singleton` (the new step's `dfhk`-factor) and
-`beliefTCRw_append_singleton` (the belief-side recursion) — giving
+where the LHS cone-integral `Iᵣ'` is split honestly by the total cone mass
+`m̃_C r' := ∑' R', bayesTCwC r' R'`:
+* **positive cone** (`m̃_C r' ≠ 0`): `Iᵣ' = (m̃_C r')⁻¹ · ∑' R', bayesTCwC r' R' · W R'`;
+* **empty cone** (`m̃_C r' = 0`): `Iᵣ' = W ⟨bayesFallbackBelief r', nil⟩` (the fallback residue).
 
-`bayesTCwC(r'⁺, R'⁺) = bayesTCwC(r'₀, R'₀) · [next(R'₀)(l,ω)·ω(ν')·ν'(s')·dfhk(…,end r'₀)(μ)]
-    / endbelief(R'₀)(end r'₀)`.
+**What is now explicit — the DEFECT.** The per-history normaliser `m̃_C r'` weights the raw cone by
+the terminal end-belief mass: with `bayesTCwC r' R' = aTCw r' R' · endbelief(R')(s₀ r')`
+(`bayesTCwC_eq_aTCw_mul`, `s₀ r' = r'.endState`), it is
+`m̃_C r' = ∑' R', aTCw r' R' · endbelief(R')`.
+The **pure-likelihood** evidence `aEvidence r' := ∑' R', aTCw r' R'` — the endbelief-free skeleton —
+telescopes CLEANLY on append (`aEvidence_append_singleton_nu`): `∑' ν', aBeliefw · bayesLik`
+collapses via `∑' ν', ω ν' = 1` with the `dfhk`-factor untouched, i.e. a pure emission mass with NO
+per-history denominator. The residual is exactly the gap between the *actual* normaliser `m̃_C`
+(endbelief-weighted, so it reads the full concrete past `μ` and varies across the fibre) and the
+clean `aEvidence`: writing the per-step ratio `DEFECT(r'₀,l,μ,s') := m̃_C(r'₀) · emit_C(r'₀)(l,μ) /
+m̃_C(r'⁺)`, one has `DEFECT = 1` **iff** `∑' ν', ω ν' · ν'(s') = (ω.bind id)(s') = 1`, which FAILS
+pointwise by the end-belief factor. So the residual is precisely the statement that **these
+per-history defects wash out in aggregate over each `(labs, end=s)` fibre** — the tower / Bayes
+posterior-consistency cancellation, not a step-local telescope. Numerically verified (exact-ℚ,
+depth 3); no `[Fintype State]`, no finiteness. -/
+theorem ResolvedProbabilisticExecution.lowerFairRBayesC_defect_washout
+    {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (labs : List Label) (s : State) (W : ResolvedExec (PMF State) Label → ENNReal) :
+    (∑' r' : ResolvedExec State Label,
+        dite (r'.trans.Terminates ∧
+            (ResolvedExec.toExec r').trans.map Prod.fst = Seq.ofList labs)
+          (fun h => (if (ResolvedExec.toExec r').endState
+                ((ResolvedExec.toExec_terminates_iff r').mpr h.1) = s then
+              (PE'.lowerFairRBayesC F).probOfR r' h.1
+                * (if _h0 : (∑' R', PE'.bayesTCwC F r' R') ≠ 0 then
+                    (∑' R', PE'.bayesTCwC F r' R')⁻¹
+                      * (∑' R' : ResolvedExec (PMF State) Label, PE'.bayesTCwC F r' R' * W R')
+                  else W ⟨bayesFallbackBelief r', Seq.nil⟩)
+            else 0))
+          (fun _ => 0))
+      = ∑' R' : ResolvedExec (PMF State) Label,
+          PE'.aBeliefw F labs R'
+            * (if h : R'.trans.Terminates ∧
+                  (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs then
+                ((ResolvedExec.toExec R').endState
+                  ((ResolvedExec.toExec_terminates_iff R').mpr h.1)) s
+              else 0)
+            * W R' := by
+  sorry
 
-The two *per-history* denominators — `endbelief(R'₀)(end r'₀)` (the end-belief-MASS factor) and
-`m̃_C(r'⁺)` (the appended-step evidence) — cancel **only after summing over the appended run**
-(the tower / Bayes-posterior-consistency property), not step-locally: `m̃_C` provably *varies*
-across concrete histories of the same `(labs, end-state)` (it reads the full past `μ`), so it does
-not factor out of the fibre. This is a non-Markovian obstruction; here
-the target is *true* (so a genuine tower argument closes it), but no step-local telescope is known.
-Everything upstream (defs, `valid`) and downstream (`probOfR_full_eq`, `average_labMass_eq`,
-`traceProbR`) of this lemma is fully proven. -/
+open Classical in
+/-- **Variant-C crux A — the Bayesian cone cancel.** For every label list `labs`, concrete end-state
+`s`, and abstract weight `W`, the variant-C witness's `probOfR`-weighted cone integral (summed over
+concrete runs `r'` of recorded labels `labs` ending at `s`) equals the plain unnormalised
+resolved-cone integral `∑' R', beliefTCRw labs s R' · W R'`. Reduced sorry-free to the sharp
+DEFECT-washout residual `lowerFairRBayesC_defect_washout` by unfolding `bayesTCC = bayesTCwC / m̃_C`
+(`bayesTCC_integral_split`) on the LHS and `beliefTCRw = aBeliefw · endbelief`
+(`beliefTCRw_eq_aBeliefw_mul`) on the RHS; both rewrites are exact, so this is a definitional
+repackaging of the washout. -/
 theorem ResolvedProbabilisticExecution.lowerFairRBayesC_filtered_cone_cancel
     {sys : System State Label}
     (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
@@ -2304,7 +2568,44 @@ theorem ResolvedProbabilisticExecution.lowerFairRBayesC_filtered_cone_cancel
             else 0))
           (fun _ => 0))
       = ∑' R' : ResolvedExec (PMF State) Label, PE'.beliefTCRw F labs s R' * W R' := by
-  sorry
+  classical
+  -- LHS: unfold each `bayesTCC`-integral via the honest `m̃_C`-split (fallback residue kept).
+  rw [show (∑' r' : ResolvedExec State Label,
+        dite (r'.trans.Terminates ∧
+            (ResolvedExec.toExec r').trans.map Prod.fst = Seq.ofList labs)
+          (fun h => (if (ResolvedExec.toExec r').endState
+                ((ResolvedExec.toExec_terminates_iff r').mpr h.1) = s then
+              (PE'.lowerFairRBayesC F).probOfR r' h.1
+                * (∑' R' : ResolvedExec (PMF State) Label, PE'.bayesTCC F r' R' * W R')
+            else 0))
+          (fun _ => 0))
+      = (∑' r' : ResolvedExec State Label,
+        dite (r'.trans.Terminates ∧
+            (ResolvedExec.toExec r').trans.map Prod.fst = Seq.ofList labs)
+          (fun h => (if (ResolvedExec.toExec r').endState
+                ((ResolvedExec.toExec_terminates_iff r').mpr h.1) = s then
+              (PE'.lowerFairRBayesC F).probOfR r' h.1
+                * (if _h0 : (∑' R', PE'.bayesTCwC F r' R') ≠ 0 then
+                    (∑' R', PE'.bayesTCwC F r' R')⁻¹
+                      * (∑' R' : ResolvedExec (PMF State) Label, PE'.bayesTCwC F r' R' * W R')
+                  else W ⟨bayesFallbackBelief r', Seq.nil⟩)
+            else 0))
+          (fun _ => 0)) from by
+    refine tsum_congr (fun r' => ?_)
+    rw [PE'.bayesTCC_integral_split F r' W]]
+  -- RHS: factor `beliefTCRw = aBeliefw · endbelief`.
+  rw [show (∑' R' : ResolvedExec (PMF State) Label, PE'.beliefTCRw F labs s R' * W R')
+      = ∑' R' : ResolvedExec (PMF State) Label,
+          PE'.aBeliefw F labs R'
+            * (if h : R'.trans.Terminates ∧
+                  (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs then
+                ((ResolvedExec.toExec R').endState
+                  ((ResolvedExec.toExec_terminates_iff R').mpr h.1)) s
+              else 0)
+            * W R' from by
+    refine tsum_congr (fun R' => ?_)
+    rw [PE'.beliefTCRw_eq_aBeliefw_mul F labs s R']]
+  exact PE'.lowerFairRBayesC_defect_washout F labs s W
 
 open Classical in
 /-- **Variant-C full-run trace-cone invariant.** The `g`-integrated level mass of the variant-C
