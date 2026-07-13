@@ -25,28 +25,22 @@ reverse inclusion.
 `(sys.distF F).step` is definitionally `𝒟(sys).step` plus a `Resolvable` side-condition, so `PE'`'s
 emissions are valid `𝒟(sys)`-steps.
 
-`lowerFairR` — the μ-reading witness. At each concrete history `r` it samples a *resolved*
-belief-run `R'` from the **resolved trace-cone** `beliefTCR` (which records the emitted `ω`s and
-every intermediate belief), restricted to the **time-local** coherence `RCoherentTL` with `r`, and
-emits through the sampled run's own **resolved** next `PE'.scheduler.next R'` followed by the
-fairness-revealing kernel `distFairHyperKernel` over `R'.toExec`. Emitting via the *resolved* next
-of the sampled coherent `R'` (rather than a forgetful average over the `toExec`-fibre) keeps the
-concrete run accompanied by a genuine coherent `PE'`-belief-run throughout, so every halt is a real
-`PE'`-halt (a fair deadlock). `RCoherentTL` is resolved, time-local (each recorded step is matched
+`lowerFairRBayesC` — the **variant-C Bayes witness**, the sole lowering used by
+`lower_of_finiteBranching`. At each concrete history `r` it samples a *resolved* belief-run `R'`
+from the **enriched Bayes cone** `bayesTCC F r` (`PMF.normalize (bayesTCwC F r)`, where
+`bayesTCwC = [term ∧ labels-match ∧ RCoherentTL] · beliefTCRw · bayesLik` — the end-belief-mass
+Bayes posterior over belief-runs, not a 0/1 coherence filter), and emits through the sampled run's
+own **resolved** next `PE'.scheduler.next R'` followed by the fairness-revealing kernel
+`distFairHyperKernel` over `R'.toExec`. Emitting via the *resolved* next of the sampled coherent
+`R'` keeps the concrete run accompanied by a genuine coherent `PE'`-belief-run throughout, so every
+halt is a real `PE'`-halt (a fair deadlock). The cone support (`bayesTCC_support`) is exactly the
+coherent runs (`RCoherentTL F r`, read off the `bayesTCwC` guard) matching `r`'s labels with `r`'s
+end-state in their end-belief; `RCoherentTL` is resolved, time-local (each recorded step is matched
 at *that step's* belief `(R'.take n).toExec.endState`) and prefix-local — exactly what a König lift
-and the
-fairness down-transfer consume; `beliefTCR` pushes forward to the plain `beliefTC` along `toExec`
-(`beliefTCR_map_toExec`); `valid` reduces to `distFairHyperKernel_valid`.
-
-`lowerFairRBayesC` — the **variant-C Bayes witness**, the actual lowering used by
-`lower_of_finiteBranching`. It has the *identical* emission to `lowerFairR` (the sampled
-belief-run's resolved next `PE'.scheduler.next R'` followed by `distFairHyperKernel`); only the
-*sampling weight* differs — the normalized Bayes posterior `bayesTCC F r` (`beliefTCRw · bayesLik`)
-in place of the 0/1 coherence-filtered cone `(beliefTCR labs s₀).filter {RCoherentTL r}`. On the
-live branch the two schedulers share their support (`bayesLik_pos_of_RCoherentTL`), so the whole
-fairness/halt story reuses the coarse `lowerFairR` lemmas verbatim via the `Consistent`-transfer
-(`lowerFairRBayesC_consistent_imp`); the coarse `lowerFairR` is therefore **retained** as the
-fairness/halt substrate. The payoff of the Bayes weight is on the *trace* side (see below).
+and the fairness down-transfer consume; `valid` reduces to `distFairHyperKernel_valid_of_resolved`.
+The Bayes weight is a genuine evidence: appending one step multiplies `bayesLik` by that step's
+`distFairHyperKernel`-factor (`bayesLik_append_singleton`), which is what makes the *trace* crux
+per-history-true (see below).
 
 ## Status (the finite-branching route)
 
@@ -59,29 +53,34 @@ free
 (`abstractMarginal_simJointExecR_next_support_finite`). **No `[Fintype State]`, no tightness, no
 image-finiteness of `sys`.**
 
-Fairness and halt are proven on `lowerFairR` and reused by `lowerFairRBayesC`
-(`lowerFairRBayesC_isFair_of_finiteBranching`) through the `Consistent`-transfer, since the two
-witnesses share their live-branch support (`bayesLik_pos_of_RCoherentTL`); only trace needs the
-variant-C Bayes weight.
+Fairness and halt are proven **directly on the enriched Bayes cone** `bayesTCC`
+(`lowerFairRBayesC_isFair_of_finiteBranching`): every fairness/halt lemma extracts a coherent
+belief-run from `bayesTCC F r`'s support (via `bayesTCC_support` and the `bayesTCwC` guard), then
+runs König / fairness-transfer / halt-bookkeeping — none of which cares about the sampling weight,
+only the support.
 
-* **Fairness (`inf_fair`) — PROVEN, axiom-clean** (`lowerFairR_phantom_free_of_finiteBranching`,
-  via `exists_timeLocal_coherent_resolved_lift`): under the two branching hypotheses the belief-lift
-  tree is genuinely finitely branching, so König (`exists_infinite_chain`) threads an infinite
-  `PE'`-consistent `RCoherentTL`-coherent belief-run `R'`; `PE'.IsFair.inf_fair` on `R'` and
-  `distFairHyperKernel_fair_transfer` carry `F.dist`-fairness down to `F`-fairness of `r`.
+* **Fairness (`inf_fair`) — PROVEN, axiom-clean**
+  (`lowerFairRBayesC_phantom_free_of_finiteBranching`, via
+  `exists_timeLocal_coherent_resolved_lift` fed the enriched prefix source
+  `exists_positive_coherent_prefix_common_init_bayes`): under the two branching hypotheses the
+  belief-lift tree is genuinely finitely branching, so König (`exists_infinite_chain`) threads an
+  infinite `PE'`-consistent `RCoherentTL`-coherent belief-run `R'`; `PE'.IsFair.inf_fair` on `R'`
+  and `distFairHyperKernel_fair_transfer` carry `F.dist`-fairness down to `F`-fairness of `r`.
 
-* **Halt (`lowerFairR_halt_fairDeadlock`) — PROVEN, axiom-clean.** With the resolved emission, when
-  the witness halts at a consistent terminating `r` the halting belief-run `R'` is read off
+* **Halt (`lowerFairRBayesC_halt_fairDeadlock`) — PROVEN, axiom-clean.** With the resolved emission,
+  when the witness halts at a consistent terminating `r` the halting belief-run `R'` is read off
   *directly* (the `none` branch of `PE'.scheduler.next R'`), so `R'` is a genuine `PE'`-halt; the
-  fallback `PMF.pure none` never fires on a consistent run (`lowerFairR_halt_restricted_cone_pos`,
-  now a consequence of consistency). `PE'.IsFair.halt_fairDeadlock` + `distF_fairDeadlock_belief`
-  carry the fair deadlock down to `r`'s end-state.
+  `pure ⟨bayesFallbackBelief r, nil⟩` fallback never fires on a consistent run
+  (`lowerFairRBayesC_halt_cone_pos`, the enriched cone is positive on consistent runs, proven
+  self-contained by induction via `lowerFairRBayesC_halt_nonnil_coherent_witness`).
+  `PE'.IsFair.halt_fairDeadlock` + `distF_fairDeadlock_belief` carry the fair deadlock down to `r`'s
+  end-state.
 
 * **Trace (`lowerFairRBayesC_traceProbR`) — reduced to one sharp residual**
   `lowerFairRBayesC_filtered_cone_cancel`. The variant-C Bayes witness realises `PE'`'s trace
   distribution; this is reduced (no finiteness), via `traceProb_average` on both sides and
   `lowerWith_traceProb_eq` on the μ-blind side, to the level-mass invariant
-  `lowerFairRBayesC_average_labMass_eq`. Where the coarse 0/1 coherence filter forces a
+  `lowerFairRBayesC_average_labMass_eq`. Where a 0/1 coherence filter would force a
   *non-Markovian* per-step renormaliser whose per-history cancel is genuinely **false**, the Bayes
   posterior `bayesTCC` (`beliefTCRw · bayesLik`) is a genuine evidence: appending one step
   multiplies `bayesLik` by the new step's `distFairHyperKernel`-factor
@@ -664,168 +663,16 @@ private theorem average_next_some_of_resolved {sys : System State Label} (F : Fa
     exact (((PE'.avgWeight_le_init (ResolvedExec.toExec R') hE).trans (PMF.coe_le_one _ _)).trans_lt
       ENNReal.one_lt_top).ne
 
-/-- The **μ-reading resolved witness scheduler.** Mirrors `Scheduler.lower`
-(`Construction/DistTrace.lean`) on the forgetful reading `PE'.average.distFToDist F`, but the
-resolved belief-run `R'` is sampled from the resolved trace-cone `beliefTCR` *restricted* to those
-`R'` time-locally coherent with the full resolved history `r` (`RCoherentTL`), so it reads the
-recorded `μ`s. The emission uses the fairness-revealing kernel `distFairHyperKernel` on the plain
-projection `R'.toExec`. When the restricted mass is `0` (the `μ`-pattern is unrealisable) it halts
-(`PMF.pure none`).
+/-! ### The Bayes fair-witness (μ-likelihood concretization)
 
-`valid` mirrors `Scheduler.lower`'s: the coherence restriction only shrinks the resolved
-belief-support, so `beliefTCR_support` still supplies `s ∈ (R'.toExec.endState).support` and
-validity reduces to `distFairHyperKernel_valid`. -/
-noncomputable def ResolvedProbabilisticExecution.lowerFairRSched {sys : System State Label}
-    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F)) :
-    ResolvedScheduler sys where
-  next r :=
-    open Classical in
-    if h_term : r.toExec.trans.Terminates then
-      if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
-          (PE'.beliefTCR F ((r.toExec.trans.toList h_term).map Prod.fst)
-            (r.toExec.endState h_term)) R') ≠ 0 then
-        ((PE'.beliefTCR F ((r.toExec.trans.toList h_term).map Prod.fst)
-            (r.toExec.endState h_term)).filter {R' | PE'.RCoherentTL F r R'}
-          (by
-            obtain ⟨R', hR'⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr h0)
-            obtain ⟨hmem, hsupp⟩ := Set.indicator_apply_ne_zero.mp hR'
-            exact ⟨R', hmem, hsupp⟩)).bind (fun R' =>
-          (PE'.scheduler.next R').bind (fun opt =>
-            match opt with
-            | none         => PMF.pure none
-            | some (l, ω)  =>
-              ((PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l ω
-                  (r.toExec.endState h_term)).map (fun μ' => some (l, μ'))))
-      else PMF.pure none
-    else PMF.pure none
-  valid := by
-    classical
-    intro r n s r_term_n r_stateAt_eq l μ h_supp
-    have h_term_e : r.toExec.trans.Terminates :=
-      (ResolvedExec.toExec_terminates_iff r).mpr ⟨n, r_term_n⟩
-    have h_term : r.trans.Terminates := ⟨n, r_term_n⟩
-    -- Reduce `r.stateAt`/`r.trans.TerminatedAt` to `r.toExec`'s, then reuse the `lower` shape.
-    have e_term_n : r.toExec.trans.TerminatedAt n :=
-      (ResolvedExec.toExec_terminatedAt_iff r n).mpr r_term_n
-    have e_stateAt_eq : r.toExec.stateAt n = some s := by
-      rw [ResolvedExec.toExec_stateAt]; exact r_stateAt_eq
-    have h_find_le : Nat.find h_term_e ≤ n := Nat.find_le e_term_n
-    have h_n_le : n ≤ Nat.find h_term_e := by
-      by_contra h_lt
-      push Not at h_lt
-      rcases n with _ | k
-      · exact absurd h_lt (Nat.not_lt_zero _)
-      · have hk_ge : Nat.find h_term_e ≤ k := Nat.lt_succ_iff.mp h_lt
-        have h_term_k : r.toExec.trans.TerminatedAt k :=
-          Stream'.Seq.terminated_stable r.toExec.trans hk_ge (Nat.find_spec h_term_e)
-        have h_state_none : r.toExec.stateAt (k + 1) = none := by
-          change (r.toExec.trans.get? k).map Prod.snd = none
-          rw [show r.toExec.trans.get? k = none from h_term_k]
-          rfl
-        rw [h_state_none] at e_stateAt_eq
-        exact Option.some_ne_none s e_stateAt_eq.symm
-    have h_n_eq : n = Nat.find h_term_e := le_antisymm h_n_le h_find_le
-    have h_s_eq : s = r.toExec.endState h_term_e := by
-      have h := AlterSeq.stateAt_find_eq_endState r.toExec h_term_e
-      rw [← h_n_eq] at h
-      rw [h] at e_stateAt_eq
-      exact (Option.some.inj e_stateAt_eq).symm
-    subst h_s_eq
-    set pe' := PE'.average.distFToDist F with hpe'
-    set labs := (r.toExec.trans.toList h_term_e).map Prod.fst with hlabs
-    set s₀ := r.toExec.endState h_term_e with hs₀
-    -- Unfold the emission; the coherence filter only shrinks `beliefTCR`'s support.
-    change some (l, μ) ∈
-      (open Classical in
-        if h_term' : r.toExec.trans.Terminates then
-          if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
-              (PE'.beliefTCR F ((r.toExec.trans.toList h_term').map Prod.fst)
-                (r.toExec.endState h_term')) R') ≠ 0 then
-            ((PE'.beliefTCR F ((r.toExec.trans.toList h_term').map Prod.fst)
-                (r.toExec.endState h_term')).filter {R' | PE'.RCoherentTL F r R'} _).bind (fun R' =>
-              (PE'.scheduler.next R').bind (fun opt =>
-                match opt with
-                | none         => PMF.pure none
-                | some (l', ω) =>
-                  (pe'.distFairHyperKernel F (ResolvedExec.toExec R') l' ω
-                      (r.toExec.endState h_term')).map (fun μ' => some (l', μ'))))
-          else PMF.pure none
-        else PMF.pure none).support at h_supp
-    rw [dif_pos h_term_e] at h_supp
-    split_ifs at h_supp with h0
-    · rw [PMF.mem_support_bind_iff] at h_supp
-      obtain ⟨R', hR'_belief, h_supp⟩ := h_supp
-      rw [PMF.mem_support_filter_iff] at hR'_belief
-      obtain ⟨-, hR'_belief⟩ := hR'_belief
-      rw [PMF.mem_support_bind_iff] at h_supp
-      obtain ⟨opt, hopt_sch, h_supp⟩ := h_supp
-      set E := ResolvedExec.toExec R' with hE
-      -- Recover `E.Terminates` and `s₀ ∈ E.endState.support`, either from `beliefTCR_support`
-      -- (positive cone mass) or from the length-0 fallback run `⟨pure s₀, nil⟩`.
-      obtain ⟨hE_term, h_endState⟩ :
-          ∃ hE_term : E.trans.Terminates, s₀ ∈ (E.endState hE_term).support := by
-        by_cases hpos : (∑' R'', PE'.beliefTCRw F labs s₀ R'') ≠ 0
-        · obtain ⟨hT, -, h_mem, -⟩ := PE'.beliefTCR_support F labs s₀ hpos R' hR'_belief
-          exact ⟨(ResolvedExec.toExec_terminates_iff R').mpr hT, h_mem⟩
-        · -- Fallback: `beliefTCR` is `pure ⟨pure s₀, nil⟩`, so `R' = ⟨pure s₀, nil⟩`.
-          rw [not_not] at hpos
-          rw [ResolvedProbabilisticExecution.beliefTCR, dif_neg (by rw [hpos]; simp),
-            PMF.mem_support_pure_iff] at hR'_belief
-          subst hR'_belief
-          have hE_nil : E.trans = Seq.nil := by rw [hE]; rfl
-          refine ⟨hE_nil ▸ Stream'.Seq.terminates_nil, ?_⟩
-          have hend : E.endState (hE_nil ▸ Stream'.Seq.terminates_nil) = PMF.pure s₀ := by
-            rw [AlterSeq.endState_of_trans_nil E hE_nil]; rw [hE]; rfl
-          rw [hend, PMF.support_pure, Set.mem_singleton_iff]
-      cases opt with
-      | none =>
-        change some (l, μ) ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
-        rw [PMF.support_pure, Set.mem_singleton_iff] at h_supp
-        exact absurd h_supp (by simp)
-      | some lω =>
-        obtain ⟨l', ω⟩ := lω
-        change some (l, μ) ∈ ((pe'.distFairHyperKernel F E l' ω s₀).map
-          (fun μ' => some (l', μ'))).support at h_supp
-        rw [PMF.mem_support_map_iff] at h_supp
-        obtain ⟨μ', h_μ'_kernel, h_eq⟩ := h_supp
-        simp only [Option.some.injEq, Prod.mk.injEq] at h_eq
-        obtain ⟨rfl, rfl⟩ := h_eq
-        exact distFairHyperKernel_valid_of_resolved F PE' R'
-          ((ResolvedExec.toExec_terminates_iff R').mp hE_term) l' ω hopt_sch hE_term
-          h_endState h_μ'_kernel
-    · change some (l, μ) ∈ (PMF.pure (α := Option (Label × PMF State)) none).support at h_supp
-      rw [PMF.support_pure, Set.mem_singleton_iff] at h_supp
-      exact absurd h_supp (by simp)
-
-/-- The **μ-reading resolved witness execution**: initial distribution `PE'.initState.bind id`
-(a Dirac on `sys.init` under the `fairAchievableTraceDists` requirement), with scheduler
-`lowerFairRSched`. Reads the recorded `μ`s (via the `RCoherentTL` filter) and emits via the sampled
-run's resolved next, so the concrete run tracks a genuine coherent belief-run throughout. -/
-noncomputable def ResolvedProbabilisticExecution.lowerFairR {sys : System State Label}
-    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F)) :
-    ResolvedProbabilisticExecution sys :=
-  ⟨PE'.initState.bind id, PE'.lowerFairRSched F⟩
-
-/-- The μ-reading witness starts from the Dirac initial distribution `pure sys.init` (one-line
-proof: `initState = PE'.initState.bind id`, then `hinit`, `PMF.pure_bind`). -/
-theorem ResolvedProbabilisticExecution.lowerFairR_initState {sys : System State Label}
-    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
-    (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
-    (PE'.lowerFairR F).initState = PMF.pure sys.init := by
-  change PE'.initState.bind id = PMF.pure sys.init
-  rw [hinit, PMF.pure_bind]
-  rfl
-
-/-! ### The Bayes fair-witness (Phase-1 refactor: μ-likelihood concretization)
-
-An alternative to the coarse `lowerFairR`. Where `lowerFairR` samples a coherent belief-run `R'`
-from the resolved trace-cone `beliefTCR` *filtered* by the boolean predicate `RCoherentTL`, the
-**Bayes** witness weights each coherent `R'` by the *likelihood* `bayesLik` of `r`'s recorded `μ`s
-under `R'` — the product, over `r`'s recorded steps `k`, of the `distFairHyperKernel`-mass of `μ_k`
-at the time-`k` belief. This is a genuine Bayesian posterior over belief-runs, not a 0/1 filter.
+The Bayes witness weights each coherent belief-run `R'` by the *likelihood* `bayesLik` of `r`'s
+recorded `μ`s under `R'` — the product, over `r`'s recorded steps `k`, of the
+`distFairHyperKernel`-mass of `μ_k` at the time-`k` belief. This is a genuine Bayesian posterior
+over belief-runs, not a 0/1 coherence filter.
 
 The whole point is the **append law** `bayesLik_append_singleton`: extending `r`/`R'` by one step
-multiplies `bayesLik` by exactly that step's `distFairHyperKernel`-factor. Phase 2 relies on it. -/
+multiplies `bayesLik` by exactly that step's `distFairHyperKernel`-factor — this is what makes the
+trace crux per-history-true. -/
 
 open Classical in
 /-- The `k`-th **Bayes factor** of a concrete run `r` against a belief-run `R'`: the
@@ -1053,13 +900,48 @@ theorem ResolvedProbabilisticExecution.bayesTCC_support {sys : System State Labe
     · exact absurd rfl hbwne
   · exact absurd rfl hR'
 
-/-- The **variant-C Bayes witness scheduler.** Same emission as the coarse `lowerFairRSched` (the
-sampled run's *resolved* next `PE'.scheduler.next R'` followed by the fairness-revealing kernel
-`distFairHyperKernel`), but samples the variant-C cone `bayesTCC F r` (weighting each coherent `R'`
-by `beliefTCRw · bayesLik`, the end-belief-mass Bayes posterior) in place of the coherence-filtered
-cone. `valid` mirrors the coarse scheduler's: from `bayesTCC`'s support, `bayesTCC_support` supplies
-`s₀ ∈ (toExec R').endState.support`, and validity reduces to
-`distFairHyperKernel_valid_of_resolved`. -/
+/-- **`bayesLik` is positive on every coherent run.** If `R'` is time-locally coherent with `r`
+(`RCoherentTL F r R'`), then the Bayes likelihood `bayesLik F r R'` is nonzero: each Bayes factor
+`bayesFactor F r R' k` at a recorded step `k` is the `distFairHyperKernel`-mass of `r`'s recorded
+`μ`, and coherence records exactly `μ ∈ (distFairHyperKernel …).support`, so every factor of the
+finite product is nonzero. (When `r` does not terminate `bayesLik = 1 ≠ 0`.) This is what makes the
+variant-C Bayes cone genuinely evidence-weighted. -/
+theorem ResolvedProbabilisticExecution.bayesLik_pos_of_RCoherentTL {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (R' : ResolvedExec (PMF State) Label)
+    (hcoh : PE'.RCoherentTL F r R') :
+    PE'.bayesLik F r R' ≠ 0 := by
+  classical
+  unfold ResolvedProbabilisticExecution.bayesLik
+  split_ifs with h
+  · rw [Finset.prod_ne_zero_iff]
+    intro k hk
+    unfold ResolvedProbabilisticExecution.bayesFactor
+    rw [Finset.mem_range] at hk
+    have hkne : r.trans.get? k ≠ none := fun hc => (Nat.find_min h hk) hc
+    obtain ⟨t, hget'⟩ := Option.ne_none_iff_exists'.mp hkne
+    obtain ⟨⟨l, μ⟩, s'⟩ := t
+    have hget : r.trans.get? k = some ((l, μ), s') := hget'
+    have hskne : r.stateAt k ≠ none := by
+      rcases Nat.eq_zero_or_pos k with hk0 | hkpos
+      · rw [hk0]; simp [AlterSeq.stateAt]
+      · obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hkpos.ne'
+        rw [hj]
+        change ((r.trans.get? j).map Prod.snd) ≠ none
+        rw [ne_eq, Option.map_eq_none_iff]
+        exact Nat.find_min h (Nat.lt_trans (hj ▸ Nat.lt_succ_self j) hk)
+    obtain ⟨s, hst⟩ := Option.ne_none_iff_exists'.mp hskne
+    obtain ⟨ν, ω, ν', hR'state, hR'get, hs_supp, hμ_ker⟩ := hcoh k s l μ s' hst hget
+    rw [hget, hst, hR'get]
+    exact (PMF.mem_support_iff _ _).mp hμ_ker
+  · exact one_ne_zero
+
+/-- The **variant-C Bayes witness scheduler.** At a terminating history `r` it samples the enriched
+Bayes cone `bayesTCC F r` (weighting each coherent `R'` by `beliefTCRw · bayesLik`, the
+end-belief-mass Bayes posterior) and emits through the sampled run's *resolved* next
+`PE'.scheduler.next R'` followed by the fairness-revealing kernel `distFairHyperKernel`. `valid`:
+from `bayesTCC`'s support, `bayesTCC_support` supplies `s₀ ∈ (toExec R').endState.support`, and
+validity reduces to `distFairHyperKernel_valid_of_resolved`. -/
 noncomputable def ResolvedProbabilisticExecution.lowerFairRBayesCSched {sys : System State Label}
     (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F)) :
     ResolvedScheduler sys where
@@ -1891,7 +1773,7 @@ open Classical in
 `R` with recorded labels `Λ`, of `probOfR pe R` times `G` of `R`'s plain end-state. The sys-side
 analogue of `rhs_reindex`: uses `probOf_average` (`pe.average.probOf E = avgWeight E = ∑' probOfR`
 over the `toExec`-fibre) and the same `Sigma` reindex. Works for the concrete witness
-(`pe := lowerFairR F`) as well as the belief execution. -/
+(`pe := lowerFairRBayesC F`) as well as the belief execution. -/
 private theorem average_labMass_eq_probOfR_full {S : Type} {Sys : System S Label}
     (pe : ResolvedProbabilisticExecution Sys) (Λ : List Label) (G : S → ENNReal) :
     pe.average.labMass Λ G
@@ -2051,8 +1933,9 @@ Two mechanical, correct-independent-of-the-crux factorisations of the resolved o
 final concrete step. Both are the resolved analogue of how the *plain* belief trace-cone `beliefTCw`
 recurses, obtained from the `probOfR` cons-end law `probOfR_append_singleton` (via the already
 proven `snoc_value_identity`). They are the raw material of any genuine attempt at the washout
-`(†)` — expressing the length-`n+1` resolved cone weight `beliefTCRw` and the μ-reading witness's
-posterior weight `lowerFairR.probOfR` through their length-`n` data plus a last concrete step. -/
+`(†)` — expressing the length-`n+1` resolved cone weight `beliefTCRw` and the Bayes witness's
+posterior weight `lowerFairRBayesC.probOfR` through their length-`n` data plus a last concrete
+step. -/
 
 open Classical in
 /-- **Brick 1 — `beliefTCRw` one-step (cons-end) recursion.** The length-`n+1` unnormalised resolved
@@ -2236,8 +2119,7 @@ over the appended run (a tower property, not a step-local telescope); it is the 
 open Classical in
 /-- **The variant-C witness scheduler's `some (l, ν)` emission.** Sampling the (total) variant-C
 cone `bayesTCC F r`, emit `some (l, ω)` via the resolved next `PE'.scheduler.next R'`, then apply
-`dfhk` at `ν`. Same emission shape as `lowerFairR` but sampling the Bayes cone `bayesTCC` (no
-coherence filter). -/
+`dfhk` at `ν`. -/
 theorem ResolvedProbabilisticExecution.lowerFairRBayesCSched_next_some {sys : System State Label}
     (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (r : ResolvedExec State Label) (h_term : r.toExec.trans.Terminates)
@@ -2661,15 +2543,15 @@ theorem ResolvedProbabilisticExecution.lowerFairRBayesC_traceProbR {sys : System
 /-! ### The halt clause (fully proven, `sorry`-free)
 
 `halt_fairDeadlock` is quantified over `Consistent` runs, and this is *not* a genuine crux — it is
-reachability bookkeeping, now fully discharged. Two branches:
-* **Realisable** (restricted belief-mass positive): with the resolved emission the halting
-  belief-run is read off *directly* (the `none` branch of `PE'.scheduler.next R'`), so `R'` itself
-  is the halting `PE'`-run; the `𝒟f→𝒟` fair-deadlock transfer (`PE'.IsFair.halt_fairDeadlock` +
-  `distF_fairDeadlock_belief`, the resolvable belief-deadlock transfer) then carries the deadlock
-  down to the concrete end-state.
-* **Fallback** (`RCoherentTL`-restricted mass `0`, witness emits `PMF.pure none`): **vacuous** on a
-  `Consistent` `r`, discharged by `lowerFairR_halt_restricted_cone_pos` (a consistent run's
-  restricted belief-cone carries positive mass), so the fallback never fires.
+reachability bookkeeping, fully discharged on the enriched Bayes cone `bayesTCC`. Two branches:
+* **Realisable** (Bayes cone mass positive): with the resolved emission the halting belief-run is
+  read off *directly* (the `none` branch of `PE'.scheduler.next R'`), where `R'` is sampled from
+  `bayesTCC F r`; `R'` itself is the halting `PE'`-run; the `𝒟f→𝒟` fair-deadlock transfer
+  (`PE'.IsFair.halt_fairDeadlock` + `distF_fairDeadlock_belief`, the resolvable belief-deadlock
+  transfer) then carries the deadlock down to the concrete end-state.
+* **Fallback** (Bayes cone mass `0`, witness emits `pure ⟨bayesFallbackBelief r, nil⟩`): **vacuous**
+  on a `Consistent` `r`, discharged by `lowerFairRBayesC_halt_cone_pos` (a consistent run's Bayes
+  cone carries positive mass), so the fallback never fires.
 Both halves are `[Fintype State]`-free reachability bookkeeping. -/
 
 /-- **Resolvability of a reached belief.** Every belief `ν` in the support of a recorded successor
@@ -2809,38 +2691,26 @@ private theorem take_endState_of_le {S L : Type} (r : AlterSeq S L) {N : ℕ}
   rw [hfind, take_stateAt r (Nat.le_refl k), hs] at heq
   exact (Option.some.inj heq).symm
 
-/-- **The coherent resolved-positive lift of the halt clause's last step.** For a
-`lowerFairR`-consistent terminating run `r` whose last recorded step is at position `k`
-(`Nat.find h = k + 1`, `r.trans.get? k = some ((l, μ), s')`, state-before-step
-`r.stateAt k = some sk`, with `μ s' ≠ 0`), there **exists** a resolved `PE'`-belief-prefix `w'`
-(with an accompanying internal emission `ω`) that
-
-* terminates exactly at `k` (`Nat.find hwT' = k`) with the same label list as `(r.take k).toExec`,
-* is time-locally coherent with `r.take k` (`RCoherentTL F (r.take k) w'`),
-* carries positive resolved path-mass (`PE'.probOfR w' hwT' ≠ 0`),
-* has `sk` in its plain end-belief,
-* has its forgetful plain projection `toExec w'` emit `some (l, ω)` with positive *average* mass,
-* has positive **resolved** emission mass on that step (`PE'.scheduler.next w' (some (l, ω)) ≠ 0`),
-* and realises `μ` through the fairness-revealing kernel at the last-step belief.
-
-Since the witness scheduler now samples the **resolved** emission `PE'.scheduler.next R'` (not the
-forgetful average), the belief-prefix `w` handed by `lowerFairR`-consistency at the last step
-carries positive *resolved* emission mass on `some (l, ω)` **directly** (`hopt_supp`) — no
-fibre-mate extraction is needed and the specific-`w` form is now provable: `w' := w`. The residual's
-*average* emission conjunct is recovered by bridging the resolved emission to the average via
-`average_next_some_of_resolved` (positive `probOfR w` + positive resolved next put a positive
-summand into `average_next_some`'s fibre-sum). The coherent length-`N` belief-run with positive
-`beliefTCRw` is then assembled in `lowerFairR_halt_nonnil_coherent_witness` from this lift. -/
-private theorem lowerFairR_halt_coherent_resolved_lift {sys : System State Label}
+/-- **The coherent resolved-positive lift of the halt clause's last step (variant-C Bayes).**
+For a `lowerFairRBayesC`-consistent terminating run `r` whose last recorded step is at position `k`,
+there exists a resolved `PE'`-belief-prefix `w'` (with an accompanying emission `ω`) terminating at
+`k`, time-locally coherent with `r.take k`, with positive resolved path-mass, `sk` in its
+end-belief, and realising `μ` through the fairness-revealing kernel at the last-step belief. The
+sampled belief-prefix `w` is extracted from the **enriched Bayes cone** `bayesTCC F (r.take k)`
+(positive by the `hkcone` hypothesis): its support supplies `RCoherentTL F (r.take k) w` via the
+`bayesTCwC` guard and positive `beliefTCRw` via `bayesTCC_support`. The extension-belief selection
+and assembly are support-based. -/
+private theorem lowerFairRBayesC_halt_coherent_resolved_lift {sys : System State Label}
     (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (r : ResolvedExec State Label) (h : r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r)
-    (hinit : PE'.initState = PMF.pure (sys.distF F).init)
+    (_hcons : (PE'.lowerFairRBayesC F).Consistent r)
+    (_hinit : PE'.initState = PMF.pure (sys.distF F).init)
     (k : ℕ) (l : Label) (μ : PMF State) (s' sk : State)
     (hkfind : Nat.find h = k + 1)
     (hrget : r.trans.get? k = some ((l, μ), s'))
     (hsk : r.stateAt k = some sk)
-    (hnext : (PE'.lowerFairR F).scheduler.next (r.take k) (some (l, μ)) ≠ 0)
+    (hnext : (PE'.lowerFairRBayesC F).scheduler.next (r.take k) (some (l, μ)) ≠ 0)
+    (hkcone : (∑' R', PE'.bayesTCwC F (r.take k) R') ≠ 0)
     (_hμs' : μ s' ≠ 0) :
     ∃ (w' : ResolvedExec (PMF State) Label) (ω : PMF (PMF State)) (hwT' : w'.trans.Terminates),
       Nat.find hwT' = k ∧
@@ -2857,8 +2727,6 @@ private theorem lowerFairR_halt_coherent_resolved_lift {sys : System State Label
   classical
   set pe' := PE'.average.distFToDist F with hpe'
   have hkN : k < Nat.find h := by rw [hkfind]; exact Nat.lt_succ_self k
-  -- `(r.take k).toExec` terminates (finite prefix); its label list is `labs'` and its end-state is
-  -- `sk = r.stateAt k` (`take_endState_of_le`).
   have hTe : (ResolvedExec.toExec (r.take k)).trans.Terminates :=
     (ResolvedExec.toExec_terminates_iff (r.take k)).mpr (take_terminates r k)
   set labs' := ((ResolvedExec.toExec (r.take k)).trans.toList hTe).map Prod.fst with hlabs'
@@ -2871,117 +2739,70 @@ private theorem lowerFairR_halt_coherent_resolved_lift {sys : System State Label
     rw [hfind, ResolvedExec.toExec_stateAt,
       take_stateAt r (Nat.le_refl k), hsk] at heq
     exact (Option.some.inj heq).symm
-  -- Unfold the μ-reading scheduler emission at `r.take k` (mirror of `lowerFairRSched.valid`).
-  have hmem : some (l, μ) ∈ ((PE'.lowerFairR F).scheduler.next (r.take k)).support :=
+  -- Unfold the variant-C scheduler emission at `r.take k` (mirror of `lowerFairRBayesCSched`).
+  have hmem : some (l, μ) ∈ ((PE'.lowerFairRBayesC F).scheduler.next (r.take k)).support :=
     (PMF.mem_support_iff _ _).mpr hnext
   change some (l, μ) ∈
     (open Classical in
       if h_term : (ResolvedExec.toExec (r.take k)).trans.Terminates then
-        if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F (r.take k) R'}
-            (PE'.beliefTCR F (((ResolvedExec.toExec (r.take k)).trans.toList h_term).map Prod.fst)
-              ((ResolvedExec.toExec (r.take k)).endState h_term)) R') ≠ 0 then
-          ((PE'.beliefTCR F (((ResolvedExec.toExec (r.take k)).trans.toList h_term).map Prod.fst)
-              ((ResolvedExec.toExec (r.take k)).endState h_term)).filter
-              {R' | PE'.RCoherentTL F (r.take k) R'} _).bind (fun R' =>
-            (PE'.scheduler.next R').bind (fun opt =>
-              match opt with
-              | none         => PMF.pure none
-              | some (l', ω) =>
-                ((PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l' ω
-                    ((ResolvedExec.toExec (r.take k)).endState h_term)).map
-                    (fun μ' => some (l', μ'))))
-        else PMF.pure none
+        (PE'.bayesTCC F (r.take k)).bind (fun R' =>
+          (PE'.scheduler.next R').bind (fun opt =>
+            match opt with
+            | none         => PMF.pure none
+            | some (l', ω) =>
+              ((PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l' ω
+                  ((ResolvedExec.toExec (r.take k)).endState h_term)).map
+                  (fun μ' => some (l', μ'))))
       else PMF.pure none).support at hmem
   rw [dif_pos hTe] at hmem
-  split_ifs at hmem with h0
-  swap
-  · rw [PMF.mem_support_pure_iff] at hmem; exact absurd hmem (by simp)
   rw [PMF.mem_support_bind_iff] at hmem
-  obtain ⟨w, hw_filter, hw_emit⟩ := hmem
-  rw [PMF.mem_support_filter_iff] at hw_filter
-  obtain ⟨hw_coh, hw_belief⟩ := hw_filter
-  -- Fold `labs'` and `sk` into the cone membership and the guard.
-  rw [← hlabs', hs₀_sk] at hw_belief h0
-  -- The `w`-emission is `some (l, μ)`: unfold the inner `bind` to get an emission `some (l, ω)`
-  -- and the kernel membership of `μ`.
+  obtain ⟨w, hw_belief, hw_emit⟩ := hmem
+  -- `w ∈ bayesTCC (r.take k)` support ⟹ `RCoherentTL F (r.take k) w` (via `bayesTCwC` guard).
+  -- Positive-cone extraction of the four `w`-facts is deferred; first read coherence.
   rw [hs₀_sk, PMF.mem_support_bind_iff] at hw_emit
   obtain ⟨opt, hopt_supp, hμ_supp⟩ := hw_emit
-  -- The `match` forces `opt = some (l, ω)`.
   set E := ResolvedExec.toExec w with hE
   obtain (_ | ⟨l', ω⟩) := opt
   · rw [PMF.mem_support_pure_iff] at hμ_supp; exact absurd hμ_supp (by simp)
   rw [PMF.mem_support_map_iff] at hμ_supp
   obtain ⟨μ', hμ'_supp, hμ'_eq⟩ := hμ_supp
-  -- `some (l', μ') = some (l, μ)` ⟹ `l' = l`, `μ' = μ`.
   rw [Option.some.injEq, Prod.mk.injEq] at hμ'_eq
   obtain ⟨hll', hμμ'⟩ := hμ'_eq
   subst hll'
   rw [hμμ'] at hμ'_supp
-  -- **The four facts about `w`.** `w` terminates, its `toExec`-label list is `labs'`, `sk` lies in
-  -- its end-belief, and it has positive resolved path-mass.  When the cone mass is positive this is
-  -- `beliefTCR_support`; when it is `0`, `beliefTCR = pure ⟨pure sk, nil⟩` so `w = ⟨pure sk, nil⟩`
-  -- (length 0), which then forces `labs' = []` and supplies the four facts explicitly.
-  obtain ⟨hwT, hwlab, hsk_mem, hwpm⟩ :
+  -- **Extract the four facts about `w`** from `bayesTCC (r.take k)`'s support (positive-cone case)
+  -- or the length-0 fallback (zero-cone case).
+  obtain ⟨hw_coh, hwT, hwlab, hsk_mem, hwpm⟩ :
+      PE'.RCoherentTL F (r.take k) w ∧
       ∃ hwT : w.trans.Terminates,
         (ResolvedExec.toExec w).trans.map Prod.fst = Seq.ofList labs' ∧
         sk ∈ ((ResolvedExec.toExec w).endState
           ((ResolvedExec.toExec_terminates_iff w).mpr hwT)).support ∧
         PE'.probOfR w hwT ≠ 0 := by
-    by_cases hcone : (∑' R'', PE'.beliefTCRw F labs' sk R'') ≠ 0
-    · exact PE'.beliefTCR_support F labs' sk hcone w hw_belief
-    · rw [not_not] at hcone
-      have hbtcr : PE'.beliefTCR F labs' sk = PMF.pure ⟨PMF.pure sk, Seq.nil⟩ := by
-        rw [ResolvedProbabilisticExecution.beliefTCR, dif_neg (by rw [hcone]; simp)]
-      rw [hbtcr, PMF.mem_support_pure_iff] at hw_belief
-      -- The zero-cone case forces `w = ⟨pure sk, nil⟩` (length 0).  Coherence of `w` with
-      -- `r.take k` excludes `k ≥ 1` (a recorded step at position `0` would demand a belief-step of
-      -- the nil `w`), so `k = 0`, `labs' = []`, `sk = r.init`; the nil run supplies the four facts.
-      have hk0 : k = 0 := by
-        by_contra hkne
-        have hkpos : 0 < k := Nat.pos_of_ne_zero hkne
-        have hr0ne : r.trans.get? 0 ≠ none :=
-          fun hc => Nat.find_min h (Nat.lt_trans hkpos hkN) hc
-        obtain ⟨t0, hr0get'⟩ := Option.ne_none_iff_exists'.mp hr0ne
-        obtain ⟨⟨l0, μ0⟩, s0'⟩ := t0
-        have hr0take : (r.take k).trans.get? 0 = some ((l0, μ0), s0') := by
-          rw [take_trans_get? r hkpos]; exact hr0get'
-        obtain ⟨ν, ω0, ν', hwstate, hwget, -, -⟩ :=
-          hw_coh 0 r.init l0 μ0 s0' rfl hr0take
-        rw [hw_belief] at hwget
-        change (Seq.nil : Seq ((Label × PMF (PMF State)) × PMF State)).get? 0 = _ at hwget
-        rw [Stream'.Seq.get?_nil] at hwget
-        exact absurd hwget (by simp)
-      subst hk0
-      have hr_init : r.init = sys.init := by
-        have hi : (PE'.lowerFairR F).initState r.init ≠ 0 := hcons.1
-        change PE'.initState.bind id r.init ≠ 0 at hi
-        rw [hinit, PMF.pure_bind] at hi
-        change ((sys.distF F).init : PMF State) r.init ≠ 0 at hi
-        rw [show ((sys.distF F).init : PMF State) = PMF.pure sys.init from rfl, PMF.pure_apply]
-          at hi
-        by_contra hc
-        rw [if_neg hc] at hi
-        exact hi rfl
-      have hsk_init : sk = r.init := by
-        have hst : r.stateAt 0 = some r.init := rfl
-        rw [hst] at hsk; exact (Option.some.inj hsk).symm
-      have hlabs_nil : labs' = [] := by
-        have hnil : (ResolvedExec.toExec (r.take 0)).trans = Seq.nil := rfl
-        rw [hlabs', Stream'.Seq.toList_congr_pub hnil hTe Stream'.Seq.terminates_nil,
-          Stream'.Seq.toList_nil, List.map_nil]
-      subst hw_belief
-      refine ⟨Stream'.Seq.terminates_nil, ?_, ?_, ?_⟩
-      · rw [hlabs_nil, Stream'.Seq.ofList_nil,
-          show (ResolvedExec.toExec (⟨PMF.pure sk, Seq.nil⟩ :
-            ResolvedExec (PMF State) Label)).trans = Seq.nil from rfl, Stream'.Seq.map_nil]
-      · rw [show (ResolvedExec.toExec (⟨PMF.pure sk, Seq.nil⟩ : ResolvedExec (PMF State)
-          Label)).endState ((ResolvedExec.toExec_terminates_iff _).mpr Stream'.Seq.terminates_nil)
-          = PMF.pure sk from by rw [AlterSeq.endState_of_trans_nil _ (by rfl)]; rfl]
-        rw [PMF.support_pure]; exact Set.mem_singleton _
-      · rw [PE'.probOfR_nil, hinit, hsk_init, hr_init]
-        rw [show ((sys.distF F).init : PMF State) = PMF.pure sys.init from rfl, PMF.pure_apply,
-          if_pos rfl]
-        exact one_ne_zero
+    by_cases hcone : (∑' R'', PE'.bayesTCwC F (r.take k) R'') ≠ 0
+    · -- Positive Bayes cone: read `RCoherentTL` + `beliefTCRw ≠ 0` off `bayesTCC`'s support.
+      have hguard : PE'.RCoherentTL F (r.take k) w ∧ PE'.beliefTCRw F labs' sk w ≠ 0 := by
+        rw [ResolvedProbabilisticExecution.bayesTCC, dif_pos hcone,
+          PMF.mem_support_normalize_iff] at hw_belief
+        unfold ResolvedProbabilisticExecution.bayesTCwC at hw_belief
+        split_ifs at hw_belief with hg
+        · refine ⟨hg.2, ?_⟩
+          have hbw : PE'.beliefTCRw F ((ResolvedExec.toExec (r.take k)).trans.toList hg.1
+              |>.map Prod.fst) ((ResolvedExec.toExec (r.take k)).endState hg.1) w ≠ 0 :=
+            left_ne_zero_of_mul hw_belief
+          rw [← hs₀_sk]; convert hbw using 3
+        · exact absurd rfl hw_belief
+      obtain ⟨hcoh, hbw⟩ := hguard
+      have hbtc_pos : (∑' R'', PE'.beliefTCRw F labs' sk R'') ≠ 0 :=
+        fun hz => hbw (ENNReal.tsum_eq_zero.mp hz w)
+      have hw_bel : w ∈ (PE'.beliefTCR F labs' sk).support := by
+        rw [ResolvedProbabilisticExecution.beliefTCR, dif_pos hbtc_pos,
+          PMF.mem_support_normalize_iff]
+        exact hbw
+      obtain ⟨hwT, hwlab, hsk_mem, hwpm⟩ := PE'.beliefTCR_support F labs' sk hbtc_pos w hw_bel
+      exact ⟨hcoh, hwT, hwlab, hsk_mem, hwpm⟩
+    · -- Zero Bayes cone: excluded by the positive-cone hypothesis `hkcone`.
+      exact absurd hkcone hcone
   -- `labs'.length = k` (the length-`k` prefix's label list).
   have hlabs'_len : labs'.length = k := by
     rw [hlabs', List.length_map, Stream'.Seq.length_toList]
@@ -2989,7 +2810,6 @@ private theorem lowerFairR_halt_coherent_resolved_lift {sys : System State Label
       (Nat.find_congr' (fun {m} => ResolvedExec.toExec_terminatedAt_iff (r.take k) m)).trans
         (take_find_of_le r h rfl (Nat.le_of_lt hkN))
     change Nat.find hTe = k; exact hfind
-  -- `w` terminates exactly at `k` (its `toExec`-label list is `labs'`, of length `k`).
   have hwfind : Nat.find hwT = k := by
     have hiff : ∀ m, w.trans.TerminatedAt m ↔ (Seq.ofList labs' : Seq Label).TerminatedAt m := by
       intro m
@@ -3006,345 +2826,390 @@ private theorem lowerFairR_halt_coherent_resolved_lift {sys : System State Label
     · rw [Nat.le_find_iff]
       intro n hn
       rw [hiff n, hofl n]; omega
-  -- Convert the `Seq.ofList labs'` label identity to the raw `Seq`-of-labels form.
   have hwlab_raw : (ResolvedExec.toExec w).trans.map Prod.fst
       = (ResolvedExec.toExec (r.take k)).trans.map Prod.fst := by
     rw [hwlab, hlabs', ← map_ofList_gen, Stream'.Seq.ofList_toList]
-  -- **`w` itself is the coherent resolved-positive lift.** With the *resolved* emission the belief
-  -- prefix `w` handed by consistency carries positive *resolved* mass directly (`hopt_supp`), so no
-  -- fibre-mate is needed: take `w' := w`, `ω := ω`. The resolved emission bridges to the average
-  -- emission via `average_next_some_of_resolved` (positive `probOfR w` + positive resolved next).
   refine ⟨w, ω, hwT, hwfind, hwlab_raw, hw_coh, hwpm, hsk_mem, ?_,
     (PMF.mem_support_iff _ _).mp hopt_supp, hμ'_supp⟩
   exact average_next_some_of_resolved F PE' w hwT hwpm l' ω hopt_supp
 
-/-- **The non-nil resolved reachability of the halt clause (assembled from the coherent
-resolved-positive lift `lowerFairR_halt_coherent_resolved_lift`).**
-For a `lowerFairR`-consistent terminating run `r` with at least one recorded step
-(`0 < Nat.find h`), there is a *resolved* `PE'`-belief-run `R'` that is time-locally coherent with
-`r` (`RCoherentTL F r`) **and** carries positive un-normalised full-cone weight
-(`beliefTCRw F labs s₀ R' ≠ 0`, i.e. `R'` terminates on the full label-list `labs`, has positive
-resolved path-mass `PE'.probOfR`, and its end-belief contains the concrete end-state `s₀`).
+/-- **Prefixes of a variant-C-consistent run are variant-C-consistent.** Pure restriction: the
+`initState` clause is shared, and each recorded step of `r.take m` at position `j < m` reads the
+same emission `next (r.take j)` as `r`'s (`take_trans_get?`, `take_take`), so the variant-C
+consistency of `r` transfers verbatim. Self-contained (no cone/support input). -/
+private theorem lowerFairRBayesC_consistent_take {sys : System State Label} (F : Fairness sys)
+    (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (hcons : (PE'.lowerFairRBayesC F).Consistent r) (m : ℕ) :
+    (PE'.lowerFairRBayesC F).Consistent (r.take m) := by
+  classical
+  refine ⟨hcons.1, ?_⟩
+  intro j l μ s' hget
+  -- `j < m` (else `r.take m` has no step at `j`).
+  have hjm : j < m := by
+    by_contra hc
+    have : (r.take m).trans.get? j = none := by
+      change (Seq.ofList (Seq.take m r.trans)).get? j = none
+      rw [Stream'.Seq.ofList_get?]
+      exact List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hc))
+    rw [this] at hget; exact absurd hget (by simp)
+  have hget_r : r.trans.get? j = some ((l, μ), s') := by
+    rw [← take_trans_get? r hjm]; exact hget
+  obtain ⟨hnext, hμs'⟩ := hcons.2 j l μ s' hget_r
+  rw [take_take r m j (Nat.le_of_lt hjm)]
+  exact ⟨hnext, hμs'⟩
 
-`r` terminates at `N := Nat.find h ≥ 1`, so its last recorded step is at position `k = N-1`,
-`r.trans.get? k = some ((l, μ), s')` with `s' = r.endState h` and state-before-step
-`sk = r.stateAt k`. Reading `lowerFairR`-consistency at that last step yields the emission
-positivity `hnext` and `μ s' ≠ 0`, which we hand to `lowerFairR_halt_coherent_resolved_lift`; the
-lift returns a coherent, `PE'.probOfR`-positive belief-prefix `w` (terminating at `k`) whose
-plain projection emits `some (l, ω)` in the average, whose fairness-revealing kernel realises `μ` at
-the last-step belief, **and** — crucially — that has positive *resolved* emission
-`PE'.scheduler.next w (some (l, ω)) ≠ 0` on that step. The extension state `ν' ∈ ω.support` with
-`ν' s' ≠ 0` is selected from the kernel marginal decomposition (`distFairHyperKernel_decomp`), and
-`R' := ⟨w.init, w.trans ++ [((l, ω), ν')]⟩` is the length-`N` coherent belief-run. Its `beliefTCRw`
-factors by `beliefTCRw_append_singleton` into `PE'.probOfR w · PE'.scheduler.next w (some (l, ω)) ·
-ω ν' · ν' s'`; every factor is now supplied — the resolved-emission factor by the lift — so no
-`sorry` remains here. Everything downstream (`lowerFairR_halt_restricted_cone_pos`,
-`lowerFairR_halt_fairDeadlock`) builds on top of it. -/
-private theorem lowerFairR_halt_nonnil_coherent_witness {sys : System State Label}
+/-- **The variant-C non-nil coherent witness + cone positivity (self-contained, by induction).**
+For a `lowerFairRBayesC`-consistent terminating run `r` with at least one recorded step, there is a
+resolved `PE'`-belief-run `R'` that is time-locally coherent with `r` and carries positive
+`beliefTCRw` at `r`'s full label-list/end-state. Proven by strong induction on `Nat.find h`: the
+last step at `k = N-1` is lifted by `lowerFairRBayesC_halt_coherent_resolved_lift`, whose
+positive-cone hypothesis `hkcone` (positive Bayes cone at `r.take k`) is supplied — for `k = 0` by
+the nil witness, for `k ≥ 1` by the induction hypothesis on the shorter run `r.take k` (a variant-C
+prefix, `lowerFairRBayesC_consistent_take`) turned into cone positivity by adding `bayesLik ≠ 0`
+(`bayesLik_pos_of_RCoherentTL`). The lift returns a coherent `probOfR`-positive belief-prefix `w`,
+extended by `((l, ω), ν')` (with `ν' ∈ ω.support`, `ν' s' ≠ 0` from
+`distFairHyperKernel_decomp`); `beliefTCRw_append_singleton` factors the extended run's `beliefTCRw`
+into four supplied nonzero factors. -/
+private theorem lowerFairRBayesC_halt_nonnil_coherent_witness_aux {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
+    ∀ (N : ℕ) (r : ResolvedExec State Label) (h : r.trans.Terminates),
+      Nat.find h = N → 0 < N → (h_e : r.toExec.trans.Terminates) →
+      (PE'.lowerFairRBayesC F).Consistent r →
+      ∃ R', PE'.RCoherentTL F r R' ∧
+        PE'.beliefTCRw F ((r.toExec.trans.toList h_e).map Prod.fst)
+          (r.toExec.endState h_e) R' ≠ 0 := by
+  classical
+  intro N
+  induction N using Nat.strong_induction_on with
+  | _ N ih =>
+    intro r h hNfind hNpos h_e hcons
+    set pe' := PE'.average.distFToDist F with hpe'
+    -- `r` has a genuine last recorded step at position `N-1`.
+    obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hNpos.ne'
+    have hkN : k < N := by rw [hk]; exact Nat.lt_succ_self k
+    have hkfind : Nat.find h = k + 1 := hNfind.trans hk
+    have hrget_ne : r.trans.get? k ≠ none := by
+      have : ¬ r.trans.TerminatedAt k := Nat.find_min h (hNfind ▸ hkN)
+      exact this
+    obtain ⟨t, hrget'⟩ := Option.ne_none_iff_exists'.mp hrget_ne
+    obtain ⟨⟨l, μ⟩, s'⟩ := t
+    have hrget : r.trans.get? k = some ((l, μ), s') := hrget'
+    have hend : r.endState h = s' := by
+      have hst : r.stateAt (Nat.find h) = some s' := by
+        rw [hkfind]; change (r.trans.get? k).map Prod.snd = some s'; rw [hrget]; rfl
+      have := AlterSeq.stateAt_find_eq_endState r h
+      rw [hst] at this; exact (Option.some.inj this).symm
+    have hsk_isSome : (r.stateAt k).isSome := by
+      rcases Nat.eq_zero_or_pos k with hk0 | hkpos
+      · rw [hk0]; rfl
+      · obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hkpos.ne'
+        rw [hj]
+        change ((r.trans.get? j).map Prod.snd).isSome
+        rw [Option.isSome_map]
+        refine Option.isSome_iff_ne_none.mpr ?_
+        exact Nat.find_min h (hNfind ▸ Nat.lt_trans (hj ▸ Nat.lt_succ_self j) hkN)
+    obtain ⟨sk, hsk⟩ := Option.isSome_iff_exists.mp hsk_isSome
+    -- `(r.take k).toExec` terminates; `labs'` is its label list.
+    have hTe : (ResolvedExec.toExec (r.take k)).trans.Terminates :=
+      (ResolvedExec.toExec_terminates_iff (r.take k)).mpr (take_terminates r k)
+    set labs' := ((ResolvedExec.toExec (r.take k)).trans.toList hTe).map Prod.fst with hlabs'
+    set sk₀ := (ResolvedExec.toExec (r.take k)).endState hTe with hsk₀
+    -- `sk₀ = sk = r.stateAt k`.
+    have hsk₀_eq : sk₀ = sk := by
+      have hfind : Nat.find hTe = k := by
+        have h1 : Nat.find hTe = Nat.find (take_terminates r k) :=
+          Nat.find_congr' (fun {m} => ResolvedExec.toExec_terminatedAt_iff (r.take k) m)
+        rw [h1, take_find_of_le r h rfl (Nat.le_of_lt (hNfind ▸ hkN))]
+      have heq := AlterSeq.stateAt_find_eq_endState (ResolvedExec.toExec (r.take k)) hTe
+      rw [hfind, ResolvedExec.toExec_stateAt, take_stateAt r (Nat.le_refl k), hsk] at heq
+      rw [hsk₀]; exact (Option.some.inj heq).symm
+    -- **Cone positivity at `r.take k`** (the lift's `hkcone`): `k = 0` from the nil witness,
+    -- `k ≥ 1` from the induction hypothesis on the shorter prefix `r.take k`.
+    have hcons_k : (PE'.lowerFairRBayesC F).Consistent (r.take k) :=
+      lowerFairRBayesC_consistent_take F PE' r hcons k
+    have hkcone : (∑' R', PE'.bayesTCwC F (r.take k) R') ≠ 0 := by
+      -- It suffices to exhibit one `R'` coherent with `r.take k` and with positive `bayesTCwC`.
+      suffices hwit : ∃ R', PE'.RCoherentTL F (r.take k) R' ∧
+          PE'.beliefTCRw F labs' sk₀ R' ≠ 0 by
+        obtain ⟨R', hcoh, hbw⟩ := hwit
+        rw [ne_eq, ENNReal.tsum_eq_zero, not_forall]
+        refine ⟨R', ?_⟩
+        intro hz
+        unfold ResolvedProbabilisticExecution.bayesTCwC at hz
+        rw [dif_pos ⟨hTe, hcoh⟩] at hz
+        rw [mul_eq_zero] at hz
+        rcases hz with h1 | h2
+        · exact hbw (by rw [hlabs', hsk₀]; convert h1 using 3)
+        · exact PE'.bayesLik_pos_of_RCoherentTL F (r.take k) R' hcoh h2
+      rcases Nat.eq_zero_or_pos k with hk0 | hkpos
+      · -- `k = 0`: `r.take 0` nil; the length-0 belief run `⟨pure sys.init, nil⟩` witnesses.
+        subst hk0
+        have hr_init : r.init = sys.init := by
+          have hi : (PE'.lowerFairRBayesC F).initState r.init ≠ 0 := hcons.1
+          change PE'.initState.bind id r.init ≠ 0 at hi
+          rw [hinit, PMF.pure_bind] at hi
+          change ((sys.distF F).init : PMF State) r.init ≠ 0 at hi
+          rw [show ((sys.distF F).init : PMF State) = PMF.pure sys.init from rfl, PMF.pure_apply]
+            at hi
+          by_contra hc; rw [if_neg hc] at hi; exact hi rfl
+        have hlabs_nil : labs' = [] := by
+          have hnil : (ResolvedExec.toExec (r.take 0)).trans = Seq.nil := rfl
+          rw [hlabs', Stream'.Seq.toList_congr_pub hnil hTe Stream'.Seq.terminates_nil,
+            Stream'.Seq.toList_nil, List.map_nil]
+        have hsk₀_init : sk₀ = sys.init := by
+          rw [hsk₀, AlterSeq.endState_of_trans_nil (ResolvedExec.toExec (r.take 0)) rfl,
+            ResolvedExec.toExec_init]
+          rw [show (r.take 0).init = r.init from rfl, hr_init]
+        refine ⟨⟨PMF.pure sys.init, Seq.nil⟩, ?_, ?_⟩
+        · intro m s ll μμ ss' _ hget
+          have hnone : (r.take 0).trans.get? m = none :=
+            Stream'.Seq.terminated_stable _ (Nat.zero_le m) (take_terminatedAt_le r 0)
+          rw [hnone] at hget; exact absurd hget (by simp)
+        · rw [ResolvedProbabilisticExecution.beliefTCRw, hlabs_nil, hsk₀_init, dif_pos]
+          · rw [PE'.probOfR_nil, hinit]
+            have hendb : (ResolvedExec.toExec (⟨PMF.pure sys.init, Seq.nil⟩ :
+                ResolvedExec (PMF State) Label)).endState
+                ((ResolvedExec.toExec_terminates_iff _).mpr Stream'.Seq.terminates_nil)
+                = PMF.pure sys.init := by
+              rw [AlterSeq.endState_of_trans_nil _ (by rfl)]; rfl
+            rw [hendb]
+            change (PMF.pure (PMF.pure sys.init) (PMF.pure sys.init))
+              * (PMF.pure sys.init) sys.init ≠ 0
+            rw [PMF.pure_apply, if_pos rfl, PMF.pure_apply, if_pos rfl, one_mul]
+            exact one_ne_zero
+          · refine ⟨Stream'.Seq.terminates_nil, ?_⟩
+            rw [show (ResolvedExec.toExec (⟨PMF.pure sys.init, Seq.nil⟩ : ResolvedExec (PMF State)
+              Label)).trans = Seq.nil from rfl, Stream'.Seq.map_nil, Stream'.Seq.ofList_nil]
+      · -- `k ≥ 1`: apply the induction hypothesis to `r.take k` (`Nat.find = k < N`).
+        have hTk : (r.take k).trans.Terminates := take_terminates r k
+        have hfindk : Nat.find hTk = k := take_find_of_le r h rfl (Nat.le_of_lt (hNfind ▸ hkN))
+        obtain ⟨R', hcoh, hbw⟩ :=
+          ih k (hNfind ▸ hkN) (r.take k) hTk hfindk hkpos hTe hcons_k
+        exact ⟨R', hcoh, by rw [hlabs', hsk₀]; convert hbw using 3⟩
+    -- **The lift at the last step `k`.**
+    obtain ⟨hnext, hμs'⟩ := hcons.2 k l μ s' hrget
+    obtain ⟨w, ω, hwT, hwfind, hwlab_raw, hw_coh, hwpm, hsk_mem, hopt_supp, hnext_pos, hμ'_supp⟩ :=
+      lowerFairRBayesC_halt_coherent_resolved_lift F PE' r h hcons hinit k l μ s' sk hkfind hrget
+        hsk hnext hkcone hμs'
+    -- Recover the `Seq.ofList labs'` form of `w`'s label identity.
+    have hwlab : (ResolvedExec.toExec w).trans.map Prod.fst = Seq.ofList labs' := by
+      rw [hwlab_raw, hlabs', ← map_ofList_gen, Stream'.Seq.ofList_toList]
+    set E := ResolvedExec.toExec w with hE
+    have hE_term : E.trans.Terminates := (ResolvedExec.toExec_terminates_iff w).mpr hwT
+    -- **Select the extension belief `ν' ∈ ω.support` with `ν' s' ≠ 0`.**
+    have hdecomp := pe'.distFairHyperKernel_decomp F hE_term hopt_supp s'
+    have hbind_sk_pos : ((pe'.distFairHyperKernel F E l ω sk).bind id) s' ≠ 0 := by
+      rw [PMF.bind_apply]
+      intro hz
+      have := ENNReal.tsum_eq_zero.mp hz μ
+      rw [id, mul_eq_zero] at this
+      rcases this with h1 | h2
+      · exact (PMF.mem_support_iff _ _).mp hμ'_supp h1
+      · exact hμs' h2
+    have hend_sk_pos : (w.toExec.endState hE_term) sk ≠ 0 := (PMF.mem_support_iff _ _).mp hsk_mem
+    have hωbind_pos : (ω.bind id) s' ≠ 0 := by
+      rw [hdecomp]
+      intro hz
+      have := ENNReal.tsum_eq_zero.mp hz sk
+      rw [mul_eq_zero] at this
+      rcases this with h1 | h2
+      · exact hend_sk_pos h1
+      · exact hbind_sk_pos h2
+    rw [PMF.bind_apply] at hωbind_pos
+    obtain ⟨ν', hν'⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hωbind_pos)
+    rw [id] at hν'
+    have hων' : ω ν' ≠ 0 := fun hz => hν' (by rw [hz, zero_mul])
+    have hν's' : ν' s' ≠ 0 := fun hz => hν' (by rw [hz, mul_zero])
+    -- **The `r.trans` decomposition at the last step.**
+    have hrtrans : r.trans
+        = (r.take k).trans.append (Seq.cons ((l, μ), s') Seq.nil) := by
+      have hnonempty : r.trans.toList h ≠ [] := by
+        intro hnil
+        have hlen : (r.trans.toList h).length = Nat.find h := Stream'.Seq.length_toList _ h
+        rw [hnil, List.length_nil, hNfind] at hlen
+        exact hNpos.ne' hlen.symm
+      obtain ⟨prev, last, hprevT, hsplit, hprevList, hlast⟩ :=
+        Stream'.Seq.exists_split_last r.trans h hnonempty
+      have hprevlen : (prev.toList hprevT).length = k := by
+        have hlen : (r.trans.toList h).length = Nat.find h := Stream'.Seq.length_toList _ h
+        rw [hprevList, List.length_dropLast, hlen, hkfind, Nat.succ_sub_one]
+      have hlast_eq : last = ((l, μ), s') := by
+        have hgetlast := get?_last_of_split r prev last hprevT hsplit
+        rw [hprevlen, hrget] at hgetlast
+        exact (Option.some.inj hgetlast).symm
+      have hprev_eq : (r.take k).trans = prev := by
+        have := take_prev_of_split r prev last hprevT hsplit
+        rw [hprevlen] at this
+        rw [this]
+      rw [hsplit, hlast_eq, hprev_eq]
+    have hend_e : r.toExec.endState h_e = s' := by
+      have hfind : Nat.find h = Nat.find h_e :=
+        Nat.find_congr' (fun {n} => (ResolvedExec.toExec_terminatedAt_iff r n).symm)
+      apply Option.some.inj
+      rw [← AlterSeq.stateAt_find_eq_endState r.toExec h_e, ← hfind, ResolvedExec.toExec_stateAt,
+        hNfind, hk]
+      change (r.trans.get? k).map Prod.snd = some s'
+      rw [hrget]; rfl
+    have hlabs_split : (r.toExec.trans.toList h_e).map Prod.fst = labs' ++ [l] := by
+      have htoE_split : r.toExec.trans
+          = (ResolvedExec.toExec (r.take k)).trans.append (Seq.cons (l, s') Seq.nil) := by
+        change r.trans.map (fun p => (p.1.1, p.2)) = _
+        rw [hrtrans, Stream'.Seq.map_append, Stream'.Seq.map_cons, Stream'.Seq.map_nil]
+        rfl
+      have hpT : (ResolvedExec.toExec (r.take k)).trans.Terminates := hTe
+      have hcT : (Seq.cons (l, s') Seq.nil : Seq (Label × State)).Terminates :=
+        Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+      have heq_toList : r.toExec.trans.toList h_e
+          = (ResolvedExec.toExec (r.take k)).trans.toList hpT
+            ++ (Seq.cons (l, s') Seq.nil : Seq (Label × State)).toList hcT := by
+        rw [Stream'.Seq.toList_congr_pub htoE_split h_e (by rw [← htoE_split]; exact h_e)]
+        exact Stream'.Seq.toList_append _ _ hpT hcT _
+      rw [heq_toList, List.map_append]
+      congr 1
+      rw [Stream'.Seq.toList_cons hcT]
+      simp [Stream'.Seq.toList_nil]
+    -- **Assemble `R'` and finish.**
+    set R' : ResolvedExec (PMF State) Label :=
+      ⟨w.init, w.trans.append (Seq.cons ((l, ω), ν') Seq.nil)⟩ with hR'def
+    have hkT : w.trans.TerminatedAt k := hwfind ▸ Nat.find_spec hwT
+    have hRtake : R'.take k = w := by
+      have hwtake : w.take k = w := take_self_of_terminatedAt w k hkT
+      rw [← hwtake]
+      change (⟨w.init, Seq.ofList (Seq.take k R'.trans)⟩ : ResolvedExec (PMF State) Label)
+        = ⟨w.init, Seq.ofList (Seq.take k w.trans)⟩
+      congr 1
+      apply Stream'.Seq.ext
+      intro m
+      rw [Stream'.Seq.ofList_get?, Stream'.Seq.ofList_get?]
+      by_cases hm : m < k
+      · rw [seq_getElem?_take R'.trans k m hm, seq_getElem?_take w.trans k m hm]
+        change (w.trans.append (Seq.cons ((l, ω), ν') Seq.nil)).get? m = w.trans.get? m
+        exact Stream'.Seq.get?_append_before_length
+          (fun ht => Nat.find_min hwT (hwfind ▸ hm) ht)
+      · rw [List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hm)),
+          List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hm))]
+    have hR'get_lt : ∀ m, m < k → R'.trans.get? m = w.trans.get? m := by
+      intro m hm
+      change (w.trans.append (Seq.cons ((l, ω), ν') Seq.nil)).get? m = w.trans.get? m
+      exact Stream'.Seq.get?_append_before_length (fun ht => Nat.find_min hwT (hwfind ▸ hm) ht)
+    have hR'state_le : ∀ m, m ≤ k → R'.stateAt m = w.stateAt m := by
+      intro m hm
+      cases m with
+      | zero => rfl
+      | succ j =>
+        change (R'.trans.get? j).map Prod.snd = (w.trans.get? j).map Prod.snd
+        rw [hR'get_lt j (Nat.lt_of_succ_le hm)]
+    have hR'take_lt : ∀ m, m ≤ k → R'.take m = w.take m := by
+      intro m hm
+      change (⟨w.init, Seq.ofList (Seq.take m R'.trans)⟩ : ResolvedExec (PMF State) Label)
+        = ⟨w.init, Seq.ofList (Seq.take m w.trans)⟩
+      congr 1
+      apply Stream'.Seq.ext
+      intro j
+      rw [Stream'.Seq.ofList_get?, Stream'.Seq.ofList_get?]
+      by_cases hj : j < m
+      · rw [seq_getElem?_take R'.trans m j hj, seq_getElem?_take w.trans m j hj,
+          hR'get_lt j (Nat.lt_of_lt_of_le hj hm)]
+      · rw [List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hj)),
+          List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hj))]
+    refine ⟨R', ?_, ?_⟩
+    · intro n s ln μn sn' hstate hget
+      have hnk : n ≤ k := by
+        by_contra hc
+        have hle : Nat.find h ≤ n := by rw [hkfind]; exact Nat.succ_le_of_lt (Nat.lt_of_not_le hc)
+        have : r.trans.TerminatedAt n :=
+          Stream'.Seq.terminated_stable r.trans hle (Nat.find_spec h)
+        rw [this] at hget; exact absurd hget (by simp)
+      rcases Nat.lt_or_ge n k with hnlt | hnge
+      · have hstate_k : (r.take k).stateAt n = some s := by
+          rw [take_stateAt r (Nat.le_of_lt hnlt)]; exact hstate
+        have hget_k : (r.take k).trans.get? n = some ((ln, μn), sn') := by
+          rw [take_trans_get? r hnlt]; exact hget
+        obtain ⟨ν, ωn, νn', hwstate, hwget, hsupp, hker⟩ := hw_coh n s ln μn sn' hstate_k hget_k
+        refine ⟨ν, ωn, νn', ?_, ?_, hsupp, ?_⟩
+        · rw [hR'state_le n (Nat.le_of_lt hnlt)]; exact hwstate
+        · rw [hR'get_lt n hnlt]; exact hwget
+        · rw [hR'take_lt n (Nat.le_of_lt hnlt)]; exact hker
+      · have hnk_eq : n = k := Nat.le_antisymm hnk hnge
+        have hs_sk : s = sk := by
+          rw [hnk_eq, hsk] at hstate; exact (Option.some.inj hstate).symm
+        have hstep : ((ln, μn), sn') = ((l, μ), s') := by
+          rw [hnk_eq, hrget] at hget; exact (Option.some.inj hget).symm
+        obtain ⟨hll, hμμn, hsn⟩ : ln = l ∧ μn = μ ∧ sn' = s' := by
+          rw [Prod.mk.injEq, Prod.mk.injEq] at hstep
+          exact ⟨hstep.1.1, hstep.1.2, hstep.2⟩
+        have hEfind : Nat.find hE_term = k :=
+          (Nat.find_congr' (hp := hE_term) (hq := hwT)
+            (fun {m} => ResolvedExec.toExec_terminatedAt_iff w m)).trans hwfind
+        refine ⟨w.toExec.endState hE_term, ω, ν', ?_, ?_, ?_, ?_⟩
+        · rw [hnk_eq, hR'state_le k (Nat.le_refl k), ← ResolvedExec.toExec_stateAt w k, ← hEfind]
+          exact AlterSeq.stateAt_find_eq_endState w.toExec hE_term
+        · rw [hnk_eq, hll]
+          change (w.trans.append (Seq.cons ((l, ω), ν') Seq.nil)).get? k = _
+          have := Stream'.Seq.get?_append_find hwT (Seq.cons ((l, ω), ν') Seq.nil) 0
+          rw [Nat.add_zero] at this
+          rw [hwfind] at this
+          rw [this]; rfl
+        · rw [hs_sk]; exact hsk_mem
+        · rw [hnk_eq, hRtake, hll, hμμn, hs_sk]; exact hμ'_supp
+    · rw [hlabs_split, hend_e]
+      rw [PE'.beliefTCRw_append_singleton F labs' l s' w ω ν' hwT hwlab]
+      exact mul_ne_zero (mul_ne_zero (mul_ne_zero hwpm hnext_pos) hων') hν's'
+
+/-- **The variant-C non-nil coherent witness** (public wrapper over the inductive auxiliary). -/
+private theorem lowerFairRBayesC_halt_nonnil_coherent_witness {sys : System State Label}
     (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (r : ResolvedExec State Label) (h : r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r)
+    (hcons : (PE'.lowerFairRBayesC F).Consistent r)
     (hinit : PE'.initState = PMF.pure (sys.distF F).init)
     (hNpos : 0 < Nat.find h)
     (h_e : r.toExec.trans.Terminates) :
     ∃ R', PE'.RCoherentTL F r R' ∧
       PE'.beliefTCRw F ((r.toExec.trans.toList h_e).map Prod.fst)
-        (r.toExec.endState h_e) R' ≠ 0 := by
-  classical
-  set pe' := PE'.average.distFToDist F with hpe'
-  set N := Nat.find h with hN
-  -- `r` has a genuine last recorded step at position `N-1`.
-  obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hNpos.ne'
-  -- `k = N - 1`; `r.trans.get? k = some ((l, μ), s')`.
-  have hkN : k < N := by rw [hk]; exact Nat.lt_succ_self k
-  have hrget_ne : r.trans.get? k ≠ none := by
-    have : ¬ r.trans.TerminatedAt k := Nat.find_min h hkN
-    exact this
-  obtain ⟨t, hrget'⟩ := Option.ne_none_iff_exists'.mp hrget_ne
-  obtain ⟨⟨l, μ⟩, s'⟩ := t
-  have hrget : r.trans.get? k = some ((l, μ), s') := hrget'
-  -- `s' = r.endState h`: position `N = k+1` reads `stateAt N = (get? k).map snd = some s'`.
-  have hend : r.endState h = s' := by
-    have hst : r.stateAt N = some s' := by
-      rw [hk]; change (r.trans.get? k).map Prod.snd = some s'; rw [hrget]; rfl
-    have := AlterSeq.stateAt_find_eq_endState r h
-    rw [← hN, hst] at this; exact (Option.some.inj this).symm
-  -- Concrete `s_k := r.stateAt k` (the state before the last step), which exists since `k < N`.
-  have hsk_isSome : (r.stateAt k).isSome := by
-    rcases Nat.eq_zero_or_pos k with hk0 | hkpos
-    · rw [hk0]; rfl
-    · obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hkpos.ne'
-      rw [hj]
-      change ((r.trans.get? j).map Prod.snd).isSome
-      rw [Option.isSome_map]
-      refine Option.isSome_iff_ne_none.mpr ?_
-      exact Nat.find_min h (Nat.lt_trans (hj ▸ Nat.lt_succ_self j) hkN)
-  obtain ⟨sk, hsk⟩ := Option.isSome_iff_exists.mp hsk_isSome
-  -- **Step 1. Read `lowerFairR`-consistency at the last step `k`, and obtain the coherent
-  -- resolved-positive lift `w` of that step from the residual
-  -- `lowerFairR_halt_coherent_resolved_lift`.**
-  obtain ⟨hnext, hμs'⟩ := hcons.2 k l μ s' hrget
-  have hkfind : Nat.find h = k + 1 := hN.symm.trans hk
-  obtain ⟨w, ω, hwT, hwfind, hwlab_raw, hw_coh, hwpm, hsk_mem, hopt_supp, hnext_pos, hμ'_supp⟩ :=
-    lowerFairR_halt_coherent_resolved_lift F PE' r h hcons hinit k l μ s' sk hkfind hrget hsk
-      hnext hμs'
-  -- `(r.take k).toExec` terminates; `labs'` is its label list.
-  have hTe : (ResolvedExec.toExec (r.take k)).trans.Terminates :=
-    (ResolvedExec.toExec_terminates_iff (r.take k)).mpr (take_terminates r k)
-  set labs' := ((ResolvedExec.toExec (r.take k)).trans.toList hTe).map Prod.fst with hlabs'
-  -- Recover the `Seq.ofList labs'` form of `w`'s label identity from the raw `Seq`-of-labels form.
-  have hwlab : (ResolvedExec.toExec w).trans.map Prod.fst = Seq.ofList labs' := by
-    rw [hwlab_raw, hlabs', ← map_ofList_gen, Stream'.Seq.ofList_toList]
-  set E := ResolvedExec.toExec w with hE
-  -- **Step 2. Select the extension belief `ν' ∈ ω.support` with `ν' s' ≠ 0`.**
-  -- `E.trans.Terminates` (as `w.trans` does).
-  have hE_term : E.trans.Terminates := (ResolvedExec.toExec_terminates_iff w).mpr hwT
-  -- Marginal decomposition of the kernel at `q = s'`:
-  --   `(ω.bind id) s' = ∑' s, (E.endState) s · ((dfhk E l ω s).bind id) s'`.
-  have hdecomp := pe'.distFairHyperKernel_decomp F hE_term hopt_supp s'
-  -- The `s = sk` summand is positive: `(E.endState) sk ≠ 0` (`hsk_mem`), and
-  --   `((dfhk E l ω sk).bind id) s' ≥ (dfhk E l ω sk) μ · μ s' > 0`.
-  have hbind_sk_pos : ((pe'.distFairHyperKernel F E l ω sk).bind id) s' ≠ 0 := by
-    rw [PMF.bind_apply]
-    intro hz
-    have := ENNReal.tsum_eq_zero.mp hz μ
-    rw [id, mul_eq_zero] at this
-    rcases this with h1 | h2
-    · exact (PMF.mem_support_iff _ _).mp hμ'_supp h1
-    · exact hμs' h2
-  have hend_sk_pos : (w.toExec.endState hE_term) sk ≠ 0 := (PMF.mem_support_iff _ _).mp hsk_mem
-  -- Hence `(ω.bind id) s' ≠ 0`.
-  have hωbind_pos : (ω.bind id) s' ≠ 0 := by
-    rw [hdecomp]
-    intro hz
-    have := ENNReal.tsum_eq_zero.mp hz sk
-    rw [mul_eq_zero] at this
-    rcases this with h1 | h2
-    · exact hend_sk_pos h1
-    · exact hbind_sk_pos h2
-  -- Unfold `(ω.bind id) s' = ∑' ν', ω ν' · ν' s'` to get the witness `ν'`.
-  rw [PMF.bind_apply] at hωbind_pos
-  obtain ⟨ν', hν'⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hωbind_pos)
-  rw [id] at hν'
-  have hων' : ω ν' ≠ 0 := fun hz => hν' (by rw [hz, zero_mul])
-  have hν's' : ν' s' ≠ 0 := fun hz => hν' (by rw [hz, mul_zero])
-  -- **The `r.trans` decomposition at the last step.**  `r.trans = (r.take k).trans ++ [step]`.
-  have hrtrans : r.trans
-      = (r.take k).trans.append (Seq.cons ((l, μ), s') Seq.nil) := by
-    have hnonempty : r.trans.toList h ≠ [] := by
-      intro hnil
-      have hlen : (r.trans.toList h).length = Nat.find h := Stream'.Seq.length_toList _ h
-      rw [hnil, List.length_nil, ← hN] at hlen
-      exact hNpos.ne' hlen.symm
-    obtain ⟨prev, last, hprevT, hsplit, hprevList, hlast⟩ :=
-      Stream'.Seq.exists_split_last r.trans h hnonempty
-    -- `(prev.toList).length = k` (dropLast of the length-`(k+1)` `toList`).
-    have hprevlen : (prev.toList hprevT).length = k := by
-      have hlen : (r.trans.toList h).length = Nat.find h := Stream'.Seq.length_toList _ h
-      rw [hprevList, List.length_dropLast, hlen, ← hN, hk, Nat.succ_sub_one]
-    -- `last = ((l, μ), s')`: it is the last recorded step, i.e. `r.trans.get? k`.
-    have hlast_eq : last = ((l, μ), s') := by
-      have hgetlast := get?_last_of_split r prev last hprevT hsplit
-      rw [hprevlen, hrget] at hgetlast
-      exact (Option.some.inj hgetlast).symm
-    -- `prev = (r.take k).trans` via `take_prev_of_split`.
-    have hprev_eq : (r.take k).trans = prev := by
-      have := take_prev_of_split r prev last hprevT hsplit
-      rw [hprevlen] at this
-      rw [this]
-    rw [hsplit, hlast_eq, hprev_eq]
-  -- **`labs = labs' ++ [l]`** and **`r.toExec.endState h_e = s'`**.
-  have hend_e : r.toExec.endState h_e = s' := by
-    have hfind : Nat.find h = Nat.find h_e :=
-      Nat.find_congr' (fun {n} => (ResolvedExec.toExec_terminatedAt_iff r n).symm)
-    apply Option.some.inj
-    rw [← AlterSeq.stateAt_find_eq_endState r.toExec h_e, ← hfind, ResolvedExec.toExec_stateAt,
-      ← hN, hk]
-    change (r.trans.get? k).map Prod.snd = some s'
-    rw [hrget]; rfl
-  have hlabs_split : (r.toExec.trans.toList h_e).map Prod.fst = labs' ++ [l] := by
-    -- `r.toExec.trans = (r.take k).toExec.trans ++ [(l, s')]`.
-    have htoE_split : r.toExec.trans
-        = (ResolvedExec.toExec (r.take k)).trans.append (Seq.cons (l, s') Seq.nil) := by
-      change r.trans.map (fun p => (p.1.1, p.2)) = _
-      rw [hrtrans, Stream'.Seq.map_append, Stream'.Seq.map_cons, Stream'.Seq.map_nil]
-      rfl
-    have hpT : (ResolvedExec.toExec (r.take k)).trans.Terminates := hTe
-    have hcT : (Seq.cons (l, s') Seq.nil : Seq (Label × State)).Terminates :=
-      Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
-    have heq_toList : r.toExec.trans.toList h_e
-        = (ResolvedExec.toExec (r.take k)).trans.toList hpT
-          ++ (Seq.cons (l, s') Seq.nil : Seq (Label × State)).toList hcT := by
-      rw [Stream'.Seq.toList_congr_pub htoE_split h_e (by rw [← htoE_split]; exact h_e)]
-      exact Stream'.Seq.toList_append _ _ hpT hcT _
-    rw [heq_toList, List.map_append]
-    congr 1
-    rw [Stream'.Seq.toList_cons hcT]
-    simp [Stream'.Seq.toList_nil]
-  -- **Step 3+4. Assemble `R'` and finish.**
-  set R' : ResolvedExec (PMF State) Label :=
-    ⟨w.init, w.trans.append (Seq.cons ((l, ω), ν') Seq.nil)⟩ with hR'def
-  -- `w` terminates exactly at `k` (`hwfind` supplied by the residual).
-  have hkT : w.trans.TerminatedAt k := hwfind ▸ Nat.find_spec hwT
-  -- `R'.take k = w` (positions `< k` unaffected by the append; `w.take k = w` as `w` ends at `k`).
-  have hRtake : R'.take k = w := by
-    have hwtake : w.take k = w := take_self_of_terminatedAt w k hkT
-    rw [← hwtake]
-    -- `R'.take k` and `w.take k` agree: their `trans` match below `k`.
-    change (⟨w.init, Seq.ofList (Seq.take k R'.trans)⟩ : ResolvedExec (PMF State) Label)
-      = ⟨w.init, Seq.ofList (Seq.take k w.trans)⟩
-    congr 1
-    apply Stream'.Seq.ext
-    intro m
-    rw [Stream'.Seq.ofList_get?, Stream'.Seq.ofList_get?]
-    by_cases hm : m < k
-    · rw [seq_getElem?_take R'.trans k m hm, seq_getElem?_take w.trans k m hm]
-      change (w.trans.append (Seq.cons ((l, ω), ν') Seq.nil)).get? m = w.trans.get? m
-      exact Stream'.Seq.get?_append_before_length
-        (fun ht => Nat.find_min hwT (hwfind ▸ hm) ht)
-    · rw [List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hm)),
-        List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hm))]
-  -- `R'.stateAt`/`get?`/`take` below `k` agree with `w`.
-  have hR'get_lt : ∀ m, m < k → R'.trans.get? m = w.trans.get? m := by
-    intro m hm
-    change (w.trans.append (Seq.cons ((l, ω), ν') Seq.nil)).get? m = w.trans.get? m
-    exact Stream'.Seq.get?_append_before_length (fun ht => Nat.find_min hwT (hwfind ▸ hm) ht)
-  have hR'state_le : ∀ m, m ≤ k → R'.stateAt m = w.stateAt m := by
-    intro m hm
-    cases m with
-    | zero => rfl
-    | succ j =>
-      change (R'.trans.get? j).map Prod.snd = (w.trans.get? j).map Prod.snd
-      rw [hR'get_lt j (Nat.lt_of_succ_le hm)]
-  have hR'take_lt : ∀ m, m ≤ k → R'.take m = w.take m := by
-    intro m hm
-    change (⟨w.init, Seq.ofList (Seq.take m R'.trans)⟩ : ResolvedExec (PMF State) Label)
-      = ⟨w.init, Seq.ofList (Seq.take m w.trans)⟩
-    congr 1
-    apply Stream'.Seq.ext
-    intro j
-    rw [Stream'.Seq.ofList_get?, Stream'.Seq.ofList_get?]
-    by_cases hj : j < m
-    · rw [seq_getElem?_take R'.trans m j hj, seq_getElem?_take w.trans m j hj,
-        hR'get_lt j (Nat.lt_of_lt_of_le hj hm)]
-    · rw [List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hj)),
-        List.getElem?_eq_none (Nat.le_trans Stream'.Seq.length_take_le (Nat.le_of_not_lt hj))]
-  refine ⟨R', ?_, ?_⟩
-  · -- **Coherence `RCoherentTL F r R'`.**
-    intro n s ln μn sn' hstate hget
-    -- `n ≤ k`: `r` has no recorded step past `N = k+1`.
-    have hnk : n ≤ k := by
-      by_contra hc
-      have hle : Nat.find h ≤ n := by rw [hkfind]; exact Nat.succ_le_of_lt (Nat.lt_of_not_le hc)
-      have : r.trans.TerminatedAt n :=
-        Stream'.Seq.terminated_stable r.trans hle (Nat.find_spec h)
-      rw [this] at hget; exact absurd hget (by simp)
-    rcases Nat.lt_or_ge n k with hnlt | hnge
-    · -- **Internal position `n < k`: reuse `w`'s coherence.**
-      have hstate_k : (r.take k).stateAt n = some s := by
-        rw [take_stateAt r (Nat.le_of_lt hnlt)]; exact hstate
-      have hget_k : (r.take k).trans.get? n = some ((ln, μn), sn') := by
-        rw [take_trans_get? r hnlt]; exact hget
-      obtain ⟨ν, ωn, νn', hwstate, hwget, hsupp, hker⟩ := hw_coh n s ln μn sn' hstate_k hget_k
-      refine ⟨ν, ωn, νn', ?_, ?_, hsupp, ?_⟩
-      · rw [hR'state_le n (Nat.le_of_lt hnlt)]; exact hwstate
-      · rw [hR'get_lt n hnlt]; exact hwget
-      · rw [hR'take_lt n (Nat.le_of_lt hnlt)]; exact hker
-    · -- **Last position `n = k`: the appended step.**
-      have hnk_eq : n = k := Nat.le_antisymm hnk hnge
-      -- `s = sk`, `ln = l`, `μn = μ`, `sn' = s'` (the recorded step at `n = k`).
-      have hs_sk : s = sk := by
-        rw [hnk_eq, hsk] at hstate; exact (Option.some.inj hstate).symm
-      have hstep : ((ln, μn), sn') = ((l, μ), s') := by
-        rw [hnk_eq, hrget] at hget; exact (Option.some.inj hget).symm
-      obtain ⟨hll, hμμn, hsn⟩ : ln = l ∧ μn = μ ∧ sn' = s' := by
-        rw [Prod.mk.injEq, Prod.mk.injEq] at hstep
-        exact ⟨hstep.1.1, hstep.1.2, hstep.2⟩
-      -- `w.toExec` terminates exactly at `k` (same position as `w`).
-      have hEfind : Nat.find hE_term = k :=
-        (Nat.find_congr' (hp := hE_term) (hq := hwT)
-          (fun {m} => ResolvedExec.toExec_terminatedAt_iff w m)).trans hwfind
-      refine ⟨w.toExec.endState hE_term, ω, ν', ?_, ?_, ?_, ?_⟩
-      · -- `R'.stateAt n = w.stateAt k = some (w.toExec.endState hE_term)`.
-        rw [hnk_eq, hR'state_le k (Nat.le_refl k), ← ResolvedExec.toExec_stateAt w k, ← hEfind]
-        exact AlterSeq.stateAt_find_eq_endState w.toExec hE_term
-      · -- `R'.trans.get? n = some ((ln, ω), ν')` (the appended step), using `ln = l`.
-        rw [hnk_eq, hll]
-        change (w.trans.append (Seq.cons ((l, ω), ν') Seq.nil)).get? k = _
-        have := Stream'.Seq.get?_append_find hwT (Seq.cons ((l, ω), ν') Seq.nil) 0
-        rw [Nat.add_zero] at this
-        rw [hwfind] at this
-        rw [this]; rfl
-      · -- `s ∈ (w.toExec.endState).support` from `s = sk` and `hsk_mem`.
-        rw [hs_sk]; exact hsk_mem
-      · -- `μn ∈ (dfhk (toExec (R'.take n)) ln ω s).support`: `R'.take k = w`, `ln = l`, `s = sk`.
-        rw [hnk_eq, hRtake, hll, hμμn, hs_sk]; exact hμ'_supp
-  · -- **Positive `beliefTCRw`.**
-    rw [hlabs_split, hend_e]
-    rw [PE'.beliefTCRw_append_singleton F labs' l s' w ω ν' hwT hwlab]
-    -- All four factors are nonzero; the resolved-next factor is supplied by the residual
-    -- (`hnext_pos`).
-    exact mul_ne_zero (mul_ne_zero (mul_ne_zero hwpm hnext_pos) hων') hν's'
+        (r.toExec.endState h_e) R' ≠ 0 :=
+  lowerFairRBayesC_halt_nonnil_coherent_witness_aux F PE' hinit (Nat.find h) r h rfl hNpos h_e hcons
 
-/-- **Fallback-exclusion at a consistent terminating run (PROVEN).** On a `lowerFairR`-consistent
-terminating run `r`, the *restricted* resolved belief-cone at `r`'s full trace `labs` and end-state
-`s₀` carries positive mass. Equivalently the `PMF.pure none` fallback of `lowerFairRSched.next r`
-(which fires exactly when this restricted mass is `0`) never fires on a consistent `r`, so the
-halting emission always factors through a coherent belief-history.
-
-With the resolved emission this is a consequence of consistency, with no dependence on crux A:
-consistency at `r`'s last step supplies a coherent belief-prefix with positive *resolved* next,
-which is extended by `beliefTCRw_append_singleton` into a coherent belief-run at the full trace
-carrying
-positive `beliefTCRw`. The `nil` sub-case is discharged directly (`s₀ = r.init`, the length-0 belief
-run is vacuously coherent and carries the positive initial mass); the non-nil sub-case is
-`lowerFairR_halt_nonnil_coherent_witness`. -/
-private theorem lowerFairR_halt_restricted_cone_pos {sys : System State Label} (F : Fairness sys)
+/-- **Fallback-exclusion at a consistent terminating run (variant-C, enriched cone).** On a
+`lowerFairRBayesC`-consistent terminating run `r`, the variant-C Bayes cone `bayesTCwC F r` carries
+positive total mass, so the `PMF.pure ⟨bayesFallbackBelief r, nil⟩` fallback of
+`lowerFairRBayesCSched.next r` never fires. The nil sub-case is the length-0 belief run; the non-nil
+sub-case reuses `lowerFairRBayesC_halt_nonnil_coherent_witness` (coherent run with positive
+`beliefTCRw`), turned into positive `bayesTCwC` by adding `bayesLik ≠ 0`
+(`bayesLik_pos_of_RCoherentTL`). -/
+private theorem lowerFairRBayesC_halt_cone_pos {sys : System State Label} (F : Fairness sys)
     (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (r : ResolvedExec State Label) (h : r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r)
+    (hcons : (PE'.lowerFairRBayesC F).Consistent r)
     (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
-    (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
-      (PE'.beliefTCR F ((r.toExec.trans.toList
-        ((ResolvedExec.toExec_terminates_iff r).mpr h)).map Prod.fst)
-        (r.toExec.endState ((ResolvedExec.toExec_terminates_iff r).mpr h))) R') ≠ 0 := by
+    (∑' R', PE'.bayesTCwC F r R') ≠ 0 := by
   classical
   have h_e : r.toExec.trans.Terminates := (ResolvedExec.toExec_terminates_iff r).mpr h
   set labs := (r.toExec.trans.toList h_e).map Prod.fst with hlabs
   set s₀ := r.toExec.endState h_e with hs₀
-  -- **Reduction.** It suffices to exhibit one `R'` that is `RCoherentTL F r`-coherent and has
-  -- positive `beliefTCR` mass at the full cone; its `indicator` value is then positive.
-  suffices hwit : ∃ R', PE'.RCoherentTL F r R' ∧ PE'.beliefTCR F labs s₀ R' ≠ 0 by
-    obtain ⟨R', hcoh, hmass⟩ := hwit
-    rw [ne_eq, ENNReal.tsum_eq_zero, not_forall]
-    refine ⟨R', fun hz => hmass ?_⟩
-    rwa [Set.indicator_of_mem hcoh] at hz
-  -- **Bridge:** `beliefTCRw ≠ 0 ⟹ beliefTCR ≠ 0` (the contributing run forces the normalise
-  -- branch, where `beliefTCR = beliefTCRw · Z⁻¹` with `Z` finite and nonzero).
+  -- It suffices to exhibit one coherent `R'` with positive `beliefTCRw` (then `bayesLik ≠ 0`, so
+  -- `bayesTCwC R' ≠ 0`, so the total is nonzero).
   suffices hwit : ∃ R', PE'.RCoherentTL F r R' ∧ PE'.beliefTCRw F labs s₀ R' ≠ 0 by
-    obtain ⟨R', hcoh, hmass⟩ := hwit
-    have hpos : (∑' R'', PE'.beliefTCRw F labs s₀ R'') ≠ 0 :=
-      fun hz => hmass (ENNReal.tsum_eq_zero.mp hz R')
-    refine ⟨R', hcoh, ?_⟩
-    rw [ResolvedProbabilisticExecution.beliefTCR, dif_pos hpos, PMF.normalize_apply]
-    refine mul_ne_zero hmass (ENNReal.inv_ne_zero.mpr ?_)
-    rw [PE'.beliefTCRw_tsum_eq F labs s₀]
-    exact (PE'.average.distFToDist F).beliefTCw_tsum_ne_top labs s₀
-  -- `r.init = sys.init` from `lowerFairR`-consistency (`initState.bind id = pure sys.init`), hinit.
-  have hinit_bind : (PE'.lowerFairR F).initState = (PMF.pure sys.init : PMF State) := by
-    change PE'.initState.bind id = _
-    rw [hinit]
-    change (PMF.pure (PMF.pure sys.init)).bind id = _
-    rw [PMF.pure_bind]; rfl
+    obtain ⟨R', hcoh, hbw⟩ := hwit
+    rw [ne_eq, ENNReal.tsum_eq_zero, not_forall]
+    refine ⟨R', ?_⟩
+    intro hz
+    unfold ResolvedProbabilisticExecution.bayesTCwC at hz
+    rw [dif_pos ⟨(show (ResolvedExec.toExec r).trans.Terminates from h_e), hcoh⟩] at hz
+    rw [mul_eq_zero] at hz
+    rcases hz with h1 | h2
+    · exact hbw (by rw [hlabs, hs₀]; convert h1 using 3)
+    · exact PE'.bayesLik_pos_of_RCoherentTL F r R' hcoh h2
+  -- `r.init = sys.init` from consistency.
   have hr_init : r.init = sys.init := by
-    have hi : (PE'.lowerFairR F).initState r.init ≠ 0 := hcons.1
-    rw [hinit_bind] at hi
-    by_contra hc
-    rw [PMF.pure_apply, if_neg hc] at hi; exact hi rfl
-  -- Case split on the length `N = Nat.find h` of `r`.
+    have hi : (PE'.lowerFairRBayesC F).initState r.init ≠ 0 := hcons.1
+    change PE'.initState.bind id r.init ≠ 0 at hi
+    rw [hinit, PMF.pure_bind] at hi
+    change ((sys.distF F).init : PMF State) r.init ≠ 0 at hi
+    rw [show ((sys.distF F).init : PMF State) = PMF.pure sys.init from rfl, PMF.pure_apply] at hi
+    by_contra hc; rw [if_neg hc] at hi; exact hi rfl
   rcases Nat.eq_zero_or_pos (Nat.find h) with hN0 | hNpos
-  · -- **Nil sub-case** (`N = 0`): `r.trans = nil`, `labs = []`, `s₀ = r.init = sys.init`.  The
-    -- length-0 belief run `⟨pure sys.init, nil⟩` is vacuously coherent and carries positive mass.
+  · -- Nil sub-case: the length-0 belief run `⟨pure sys.init, nil⟩`.
     have hr_nil : r.trans = Seq.nil :=
       Stream'.Seq.terminatedAt_zero_iff.mp (hN0 ▸ Nat.find_spec h)
     have htoExec_nil : r.toExec.trans = Seq.nil := by
@@ -3355,15 +3220,12 @@ private theorem lowerFairR_halt_restricted_cone_pos {sys : System State Label} (
     have hs₀_init : s₀ = sys.init := by
       rw [hs₀, AlterSeq.endState_of_trans_nil r.toExec htoExec_nil, ResolvedExec.toExec_init,
         hr_init]
-    -- Witness: the length-0 belief run `⟨pure sys.init, nil⟩`.
     refine ⟨⟨PMF.pure sys.init, Seq.nil⟩, ?_, ?_⟩
-    · -- Coherence is vacuous: `r` has no recorded step.
-      intro m s l μ s' _ hget
+    · intro m s l μ s' _ hget
       rw [hr_nil] at hget
       change (Seq.nil : Seq ((Label × PMF State) × State)).get? m = _ at hget
       rw [Stream'.Seq.get?_nil] at hget; exact absurd hget (by simp)
-    · -- Positive `beliefTCRw`: guard holds (nil, empty labels), mass `= 1 · 1 ≠ 0`.
-      rw [ResolvedProbabilisticExecution.beliefTCRw, hlabs_nil, hs₀_init, dif_pos]
+    · rw [ResolvedProbabilisticExecution.beliefTCRw, hlabs_nil, hs₀_init, dif_pos]
       · rw [PE'.probOfR_nil, hinit]
         have hend : (ResolvedExec.toExec (⟨PMF.pure sys.init, Seq.nil⟩ : ResolvedExec (PMF State)
             Label)).endState ((ResolvedExec.toExec_terminates_iff _).mpr Stream'.Seq.terminates_nil)
@@ -3376,28 +3238,20 @@ private theorem lowerFairR_halt_restricted_cone_pos {sys : System State Label} (
       · refine ⟨Stream'.Seq.terminates_nil, ?_⟩
         rw [show (ResolvedExec.toExec (⟨PMF.pure sys.init, Seq.nil⟩ : ResolvedExec (PMF State)
           Label)).trans = Seq.nil from rfl, Stream'.Seq.map_nil, Stream'.Seq.ofList_nil]
-  · -- **Non-nil sub-case** (`0 < Nat.find h`): the resolved belief-cone realizability of `r`'s
-    -- full trace at the terminal step, supplied (proven) by the non-nil coherent witness.
-    exact lowerFairR_halt_nonnil_coherent_witness F PE' r h hcons hinit hNpos h_e
+  · -- Non-nil sub-case: the enriched non-nil coherent witness.
+    exact lowerFairRBayesC_halt_nonnil_coherent_witness F PE' r h hcons hinit hNpos h_e
 
-/-- **Fallback-exclusion + halting lift (PROVEN).**
-On a `lowerFairR`-consistent terminating run `r` at which the μ-reading witness halts
-(`lowerFairRSched.next r none ≠ 0`), the emission factors through a coherent belief-history: there
-is a resolved `PE'`-run `R''` with a positive path mass (hence `PE'`-consistent), whose end-belief
-contains the concrete end-state `r.endState h`, at which `PE'` itself halts
-(`PE'.scheduler.next R'' none ≠ 0`).
-
-With the resolved emission the halt reads directly off `PE'.scheduler.next R' none`, so the sampled
-belief-run `R'` (positive-mass by `lowerFairR_halt_restricted_cone_pos`, whence the fallback
-`PMF.pure none` of `lowerFairRSched.next r` never fires on a consistent `r`) is itself the halting
-`PE'`-run — no fibre-mate extraction is needed. Fully discharged. Everything downstream (the `𝒟f→𝒟`
-fair-deadlock transfer via `IsFair.halt_fairDeadlock`, `resolvable_of_consistent_step` and
-`distF_fairDeadlock_belief`) is discharged unconditionally in `lowerFairR_halt_fairDeadlock`. -/
-private theorem lowerFairR_halt_coherent_lift {sys : System State Label} (F : Fairness sys)
+/-- **Fallback-exclusion + halting lift (variant-C, enriched cone).** On a
+`lowerFairRBayesC`-consistent terminating run `r` at which the variant-C witness halts, the halting
+belief-run `R'` is read directly off the `none` branch of `PE'.scheduler.next R'`, where `R'` is
+sampled from `bayesTCC F r` (positive by `lowerFairRBayesC_halt_cone_pos`, so the
+`pure ⟨bayesFallbackBelief r, nil⟩` fallback never fires). `bayesTCC_support` supplies `R'`'s
+termination, positive `probOfR` (via `beliefTCRw`) and `s₀ ∈ (toExec R').endState`. -/
+private theorem lowerFairRBayesC_halt_coherent_lift {sys : System State Label} (F : Fairness sys)
     (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (r : ResolvedExec State Label) (h : r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r)
-    (h_none : (PE'.lowerFairR F).scheduler.next r none ≠ 0)
+    (hcons : (PE'.lowerFairRBayesC F).Consistent r)
+    (h_none : (PE'.lowerFairRBayesC F).scheduler.next r none ≠ 0)
     (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
     ∃ (R'' : ResolvedExec (PMF State) Label) (hT'' : R''.trans.Terminates),
       PE'.probOfR R'' hT'' ≠ 0 ∧
@@ -3406,7 +3260,6 @@ private theorem lowerFairR_halt_coherent_lift {sys : System State Label} (F : Fa
       PE'.scheduler.next R'' none ≠ 0 := by
   classical
   set pe' := PE'.average.distFToDist F with hpe'
-  -- The concrete end-state, identified with `r.toExec`'s end-state.
   have h_e : r.toExec.trans.Terminates := (ResolvedExec.toExec_terminates_iff r).mpr h
   have hend_eq : r.endState h = r.toExec.endState h_e := by
     have hfind : Nat.find h = Nat.find h_e :=
@@ -3414,94 +3267,48 @@ private theorem lowerFairR_halt_coherent_lift {sys : System State Label} (F : Fa
     apply Option.some.inj
     rw [← AlterSeq.stateAt_find_eq_endState r h, ← AlterSeq.stateAt_find_eq_endState r.toExec h_e,
       hfind, ResolvedExec.toExec_stateAt]
-  set labs := (r.toExec.trans.toList h_e).map Prod.fst with hlabs
   set s₀ := r.toExec.endState h_e with hs₀
-  -- `none ∈ (lowerFairRSched.next r).support`; unfold the emission (mirror of `.valid`).
-  have hmem : none ∈ ((PE'.lowerFairR F).scheduler.next r).support :=
+  -- `none ∈ (lowerFairRBayesCSched.next r).support`; unfold the emission.
+  have hmem : none ∈ ((PE'.lowerFairRBayesC F).scheduler.next r).support :=
     (PMF.mem_support_iff _ _).mpr h_none
   change none ∈
     (open Classical in
       if h_term : r.toExec.trans.Terminates then
-        if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
-            (PE'.beliefTCR F ((r.toExec.trans.toList h_term).map Prod.fst)
-              (r.toExec.endState h_term)) R') ≠ 0 then
-          ((PE'.beliefTCR F ((r.toExec.trans.toList h_term).map Prod.fst)
-              (r.toExec.endState h_term)).filter {R' | PE'.RCoherentTL F r R'} _).bind (fun R' =>
-            (PE'.scheduler.next R').bind (fun opt =>
-              match opt with
-              | none         => PMF.pure none
-              | some (l', ω) =>
-                (pe'.distFairHyperKernel F (ResolvedExec.toExec R') l' ω
-                    (r.toExec.endState h_term)).map (fun μ' => some (l', μ'))))
-        else PMF.pure none
+        (PE'.bayesTCC F r).bind (fun R' =>
+          (PE'.scheduler.next R').bind (fun opt =>
+            match opt with
+            | none         => PMF.pure none
+            | some (l', ω) =>
+              (pe'.distFairHyperKernel F (ResolvedExec.toExec R') l' ω
+                  (r.toExec.endState h_term)).map (fun μ' => some (l', μ'))))
       else PMF.pure none).support at hmem
   rw [dif_pos h_e] at hmem
-  -- The live branch (positive restricted cone mass) must hold: on the fallback the emission is
-  -- `PMF.pure none`, and a `lowerFairR`-consistent terminating run forbids it.
-  have h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
-      (PE'.beliefTCR F labs s₀) R') ≠ 0 :=
-    lowerFairR_halt_restricted_cone_pos F PE' r h hcons hinit
-  rw [dif_pos h0] at hmem
-  -- Factor the `none`-mass through the filter-bind: it can only arise from the `opt = none` case.
   rw [PMF.mem_support_bind_iff] at hmem
-  obtain ⟨R', hR'_filter, hmem⟩ := hmem
-  rw [PMF.mem_support_filter_iff] at hR'_filter
-  obtain ⟨hR'_coh, hR'_belief⟩ := hR'_filter
+  obtain ⟨R', hR'_belief, hmem⟩ := hmem
   set E := ResolvedExec.toExec R' with hE
   rw [PMF.mem_support_bind_iff] at hmem
   obtain ⟨opt, hopt_sch, hmem⟩ := hmem
-  -- Recover `E.Terminates`, `s₀ ∈ E.endState.support`, and `avgWeight E ≠ 0`.
-  -- Two cases: positive cone mass (`beliefTCR_support`), or the length-0 fallback which — since
-  -- `h0` holds and the fallback run is coherent with `r` — forces `r` to have no step, whence
-  -- `s₀ = r.init = sys.init` and `avgWeight ⟨pure s₀, nil⟩ = PE'.initState (pure sys.init) = 1`.
-  obtain ⟨hE_term, hR'T, h_endState, hpm'⟩ :
-      ∃ (hE_term : E.trans.Terminates) (hR'T : R'.trans.Terminates),
-        s₀ ∈ (E.endState hE_term).support ∧ PE'.probOfR R' hR'T ≠ 0 := by
-    by_cases hpos : (∑' R'', PE'.beliefTCRw F labs s₀ R'') ≠ 0
-    · obtain ⟨hT, -, h_mem, hpm⟩ := PE'.beliefTCR_support F labs s₀ hpos R' hR'_belief
-      exact ⟨(ResolvedExec.toExec_terminates_iff R').mpr hT, hT, h_mem, hpm⟩
-    · rw [not_not] at hpos
-      rw [ResolvedProbabilisticExecution.beliefTCR, dif_neg (by rw [hpos]; simp),
-        PMF.mem_support_pure_iff] at hR'_belief
-      -- The fallback belief run is `⟨pure s₀, nil⟩`; it is `RCoherentTL`-coherent with `r` (from
-      -- the filter membership), which forbids `r` having a step at position 0, so `r` is nil.
-      subst hR'_belief
-      have hE_nil : E.trans = Seq.nil := by rw [hE]; rfl
-      have hR'_nil : (⟨PMF.pure s₀, Seq.nil⟩ : ResolvedExec (PMF State) Label).trans = Seq.nil :=
-        rfl
-      -- `r` has no step at position 0.
-      have hr0 : r.trans.get? 0 = none := by
-        by_contra hc
-        obtain ⟨⟨⟨l0, μ0⟩, s0'⟩, hr0get⟩ := Option.ne_none_iff_exists'.mp hc
-        obtain ⟨ν, ω, ν', hwstate, hwget, -, -⟩ :=
-          hR'_coh 0 r.init l0 μ0 s0' rfl hr0get
-        change (Seq.nil : Seq ((Label × PMF (PMF State)) × PMF State)).get? 0 = _ at hwget
-        rw [Stream'.Seq.get?_nil] at hwget
-        exact absurd hwget (by simp)
-      have hr_nil : r.trans = Seq.nil := Stream'.Seq.terminatedAt_zero_iff.mp hr0
-      -- `s₀ = r.endState = r.init`.
-      have hr_end : r.endState h = r.init := AlterSeq.endState_of_trans_nil r hr_nil h
-      have hs₀_init : s₀ = r.init := by rw [← hend_eq, hr_end]
-      -- `r.init = sys.init` from `lowerFairR`-consistency + `hinit`.
-      have hinit_mem : (PE'.lowerFairR F).initState r.init ≠ 0 := hcons.1
-      have hinit_bind : (PE'.lowerFairR F).initState = (PMF.pure sys.init : PMF State) := by
-        change PE'.initState.bind id = _
-        rw [hinit]
-        change (PMF.pure (PMF.pure sys.init)).bind id = _
-        rw [PMF.pure_bind]; rfl
-      rw [hinit_bind] at hinit_mem
-      have hr_init : r.init = sys.init := by
-        by_contra hc
-        rw [PMF.pure_apply, if_neg hc] at hinit_mem; exact hinit_mem rfl
-      have hs₀_eq : s₀ = sys.init := by rw [hs₀_init, hr_init]
-      refine ⟨hE_nil ▸ Stream'.Seq.terminates_nil, hR'_nil ▸ Stream'.Seq.terminates_nil, ?_, ?_⟩
-      · have hend : E.endState (hE_nil ▸ Stream'.Seq.terminates_nil) = PMF.pure s₀ := by
-          rw [AlterSeq.endState_of_trans_nil E hE_nil]; rw [hE]; rfl
-        rw [hend, PMF.support_pure, Set.mem_singleton_iff]
-      · -- `probOfR ⟨pure s₀, nil⟩ = PE'.initState (pure sys.init) = 1 ≠ 0`.
-        rw [PE'.probOfR_nil, ← hs₀, hs₀_eq, hinit]
-        change (PMF.pure (PMF.pure sys.init)) (PMF.pure sys.init) ≠ 0
-        rw [PMF.pure_apply, if_pos rfl]; exact one_ne_zero
+  -- Positive Bayes cone (consistent run), so the fallback never fires — `bayesTCC_support` applies.
+  have hbayes_pos : (∑' R'', PE'.bayesTCwC F r R'') ≠ 0 :=
+    lowerFairRBayesC_halt_cone_pos F PE' r h hcons hinit
+  obtain ⟨hr, hR'T, hE_term, h_endState⟩ := PE'.bayesTCC_support F r hbayes_pos R' hR'_belief
+  have h_endState' : s₀ ∈ (E.endState hE_term).support :=
+    show (ResolvedExec.toExec r).endState hr ∈ ((ResolvedExec.toExec R').endState hE_term).support
+      from h_endState
+  -- Positive `probOfR R'`: from `bayesTCC`'s support, the `beliefTCRw`-factor is positive.
+  have hpm' : PE'.probOfR R' hR'T ≠ 0 := by
+    rw [ResolvedProbabilisticExecution.bayesTCC, dif_pos hbayes_pos,
+      PMF.mem_support_normalize_iff] at hR'_belief
+    unfold ResolvedProbabilisticExecution.bayesTCwC at hR'_belief
+    split_ifs at hR'_belief with hg
+    · have hbw : PE'.beliefTCRw F ((r.toExec.trans.toList hg.1).map Prod.fst)
+          (r.toExec.endState hg.1) R' ≠ 0 := left_ne_zero_of_mul hR'_belief
+      unfold ResolvedProbabilisticExecution.beliefTCRw at hbw
+      split_ifs at hbw with hbg
+      · have hpm_mass : PE'.probOfR R' hbg.1 ≠ 0 := left_ne_zero_of_mul hbw
+        convert hpm_mass using 2
+      · exact absurd rfl hbw
+    · exact absurd rfl hR'_belief
   -- Only the `opt = none` branch of the match can carry mass on `none`.
   have hopt_none : opt = none := by
     cases opt with
@@ -3515,11 +3322,8 @@ private theorem lowerFairR_halt_coherent_lift {sys : System State Label} (F : Fa
       obtain ⟨μ', -, h_eq⟩ := hmem
       exact absurd h_eq (by simp)
   subst hopt_none
-  -- So `PE'.scheduler.next R' none ≠ 0`: `R'` itself is the halting `PE'`-run (direct reading, no
-  -- fibre-mate extraction).
   have hnone' : PE'.scheduler.next R' none ≠ 0 := (PMF.mem_support_iff _ _).mp hopt_sch
   have hcons' : PE'.Consistent R' := probOfR_ne_zero_imp_consistent PE' R' hR'T hpm'
-  -- `R'.endState = E.endState` (same `toExec`, since `E = R'.toExec`).
   have hend2 : R'.endState hR'T = E.endState hE_term := by
     have hE_term' : R'.toExec.trans.Terminates := hE ▸ hE_term
     have hfind : Nat.find hR'T = Nat.find hE_term' :=
@@ -3531,38 +3335,27 @@ private theorem lowerFairR_halt_coherent_lift {sys : System State Label} (F : Fa
         ← ResolvedExec.toExec_stateAt]
     rw [hstep]
   refine ⟨R', hR'T, hpm', ?_, ?_, hnone'⟩
-  · -- `r.endState h ∈ (R'.endState).support`.
-    rw [hend_eq, hend2]; exact h_endState
-  · -- Resolvability of `R'.endState` (consistent terminating run).
-    exact ResolvedProbabilisticExecution.resolvable_of_consistent_endState
+  · rw [hend_eq, hend2]; exact h_endState'
+  · exact ResolvedProbabilisticExecution.resolvable_of_consistent_endState
       F PE' R' hcons' hR'T hinit
 
-/-- **The witness halts only from a fair deadlock.** If the μ-reading witness halts at a terminating
-consistent run `r`, its end-state `r.endState` is an `F`-fair-deadlock. The halt (`h_none`) factors,
-via the reachability lift `lowerFairR_halt_coherent_lift`, through a positive-mass (hence
-consistent) resolved `PE'`-belief-run `R''` at which `PE'` itself halts, with
-`r.endState h ∈ (R''.endState)` and `R''.endState` `F.Resolvable`. The `𝒟f`-fairness of `PE'`
-(`hfair.halt_fairDeadlock`) makes
-`R''.endState` an `F.dist`-fair-deadlock belief; resolvability then lets
-`distF_fairDeadlock_belief` carry the deadlock down to every state in its support — in particular to
-`r.endState h`. -/
-theorem ResolvedProbabilisticExecution.lowerFairR_halt_fairDeadlock {sys : System State Label}
+/-- **The variant-C witness halts only from a fair deadlock (enriched cone).** Proven directly on
+`lowerFairRBayesC`: the halt factors, via `lowerFairRBayesC_halt_coherent_lift`, through a
+positive-mass (hence consistent) resolved `PE'`-halt `R''`; `PE'.IsFair.halt_fairDeadlock` +
+`distF_fairDeadlock_belief` carry the fair deadlock down to `r`'s end-state. -/
+theorem ResolvedProbabilisticExecution.lowerFairRBayesC_halt_fairDeadlock {sys : System State Label}
     (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (hfair : PE'.IsFair F.dist) (r : ResolvedExec State Label) (h : r.trans.Terminates)
-    (_hcons : (PE'.lowerFairR F).Consistent r)
-    (h_none : (PE'.lowerFairR F).scheduler.next r none ≠ 0)
+    (hcons : (PE'.lowerFairRBayesC F).Consistent r)
+    (h_none : (PE'.lowerFairRBayesC F).scheduler.next r none ≠ 0)
     (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
     F.FairDeadlock (r.endState h) := by
   classical
-  -- Reachability lift: a positive-mass resolved `PE'`-run `R''` at which `PE'` halts, whose
-  -- end-belief `R''.endState` contains the concrete end-state `r.endState h` and is resolvable.
   obtain ⟨R'', hT'', hpm'', hmem'', hres, hnone''⟩ :=
-    lowerFairR_halt_coherent_lift F PE' r h _hcons h_none hinit
+    lowerFairRBayesC_halt_coherent_lift F PE' r h hcons h_none hinit
   have hcons'' : PE'.Consistent R'' := probOfR_ne_zero_imp_consistent PE' R'' hT'' hpm''
-  -- `𝒟f`-fairness: `PE'` halts at the consistent `R''` only from an `F.dist`-fair-deadlock belief.
   have hdl : F.dist.FairDeadlock (R''.endState hT'') :=
     hfair.halt_fairDeadlock R'' hT'' hcons'' hnone''
-  -- Transfer the belief-fair-deadlock to the concrete end-state via resolvability.
   exact F.distF_fairDeadlock_belief hres hdl (r.endState h) hmem''
 
 /-! ### The finite-branching route to crux B (finitely-branching + finite mass-splitting)
@@ -3611,150 +3404,117 @@ is **time-local**: to make step `n` of `r` fair it needs `r`'s recorded `μ` rep
 read at its final belief* `(R'.take n).endState = R'.stateAt n` — the **time-`n` belief** — with the
 concrete state `s = r.stateAt n` in that belief's support.
 
-This is exactly the reading `lowerFairR`'s own consistency records: its scheduler samples a resolved
-belief-run from `beliefTCR` restricted to the resolved, time-local, prefix-local coherence
-`RCoherentTL F r`, which matches each recorded step `n` at *its own* time-`n` belief
-`(R'.take n).toExec.endState` (unlike a de-resolved, final-belief filter, whose per-prefix readings
-would not nest into a König chain of resolved belief-prefixes).
+This is exactly the reading `lowerFairRBayesC`'s own consistency records: its scheduler samples a
+resolved belief-run from the enriched Bayes cone `bayesTCC`, whose support is the resolved,
+time-local, prefix-local coherent runs `RCoherentTL F r`, matching each recorded step `n` at *its
+own* time-`n` belief `(R'.take n).toExec.endState` (unlike a de-resolved, final-belief filter,
+whose per-prefix readings would not nest into a König chain of resolved belief-prefixes).
 
 `exists_timeLocal_coherent_resolved_lift` produces `R'` by König (`exists_infinite_chain`) over the
 finitely-branching tree of resolved belief-prefixes (`hfb` bounds the emitted `(l, ω)`, `hms` the
-sampled successor beliefs `ν`), each finite prefix supplied by `exists_positive_coherent_prefix`
-(via `beliefTCR_support`). Everything downstream of it — the König assembly of `R'` and the
-`F.dist → F` fairness transfer — is discharged unconditionally by
-`lowerFairR_phantom_free_of_finiteBranching`, below. -/
+sampled successor beliefs `ν`), each finite prefix supplied by the prefix source
+`exists_positive_coherent_prefix_common_init_bayes` (via `bayesTCC_support`). Everything downstream
+of it — the König assembly of `R'` and the `F.dist → F` fairness transfer — is discharged
+unconditionally by `lowerFairRBayesC_phantom_free_of_finiteBranching`, below. -/
 
-/-- **König chain source (crux B).** For every `n ≥ 1`, the `lowerFairR`-consistency of the infinite
-concrete run `r` supplies a length-`n` (terminated at `n`) resolved `PE'`-belief-run `w` that is
-time-locally coherent with `r.take n` and has positive `PE'`-path-mass. Read `hcons` at position
-`n` (a genuine step, since `r` is infinite): it forces the `h_term`/`h0` branch of
-`lowerFairRSched.next (r.take n)`, whose emission binds through the
-`RCoherentTL (r.take n)`-filtered
-`beliefTCR`; a support element `w` of that filter is coherent with all of `r.take n` and, by
-`beliefTCR_support`, terminates and has positive `probOfR`. Its label list is `r.take n`'s labels
-(length `n`), so it terminates exactly at `n`. The hypothesis `1 ≤ n` excludes the length-0 cone
-fallback: its RCoherence at position `0` would demand a step the length-0 run lacks, so the cone
-mass is genuinely positive and `beliefTCR_support` applies. (The `n = 0` node of the König tree is
-the root, supplied directly.) -/
-private theorem exists_positive_coherent_prefix {sys : System State Label} (F : Fairness sys)
+/-- **König chain source (variant-C, enriched cone).** For every `n ≥ 1`, the
+`lowerFairRBayesC`-consistency of the infinite concrete run `r` supplies a length-`n` resolved
+`PE'`-belief-run `w` time-locally coherent with `r.take n` and with positive `PE'`-path-mass. The
+sampled `w` is extracted from `bayesTCC F (r.take n)` (positive by `lowerFairRBayesC_halt_cone_pos`
+on the consistent prefix `r.take n`), whose support supplies `RCoherentTL` (via the `bayesTCwC`
+guard) and positive `beliefTCRw` (via `bayesTCC_support`); `beliefTCR_support` then supplies
+termination at `n` and positive `probOfR`. -/
+private theorem exists_positive_coherent_prefix_bayes {sys : System State Label} (F : Fairness sys)
     (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (r : ResolvedExec State Label) (hinf : ¬ r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r) (n : ℕ) (hn : 1 ≤ n) :
+    (hcons : (PE'.lowerFairRBayesC F).Consistent r)
+    (hinit : PE'.initState = PMF.pure (sys.distF F).init) (n : ℕ) (_hn : 1 ≤ n) :
     ∃ w : ResolvedExec (PMF State) Label,
       w.trans.TerminatedAt n ∧ PE'.RCoherentTL F (r.take n) w ∧
       ∃ hT : w.trans.Terminates, PE'.probOfR w hT ≠ 0 := by
   classical
   set pe' := PE'.average.distFToDist F with hpe'
-  -- `r` has a genuine recorded step at position `n`.
   have hrne : r.trans.get? n ≠ none := fun hc => hinf ⟨n, hc⟩
   obtain ⟨t, hrget'⟩ := Option.ne_none_iff_exists'.mp hrne
   obtain ⟨⟨l, μ⟩, s'⟩ := t
   have hrget : r.trans.get? n = some ((l, μ), s') := hrget'
-  -- Read `lowerFairR`-consistency at position `n`.
   obtain ⟨hnext, -⟩ := hcons.2 n l μ s' hrget
-  -- `(r.take n).toExec` terminates (finite prefix); force the `h_term`/`h0` branch.
   have hTe : (ResolvedExec.toExec (r.take n)).trans.Terminates :=
     (ResolvedExec.toExec_terminates_iff (r.take n)).mpr (take_terminates r n)
   set labs := ((ResolvedExec.toExec (r.take n)).trans.toList hTe).map Prod.fst with hlabs
   set s₀ := (ResolvedExec.toExec (r.take n)).endState hTe with hs₀
-  -- Unfold the scheduler emission (mirror of `lowerFairRSched.valid`).
-  have hmem : some (l, μ) ∈ ((PE'.lowerFairR F).scheduler.next (r.take n)).support :=
+  -- Cone positivity at `r.take n` (consistent prefix): the fallback never fires.
+  have hcons_n : (PE'.lowerFairRBayesC F).Consistent (r.take n) :=
+    lowerFairRBayesC_consistent_take F PE' r hcons n
+  have hcone : (∑' R', PE'.bayesTCwC F (r.take n) R') ≠ 0 :=
+    lowerFairRBayesC_halt_cone_pos F PE' (r.take n) (take_terminates r n) hcons_n hinit
+  -- Unfold the variant-C scheduler emission.
+  have hmem : some (l, μ) ∈ ((PE'.lowerFairRBayesC F).scheduler.next (r.take n)).support :=
     (PMF.mem_support_iff _ _).mpr hnext
   change some (l, μ) ∈
     (open Classical in
       if h_term : (ResolvedExec.toExec (r.take n)).trans.Terminates then
-        if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F (r.take n) R'}
-            (PE'.beliefTCR F (((ResolvedExec.toExec (r.take n)).trans.toList h_term).map Prod.fst)
-              ((ResolvedExec.toExec (r.take n)).endState h_term)) R') ≠ 0 then
-          ((PE'.beliefTCR F (((ResolvedExec.toExec (r.take n)).trans.toList h_term).map Prod.fst)
-              ((ResolvedExec.toExec (r.take n)).endState h_term)).filter
-              {R' | PE'.RCoherentTL F (r.take n) R'} _).bind (fun R' =>
-            (PE'.scheduler.next R').bind (fun opt =>
-              match opt with
-              | none         => PMF.pure none
-              | some (l', ω) =>
-                ((PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l' ω
-                    ((ResolvedExec.toExec (r.take n)).endState h_term)).map
-                    (fun μ' => some (l', μ'))))
-        else PMF.pure none
+        (PE'.bayesTCC F (r.take n)).bind (fun R' =>
+          (PE'.scheduler.next R').bind (fun opt =>
+            match opt with
+            | none         => PMF.pure none
+            | some (l', ω) =>
+              ((PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l' ω
+                  ((ResolvedExec.toExec (r.take n)).endState h_term)).map
+                  (fun μ' => some (l', μ'))))
       else PMF.pure none).support at hmem
   rw [dif_pos hTe] at hmem
-  split_ifs at hmem with h0
-  · rw [PMF.mem_support_bind_iff] at hmem
-    obtain ⟨w, hw_filter, -⟩ := hmem
-    rw [PMF.mem_support_filter_iff] at hw_filter
-    obtain ⟨hw_coh, hw_belief⟩ := hw_filter
-    -- `r`'s step at position `0` (exists since `r` is infinite and `n ≥ 1`, so position `0 < n`).
-    have hr0ne : r.trans.get? 0 ≠ none := fun hc => hinf ⟨0, hc⟩
-    obtain ⟨t0, hr0get'⟩ := Option.ne_none_iff_exists'.mp hr0ne
-    obtain ⟨⟨l0, μ0⟩, s0'⟩ := t0
-    have hr0take : (r.take n).trans.get? 0 = some ((l0, μ0), s0') := by
-      rw [take_trans_get? r hn]; exact hr0get'
-    have hr0state : (r.take n).stateAt 0 = some r.init := rfl
-    -- Positive cone mass. Otherwise `beliefTCR = pure ⟨pure s₀, nil⟩`, so `w = ⟨pure s₀, nil⟩`
-    -- (length 0); but coherence at position `0` demands a step `w` (length 0) does not have.
-    have hpos : (∑' R'', PE'.beliefTCRw F labs s₀ R'') ≠ 0 := by
-      intro hzero
-      have hbtcr : PE'.beliefTCR F labs s₀ = PMF.pure ⟨PMF.pure s₀, Seq.nil⟩ := by
-        rw [ResolvedProbabilisticExecution.beliefTCR, dif_neg (by rw [hzero]; simp)]
-      rw [hbtcr, PMF.mem_support_pure_iff] at hw_belief
-      -- Coherence of the length-0 fallback at position `0`: no such belief-step exists.
-      obtain ⟨ν, ω, ν', hwstate, hwget, -, -⟩ :=
-        hw_coh 0 r.init l0 μ0 s0' hr0state hr0take
-      rw [hw_belief] at hwget
-      change (Seq.nil : Seq ((Label × PMF (PMF State)) × PMF State)).get? 0 = _ at hwget
-      rw [Stream'.Seq.get?_nil] at hwget
-      exact absurd hwget (by simp)
-    obtain ⟨hwT, hwlab, -, hwpm⟩ := PE'.beliefTCR_support F labs s₀ hpos w hw_belief
-    -- `labs` has length `n` (the label list of the length-`n` prefix `r.take n`), so `w`, whose
-    -- `toExec`-label list is `labs`, terminates exactly at `n`.
-    have hlabs_len : labs.length = n := by
-      rw [hlabs, List.length_map]
-      have hlen : ((ResolvedExec.toExec (r.take n)).trans.toList hTe).length = Nat.find hTe :=
-        Stream'.Seq.length_toList _ hTe
-      rw [hlen]
-      -- `Nat.find hTe = n`: `toExec (r.take n)` terminates exactly where `r.take n` does, at `n`.
-      have hfind : Nat.find hTe = Nat.find (take_terminates r n) :=
-        Nat.find_congr' (fun {m} => ResolvedExec.toExec_terminatedAt_iff (r.take n) m)
-      rw [hfind, take_find r n hinf]
-    have hwtermn : w.trans.TerminatedAt n := by
-      rw [← ResolvedExec.toExec_terminatedAt_iff]
-      have hiff : (ResolvedExec.toExec w).trans.TerminatedAt n ↔
-          (Seq.map Prod.fst (ResolvedExec.toExec w).trans).TerminatedAt n := by
-        unfold Stream'.Seq.TerminatedAt
-        rw [Stream'.Seq.map_get?, Option.map_eq_none_iff]
-      rw [hiff, hwlab]
-      change (Seq.ofList labs).get? n = none
-      rw [Stream'.Seq.ofList_get?]
-      exact List.getElem?_eq_none (by rw [hlabs_len])
-    exact ⟨w, hwtermn, hw_coh, hwT, hwpm⟩
-  · -- Fallback branch is impossible (the emission is `PMF.pure none`).
-    rw [PMF.mem_support_pure_iff] at hmem
-    exact absurd hmem (by simp)
+  rw [PMF.mem_support_bind_iff] at hmem
+  obtain ⟨w, hw_belief, -⟩ := hmem
+  -- `w ∈ bayesTCC (r.take n)` support ⟹ `RCoherentTL (r.take n) w` + positive `beliefTCRw`.
+  have hguard : PE'.RCoherentTL F (r.take n) w ∧ PE'.beliefTCRw F labs s₀ w ≠ 0 := by
+    rw [ResolvedProbabilisticExecution.bayesTCC, dif_pos hcone,
+      PMF.mem_support_normalize_iff] at hw_belief
+    unfold ResolvedProbabilisticExecution.bayesTCwC at hw_belief
+    split_ifs at hw_belief with hg
+    · refine ⟨hg.2, ?_⟩
+      have hbw : PE'.beliefTCRw F ((ResolvedExec.toExec (r.take n)).trans.toList hg.1
+          |>.map Prod.fst) ((ResolvedExec.toExec (r.take n)).endState hg.1) w ≠ 0 :=
+        left_ne_zero_of_mul hw_belief
+      rw [hlabs, hs₀]; convert hbw using 3
+    · exact absurd rfl hw_belief
+  obtain ⟨hw_coh, hbw⟩ := hguard
+  have hpos : (∑' R'', PE'.beliefTCRw F labs s₀ R'') ≠ 0 :=
+    fun hz => hbw (ENNReal.tsum_eq_zero.mp hz w)
+  have hw_bel : w ∈ (PE'.beliefTCR F labs s₀).support := by
+    rw [ResolvedProbabilisticExecution.beliefTCR, dif_pos hpos, PMF.mem_support_normalize_iff]
+    exact hbw
+  obtain ⟨hwT, hwlab, -, hwpm⟩ := PE'.beliefTCR_support F labs s₀ hpos w hw_bel
+  -- `labs` has length `n`, so `w` terminates exactly at `n`.
+  have hlabs_len : labs.length = n := by
+    rw [hlabs, List.length_map]
+    have hlen : ((ResolvedExec.toExec (r.take n)).trans.toList hTe).length = Nat.find hTe :=
+      Stream'.Seq.length_toList _ hTe
+    rw [hlen]
+    have hfind : Nat.find hTe = Nat.find (take_terminates r n) :=
+      Nat.find_congr' (fun {m} => ResolvedExec.toExec_terminatedAt_iff (r.take n) m)
+    rw [hfind, take_find r n hinf]
+  have hwtermn : w.trans.TerminatedAt n := by
+    rw [← ResolvedExec.toExec_terminatedAt_iff]
+    have hiff : (ResolvedExec.toExec w).trans.TerminatedAt n ↔
+        (Seq.map Prod.fst (ResolvedExec.toExec w).trans).TerminatedAt n := by
+      unfold Stream'.Seq.TerminatedAt
+      rw [Stream'.Seq.map_get?, Option.map_eq_none_iff]
+    rw [hiff, hwlab]
+    change (Seq.ofList labs).get? n = none
+    rw [Stream'.Seq.ofList_get?]
+    exact List.getElem?_eq_none (by rw [hlabs_len])
+  exact ⟨w, hwtermn, hw_coh, hwT, hwpm⟩
 
-/-- **König chain source with a common initial belief (the single residual crux-B gap).**
-Strengthens `exists_positive_coherent_prefix` by pinning *one* initial belief `μ₀` shared by the
-coherent positive prefixes at *every* level. This is exactly the fact `exists_infinite_chain`
-requires (a fixed `root`): König threads a chain of prefixes that must all start at the same node,
-and the reconstructed `R'.init` is that common `μ₀`.
-
-Why it is the residue and not derivable from `exists_positive_coherent_prefix` alone: the
-per-level prefixes returned by `exists_positive_coherent_prefix` are drawn from the belief-cone
-`beliefTCR`, whose runs are only constrained to have *some* initial belief in the support of
-`PE'.initState` (a `PMF (PMF State)`); when `PE'.initState` is not a Dirac the different levels may
-a priori choose *different* initial beliefs, and neither `hfb` (finite branching of the scheduler)
-nor `hms` (finite mass-splitting) bounds the initial-belief support. In the intended use
-(`lower_of_finiteBranching`) `PE'.initState = PMF.pure (sys.distF F).init` is Dirac, so
-`μ₀ = (sys.distF F).init` is forced and this lemma is immediate; but the ambient statement of
-`exists_timeLocal_coherent_resolved_lift` does not carry that `hinit`, so the common-initial-belief
-selection is isolated in this helper. Everything else — the finitely-branching König tree, its
-reconstruction, consistency and time-local coherence of the assembled infinite run — is proven
-unconditionally on top of it. -/
-private theorem exists_positive_coherent_prefix_common_init {sys : System State Label}
+/-- **König chain source with a common initial belief (variant-C).** Strengthens
+`exists_positive_coherent_prefix_bayes` by pinning *one* initial belief `μ₀` shared by the coherent
+positive prefixes at every level (the fixed `root` required by `exists_infinite_chain`). The common
+initial belief is `μ₀ = pure sys.init` (Dirac start), forced by consistency. -/
+private theorem exists_positive_coherent_prefix_common_init_bayes {sys : System State Label}
     (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (_hfb : PE'.FinitelyBranching) (_hms : PE'.FiniteMassSplitting F)
     (r : ResolvedExec State Label) (hinf : ¬ r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r)
+    (hcons : (PE'.lowerFairRBayesC F).Consistent r)
     (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
     ∃ μ₀ : PMF State, ∀ n : ℕ, ∃ w : ResolvedExec (PMF State) Label,
       w.init = μ₀ ∧ w.trans.TerminatedAt n ∧ PE'.RCoherentTL F (r.take n) w ∧
@@ -3774,7 +3534,7 @@ private theorem exists_positive_coherent_prefix_common_init {sys : System State 
       change (PMF.pure (PMF.pure sys.init)) (PMF.pure sys.init) ≠ 0
       simp
   · obtain ⟨w, hterm, hcoh, hT, hpm⟩ :=
-      exists_positive_coherent_prefix F PE' r hinf hcons n hn1
+      exists_positive_coherent_prefix_bayes F PE' r hinf hcons hinit n hn1
     have hi : PE'.initState w.init ≠ 0 := (probOfR_ne_zero_imp_consistent PE' w hT hpm).1
     rw [hinit] at hi
     have hwi : w.init = (sys.distF F).init := by
@@ -3816,35 +3576,38 @@ private theorem RCoherentTL_take {sys : System State Label} (F : Fairness sys)
   · rw [take_trans_get? w hmk]; exact hwget
   · rw [take_take w k m (Nat.le_of_lt hmk)]; exact hker
 
-/-- **The residual crux-B gap: a time-local coherent infinite resolved belief-lift.** From a
-`lowerFairR`-consistent infinite concrete run `r`, under finite branching (`hfb`) and finite
-mass-splitting (`hms`), there is an infinite `PE'`-**Consistent** *resolved* belief-run `R'` that is
-**time-locally coherent** with `r`: at every position `n`, `r`'s recorded step `((l, μ), s')` is
-matched by a resolved belief-step `((l, ω), ν')` of `R'` at the *same* label `l`, with the current
-concrete state `s = r.stateAt n` lying in the *time-`n`* belief `R'.stateAt n`'s support, and `μ`
-reproduced by the fairness-revealing kernel evaluated at the prefix `R'.take n` (whose fair-branch
-is read at `(R'.take n).endState = R'.stateAt n = ν`).
+/-- **The residual crux-B gap: a time-local coherent infinite resolved belief-lift.** Given a prefix
+source `hpref` (a common initial belief `μ₀` and, for every `n`, a length-`n` positive coherent
+belief-prefix of `r` starting at `μ₀`), under finite branching (`hfb`) and finite mass-splitting
+(`hms`), there is an infinite `PE'`-**Consistent** *resolved* belief-run `R'` that is **time-locally
+coherent** with `r`: at every position `n`, `r`'s recorded step `((l, μ), s')` is matched by a
+resolved belief-step `((l, ω), ν')` of `R'` at the *same* label `l`, with the current concrete state
+`s = r.stateAt n` lying in the *time-`n`* belief `R'.stateAt n`'s support, and `μ` reproduced by the
+fairness-revealing kernel evaluated at the prefix `R'.take n` (whose fair-branch is read at
+`(R'.take n).endState = R'.stateAt n = ν`).
 
 This is precisely the reading the `F.dist → F` transfer consumes, and precisely the resolved,
-time-local, prefix-local reading `lowerFairR`'s own `RCoherentTL`-based consistency records (a
-de-resolved, single-final-belief filter would not supply it — see the section docstring).
+time-local, prefix-local reading `lowerFairRBayesC`'s own `RCoherentTL`-based consistency records
+via the enriched Bayes cone (a de-resolved, single-final-belief filter would not supply it — see the
+section docstring). The prefix source is supplied by
+`exists_positive_coherent_prefix_common_init_bayes`.
 
 Proven here by a finitely-branching König lift mirroring
 `FairStrongProbabilisticSimulation.exists_infinite_coupled_lift`: the tree nodes are the length-`n`
-positive coherent belief-prefixes of `r` (supplied with a common initial belief by
-`exists_positive_coherent_prefix_common_init`); a node's children extend it by one belief-step
-`((lₙ, ω), ν')` whose label `lₙ` is pinned by `r`'s `n`-th step (via `RCoherentTL`), whose emission
-`ω` ranges over the finite `PE'.scheduler.next`-support (`hfb`) and whose sampled successor belief
-`ν' ∈ ω.support` is finite (`hms`), so branching is finite; `exists_infinite_chain` threads the
-infinite run `R'`, reconstructed from the König path, and its consistency and time-local coherence
-are read off each level-`(n+1)` node (both prefix-stable). -/
+positive coherent belief-prefixes of `r` (from `hpref`); a node's children extend it by one
+belief-step `((lₙ, ω), ν')` whose label `lₙ` is pinned by `r`'s `n`-th step (via `RCoherentTL`),
+whose emission `ω` ranges over the finite `PE'.scheduler.next`-support (`hfb`) and whose sampled
+successor belief `ν' ∈ ω.support` is finite (`hms`), so branching is finite; `exists_infinite_chain`
+threads the infinite run `R'`, reconstructed from the König path, and its consistency and time-local
+coherence are read off each level-`(n+1)` node (both prefix-stable). -/
 theorem ResolvedProbabilisticExecution.exists_timeLocal_coherent_resolved_lift
     {sys : System State Label} (F : Fairness sys)
     (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (hfb : PE'.FinitelyBranching) (hms : PE'.FiniteMassSplitting F)
     (r : ResolvedExec State Label) (hinf : ¬ r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r)
-    (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
+    (hpref : ∃ μ₀ : PMF State, ∀ n : ℕ, ∃ w : ResolvedExec (PMF State) Label,
+      w.init = μ₀ ∧ w.trans.TerminatedAt n ∧ PE'.RCoherentTL F (r.take n) w ∧
+      ∃ hT : w.trans.Terminates, PE'.probOfR w hT ≠ 0) :
     ∃ R' : ResolvedExec (PMF State) Label,
       ¬ R'.trans.Terminates ∧ PE'.Consistent R' ∧
       ∀ (n : ℕ) (s : State) (l : Label) (μ : PMF State) (s' : State),
@@ -3856,8 +3619,7 @@ theorem ResolvedProbabilisticExecution.exists_timeLocal_coherent_resolved_lift
                 (ResolvedExec.toExec (R'.take n)) l ω s).support := by
   classical
   -- A common initial belief `μ₀` and coherent positive prefixes of every length (crux-B source).
-  obtain ⟨μ₀, hpref⟩ :=
-    exists_positive_coherent_prefix_common_init F PE' hfb hms r hinf hcons hinit
+  obtain ⟨μ₀, hpref⟩ := hpref
   -- The König tree.  A node at level `n` is a length-`n` (terminated at `n`) belief-run coherent
   -- with `r.take n`, starting at `μ₀`, with positive path mass.  `succ n w w'` extends `w` by one
   -- belief-step to such a level-`(n+1)` node.
@@ -4103,51 +3865,29 @@ theorem ResolvedProbabilisticExecution.exists_timeLocal_coherent_resolved_lift
 
 /-! ### Crux B via finite branching (the route this development takes) -/
 
-/-- **Crux B, finite-branching route (PROVEN).** Every infinite consistent concrete run `r` of the
-μ-reading witness takes infinitely many `F`-fair steps, given that `PE'` is finitely branching and
-finite mass-splitting. Proof (mirroring
-`FairStrongProbabilisticSimulation.exists_infinite_coupled_lift`): König
-(`exists_infinite_chain`) on the tree of coherent consistent `PE'`-belief-prefixes projecting onto
-`r`'s prefixes, packaged as `exists_timeLocal_coherent_resolved_lift`.
-
-* **Nodes / finite branching.** A child extends a coherent prefix by one belief-step `((l, ω), ν)`.
-  The emitted `(l, ω)` ranges over `supp(PE'.next E)` — finite by `hfb`; the sampled successor
-  belief `ν ∈ ω.support` — finite by `hms`. So each node has finitely many children (the concrete
-  side is
-  pinned by `r`, as in `exists_infinite_coupled_lift`'s `hfinChildren`).
-* **Arbitrarily long chains.** Every finite prefix `r.take n` lifts to a coherent belief-prefix
-  (`exists_positive_coherent_prefix`, via `beliefTCR_support`). No finiteness.
-* **Assembly.** König threads a genuine infinite consistent coherent `PE'`-belief-run `R'`
-  (consistency is prefix-local, so no phantom — unlike the compactness route). `R'` is infinite and
-  `PE'`-consistent, so `PE'.IsFair.inf_fair` gives it infinitely many `F.dist`-fair belief-steps;
-  the fairness-revealing kernel `distFairHyperKernel` carries each down to an `F`-fair concrete step
-  of
-  `r` (`F.dist.fair`'s realiser `p` has `F.fair s l μ` for `μ ∈ (p s).support`, and `RCoherentTL`
-  places `r`'s recorded `μ` there).
-
-No tightness, no continuity, no `[Fintype State]`, no `ImageFinite sys`; survives belief escape. -/
-theorem ResolvedProbabilisticExecution.lowerFairR_phantom_free_of_finiteBranching
+/-- **Crux B, finite-branching route (variant-C, enriched cone).** Proven directly on
+`lowerFairRBayesC`: the `lowerFairRBayesC`-consistent infinite run `r` is lifted to an infinite
+`PE'`-consistent resolved belief-run `R'` (time-locally coherent with `r`) via
+`exists_timeLocal_coherent_resolved_lift` fed the enriched prefix source
+`exists_positive_coherent_prefix_common_init_bayes`; `PE'.IsFair.inf_fair` on `R'` plus
+`distFairHyperKernel_fair_transfer` carries `F.dist`-fairness down to `F`-fairness of `r`. -/
+theorem ResolvedProbabilisticExecution.lowerFairRBayesC_phantom_free_of_finiteBranching
     {sys : System State Label} (F : Fairness sys)
     (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (hfb : PE'.FinitelyBranching) (hms : PE'.FiniteMassSplitting F) (hfair : PE'.IsFair F.dist)
     (r : ResolvedExec State Label) (hinf : ¬ r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r)
+    (hcons : (PE'.lowerFairRBayesC F).Consistent r)
     (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
     ∀ N : ℕ, ∃ n : ℕ, N ≤ n ∧ F.FairStepAt r n := by
   classical
   intro N
   set pe' := PE'.average.distFToDist F with hpe'
-  -- Lift `r` to an infinite `PE'`-consistent resolved belief-run `R'`, time-locally coherent with
-  -- `r` (the residual crux-B gap).
   obtain ⟨R', hR'inf, hR'cons, hcoh⟩ :=
-    PE'.exists_timeLocal_coherent_resolved_lift F hfb hms r hinf hcons hinit
-  -- `R'` is `F.dist`-fair infinitely often (its recorded belief-steps).
+    PE'.exists_timeLocal_coherent_resolved_lift F hfb hms r hinf
+      (exists_positive_coherent_prefix_common_init_bayes F PE' hfb hms r hinf hcons hinit)
   obtain ⟨m, hmN, hfairstep⟩ := hfair.inf_fair R' hR'inf hR'cons N
   refine ⟨m, hmN, ?_⟩
-  -- Unpack the `F.dist`-fair belief-step at position `m`: `R'.stateAt m = some ν`,
-  -- `R'.trans.get? m = some ((l, ω), ν')`, and `F.dist.fair ν l ω`.
   obtain ⟨ν, l, ω, ν', hR'state, hR'get, hνfair⟩ := hfairstep
-  -- `r` has a genuine recorded step at `m` (it is infinite) with current concrete state `s`.
   have hrne : r.trans.get? m ≠ none := fun hc => hinf ⟨m, hc⟩
   obtain ⟨t, hrget'⟩ := Option.ne_none_iff_exists'.mp hrne
   obtain ⟨⟨lr, μ⟩, s'⟩ := t
@@ -4161,17 +3901,13 @@ theorem ResolvedProbabilisticExecution.lowerFairR_phantom_free_of_finiteBranchin
         rw [Option.map_eq_none_iff] at hc
         exact hinf ⟨k, hc⟩
     exact Option.ne_none_iff_exists'.mp hne
-  -- The time-local coherence at `m` matches `r`'s step to a belief-step of `R'` at the same label.
   obtain ⟨ν₀, ω₀, ν'₀, hR'state₀, hR'get₀, hs_supp, hμ_ker⟩ := hcoh m s lr μ s' hrstate hrget
-  -- The two readings of `R'`'s state / recorded step at `m` coincide: identify `ν₀ = ν`,
-  -- `lr = l`, `ω₀ = ω` and push these into the coherence data.
   obtain rfl : ν₀ = ν := by rw [hR'state₀] at hR'state; exact Option.some.inj hR'state
   have hget_eq : ((lr, ω₀), ν'₀) = ((l, ω), ν') := by
     rw [hR'get₀] at hR'get; exact Option.some.inj hR'get
   have hlr : l = lr := (congrArg (·.1.1) hget_eq).symm
   have hω₀ : ω = ω₀ := (congrArg (·.1.2) hget_eq).symm
   subst hlr hω₀
-  -- The plain projection of the prefix `R'.take m` has end-belief `ν₀` (= the time-`m` belief).
   have hTe : (ResolvedExec.toExec (R'.take m)).trans.Terminates :=
     (ResolvedExec.toExec_terminates_iff (R'.take m)).mpr (take_terminates R' m)
   have hend : (ResolvedExec.toExec (R'.take m)).endState hTe = ν₀ := by
@@ -4185,7 +3921,6 @@ theorem ResolvedProbabilisticExecution.lowerFairR_phantom_free_of_finiteBranchin
       rw [hfind, take_stateAt R' (Nat.le_refl m)]; exact hR'state
     have h := AlterSeq.stateAt_find_eq_endState (ResolvedExec.toExec (R'.take m)) hTe
     rw [hst] at h; exact (Option.some.inj h).symm
-  -- Fairness transfer: `F.dist.fair ν₀ l ω` at `ν₀ = end-belief`, `s ∈ ν₀.support`, `μ` in kernel.
   have hfair_dist : F.dist.fair ((ResolvedExec.toExec (R'.take m)).endState hTe) l ω := by
     rw [hend]; exact hνfair
   have hs_supp' : s ∈ ((ResolvedExec.toExec (R'.take m)).endState hTe).support := by
@@ -4195,346 +3930,12 @@ theorem ResolvedProbabilisticExecution.lowerFairR_phantom_free_of_finiteBranchin
       hfair_dist s hs_supp' μ hμ_ker
   exact ⟨s, l, μ, s', hrstate, hrget, hF_fair⟩
 
-/-- **The μ-reading witness is sure-fair (finite-branching route).** Combines the halt clause
-(`lowerFairR_halt_fairDeadlock`) with the finite-branching phantom-freeness
-(`lowerFairR_phantom_free_of_finiteBranching`). Fairness rests on `PE'.FinitelyBranching` and
+/-- **The variant-C witness is sure-fair (finite-branching route).** Both fairness clauses are
+proven **directly on `lowerFairRBayesC`** (no `Consistent`-transfer): halt from
+`lowerFairRBayesC_halt_fairDeadlock`, infinitely-often-fair from
+`lowerFairRBayesC_phantom_free_of_finiteBranching`, both of which read coherent belief-runs off the
+enriched Bayes cone `bayesTCC`. Fairness rests on `PE'.FinitelyBranching` and
 `PE'.FiniteMassSplitting F` — no tightness, no `[Fintype State]`. -/
-theorem ResolvedProbabilisticExecution.lowerFairR_isFair_of_finiteBranching
-    {sys : System State Label} (F : Fairness sys)
-    (PE' : ResolvedProbabilisticExecution (sys.distF F))
-    (hfb : PE'.FinitelyBranching) (hms : PE'.FiniteMassSplitting F) (hfair : PE'.IsFair F.dist)
-    (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
-    (PE'.lowerFairR F).IsFair F where
-  halt_fairDeadlock := fun r h hcons h_none =>
-    PE'.lowerFairR_halt_fairDeadlock F hfair r h hcons h_none hinit
-  inf_fair := fun r hinf hcons N =>
-    PE'.lowerFairR_phantom_free_of_finiteBranching F hfb hms hfair r hinf hcons hinit N
-
-/-! ### Variant-C witness fairness + halt (reuse via a `Consistent`-transfer)
-
-The variant-C Bayes witness `lowerFairRBayesC` uses the **identical** emission to the coarse
-`lowerFairR` (the sampled belief-run's resolved next `PE'.scheduler.next R'` followed by
-`distFairHyperKernel`); the only difference is the *sampling weight* — `bayesTCC F r`
-(`beliefTCRw · bayesLik`, normalized) in place of `(beliefTCR labs s₀).filter {RCoherentTL r}`. On
-the live branch the two schedulers have the **same support**: `bayesLik ≠ 0` on every
-`RCoherentTL`-coherent run (`bayesLik_pos_of_RCoherentTL`), so the Bayes-cone support equals the
-filtered-cone support. Hence a variant-C-consistent run is coarse-consistent
-(`lowerFairRBayesC_consistent_imp`) and halts only where the coarse witness halts, and the whole
-fairness/halt story reduces to the already-proven coarse lemmas
-(`lowerFairR_phantom_free_of_finiteBranching`, `lowerFairR_halt_fairDeadlock`). -/
-
-/-- **`bayesLik` is positive on every coherent run.** If `R'` is time-locally coherent with `r`
-(`RCoherentTL F r R'`), then the Bayes likelihood `bayesLik F r R'` is nonzero: each Bayes factor
-`bayesFactor F r R' k` at a recorded step `k` is the `distFairHyperKernel`-mass of `r`'s recorded
-`μ`, and coherence records exactly `μ ∈ (distFairHyperKernel …).support`, so every factor of the
-finite product is nonzero. (When `r` does not terminate `bayesLik = 1 ≠ 0`.) This is what makes the
-variant-C Bayes cone and the coarse filtered cone share their support. -/
-theorem ResolvedProbabilisticExecution.bayesLik_pos_of_RCoherentTL {sys : System State Label}
-    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
-    (r : ResolvedExec State Label) (R' : ResolvedExec (PMF State) Label)
-    (hcoh : PE'.RCoherentTL F r R') :
-    PE'.bayesLik F r R' ≠ 0 := by
-  classical
-  unfold ResolvedProbabilisticExecution.bayesLik
-  split_ifs with h
-  · rw [Finset.prod_ne_zero_iff]
-    intro k hk
-    unfold ResolvedProbabilisticExecution.bayesFactor
-    rw [Finset.mem_range] at hk
-    have hkne : r.trans.get? k ≠ none := fun hc => (Nat.find_min h hk) hc
-    obtain ⟨t, hget'⟩ := Option.ne_none_iff_exists'.mp hkne
-    obtain ⟨⟨l, μ⟩, s'⟩ := t
-    have hget : r.trans.get? k = some ((l, μ), s') := hget'
-    have hskne : r.stateAt k ≠ none := by
-      rcases Nat.eq_zero_or_pos k with hk0 | hkpos
-      · rw [hk0]; simp [AlterSeq.stateAt]
-      · obtain ⟨j, hj⟩ := Nat.exists_eq_succ_of_ne_zero hkpos.ne'
-        rw [hj]
-        change ((r.trans.get? j).map Prod.snd) ≠ none
-        rw [ne_eq, Option.map_eq_none_iff]
-        exact Nat.find_min h (Nat.lt_trans (hj ▸ Nat.lt_succ_self j) hk)
-    obtain ⟨s, hst⟩ := Option.ne_none_iff_exists'.mp hskne
-    obtain ⟨ν, ω, ν', hR'state, hR'get, hs_supp, hμ_ker⟩ := hcoh k s l μ s' hst hget
-    rw [hget, hst, hR'get]
-    exact (PMF.mem_support_iff _ _).mp hμ_ker
-  · exact one_ne_zero
-
-/-- **Variant-C cone positivity from coarse consistency.** On a `lowerFairR`-consistent terminating
-run `r`, the variant-C Bayes cone `bayesTCwC F r` carries positive total mass. The same coherent
-belief-run witness that keeps the coarse restricted cone positive
-(`lowerFairR_halt_restricted_cone_pos`'s nil/non-nil split, reusing
-`lowerFairR_halt_nonnil_coherent_witness`) has `RCoherentTL F r` and positive `beliefTCRw`; adding
-`bayesLik ≠ 0` (`bayesLik_pos_of_RCoherentTL`) gives it positive `bayesTCwC`, so the total is
-nonzero. Equivalently the variant-C scheduler's internal fallback never fires on a consistent run.
--/
-theorem ResolvedProbabilisticExecution.lowerFairRBayesC_cone_pos_of_lowerFairR_consistent
-    {sys : System State Label} (F : Fairness sys)
-    (PE' : ResolvedProbabilisticExecution (sys.distF F))
-    (r : ResolvedExec State Label) (h : r.trans.Terminates)
-    (hcons : (PE'.lowerFairR F).Consistent r)
-    (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
-    (∑' R', PE'.bayesTCwC F r R') ≠ 0 := by
-  classical
-  have h_e : r.toExec.trans.Terminates := (ResolvedExec.toExec_terminates_iff r).mpr h
-  set labs := (r.toExec.trans.toList h_e).map Prod.fst with hlabs
-  set s₀ := r.toExec.endState h_e with hs₀
-  -- It suffices to exhibit one coherent `R'` with positive `beliefTCRw` (then `bayesLik ≠ 0` free,
-  -- so `bayesTCwC R' ≠ 0`, so the total is nonzero).
-  suffices hwit : ∃ R', PE'.RCoherentTL F r R' ∧ PE'.beliefTCRw F labs s₀ R' ≠ 0 by
-    obtain ⟨R', hcoh, hbw⟩ := hwit
-    rw [ne_eq, ENNReal.tsum_eq_zero, not_forall]
-    refine ⟨R', ?_⟩
-    intro hz
-    unfold ResolvedProbabilisticExecution.bayesTCwC at hz
-    rw [dif_pos ⟨(show (ResolvedExec.toExec r).trans.Terminates from h_e), hcoh⟩] at hz
-    rw [mul_eq_zero] at hz
-    rcases hz with h1 | h2
-    · exact hbw h1
-    · exact PE'.bayesLik_pos_of_RCoherentTL F r R' hcoh h2
-  -- `r.init = sys.init` from consistency (`initState.bind id = pure sys.init`).
-  have hinit_bind : (PE'.lowerFairR F).initState = (PMF.pure sys.init : PMF State) := by
-    change PE'.initState.bind id = _
-    rw [hinit]
-    change (PMF.pure (PMF.pure sys.init)).bind id = _
-    rw [PMF.pure_bind]; rfl
-  have hr_init : r.init = sys.init := by
-    have hi : (PE'.lowerFairR F).initState r.init ≠ 0 := hcons.1
-    rw [hinit_bind] at hi
-    by_contra hc
-    rw [PMF.pure_apply, if_neg hc] at hi; exact hi rfl
-  -- Case split on the length `N = Nat.find h` of `r`.
-  rcases Nat.eq_zero_or_pos (Nat.find h) with hN0 | hNpos
-  · -- Nil sub-case: the length-0 belief run `⟨pure sys.init, nil⟩` is vacuously coherent, mass `1`.
-    have hr_nil : r.trans = Seq.nil :=
-      Stream'.Seq.terminatedAt_zero_iff.mp (hN0 ▸ Nat.find_spec h)
-    have htoExec_nil : r.toExec.trans = Seq.nil := by
-      rw [ResolvedExec.toExec_trans, hr_nil]; rfl
-    have hlabs_nil : labs = [] := by
-      rw [hlabs, Stream'.Seq.toList_congr_pub htoExec_nil h_e Stream'.Seq.terminates_nil,
-        Stream'.Seq.toList_nil, List.map_nil]
-    have hs₀_init : s₀ = sys.init := by
-      rw [hs₀, AlterSeq.endState_of_trans_nil r.toExec htoExec_nil, ResolvedExec.toExec_init,
-        hr_init]
-    refine ⟨⟨PMF.pure sys.init, Seq.nil⟩, ?_, ?_⟩
-    · intro m s l μ s' _ hget
-      rw [hr_nil] at hget
-      change (Seq.nil : Seq ((Label × PMF State) × State)).get? m = _ at hget
-      rw [Stream'.Seq.get?_nil] at hget; exact absurd hget (by simp)
-    · rw [ResolvedProbabilisticExecution.beliefTCRw, hlabs_nil, hs₀_init, dif_pos]
-      · rw [PE'.probOfR_nil, hinit]
-        have hend : (ResolvedExec.toExec (⟨PMF.pure sys.init, Seq.nil⟩ : ResolvedExec (PMF State)
-            Label)).endState ((ResolvedExec.toExec_terminates_iff _).mpr Stream'.Seq.terminates_nil)
-            = PMF.pure sys.init := by
-          rw [AlterSeq.endState_of_trans_nil _ (by rfl)]; rfl
-        rw [hend]
-        change (PMF.pure (PMF.pure sys.init) (PMF.pure sys.init)) * (PMF.pure sys.init) sys.init ≠ 0
-        rw [PMF.pure_apply, if_pos rfl, PMF.pure_apply, if_pos rfl, one_mul]
-        exact one_ne_zero
-      · refine ⟨Stream'.Seq.terminates_nil, ?_⟩
-        rw [show (ResolvedExec.toExec (⟨PMF.pure sys.init, Seq.nil⟩ : ResolvedExec (PMF State)
-          Label)).trans = Seq.nil from rfl, Stream'.Seq.map_nil, Stream'.Seq.ofList_nil]
-  · -- Non-nil sub-case: reuse the coarse coherent-witness lemma.
-    exact lowerFairR_halt_nonnil_coherent_witness F PE' r h hcons hinit hNpos h_e
-
-/-- **Variant-C emission support ⊆ coarse emission support.** On a terminating run `r` at which both
-the variant-C Bayes cone (`∑ bayesTCwC F r ≠ 0`) and the coarse restricted cone (the `h0` guard of
-`lowerFairRSched`) carry positive mass, every emission `x` (a `some (l, μ)` transition, or `none`
-halting) produced by the variant-C scheduler is also produced by the coarse scheduler. Both
-schedulers `bind` the *same* emission `(PE'.scheduler.next R').bind … distFairHyperKernel` over
-their respective cone supports; the sampled run `R'` extracted from `bayesTCC`'s support satisfies
-`RCoherentTL F r` and positive `beliefTCRw` (read off `bayesTCwC`'s guard), so it also lies in
-`(beliefTCR labs s₀).filter {RCoherentTL r}` — and the identical downstream `bind` reproduces the
-same `x`. -/
-theorem ResolvedProbabilisticExecution.lowerFairRBayesC_next_support_subset
-    {sys : System State Label} (F : Fairness sys)
-    (PE' : ResolvedProbabilisticExecution (sys.distF F))
-    (r : ResolvedExec State Label) (h : r.trans.Terminates)
-    (hbayes_pos : (∑' R', PE'.bayesTCwC F r R') ≠ 0)
-    (hcoarse_pos : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
-        (PE'.beliefTCR F ((r.toExec.trans.toList
-          ((ResolvedExec.toExec_terminates_iff r).mpr h)).map Prod.fst)
-          (r.toExec.endState ((ResolvedExec.toExec_terminates_iff r).mpr h))) R') ≠ 0)
-    (x : Option (Label × PMF State))
-    (hmem : x ∈ ((PE'.lowerFairRBayesC F).scheduler.next r).support) :
-    x ∈ ((PE'.lowerFairR F).scheduler.next r).support := by
-  classical
-  have h_e : r.toExec.trans.Terminates := (ResolvedExec.toExec_terminates_iff r).mpr h
-  set pe' := PE'.average.distFToDist F with hpe'
-  set labs := (r.toExec.trans.toList h_e).map Prod.fst with hlabs
-  set s₀ := r.toExec.endState h_e with hs₀
-  -- Unfold the variant-C emission and extract the sampled belief-run `R'`.
-  change x ∈
-    (open Classical in
-      if h_term : r.toExec.trans.Terminates then
-        (PE'.bayesTCC F r).bind (fun R' =>
-          (PE'.scheduler.next R').bind (fun opt =>
-            match opt with
-            | none         => PMF.pure none
-            | some (l', ω) =>
-              (pe'.distFairHyperKernel F (ResolvedExec.toExec R') l' ω
-                  (r.toExec.endState h_term)).map (fun μ' => some (l', μ'))))
-      else PMF.pure none).support at hmem
-  rw [dif_pos h_e] at hmem
-  rw [PMF.mem_support_bind_iff] at hmem
-  obtain ⟨R', hR'_belief, h_supp⟩ := hmem
-  -- `R'` is in `bayesTCC`'s support ⟹ `RCoherentTL F r R'` and `beliefTCRw labs s₀ R' ≠ 0`.
-  have hR'guard : PE'.RCoherentTL F r R' ∧ PE'.beliefTCRw F labs s₀ R' ≠ 0 := by
-    rw [ResolvedProbabilisticExecution.bayesTCC, dif_pos hbayes_pos,
-      PMF.mem_support_normalize_iff] at hR'_belief
-    unfold ResolvedProbabilisticExecution.bayesTCwC at hR'_belief
-    split_ifs at hR'_belief with hg
-    · refine ⟨hg.2, ?_⟩
-      have hbw : PE'.beliefTCRw F ((r.toExec.trans.toList hg.1).map Prod.fst)
-          (r.toExec.endState hg.1) R' ≠ 0 := left_ne_zero_of_mul hR'_belief
-      rw [hlabs, hs₀]; convert hbw using 3
-    · exact absurd rfl hR'_belief
-  obtain ⟨hR'coh, hR'bw⟩ := hR'guard
-  -- `beliefTCRw ≠ 0 ⟹ beliefTCR ≠ 0` (positive-total normalise branch).
-  have hbtc_pos : (∑' R'', PE'.beliefTCRw F labs s₀ R'') ≠ 0 :=
-    fun hz => hR'bw (ENNReal.tsum_eq_zero.mp hz R')
-  have hR'inFilter : R' ∈ ((PE'.beliefTCR F labs s₀).filter
-      {R' | PE'.RCoherentTL F r R'} (by
-        obtain ⟨w, hw⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hcoarse_pos)
-        obtain ⟨hmem', hsupp'⟩ := Set.indicator_apply_ne_zero.mp hw
-        exact ⟨w, hmem', hsupp'⟩)).support := by
-    rw [PMF.mem_support_filter_iff]
-    refine ⟨hR'coh, ?_⟩
-    rw [ResolvedProbabilisticExecution.beliefTCR, dif_pos hbtc_pos, PMF.mem_support_normalize_iff]
-    exact hR'bw
-  -- Rebuild the coarse emission: same `bind` over `R'`, same downstream.
-  change x ∈
-    (open Classical in
-      if h_term : r.toExec.trans.Terminates then
-        if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
-            (PE'.beliefTCR F ((r.toExec.trans.toList h_term).map Prod.fst)
-              (r.toExec.endState h_term)) R') ≠ 0 then
-          ((PE'.beliefTCR F ((r.toExec.trans.toList h_term).map Prod.fst)
-              (r.toExec.endState h_term)).filter {R' | PE'.RCoherentTL F r R'} _).bind (fun R' =>
-            (PE'.scheduler.next R').bind (fun opt =>
-              match opt with
-              | none         => PMF.pure none
-              | some (l', ω) =>
-                (pe'.distFairHyperKernel F (ResolvedExec.toExec R') l' ω
-                    (r.toExec.endState h_term)).map (fun μ' => some (l', μ'))))
-        else PMF.pure none
-      else PMF.pure none).support
-  rw [dif_pos h_e, dif_pos hcoarse_pos]
-  rw [PMF.mem_support_bind_iff]
-  exact ⟨R', hR'inFilter, h_supp⟩
-
-/-- **Every prefix of a variant-C-consistent run is coarse-consistent.** Strong induction on `n`:
-`r.take n` is `lowerFairR`-consistent because its every recorded step (at position `m < n`, hence at
-prefix `r.take m`) transfers from the variant-C consistency of `r`. For that transfer, the strong IH
-gives `lowerFairR`-consistency of `r.take m`, whence coarse cone positivity
-(`lowerFairR_halt_restricted_cone_pos`) and variant-C cone positivity
-(`lowerFairRBayesC_cone_pos_of_lowerFairR_consistent`) at `r.take m`; then
-`lowerFairRBayesC_next_support_subset` maps the variant-C step into the coarse support. The
-`initState` clause is identical for the two witnesses. -/
-theorem ResolvedProbabilisticExecution.lowerFairRBayesC_take_lowerFairR_consistent
-    {sys : System State Label} (F : Fairness sys)
-    (PE' : ResolvedProbabilisticExecution (sys.distF F))
-    (r : ResolvedExec State Label) (hcons : (PE'.lowerFairRBayesC F).Consistent r)
-    (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
-    ∀ n, (PE'.lowerFairR F).Consistent (r.take n) := by
-  classical
-  -- `initState` agrees for both witnesses; extract the positive-init fact once.
-  have hinit_eq : (PE'.lowerFairR F).initState = (PE'.lowerFairRBayesC F).initState := rfl
-  intro n
-  induction n using Nat.strong_induction_on with
-  | _ n ih =>
-    refine ⟨?_, ?_⟩
-    · -- Positive initial mass: `(r.take n).init = r.init` and both witnesses share `initState`.
-      rw [hinit_eq]; exact hcons.1
-    · -- Each recorded step at `m < n` of `r.take n` transfers to the coarse support.
-      intro m l μ s' hget
-      -- `m < n` (else `(r.take n)` has no step at `m`).
-      have hmn : m < n := by
-        by_contra hc
-        have : (r.take n).trans.get? m = none := by
-          change (Seq.ofList (Seq.take n r.trans)).get? m = none
-          rw [Stream'.Seq.ofList_get?]
-          apply List.getElem?_eq_none
-          exact Nat.le_trans (Stream'.Seq.length_take_le) (Nat.le_of_not_lt hc)
-        rw [this] at hget; exact absurd hget (by simp)
-      -- `(r.take n).trans.get? m = r.trans.get? m` at `m < n`.
-      have hget_r : r.trans.get? m = some ((l, μ), s') := by
-        rw [← take_trans_get? r hmn]; exact hget
-      -- `(r.take n).take m = r.take m`.
-      have htk : (r.take n).take m = r.take m := take_take r n m (Nat.le_of_lt hmn)
-      -- `r.take m` is coarse-consistent by strong IH.
-      have hcons_m : (PE'.lowerFairR F).Consistent (r.take m) := ih m hmn
-      -- `r.take m` terminates (finite prefix).
-      have hTm : (r.take m).trans.Terminates := take_terminates r m
-      -- Coarse cone positivity at `r.take m`.
-      have hcoarse_pos := lowerFairR_halt_restricted_cone_pos F PE' (r.take m) hTm hcons_m hinit
-      -- Variant-C cone positivity at `r.take m`.
-      have hbayes_pos :=
-        PE'.lowerFairRBayesC_cone_pos_of_lowerFairR_consistent F (r.take m) hTm hcons_m hinit
-      -- Read variant-C consistency of `r` at `m`; the step lies in the variant-C support.
-      obtain ⟨hnext_bayes, hμs'⟩ := hcons.2 m l μ s' hget_r
-      have hmem_bayes :
-          some (l, μ) ∈ ((PE'.lowerFairRBayesC F).scheduler.next (r.take m)).support :=
-        (PMF.mem_support_iff _ _).mpr hnext_bayes
-      -- Transfer into the coarse support.
-      have hmem_coarse : some (l, μ) ∈ ((PE'.lowerFairR F).scheduler.next (r.take m)).support :=
-        PE'.lowerFairRBayesC_next_support_subset F (r.take m) hTm hbayes_pos hcoarse_pos
-          (some (l, μ)) hmem_bayes
-      rw [htk]
-      exact ⟨(PMF.mem_support_iff _ _).mp hmem_coarse, hμs'⟩
-
-/-- **The `Consistent`-transfer.** A variant-C-consistent run is coarse-consistent. Immediate from
-`lowerFairRBayesC_take_lowerFairR_consistent` read at every position (`(r.take (n+1)).take n =
-r.take n`, `(r.take (n+1)).trans.get? n = r.trans.get? n`). -/
-theorem ResolvedProbabilisticExecution.lowerFairRBayesC_consistent_imp
-    {sys : System State Label} (F : Fairness sys)
-    (PE' : ResolvedProbabilisticExecution (sys.distF F))
-    (r : ResolvedExec State Label) (hcons : (PE'.lowerFairRBayesC F).Consistent r)
-    (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
-    (PE'.lowerFairR F).Consistent r := by
-  classical
-  refine ⟨hcons.1, ?_⟩
-  intro n l μ s' hget
-  -- Read coarse-consistency of `r.take (n+1)` at position `n`.
-  have hcons_take := PE'.lowerFairRBayesC_take_lowerFairR_consistent F r hcons hinit (n + 1)
-  have hget' : (r.take (n + 1)).trans.get? n = some ((l, μ), s') := by
-    rw [take_trans_get? r (Nat.lt_succ_self n)]; exact hget
-  obtain ⟨hnext, hμs'⟩ := hcons_take.2 n l μ s' hget'
-  rw [take_take r (n + 1) n (Nat.le_succ n)] at hnext
-  exact ⟨hnext, hμs'⟩
-
-/-- **The `none`-halt transfer.** If the variant-C witness halts at a terminating
-variant-C-consistent run `r` (`(lowerFairRBayesC).scheduler.next r none ≠ 0`), then the coarse
-witness halts there too. The run is coarse-consistent (`lowerFairRBayesC_consistent_imp`), so both
-cones carry positive mass at `r` (`lowerFairR_halt_restricted_cone_pos`,
-`lowerFairRBayesC_cone_pos_of_lowerFairR_consistent`), and the generalised emission-support
-inclusion (`lowerFairRBayesC_next_support_subset` at `x = none`) carries the halt over. -/
-theorem ResolvedProbabilisticExecution.lowerFairRBayesC_next_none_imp
-    {sys : System State Label} (F : Fairness sys)
-    (PE' : ResolvedProbabilisticExecution (sys.distF F))
-    (r : ResolvedExec State Label) (h : r.trans.Terminates)
-    (hcons : (PE'.lowerFairRBayesC F).Consistent r)
-    (h_none : (PE'.lowerFairRBayesC F).scheduler.next r none ≠ 0)
-    (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
-    (PE'.lowerFairR F).scheduler.next r none ≠ 0 := by
-  classical
-  have hcons_coarse : (PE'.lowerFairR F).Consistent r :=
-    PE'.lowerFairRBayesC_consistent_imp F r hcons hinit
-  have hcoarse_pos := lowerFairR_halt_restricted_cone_pos F PE' r h hcons_coarse hinit
-  have hbayes_pos :=
-    PE'.lowerFairRBayesC_cone_pos_of_lowerFairR_consistent F r h hcons_coarse hinit
-  have hmem_bayes : none ∈ ((PE'.lowerFairRBayesC F).scheduler.next r).support :=
-    (PMF.mem_support_iff _ _).mpr h_none
-  have hmem_coarse : none ∈ ((PE'.lowerFairR F).scheduler.next r).support :=
-    PE'.lowerFairRBayesC_next_support_subset F r h hbayes_pos hcoarse_pos none hmem_bayes
-  exact (PMF.mem_support_iff _ _).mp hmem_coarse
-
-/-- **The variant-C witness is sure-fair (finite-branching route).** Both fairness clauses reduce to
-the coarse μ-reading witness via the `Consistent`-transfer (`lowerFairRBayesC_consistent_imp`) and
-the `none`-halt transfer (`lowerFairRBayesC_next_none_imp`): the conclusions of the coarse lemmas
-(`lowerFairR_halt_fairDeadlock`, `lowerFairR_phantom_free_of_finiteBranching`) are witness-agnostic
-(about `r`/`F`), only their hypotheses mention the witness. As with the coarse witness, fairness
-rests on `PE'.FinitelyBranching` and `PE'.FiniteMassSplitting F` — no tightness, no
-`[Fintype State]`. -/
 theorem ResolvedProbabilisticExecution.lowerFairRBayesC_isFair_of_finiteBranching
     {sys : System State Label} (F : Fairness sys)
     (PE' : ResolvedProbabilisticExecution (sys.distF F))
@@ -4542,12 +3943,9 @@ theorem ResolvedProbabilisticExecution.lowerFairRBayesC_isFair_of_finiteBranchin
     (hinit : PE'.initState = PMF.pure (sys.distF F).init) :
     (PE'.lowerFairRBayesC F).IsFair F where
   halt_fairDeadlock := fun r h hcons h_none =>
-    PE'.lowerFairR_halt_fairDeadlock F hfair r h
-      (PE'.lowerFairRBayesC_consistent_imp F r hcons hinit)
-      (PE'.lowerFairRBayesC_next_none_imp F r h hcons h_none hinit) hinit
+    PE'.lowerFairRBayesC_halt_fairDeadlock F hfair r h hcons h_none hinit
   inf_fair := fun r hinf hcons N =>
-    PE'.lowerFairR_phantom_free_of_finiteBranching F hfb hms hfair r hinf
-      (PE'.lowerFairRBayesC_consistent_imp F r hcons hinit) hinit N
+    PE'.lowerFairRBayesC_phantom_free_of_finiteBranching F hfb hms hfair r hinf hcons hinit N
 
 /-! ### The transformation theorem (finite-branching route) -/
 
@@ -4559,9 +3957,8 @@ direction under the branching hypotheses (no `[Fintype State]`, no tightness): e
 the scheduler built by `FairStrongProbabilisticSimulation` on `𝒟f(sys,F)` back to `sys`.
 
 Proven from `lowerFairRBayesC_initState` (Dirac start),
-`lowerFairRBayesC_isFair_of_finiteBranching` (fairness, via the coarse crux B + halt clause reused
-through the `Consistent`-transfer) and `lowerFairRBayesC_traceProbR` (trace, crux A —
-finiteness-free). -/
+`lowerFairRBayesC_isFair_of_finiteBranching` (fairness, via crux B + halt clause proven directly on
+the enriched Bayes cone) and `lowerFairRBayesC_traceProbR` (trace, crux A — finiteness-free). -/
 theorem lower_of_finiteBranching {sys : System State Label} (F : Fairness sys)
     (PE' : ResolvedProbabilisticExecution (sys.distF F))
     (hinit : PE'.initState = PMF.pure (sys.distF F).init)
