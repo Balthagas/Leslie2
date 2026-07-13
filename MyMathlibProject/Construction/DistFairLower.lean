@@ -1671,6 +1671,83 @@ private theorem probOfR_full_eq_step {sys : System State Label}
   (full_eq_sigma pe labs l g).trans (step_eq_sigma pe labs l g).symm
 
 open Classical in
+/-- **General `average`-`labMass` fibre reindex.** For *any* resolved execution `pe`, its averaged
+`G`-integrated level mass `pe.average.labMass Λ G` equals the sum, over terminating resolved runs
+`R` with recorded labels `Λ`, of `probOfR pe R` times `G` of `R`'s plain end-state. The sys-side
+analogue of `rhs_reindex`: uses `probOf_average` (`pe.average.probOf E = avgWeight E = ∑' probOfR`
+over the `toExec`-fibre) and the same `Sigma` reindex. Works for the concrete witness
+(`pe := lowerFairR F`) as well as the belief execution. -/
+private theorem average_labMass_eq_probOfR_full {S : Type} {Sys : System S Label}
+    (pe : ResolvedProbabilisticExecution Sys) (Λ : List Label) (G : S → ENNReal) :
+    pe.average.labMass Λ G
+      = ∑' R : ResolvedExec S Label,
+          dite (R.trans.Terminates ∧
+              (ResolvedExec.toExec R).trans.map Prod.fst = Seq.ofList Λ)
+            (fun h => pe.probOfR R h.1
+                * G ((ResolvedExec.toExec R).endState
+                    ((ResolvedExec.toExec_terminates_iff R).mpr h.1)))
+            (fun _ => 0) := by
+  classical
+  unfold ProbabilisticExecution.labMass
+  have hstep : (∑' E : AlterSeq S Label,
+        dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList Λ)
+          (fun h => pe.average.probOf E h.1 * G (E.endState h.1)) (fun _ => 0))
+      = ∑' E : AlterSeq S Label,
+          dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList Λ)
+            (fun h => ∑' R : {R : ResolvedExec S Label // R.toExec = E},
+                pe.probOfR R.1 (ResolvedExec.terminates_of_toExec_eq h.1 R.2) * G (E.endState h.1))
+            (fun _ => 0) := by
+    refine tsum_congr (fun E => ?_)
+    by_cases hc : E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList Λ
+    · rw [dif_pos hc, dif_pos hc, pe.probOf_average E hc.1]
+      unfold ResolvedProbabilisticExecution.avgWeight; rw [ENNReal.tsum_mul_right]
+    · rw [dif_neg hc, dif_neg hc]
+  rw [hstep]
+  have hpull : (∑' E : AlterSeq S Label,
+        dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList Λ)
+          (fun h => ∑' R : {R : ResolvedExec S Label // R.toExec = E},
+              pe.probOfR R.1 (ResolvedExec.terminates_of_toExec_eq h.1 R.2) * G (E.endState h.1))
+          (fun _ => 0))
+      = ∑' (E : AlterSeq S Label) (R : {R : ResolvedExec S Label // R.toExec = E}),
+          dite (E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList Λ)
+            (fun h => pe.probOfR R.1 (ResolvedExec.terminates_of_toExec_eq h.1 R.2)
+                * G (E.endState h.1))
+            (fun _ => 0) := by
+    refine tsum_congr (fun E => ?_)
+    by_cases hc : E.trans.Terminates ∧ E.trans.map Prod.fst = Seq.ofList Λ
+    · simp only [dif_pos hc]
+    · simp only [dif_neg hc, tsum_zero]
+  rw [hpull, ← ENNReal.tsum_sigma' (f := fun p : Σ E : AlterSeq S Label,
+      {R : ResolvedExec S Label // R.toExec = E} =>
+      dite (p.1.trans.Terminates ∧ p.1.trans.map Prod.fst = Seq.ofList Λ)
+        (fun h => pe.probOfR p.2.1 (ResolvedExec.terminates_of_toExec_eq h.1 p.2.2)
+            * G (p.1.endState h.1))
+        (fun _ => 0))]
+  refine tsum_eq_tsum_of_ne_zero_bij
+    (fun R => (⟨ResolvedExec.toExec R.1, ⟨R.1, rfl⟩⟩ :
+      Σ E : AlterSeq S Label, {R : ResolvedExec S Label // R.toExec = E}))
+    ?_ ?_ ?_
+  · intro a b h; exact Subtype.ext (congrArg (fun q => q.2.1) h)
+  · intro p hp
+    rw [Function.mem_support] at hp
+    rcases p with ⟨E, ⟨R, hReq⟩⟩
+    subst hReq
+    refine ⟨⟨R, ?_⟩, rfl⟩
+    rw [Function.mem_support]
+    rwa [show (dite (R.trans.Terminates ∧ Seq.map Prod.fst R.toExec.trans = ↑Λ)
+          (fun h => pe.probOfR R h.1 * G ((ResolvedExec.toExec R).endState
+              ((ResolvedExec.toExec_terminates_iff R).mpr h.1)))
+          (fun _ => 0))
+        = dite (R.toExec.trans.Terminates ∧ Seq.map Prod.fst R.toExec.trans = ↑Λ)
+          (fun h => pe.probOfR R (ResolvedExec.terminates_of_toExec_eq h.1 rfl)
+            * G (R.toExec.endState h.1)) (fun _ => 0) from
+      dite_congr (by rw [ResolvedExec.toExec_terminates_iff]) (fun h => rfl) (fun _ => rfl)]
+  · intro R
+    rcases R with ⟨R, hRne⟩
+    simp only
+    refine dite_congr (by rw [ResolvedExec.toExec_terminates_iff]) (fun h => rfl) (fun _ => rfl)
+
+open Classical in
 /-- **The belief-side `toExec`-fibre reindex.** The belief execution
 `pe' := PE'.average.distFToDist F`'s
 `g`-integrated level mass `pe'.labMass Λ (μ ↦ ∑' s, μ s · g s)` equals the sum, over terminating
@@ -1814,6 +1891,99 @@ theorem ResolvedProbabilisticExecution.lowerFairR_probOfR_append_singleton
   rw [hfact]
   unfold ResolvedProbabilisticExecution.rkernel
   ring
+
+open Classical in
+/-- **The filtered witness scheduler's `some (l, ν)` emission.** Same shape as
+`lowerFairRUnfSched_next_some`, but sampling the *coherence-filtered* resolved cone
+`beliefTCR.filter {RCoherentTL r}` in place of the full `beliefTCR`. On the positive-restricted-mass
+branch the filter weight `filtEmitCoeff r R' = {RCoherentTL r}.indicator (beliefTCR labs s₀) R' / m`
+(with `m := ∑' R', {RCoherentTL r}.indicator (beliefTCR labs s₀) R'`) multiplies the resolved
+emission; on the zero branch it emits `PMF.pure none`, so `some (l, ν)` gets mass `0`. -/
+theorem ResolvedProbabilisticExecution.lowerFairRSched_next_some {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (h_term : r.toExec.trans.Terminates)
+    (l : Label) (ν : PMF State) :
+    (PE'.lowerFairRSched F).next r (some (l, ν))
+      = if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
+            (PE'.beliefTCR F ((r.toExec.trans.toList h_term).map Prod.fst)
+              (r.toExec.endState h_term)) R') ≠ 0 then
+          ∑' R' : ResolvedExec (PMF State) Label,
+            ((PE'.beliefTCR F ((r.toExec.trans.toList h_term).map Prod.fst)
+                (r.toExec.endState h_term)).filter {R' | PE'.RCoherentTL F r R'}
+              (by
+                obtain ⟨R', hR'⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr h0)
+                obtain ⟨hmem, hsupp⟩ := Set.indicator_apply_ne_zero.mp hR'
+                exact ⟨R', hmem, hsupp⟩)) R' *
+              ∑' ω : PMF (PMF State),
+                PE'.scheduler.next R' (some (l, ω)) *
+                  (PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l ω
+                    (r.toExec.endState h_term) ν
+        else 0 := by
+  classical
+  change (if h : r.toExec.trans.Terminates then
+      if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
+          (PE'.beliefTCR F ((r.toExec.trans.toList h).map Prod.fst)
+            (r.toExec.endState h)) R') ≠ 0 then
+        ((PE'.beliefTCR F ((r.toExec.trans.toList h).map Prod.fst)
+            (r.toExec.endState h)).filter {R' | PE'.RCoherentTL F r R'} _).bind (fun R' =>
+          (PE'.scheduler.next R').bind (fun opt =>
+            match opt with
+            | none         => PMF.pure none
+            | some (l', ω) =>
+              ((PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l' ω
+                  (r.toExec.endState h)).map (fun μ' => some (l', μ'))))
+      else PMF.pure none
+    else PMF.pure none) (some (l, ν)) = _
+  rw [dif_pos h_term]
+  split_ifs with h0
+  · rw [PMF.bind_apply]
+    refine tsum_congr (fun R' => ?_)
+    congr 1
+    rw [PMF.bind_apply]
+    refine tsum_eq_tsum_of_ne_zero_bij
+      (i := fun ω : Function.support (fun ω : PMF (PMF State) =>
+        PE'.scheduler.next R' (some (l, ω)) *
+          (PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l ω
+            (r.toExec.endState h_term) ν) =>
+        (some (l, (ω : PMF (PMF State))) : Option (Label × PMF (PMF State)))) ?hinj ?hf ?hfg
+    case hinj =>
+      rintro x y hxy
+      exact Subtype.ext (Prod.mk.inj (Option.some.inj hxy)).2
+    case hf =>
+      intro opt hopt
+      rw [Function.mem_support] at hopt
+      rcases opt with _ | ⟨l₀, ω⟩
+      · simp only [PMF.pure_apply_of_ne _ _ (by simp : (some (l, ν)) ≠ none), mul_zero,
+          ne_eq, not_true_eq_false] at hopt
+      · have hmap : (PMF.map (fun μ' => some (l₀, μ'))
+            ((PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l₀ ω
+              (r.toExec.endState h_term))) (some (l, ν)) ≠ 0 := right_ne_zero_of_mul hopt
+        rw [PMF.map_apply] at hmap
+        have hl : l₀ = l := by
+          by_contra hne
+          apply hmap
+          rw [ENNReal.tsum_eq_zero]
+          intro a
+          exact if_neg (fun ha => hne (Prod.mk.inj (Option.some.inj ha)).1.symm)
+        subst hl
+        have hmap_eval : (PMF.map (fun μ' => some (l₀, μ'))
+            ((PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l₀ ω
+              (r.toExec.endState h_term))) (some (l₀, ν))
+            = (PE'.average.distFToDist F).distFairHyperKernel F (ResolvedExec.toExec R') l₀ ω
+                (r.toExec.endState h_term) ν := by
+          rw [PMF.map_apply]
+          simp only [Option.some.injEq, Prod.mk.injEq, true_and, @eq_comm _ ν]
+          exact tsum_ite_eq ν _
+        rw [hmap_eval] at hopt
+        exact ⟨⟨ω, hopt⟩, rfl⟩
+    case hfg =>
+      rintro ⟨ω, hω⟩
+      simp only
+      congr 1
+      rw [PMF.map_apply]
+      simp only [Option.some.injEq, Prod.mk.injEq, true_and, @eq_comm _ ν]
+      exact tsum_ite_eq ν _
+  · rw [PMF.pure_apply_of_ne _ _ (by simp : (some (l, ν)) ≠ none)]
 
 open Classical in
 /-- **The unfiltered witness scheduler's `some (l, ν)` emission**, in the same shape as
@@ -2418,6 +2588,361 @@ theorem ResolvedProbabilisticExecution.lowerFairRUnf_average_traceProb_eq {sys :
   · have h' : ¬ (𝒟(sys)).traceTightLabs τ labs := h
     rw [if_neg h, if_neg h']
 
+open Classical in
+/-- **The filtered-emission coefficient.** The PMF weight that the filtered witness scheduler
+`lowerFairRSched` samples a belief-run `R'` with, at a concrete run `r` whose plain projection
+terminates with recorded labels `labs` and end-state `s₀`: on the positive-restricted-cone-mass
+branch it is the `RCoherentTL`-filtered normalised resolved cone
+`{RCoherentTL r}.indicator (beliefTCR labs s₀) R' / m(r)` (with
+`m(r) := ∑' R', {RCoherentTL r}.indicator (beliefTCR labs s₀) R'`); on the zero branch (the witness
+halts) it is `0`. This is exactly `PMF.filter_apply` of `beliefTCR.filter {RCoherentTL r}`. -/
+noncomputable def ResolvedProbabilisticExecution.filtEmitCoeff {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (labs : List Label) (s₀ : State)
+    (R' : ResolvedExec (PMF State) Label) : ENNReal :=
+  Set.indicator {R' | PE'.RCoherentTL F r R'} (PE'.beliefTCR F labs s₀) R'
+    * (∑' R'', Set.indicator {R' | PE'.RCoherentTL F r R'} (PE'.beliefTCR F labs s₀) R'')⁻¹
+
+open Classical in
+/-- **The filtered witness's one-step `g`-emission, expanded.** For a concrete run `r` whose plain
+projection terminates with recorded labels `labs` and end-state `s₀`, the `g`-integral of the
+filtered witness's `some (l, ·)` emission expands, in *both* filter branches, to the filtered-cone
+integral `∑' R', filtEmitCoeff r labs s₀ R' · Θ R' s₀`, where
+`Θ R' s := ∑' ω, next R' (some (l, ω)) · (∑' s', (dfhk (toExec R') l ω s).bind id s' · g s')` is the
+per-belief-run, per-end-state one-step kernel. (On the zero-mass branch both sides are `0`:
+`filtEmitCoeff` carries the vanishing indicator numerator.) -/
+theorem ResolvedProbabilisticExecution.lowerFairR_step_emit_eq {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (r : ResolvedExec State Label) (h_term : r.toExec.trans.Terminates)
+    (l : Label) (g : State → ENNReal) :
+    (∑' μ : PMF State, (PE'.lowerFairR F).scheduler.next r (some (l, μ))
+        * (∑' s' : State, μ s' * g s'))
+      = ∑' R' : ResolvedExec (PMF State) Label,
+          PE'.filtEmitCoeff F r ((r.toExec.trans.toList h_term).map Prod.fst)
+              (r.toExec.endState h_term) R' *
+            (∑' ω : PMF (PMF State), PE'.scheduler.next R' (some (l, ω)) *
+              (∑' s' : State,
+                (((PE'.average.distFToDist F).distFairHyperKernel F
+                  (ResolvedExec.toExec R') l ω (r.toExec.endState h_term)).bind id) s'
+                  * g s')) := by
+  classical
+  set labs := (r.toExec.trans.toList h_term).map Prod.fst with hlabs
+  set s₀ := r.toExec.endState h_term with hs₀
+  set dfhk := (PE'.average.distFToDist F).distFairHyperKernel F with hdfhk
+  -- Expand the filtered emission `some (l, μ)` via `lowerFairRSched_next_some`.
+  have hnext : ∀ μ : PMF State, (PE'.lowerFairR F).scheduler.next r (some (l, μ))
+      = if h0 : (∑' R', Set.indicator {R' | PE'.RCoherentTL F r R'}
+            (PE'.beliefTCR F labs s₀) R') ≠ 0 then
+          ∑' R' : ResolvedExec (PMF State) Label,
+            ((PE'.beliefTCR F labs s₀).filter {R' | PE'.RCoherentTL F r R'}
+              (by
+                obtain ⟨R', hR'⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr h0)
+                obtain ⟨hmem, hsupp⟩ := Set.indicator_apply_ne_zero.mp hR'
+                exact ⟨R', hmem, hsupp⟩)) R' *
+              ∑' ω : PMF (PMF State), PE'.scheduler.next R' (some (l, ω)) *
+                dfhk (ResolvedExec.toExec R') l ω s₀ μ
+        else 0 := by
+    intro μ
+    change (PE'.lowerFairRSched F).next r (some (l, μ)) = _
+    rw [PE'.lowerFairRSched_next_some F r h_term l μ]
+  -- Abbreviate the filtered coefficient's two factors.
+  set ind : ResolvedExec (PMF State) Label → ENNReal := fun R' =>
+    Set.indicator {R' | PE'.RCoherentTL F r R'} (PE'.beliefTCR F labs s₀) R' with hind_def
+  have hcoeff : ∀ R', PE'.filtEmitCoeff F r labs s₀ R' = ind R' * (∑' R'', ind R'')⁻¹ :=
+    fun R' => rfl
+  -- The `dfhk`-`bind` collapse `∑' μ, K μ · (∑' s', μ s' · g s') = ∑' s', (K.bind id) s' · g s'`.
+  have inner : ∀ (K : PMF (PMF State)),
+      (∑' μ : PMF State, K μ * ∑' s' : State, μ s' * g s')
+        = ∑' s' : State, ((K.bind id) s') * g s' := by
+    intro K
+    symm
+    simp_rw [PMF.bind_apply, id_eq, ← ENNReal.tsum_mul_right]
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun μ => ?_)
+    rw [← ENNReal.tsum_mul_left]
+    exact tsum_congr (fun s' => by ring)
+  simp_rw [hnext]
+  simp_rw [hcoeff]
+  split_ifs with h0
+  · -- Positive branch. Rewrite the filter weight to `ind · (∑ ind)⁻¹`, then swap sums.
+    simp_rw [PMF.filter_apply, ← hind_def]
+    -- Distribute `C μ := ∑' s', μ s' · g s'` into the `R'`-sum, then swap `μ ↔ R'`.
+    simp_rw [← ENNReal.tsum_mul_right]
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun R' => ?_)
+    -- Pull `ind R' · (∑ ind)⁻¹` out of the `μ`-sum.
+    rw [show (∑' μ : PMF State, ind R' * (∑' R'', ind R'')⁻¹ *
+          (∑' ω : PMF (PMF State), PE'.scheduler.next R' (some (l, ω)) *
+            dfhk (ResolvedExec.toExec R') l ω s₀ μ) * (∑' s' : State, μ s' * g s'))
+        = ind R' * (∑' R'', ind R'')⁻¹ * (∑' μ : PMF State,
+            (∑' ω : PMF (PMF State), PE'.scheduler.next R' (some (l, ω)) *
+              dfhk (ResolvedExec.toExec R') l ω s₀ μ) * (∑' s' : State, μ s' * g s'))
+        from by rw [← ENNReal.tsum_mul_left]; refine tsum_congr (fun μ => by ring)]
+    congr 1
+    -- `∑' μ, (∑' ω, next · dfhk μ)·C μ = ∑' ω, next·(∑' μ, dfhk μ·C μ) = ∑' ω, next·(bind)`.
+    rw [show (∑' μ : PMF State, (∑' ω : PMF (PMF State), PE'.scheduler.next R' (some (l, ω)) *
+            dfhk (ResolvedExec.toExec R') l ω s₀ μ) * (∑' s' : State, μ s' * g s'))
+        = ∑' (μ : PMF State) (ω : PMF (PMF State)), PE'.scheduler.next R' (some (l, ω)) *
+            (dfhk (ResolvedExec.toExec R') l ω s₀ μ * (∑' s' : State, μ s' * g s'))
+        from by
+      refine tsum_congr (fun μ => ?_)
+      rw [← ENNReal.tsum_mul_right]
+      exact tsum_congr (fun ω => by ring)]
+    rw [ENNReal.tsum_comm]
+    refine tsum_congr (fun ω => ?_)
+    -- Per `ω`: pull `next` out on each side and apply the `inner` collapse.
+    rw [show (∑' μ : PMF State, PE'.scheduler.next R' (some (l, ω)) *
+          (dfhk (ResolvedExec.toExec R') l ω s₀ μ * (∑' s' : State, μ s' * g s')))
+        = PE'.scheduler.next R' (some (l, ω)) * (∑' μ : PMF State,
+            dfhk (ResolvedExec.toExec R') l ω s₀ μ * (∑' s' : State, μ s' * g s'))
+        from ENNReal.tsum_mul_left]
+    exact congrArg _ (inner (dfhk (ResolvedExec.toExec R') l ω s₀))
+  · -- Zero branch: both sides vanish (the indicator numerator is `0`).
+    rw [tsum_congr (fun μ => by rw [zero_mul] : ∀ μ : PMF State,
+      (0 : ENNReal) * (∑' s' : State, μ s' * g s') = 0), tsum_zero]
+    symm
+    refine ENNReal.tsum_eq_zero.mpr (fun R' => ?_)
+    have hz : ind R' = 0 := by rw [not_not] at h0; exact ENNReal.tsum_eq_zero.mp h0 R'
+    rw [hz, zero_mul, zero_mul]
+
+open Classical in
+/-- **Crux A, the sole residual: the filtered-cone renormaliser telescopes to the resolved cone.**
+For every label list `labs`, concrete end-state `s`, and abstract weight `W`, the filtered witness's
+`probOfR`-weighted, `RCoherentTL`-filtered resolved-cone integral (summed over all concrete runs
+`r'` of recorded labels `labs` ending at `s`) equals the plain unnormalised resolved-cone integral
+`∑' R', beliefTCRw labs s R' · W R'`.
+
+This is the tower / Bayes-posterior-consistency property: the belief-run the filtered witness
+samples is `PE'`-distributed, because the per-step filter normalisers `m(r'.take k)` telescope
+against the resolved cone masses along `r'`. **NUMERICALLY VERIFIED** (exact-ℚ simulator, depths
+2–3, including per-history-nontrivial cases). It is the entire open content of
+`lowerFairR_filter_trace_neutral`; everything upstream and downstream of it is proven. -/
+theorem ResolvedProbabilisticExecution.lowerFairR_filtered_cone_cancel {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (labs : List Label) (s : State) (W : ResolvedExec (PMF State) Label → ENNReal) :
+    (∑' r' : ResolvedExec State Label,
+        dite (r'.trans.Terminates ∧
+            (ResolvedExec.toExec r').trans.map Prod.fst = Seq.ofList labs)
+          (fun h => (if (ResolvedExec.toExec r').endState
+                ((ResolvedExec.toExec_terminates_iff r').mpr h.1) = s then
+              (PE'.lowerFairR F).probOfR r' h.1
+                * (∑' R' : ResolvedExec (PMF State) Label,
+                    PE'.filtEmitCoeff F r' labs s R' * W R')
+            else 0))
+          (fun _ => 0))
+      = ∑' R' : ResolvedExec (PMF State) Label, PE'.beliefTCRw F labs s R' * W R' := by
+  sorry
+
+open Classical in
+/-- **The filtered witness's full-run trace-cone invariant.** The `g`-integrated level mass of the
+filtered witness `lowerFairR`, written in the concrete-run "full-run" form (`probOfR_LF` summed over
+terminating concrete runs with recorded labels `labs`, weighted by `g` of the end-state), equals the
+belief-run form (`PE'.probOfR` summed over terminating belief-runs with labels `labs`, weighted by
+the `g`-integral `∑' s, (endBelief) s · g s`).
+
+Proven by reverse induction on `labs`. The base case telescopes the shared initial distribution
+`PE'.initState.bind id`; the append step peels the last label on both sides via the sys-side and
+belief-side snoc reindexes (`probOfR_full_eq_step`), collapses the belief-side per-state kernel
+against the end-belief (`distFairHyperKernel_decomp_gsum`), and reduces to the per-end-state
+renormaliser-telescoping identity `lowerFairR_filtered_cone_cancel` (the sole residual). -/
+theorem ResolvedProbabilisticExecution.lowerFairR_probOfR_full_eq
+    {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (labs : List Label) (g : State → ENNReal) :
+    (∑' r : ResolvedExec State Label,
+        dite (r.trans.Terminates ∧
+            (ResolvedExec.toExec r).trans.map Prod.fst = Seq.ofList labs)
+          (fun h => (PE'.lowerFairR F).probOfR r h.1
+              * g ((ResolvedExec.toExec r).endState
+                  ((ResolvedExec.toExec_terminates_iff r).mpr h.1)))
+          (fun _ => 0))
+      = ∑' R : ResolvedExec (PMF State) Label,
+          dite (R.trans.Terminates ∧
+              (ResolvedExec.toExec R).trans.map Prod.fst = Seq.ofList labs)
+            (fun h => PE'.probOfR R h.1
+                * (∑' s : State,
+                    ((ResolvedExec.toExec R).endState
+                      ((ResolvedExec.toExec_terminates_iff R).mpr h.1)) s * g s))
+            (fun _ => 0) := by
+  classical
+  revert g
+  induction labs using List.reverseRecOn with
+  | nil =>
+      intro g
+      -- Both full-run forms are `labMass []`; reuse the shared `initState.bind id` telescoping.
+      rw [← average_labMass_eq_probOfR_full (PE'.lowerFairR F) [] g,
+        ← rhs_reindex F PE' [] g,
+        (PE'.lowerFairR F).average.labMass_nil g,
+        (PE'.average.distFToDist F).labMass_nil (fun μ : PMF State => ∑' s, μ s * g s)]
+      have hinit : (PE'.lowerFairR F).average.initState = PE'.initState.bind id := rfl
+      have hinit' : (PE'.average.distFToDist F).initState = PE'.initState := rfl
+      rw [hinit, hinit']
+      simp_rw [PMF.bind_apply, id_eq]
+      simp_rw [← ENNReal.tsum_mul_right]
+      rw [ENNReal.tsum_comm]
+      refine tsum_congr (fun a => ?_)
+      rw [← ENNReal.tsum_mul_left]
+      exact tsum_congr (fun s₀ => by ring)
+  | append_singleton labs l ih =>
+      intro g
+      -- Peel the last label on both sides via the sys-side / belief-side snoc reindexes.
+      rw [probOfR_full_eq_step (PE'.lowerFairR F) labs l g]
+      rw [probOfR_full_eq_step PE' labs l (fun ρ : PMF State => ∑' s : State, ρ s * g s)]
+      set dfhk := (PE'.average.distFToDist F).distFairHyperKernel F with hdfhk
+      -- The per-belief-run, per-end-state one-step kernel.
+      set Θ : ResolvedExec (PMF State) Label → State → ENNReal := fun R' s =>
+        ∑' ω : PMF (PMF State), PE'.scheduler.next R' (some (l, ω)) *
+          (∑' s' : State, ((dfhk (ResolvedExec.toExec R') l ω s).bind id) s' * g s') with hΘ_def
+      -- The `dfhk`-`bind` / `inner` collapse (reused on both sides).
+      have inner : ∀ (K : PMF (PMF State)),
+          (∑' μ : PMF State, K μ * ∑' s' : State, μ s' * g s')
+            = ∑' s' : State, ((K.bind id) s') * g s' := by
+        intro K
+        symm
+        simp_rw [PMF.bind_apply, id_eq, ← ENNReal.tsum_mul_right]
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun μ => ?_)
+        rw [← ENNReal.tsum_mul_left]
+        exact tsum_congr (fun s' => by ring)
+      -- **RHS**: collapse the belief-side per-state kernel against the end-belief (`decomp_gsum`).
+      have hRHS : (∑' R' : ResolvedExec (PMF State) Label,
+            dite (R'.trans.Terminates ∧
+                (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs)
+              (fun h => PE'.probOfR R' h.1 * ∑' μ : PMF (PMF State),
+                PE'.scheduler.next R' (some (l, μ)) *
+                  ∑' ν' : PMF State, μ ν' * ∑' s : State, ν' s * g s)
+              (fun _ => 0))
+          = ∑' s : State, ∑' R' : ResolvedExec (PMF State) Label,
+              PE'.beliefTCRw F labs s R' * Θ R' s := by
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun R' => ?_)
+        by_cases hpm : ∃ h : R'.trans.Terminates, PE'.probOfR R' h ≠ 0
+        · obtain ⟨hT, hpmne⟩ := hpm
+          by_cases hg : R'.trans.Terminates ∧
+              (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs
+          · rw [dif_pos hg]
+            -- Collapse the `ν'`-inner via `inner`, then `decomp_gsum` per `ω`.
+            have hE_term : (ResolvedExec.toExec R').trans.Terminates :=
+              (ResolvedExec.toExec_terminates_iff R').mpr hg.1
+            have hΨ : (∑' μ : PMF (PMF State), PE'.scheduler.next R' (some (l, μ)) *
+                  ∑' ν' : PMF State, μ ν' * ∑' s : State, ν' s * g s)
+                = ∑' s : State,
+                    ((ResolvedExec.toExec R').endState hE_term) s * Θ R' s := by
+              simp_rw [inner]
+              -- Per `ω`: `∑' q, (ω.bind id) q · g q = ∑' s, endState s · Θinner`.
+              have hstep : ∀ ω : PMF (PMF State),
+                  PE'.scheduler.next R' (some (l, ω)) *
+                      (∑' q : State, ((ω.bind id) q) * g q)
+                    = ∑' s : State, ((ResolvedExec.toExec R').endState hE_term) s *
+                        (PE'.scheduler.next R' (some (l, ω)) *
+                          (∑' q : State,
+                            ((dfhk (ResolvedExec.toExec R') l ω s).bind id) q * g q)) := by
+                intro ω
+                by_cases hω : PE'.scheduler.next R' (some (l, ω)) = 0
+                · simp [hω]
+                · have hsupp : some (l, ω) ∈
+                      ((PE'.average.distFToDist F).scheduler.next
+                        (ResolvedExec.toExec R')).support :=
+                    average_next_some_of_resolved F PE' R' hT hpmne l ω
+                      ((PMF.mem_support_iff _ _).mpr hω)
+                  rw [(PE'.average.distFToDist F).distFairHyperKernel_decomp_gsum F hE_term hsupp g]
+                  rw [← ENNReal.tsum_mul_left]
+                  refine tsum_congr (fun s => ?_)
+                  rw [hdfhk]; ring
+              rw [tsum_congr hstep, ENNReal.tsum_comm]
+              refine tsum_congr (fun s => ?_)
+              rw [hΘ_def, ← ENNReal.tsum_mul_left]
+            rw [hΨ, ← ENNReal.tsum_mul_left]
+            refine tsum_congr (fun s => ?_)
+            have hbw : PE'.beliefTCRw F labs s R'
+                = PE'.probOfR R' hg.1 * ((ResolvedExec.toExec R').endState hE_term) s := by
+              unfold ResolvedProbabilisticExecution.beliefTCRw
+              rw [dif_pos ⟨hg.1, hg.2⟩]
+            rw [hbw]; ring
+          · rw [dif_neg hg]
+            refine (ENNReal.tsum_eq_zero.mpr (fun s => ?_)).symm
+            have hz : PE'.beliefTCRw F labs s R' = 0 := by
+              unfold ResolvedProbabilisticExecution.beliefTCRw
+              rw [dif_neg (fun hc => hg hc)]
+            rw [hz, zero_mul]
+        · -- `probOfR R' = 0` (or non-terminating): both the summand and every `beliefTCRw` vanish.
+          push Not at hpm
+          by_cases hg : R'.trans.Terminates ∧
+              (ResolvedExec.toExec R').trans.map Prod.fst = Seq.ofList labs
+          · rw [dif_pos hg, hpm hg.1, zero_mul]
+            refine (ENNReal.tsum_eq_zero.mpr (fun s => ?_)).symm
+            have hz : PE'.beliefTCRw F labs s R' = 0 := by
+              unfold ResolvedProbabilisticExecution.beliefTCRw
+              rw [dif_pos ⟨hg.1, hg.2⟩, hpm hg.1, zero_mul]
+            rw [hz, zero_mul]
+          · rw [dif_neg hg]
+            refine (ENNReal.tsum_eq_zero.mpr (fun s => ?_)).symm
+            have hz : PE'.beliefTCRw F labs s R' = 0 := by
+              unfold ResolvedProbabilisticExecution.beliefTCRw
+              rw [dif_neg (fun hc => hg hc)]
+            rw [hz, zero_mul]
+      rw [hRHS]
+      -- **LHS**: expand the filtered emission (`lowerFairR_step_emit_eq`), group by end-state `s`.
+      have hLHS : (∑' r' : ResolvedExec State Label,
+            dite (r'.trans.Terminates ∧
+                (ResolvedExec.toExec r').trans.map Prod.fst = Seq.ofList labs)
+              (fun h => (PE'.lowerFairR F).probOfR r' h.1 * ∑' μ : PMF State,
+                (PE'.lowerFairR F).scheduler.next r' (some (l, μ)) *
+                  ∑' s' : State, μ s' * g s')
+              (fun _ => 0))
+          = ∑' s : State,
+              ∑' r' : ResolvedExec State Label,
+                dite (r'.trans.Terminates ∧
+                    (ResolvedExec.toExec r').trans.map Prod.fst = Seq.ofList labs)
+                  (fun h => (if (ResolvedExec.toExec r').endState
+                        ((ResolvedExec.toExec_terminates_iff r').mpr h.1) = s then
+                      (PE'.lowerFairR F).probOfR r' h.1
+                        * (∑' R' : ResolvedExec (PMF State) Label,
+                            PE'.filtEmitCoeff F r' labs s R' * Θ R' s)
+                    else 0))
+                  (fun _ => 0) := by
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr (fun r' => ?_)
+        by_cases hg : r'.trans.Terminates ∧
+            (ResolvedExec.toExec r').trans.map Prod.fst = Seq.ofList labs
+        · simp only [dif_pos hg]
+          have hE_term : (ResolvedExec.toExec r').trans.Terminates :=
+            (ResolvedExec.toExec_terminates_iff r').mpr hg.1
+          set s₀ := (ResolvedExec.toExec r').endState hE_term with hs₀
+          -- The recorded labels of `r'` equal `labs`, matching the internal labs of the emission.
+          have hlabs_eq : (r'.toExec.trans.toList hE_term).map Prod.fst = labs := by
+            apply Stream'.Seq.ofList_injective
+            rw [← map_ofList_gen, Stream'.Seq.ofList_toList r'.toExec.trans hE_term]; exact hg.2
+          -- Rewrite the emission `g`-integral via `lowerFairR_step_emit_eq`.
+          rw [PE'.lowerFairR_step_emit_eq F r' hE_term l g, hlabs_eq, ← hs₀]
+          -- Now group the RHS `∑' s` by `s = s₀` using the point-mass indicator.
+          rw [tsum_eq_single s₀ (fun s hs => by rw [if_neg (fun h => hs h.symm)]),
+            if_pos rfl]
+        · simp only [dif_neg hg]
+          rw [tsum_zero]
+      rw [hLHS]
+      -- Apply the crux `lowerFairR_filtered_cone_cancel` per end-state `s`.
+      refine tsum_congr (fun s => ?_)
+      exact PE'.lowerFairR_filtered_cone_cancel F labs s (fun R' => Θ R' s)
+
+/-- **The filtered-witness trace-cone invariant (`g`-indexed).** The filtered analogue of
+`lowerFairRUnf_average_labMass_eq`: for every label list `labs`, the averaged *filtered* witness
+`lowerFairR.average` assigns the same `g`-integrated level mass to its `sys`-histories as the belief
+execution `pe' := PE'.average.distFToDist F` assigns to its `𝒟(sys)`-histories against the `bind id`
+push-forward `μ ↦ ∑' s, μ s · g s`. Both invariants land on the *same* right-hand side
+`B(labs, g) := pe'.labMass labs (μ ↦ ∑' s, μ s · g s)`, so this equals
+`lowerFairRUnf_average_labMass_eq`; that identity is the entire content of the trace-neutrality of
+the coherence filter (`lowerFairR_filter_trace_neutral`). -/
+theorem ResolvedProbabilisticExecution.lowerFairR_average_labMass_eq
+    {sys : System State Label}
+    (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F))
+    (labs : List Label) (g : State → ENNReal) :
+    (PE'.lowerFairR F).average.labMass labs g
+      = (PE'.average.distFToDist F).labMass labs
+          (fun μ : PMF State => ∑' s : State, μ s * g s) := by
+  rw [average_labMass_eq_probOfR_full (PE'.lowerFairR F) labs g, rhs_reindex F PE' labs g]
+  exact PE'.lowerFairR_probOfR_full_eq F labs g
+
 /-- **Crux A, the sharp residual: the coherence filter is trace-neutral.** The averaging of the
 μ-reading witness `lowerFairR` (which samples `beliefTCR.filter {RCoherentTL r}`, reading the
 recorded `μ`s) has the same `sys`-trace as the averaging of the *unfiltered* witness
@@ -2440,7 +2965,19 @@ theorem ResolvedProbabilisticExecution.lowerFairR_filter_trace_neutral {sys : Sy
     (F : Fairness sys) (PE' : ResolvedProbabilisticExecution (sys.distF F)) (τ : Seq Label) :
     sys.traceProb (PE'.lowerFairR F).average τ
       = sys.traceProb (PE'.lowerFairRUnf F).average τ := by
-  sorry
+  classical
+  -- Regroup both trace measures by label list; compare per label list.
+  rw [System.traceProb_eq_labProb_sum sys (PE'.lowerFairR F).average τ,
+    System.traceProb_eq_labProb_sum sys (PE'.lowerFairRUnf F).average τ]
+  refine tsum_congr fun labs => ?_
+  by_cases h : sys.traceTightLabs τ labs
+  · rw [if_pos h, if_pos h]
+    -- Both level-mass slices equal the shared `g = 1` right-hand side `B(labs, 1)`.
+    have hinvF := PE'.lowerFairR_average_labMass_eq F labs (fun _ => (1 : ENNReal))
+    have hinvU := PE'.lowerFairRUnf_average_labMass_eq F labs (fun _ => (1 : ENNReal))
+    simp only [ProbabilisticExecution.labMass, mul_one] at hinvF hinvU
+    rw [hinvF, hinvU]
+  · rw [if_neg h, if_neg h]
 
 /-- **Crux A (reduced): the two plain witnesses realise the same trace distribution.** Now a
 composition of the sharp residual `lowerFairR_filter_trace_neutral` (the coherence filter is
