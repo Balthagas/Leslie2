@@ -1,4 +1,6 @@
 import MyMathlibProject.Construction.DistFair
+import MyMathlibProject.Construction.DistFairBarycenter
+import MyMathlibProject.Construction.DistFairClosure
 import MyMathlibProject.Construction.DistFairHalt
 import MyMathlibProject.Construction.DistFairTrace
 import MyMathlibProject.Construction.DistMonad
