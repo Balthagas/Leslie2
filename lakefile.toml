@@ -1,7 +1,7 @@
-name = "MyMathlibProject"
+name = "Leslie2"
 version = "0.1.0"
 keywords = ["math"]
-defaultTargets = ["MyMathlibProject"]
+defaultTargets = ["Leslie2"]
 
 [leanOptions]
 pp.unicode.fun = true # pretty-prints `fun a ↦ b`
@@ -24,4 +24,11 @@ name = "«doc-gen4»"
 git = "https://github.com/leanprover/doc-gen4"
 rev = "main"
 [[lean_lib]]
-name = "MyMathlibProject"
+name = "Leslie2"
+
+# Opt-in library for the exploratory work (fairness + measure-theoretic trace
+# semantics) that builds on top of the core. Not a default target, so `lake
+# build` compiles only the core; build it explicitly with
+# `lake build Leslie2Extra`.
+[[lean_lib]]
+name = "Leslie2Extra"

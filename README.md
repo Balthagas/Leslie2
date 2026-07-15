@@ -5,110 +5,125 @@ A Lean 4 + Mathlib formalization of **probabilistic labelled transition systems
 PLTS are the foundational model for reasoning about randomized programs and
 protocols; the headline results say that if one system *simulates* another, then
 every observable-trace distribution of the concrete system is reproducible by the
-abstract one.
+abstract one — and that this simulation relation is a well-behaved (transitive,
+precongruent) refinement.
 
-> **Naming note.** The repository is called *leslie2* (GitHub, blueprint), but the
-> Lake package and Lean root module are `MyMathlibProject` — the rename was never
-> propagated. Every module path below is therefore `MyMathlibProject.…`.
+> **Naming.** The GitHub repository, the Lake package, and the Lean root module all
+> share the name `Leslie2` (the repo folder is lowercase *leslie2*; the Lean module
+> is capitalized `Leslie2`, per Lean's module-naming convention). Every core module
+> path below is `Leslie2.…`; the opt-in extras live under `Leslie2Extra.…`.
 
-## Main results
+## The five essential results
 
-Everything is stated for a canonical silent label `τ` (`class Silent`), so the
-internal/external partition is a property of the *label type*, not of an
-individual system.
+The project is organized around five theorems about **probabilistic forward
+simulation** (everything is `namespace PLTS`, and stated for a canonical silent
+label `τ` via `class Silent`, so the internal/external partition is a property of
+the *label type*, not of an individual system):
 
-| Result | Statement | Lives in |
+All five live together in **`Leslie2/Results.lean`**; their supporting
+machinery lives in the seven themed sub-folders described below.
+
+| # | Result | Statement |
 | --- | --- | --- |
-| `StrongProbabilisticSimulation.achievableTraceDists_subset` | strong simulation ⇒ trace-distribution inclusion | `Simulation/Trace.lean` |
-| `WeakProbabilisticSimulation.achievableTraceDists_subset` | weak simulation ⇒ trace-distribution inclusion | `Simulation/Soundness.lean` |
-| `ProbabilisticForwardSimulation.achievableTraceDists_subset` | forward simulation ⇒ trace-distribution inclusion | `Simulation/Soundness.lean` |
-| `weakClosure_traceProb_eq` | the weak closure `sys^w` preserves achievable trace distributions | `Expansion/TraceProb.lean` |
-| `dist_traceProb_eq` | the distribution-monad lift `𝒟(sys)` preserves achievable trace distributions | `Construction/DistTrace.lean` |
-| `achievableTraceDists_map` | a functional label-preserving simulation preserves trace distributions (reusable engine) | `Construction/TraceMap.lean` |
+| 1 | `ProbabilisticForwardSimulation.achievableTraceDists_subset` | forward simulation ⇒ trace-distribution inclusion |
+| 2 | `ProbabilisticForwardSimulation.trans` | forward simulation is transitive |
+| 3 | `ProbabilisticForwardSimulation.parallel_right` | precongruence for `System.parallel` |
+| 4 | `ProbabilisticForwardSimulation.interleave` | precongruence for `System.interleave` |
+| 5 | `ProbabilisticForwardSimulation.abstract` | precongruence for `System.abstract` |
 
-**How they fit together.** Strong-simulation soundness is proved directly. Weak
-and forward simulation each turn out to be *the same data* as a strong simulation
-into a transformed abstract system — `sys^w` (weak closure) and `𝒟(sys^w)`
-(distribution-monad lift of the weak closure) respectively — via the two
-equivalences in `Simulation/Equivalences.lean`. Those reductions are sound because
+**How they fit together.** Strong-simulation soundness is proved directly
+(`StrongProbabilisticSimulation.achievableTraceDists_subset`,
+`Simulation/Soundness.lean`). Weak and forward simulation each turn out to
+be *the same data* as a strong simulation into a transformed abstract system —
+`sys^w` (weak closure) and `𝒟(sys^w)` (distribution-monad lift of the weak
+closure) respectively — via the two equivalences in
+`Simulation/Equivalences.lean`. Those reductions are sound because
 both transformations preserve achievable trace distributions
-(`weakClosure_traceProb_eq`, `dist_traceProb_eq`). The hardest part of the whole
-development is the `Expansion/` pipeline, which proves the non-trivial `sys^w ⊆
-sys` trace inclusion by unfolding each abstract weak step `τ*·l·τ*` into a concrete
-`sys`-path.
+(`weakClosure_traceProb_eq` in `WeakClosure/TraceProb.lean`,
+`dist_traceProb_eq` in `DistMonad/DistTrace.lean`; both driven by
+the reusable functional-simulation engine `achievableTraceDists_map` in
+`Simulation/TraceMap.lean`). The hardest part of the whole
+development is the `WeakClosure/` unfolding pipeline, which proves the non-trivial
+`sys^w ⊆ sys` trace inclusion by unfolding each abstract weak step `τ*·l·τ*` into a
+concrete `sys`-path. Transitivity and the three precongruences (results 2–5) then
+build on the simulation framework directly.
 
 ## Project layout
 
-Files are grouped into thematic folders that follow the dependency order (each
-layer imports only earlier ones). Within a layer, **helper** files gather lemmas
-around a common theme and **result** files (marked ★) state the theorems above.
+The project is split into **two Lake libraries**:
+
+- **`Leslie2`** — the **core** (default `lake build` target): the five
+  essential results and everything they depend on. Self-contained.
+- **`Leslie2Extra`** — **opt-in exploratory work** built *on top of* the
+  core (it imports the core; nothing in the core imports it). Built with
+  `lake build Leslie2Extra`.
+
+### Core — `Leslie2/`
+
+`Results.lean` holds the five theorems alone; every other file is filed into one
+of seven content-themed sub-folders (folders are purely organizational — the
+import graph, not the folder, defines the dependency order).
 
 ```
-MyMathlibProject/
-├── Util/            — generic helper lemmas, independent of PLTS
-│   ├── Seq.lean         Stream'.Seq lemmas (append / filter / toList)
-│   └── Pmf.lean         PMF.pure / PMF.map helpers
-│
-├── Model/           — the PLTS model and its trace semantics
-│   ├── System.lean      System, AlterSeq (executions), ProbabilisticExecution
-│   ├── Trace.lean       Silent (canonical τ), trace, IsTight, traceProb,
-│   │                    achievableTraceDists
-│   └── Composition.lean CSP-style parallel composition (System.parallel)
-│
-├── Weak/            — scheduler bind-calculus and weak transitions
-│   ├── Scheduler.lean   WeakScheduler, haltMass, Scheduler.bind, bind_haltMass
-│   ├── Step.lean        weakTau, hyperStep, weakStep, weakTau_trans
-│   └── Bounds.lean      Kraft / antichain mass bounds, haltMass_tsum_le_one
-│
-├── Construction/    — constructions that build new systems from old
-│   ├── EndState.lean    AlterSeq.endState helper lemmas
-│   ├── TraceMap.lean    achievableTraceDists_map (functional-simulation soundness)
-│   ├── DistMonad.lean   the 𝒟(sys) construction + easy trace inclusion
-│   ├── DistTrace.lean   ★ dist_traceProb_eq (𝒟 preserves traces — the hard half)
-│   └── WeakClosure.lean the weak closure sys^w
-│
-├── Expansion/       — proves the hard direction: sys^w ⊆ sys on traces
-│   ├── Algorithm.lean   unfolding algorithm: configurations, reachProb, Realises
-│   ├── Trace.lean       reachable configs have matching abstract/concrete traces
-│   ├── ProbOf.lean      trajectory probability = configuration reaching probability
-│   ├── Scheduler.lean   expandSched: the concrete scheduler realising the unfolding
-│   └── TraceProb.lean   ★ weakClosure_traceProb_eq
-│
-└── Simulation/      — the simulation notions and their soundness
-    ├── Defs.lean        PMFRel + Strong / Weak / Forward simulation structures
-    ├── WeakChar.lean    weak-transition workhorse lemmas (weakTau_bind, …)
-    ├── Equivalences.lean weak/forward sim = strong sim into sys^w / 𝒟(sys^w)
-    ├── Trace.lean       ★ strong-simulation trace soundness
-    └── Soundness.lean   ★ weak- and forward-simulation trace soundness
+Leslie2/
+├── Results.lean       — the five essential theorems, alone
+├── Systems/           — the PLTS model: System (executions, schedulers, probOf),
+│                        Trace (Silent τ, traceProb, achievableTraceDists), EndState
+├── Weak/              — weak transitions: Scheduler (bind-calculus), Step (weakTau/weakStep),
+│                        WeakChar (weak-transition characterizations), Bounds + BoundsHalt (halt mass)
+├── DistMonad/         — the 𝒟(sys) construction: DistMonad, and its trace-preservation proof
+│                        DistTraceKernel + DistTraceBelief + DistTrace (𝒟 preserves traces ★)
+├── WeakClosure/       — the weak closure sys^w: WeakClosure, and the unfolding pipeline proving
+│                        sys^w ⊆ sys — Algorithm, ProbOf, Scheduler, Trace, TraceProb ★
+├── Simulation/        — Defs (Strong/Weak/Forward sim + compRel), Equivalences, TraceMap (functional-
+│                        sim engine ★), Trace (coupling), Transitivity (lift), Soundness (strong+weak ★)
+├── ProcessAlgebra/    — Composition (parallel/interleave/abstract operators + prodPMF/piPMF algebra),
+│                        Parallel / Interleave / Abstract (per-operator simulation-congruence support)
+└── Other/             — generic utilities, not PLTS-specific: Seq (Stream'.Seq), Pmf (PMF helpers)
 ```
 
-`MyMathlibProject.lean` is the root module; it simply re-exports every file above
-(kept in sync by `lake exe mk_all`).
-
-### Dependency flow
+### Extras — `Leslie2Extra/`
 
 ```
-Util ─┐
-      ├─▶ Model ─▶ Weak ─▶ Construction ─▶ Expansion ─┐
-      │                         │                     ├─▶ Simulation/Soundness ★
-      │                         └─▶ Simulation/{Defs,WeakChar,Equivalences,Trace ★}
+Leslie2Extra/
+├── Fairness/           — fair simulation and resolved-scheduler fairness model
+│   ├── Model/           Fairness, ResolvedScheduler, ResolvedGap
+│   ├── Construction/    DistFair, DistFairTrace, DistFairHalt, DistFairBarycenter, DistFairClosure
+│   └── Simulation/      Defs, Descent, AbstractMarginal, ConcreteMarginal, Trace, Soundness
+└── Measure/            — measure-theoretic trace semantics
+    ├── Coordinates, Trajectory, Trace
+    └── Examples/        Infinite / HalfInfinite / ConvergingInfinite trace examples
 ```
+
+`Leslie2.lean` and `Leslie2Extra.lean` are the two root modules;
+each re-exports every file in its library (kept in sync by `lake exe mk_all`).
+
+### Dependency flow (core)
+
+```
+Other ─┐
+Systems ─┼─▶ Weak ─▶ WeakClosure ─┐
+         │     │                  ├─▶ Simulation ─▶ Results.lean
+         │     └─▶ DistMonad ─────┤     (Defs/…/Soundness)   (the five)
+         └─▶ ProcessAlgebra ──────┘
+```
+(Folders group by theme, not strictly by layer — e.g. `Weak/WeakChar` imports
+`WeakClosure/WeakClosure`, and `Simulation/TraceMap` is used by `DistMonad/`.)
 
 ### Helper vs. result files
 
-- **Helper files** collect lemmas around one theme: `Util/*`, `Weak/Bounds`,
-  `Construction/EndState`, `Simulation/WeakChar`, and the intermediate stages of
-  `Expansion/` (`Algorithm`, `Trace`, `ProbOf`, `Scheduler`).
-- **Definition files** introduce the objects: `Model/*`, `Weak/{Scheduler,Step}`,
-  `Construction/{DistMonad,WeakClosure}`, `Simulation/Defs`.
-- **Result files (★)** state the theorems in the table above:
-  `Construction/{TraceMap,DistTrace}`, `Expansion/TraceProb`,
-  `Simulation/{Trace,Soundness}`.
-
-Two originally-monolithic files were split along their helper/result seam:
-`Simulation/` was `Simulation.lean` (definitions + workhorse lemmas + equivalence
-results); `Construction/{DistMonad,DistTrace}` was `DistConstruction.lean` (the
-small `𝒟` construction + its ~1200-line trace-preservation proof).
+- **Helper files** collect lemmas around one theme: `Other/*`, `Systems/EndState`,
+  `Weak/{WeakChar,BoundsHalt}`, the per-operator simulation-congruence support
+  `ProcessAlgebra/{Parallel,Interleave,Abstract}`, the transitivity lift
+  `Simulation/Transitivity`, and the intermediate stages of the `WeakClosure/`
+  unfolding pipeline (`Algorithm`, `Trace`, `ProbOf`, `Scheduler`).
+- **Definition files** introduce the objects: `Systems/{System,Trace}`,
+  `Weak/{Scheduler,Step}`, `DistMonad/DistMonad`, `WeakClosure/WeakClosure`,
+  `Simulation/Defs`, `ProcessAlgebra/Composition`.
+- **Result files (★)** state the theorems: the five in `Results.lean`, plus the
+  strong/weak soundness stepping stones (`Simulation/Soundness`) and the
+  trace-preservation engines they rely on (`Simulation/TraceMap`,
+  `DistMonad/DistTrace`, `WeakClosure/TraceProb`, `Simulation/Trace`).
 
 ## Building
 
@@ -116,16 +131,17 @@ The toolchain is pinned in `lean-toolchain` and the Mathlib revision in
 `lakefile.toml`; the two must stay in lockstep.
 
 ```bash
-lake exe cache get                        # fetch the Mathlib build cache (first time)
-lake build                                # build the whole project
-lake build MyMathlibProject.Model.System  # build a single module
-lake exe mk_all --check                   # check the root re-exports every file (CI)
+lake exe cache get                    # fetch the Mathlib build cache (first time)
+lake build                            # build the core library (default target)
+lake build Leslie2Extra               # build the opt-in extras (fairness + measure)
+lake build Leslie2.Systems.System     # build a single module
+lake exe mk_all --check               # check each library root re-exports its files (CI)
 ```
 
-There is no test suite. CI (`.github/workflows/blueprint.yml`) runs the build plus
-`mk_all --check`, then compiles the blueprint and API docs to GitHub Pages on every
-push to `master`. Linting is intentionally off in CI (warnings show locally but do
-not fail the build).
+There is no test suite. CI (`.github/workflows/blueprint.yml`) builds the core
+plus `mk_all --check`, then builds the extras library, then compiles the blueprint
+and API docs to GitHub Pages on every push to `master`. Linting is intentionally
+off in CI (warnings show locally but do not fail the build).
 
 ## Blueprint & conventions
 

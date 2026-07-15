@@ -151,6 +151,6 @@
    "inputRev": "v4.31.0-rc1",
    "inherited": true,
    "configFile": "lakefile.toml"}],
- "name": "MyMathlibProject",
+ "name": "Leslie2",
  "lakeDir": ".lake",
  "fixedToolchain": false}
