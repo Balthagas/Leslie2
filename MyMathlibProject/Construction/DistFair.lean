@@ -641,62 +641,964 @@ theorem fairAchievableTraceDists_subset_distF {sys : System State Label} (F : Fa
     distFDiracLift_isFair pe h_init h_fair,
     fun τ => (pe.distFDiracLift_traceProbR F h_init τ).trans (h_tp τ)⟩
 
-/-! ### The reverse inclusion `⊇`, and a note on the resolved semantics
+/-! ### The lowering Markov chain
 
-Only the Dirac-lift `⊆` (`fairAchievableTraceDists_subset_distF`) is proven here.
+The reverse inclusion `fairAchievableTraceDists F.dist ⊆ fairAchievableTraceDists F` reconstructs a
+fair `sys`-execution from a fair `𝒟f(sys,F)`-execution by an **algorithmic disintegration**, in the
+spirit of the weak-closure unfolding (`Expansion/Algorithm.lean`). Given a resolved-history
+scheduler `s` on `𝒟f(sys,F)` we run a Markov chain whose state (`LowerConfig`) is a pair of coupled
+resolved executions advanced *in lockstep*, together with the pending emission `h = s(de)`:
 
-⚠️ **The analysis below was written for the former *plain*-scheduler reading of
-`fairAchievableTraceDists`.** Now that `fairAchievableTraceDists` is defined via *resolved*-history
-schedulers (`Model/Fairness.lean`), its separation argument no longer applies: the very
-belief/mass-splitting "memory" that makes `𝒟f` more expressive than a *plain* `sys`-scheduler is
-*also* available to a resolved `sys`-scheduler (which reads its own `μ`-history and alternates —
-exactly the `Model/ResolvedGap.lean` construction). So the witness `D` below *is* achievable by a
-fair resolved `sys`-execution, i.e. `D ∈ fairAchievableTraceDists F`; the strict separation holds
-only against the *plain* set `fairAchievableTraceDistsPlain F`. Whether
-`fairAchievableTraceDists F = fairAchievableTraceDists F.dist` is therefore now **open** — plausibly
-an *equality*, since resolved-history power and `𝒟f`-belief power coincide. The plain-scheduler
-discussion is kept below only as historical context (read `fairAchievableTraceDists` there as the
-plain `fairAchievableTraceDistsPlain`).
+* `de : ResolvedExec (PMF State) Label` — the abstract `𝒟f`-run; steps recorded as `((l, ω), dq)`
+  with `ω : PMF (PMF State)` the emitted next-belief distribution and `dq : PMF State` the sampled
+  next belief;
+* `e  : ResolvedExec State Label` — the concrete `sys`-run; steps recorded as `((l, μ'), q)`;
+* `h  : Option (Label × PMF (PMF State))` — the pending `𝒟f`-emission (`none` = halt).
 
-**Why `𝒟f` is more expressive than a *plain* scheduler: mass-splitting records hidden randomness.**
-A `𝒟f`-step `μ −l→ ω`
-has `ω : PMF (PMF State)`, and by `System.distF` it depends on `ω` only through `ω.bind id`. So from
-`δ_{q_0}` the scheduler may take a probabilistic step and choose to MERGE it into one successor
-belief or to SPLIT it into several — recording, in the *belief weights*, which branch was taken. A
-plain `sys`-scheduler has no such memory. This is exactly the resolved-scheduler power exploited by
-the finite-branching counterexample in `Model/ResolvedScheduler.lean`.
+The **critical invariant** (`Coupled`) is `last e ∈ (last de).support`.
 
-**Gadget** (image-finite). States `q_n`, `q'_n`, deadlock `b`; `q_0` initial. From `q_n`, two silent
-(`τ`) transitions, both landing in `{q_{n+1}, q'_n}`: fair `μ_A = ½δ_{q_{n+1}} + ½δ_{q'_n}` (exits
-w.p. ½), unfair `μ_B = ⅔δ_{q_{n+1}} + ⅓δ_{q'_n}` (exits w.p. ⅓). Each `q'_n` has an external
-transition labelled `n` to `b`, AND a fair `τ`-self-loop `q'_n → δ_{q'_n}`. The self-loop is
-essential: a mixed belief `a·δ_{q_{n+1}} + b·δ_{q'_n}` needs a *common fair label* to be
-`Resolvable`, and `τ` is it (both `q_{n+1}` and `q'_n` fair-enable `τ`); being a self-loop, it lets
-the run split off the pure Dirac belief `δ_{q'_n}` (Resolvable) to emit `n` (a `→ b` internal
-transition would instead drain the exit mass silently).
+**One instruction**, from a state with pending emission `h = some (l, ω)`:
 
-**Resolved/belief witness.** A fair `𝒟f`-execution achieving the mixture `D`:
-1. at `δ_{q_0}`, SPLIT the coin into the belief-branches `½δ_{q_1}+½δ_{q'_0}` and
-   `⅔δ_{q_1}+⅓δ_{q'_0}` (the belief weights record the coin);
-2. in each branch ALTERNATE fair/unfair hypersteps (the branch is visible in the belief), splitting
-   off `δ_{q'_k}` to emit `k` as mass exits;
-3. every infinite belief-run alternates ⇒ ∞ `F.dist`-fair steps ⇒ fair (a `μ_B`-hyperstep is
-   genuinely `F.dist`-unfair: its flattened `⅔/⅓` target is realizable by no all-`F`-fair kernel —
-   `μ_A`'s `½/½` is the only fair one).
-Its trace is the ½/½ mixture `D`, so `D ∈ fairAchievableTraceDists F.dist`.
+1. `t = (l, μ')` — the concrete transition out of `qₚ := last e`: a *deterministic* single
+   `sys`-step chosen from the fairness data of the emission (`tOutcome`), `F.fair`-fair whenever the
+   emission is `F.dist`-fair and plain otherwise. This clause carries `inf_fair` downward.
+2. `e` **first**: sample `q ~ μ'`, append `((l, μ'), q)`.
+3. `de` **follows**: sample `dq ~ ω` reweighted by `dq(q) / μ'(q)`, append `((l, ω), dq)`. Choosing
+   `dq` *after* `q`, with weight `∝ dq(q)`, restores `q ∈ dq.support` by construction — so the
+   invariant can never be stranded.
+4. draw the next pending emission `h' = s(de')`.
 
-**No fair `sys`-execution achieves `D`** (see `Model/ResolvedScheduler.lean`). After `k` non-exit
-steps the `sys`-history is "advanced `k` times", so a plain scheduler emits `μ_A` w.p. `α_k` with
-exit rate `ρ_k = ½·α_k + ⅓·(1−α_k)`. Sure-fairness — killing the all-`μ_B` advancing run
-`q_0→q_1→⋯`, which never reaches any `q'_k` — forces `ρ_k = ½` at infinitely many `k`; but `D` pins
-`ρ_k ∈ (⅓,½)` strictly for all `k` (a genuine ½/½ posterior mixture). Incompatible, so
-`D ∉ fairAchievableTraceDistsPlain F` (`Model/ResolvedScheduler.lean`) — but, as noted above,
-`D ∈ fairAchievableTraceDists F` under the resolved semantics now in force.
+The chain is deliberately **sub-stochastic**: the abstract marginal of one instruction is `pe`'s
+kernel `s(de)(l,ω)·ω(dq)` tilted by the *evidence factor* `dq(μ'.support)` — the fraction of the
+belief branch that the single concrete step can physically reach. This evidence telescopes over a
+run and is meant to be renormalised away by the concrete scheduler's `reachDep/reachArr` Bayes
+ratio, built later. In `LowerStep` the `μ'(q)` of step 2 cancels the `1/μ'(q)` of step 3, so
+`reachProb` stays a clean product.
 
-**Consequence.** `ProbabilisticExecution.lowerFair_inf_fair` and its residual
-`exists_coherent_decoration` are UNPROVABLE (false), not merely hard; the whole `lowerFair`
-fair-reconstruction has been removed. What remains proven is the true `⊆` direction (the Dirac lift
-`fairAchievableTraceDists_subset_distF`) and the trace-equivalence — the fair sets differ strictly.
--/
+Only the chain and its reaching probability are defined here; the concrete resolved scheduler and
+the trace/fairness soundness are deferred. -/
+
+section LoweringChain
+
+variable {sys : System State Label}
+
+/-- The last state of a finite alternating sequence (its `endState`), with `init` as junk on the
+non-terminating executions the chain never reaches. -/
+noncomputable def lastStateOf {S L : Type} (e : AlterSeq S L) : S := by
+  classical
+  exact if h : e.trans.Terminates then e.endState h else e.init
+
+/-- The recorded transition-distribution `μ` of the last step of a resolved `sys`-execution
+(`init`'s Dirac as junk when there are no transitions / the run is infinite). The chain reads the
+*sampled* `μ'` off `c'.e` here. -/
+noncomputable def lastMuOf (e : ResolvedExec State Label) : PMF State := by
+  classical
+  exact if h : e.trans.Terminates then
+    ((e.trans.toList h).getLast?).elim (PMF.pure e.init) (fun p => p.1.2)
+  else PMF.pure e.init
+
+/-- The **fair-aware transition kernel** at `qₚ` for the `𝒟f`-emission `(l, ω)` at belief `β`: the
+distribution `p qₚ : PMF (PMF State)` over `sys`-transitions out of `qₚ` given by the emission's
+witness kernel — the `F.fair`-fair kernel when the step is `F.dist`-fair, the plain `hyperStep`
+witness otherwise (`PMF.pure (PMF.pure qₚ)` as junk when the emission is not a valid `𝒟f`-step). The
+concrete transition `μ'` is **sampled** from this kernel. -/
+noncomputable def tKernel (F : Fairness sys) (β : PMF State) (l : Label) (ω : PMF (PMF State))
+    (qₚ : State) : PMF (PMF State) := by
+  classical
+  exact
+    if h : F.dist.fair β l ω then h.2.choose qₚ
+    else if h' : (sys.distF F).step β l ω then h'.1.choose qₚ
+    else PMF.pure (PMF.pure qₚ)
+
+/-- A state of the lowering Markov chain: an abstract `𝒟f`-run `de`, a concrete `sys`-run `e`, and
+the pending `𝒟f`-emission `h = s(de)` (`none` = halt). -/
+structure LowerConfig (sys : System State Label) where
+  /-- The abstract `𝒟f(sys,F)`-execution built so far. -/
+  de : ResolvedExec (PMF State) Label
+  /-- The concrete `sys`-execution built so far. -/
+  e  : ResolvedExec State Label
+  /-- The pending `𝒟f`-emission `s(de)` (`none` = halt). -/
+  h  : Option (Label × PMF (PMF State))
+
+/-- One instruction of the lowering chain, as a transition weight `c → c'` (a genuine stochastic
+kernel on `LowerConfig`). Halted (`c.h = none`) states have no outgoing transition. For a pending
+emission `c.h = some (l, ω)`, the successor `c'` appends the concrete step `((l, μ'), q)` to `e` and
+the abstract step `((l, ω), dq)` to `de`, then carries the next pending emission `c'.h`, where
+`μ' = lastMuOf c'.e` is the recorded concrete transition, `q = lastStateOf c'.e`,
+`dq = lastStateOf c'.de`. The weight `tKernel(…) μ' * μ' q * ω dq * (dq q / (ω.bind id) q) *
+s(de')(h')` factors the four draws: `μ' ∼ tKernel(qₚ)` (the fair kernel — concrete transition
+sampled), `q ∼ μ'` (outcome, keeps `e` valid), `dq ∼ ω` reweighted by the **proper Bayes posterior**
+`dq(q) / (ω.bind id)(q)`. Sampling `μ'` from the kernel (rather than a fixed choice) makes the
+concrete run track the belief, so both marginals are faithful. -/
+noncomputable def LowerStep (F : Fairness sys) (s : ResolvedScheduler (sys.distF F))
+    (c c' : LowerConfig sys) : ENNReal := by
+  classical
+  exact
+    match c.h with
+    | none => 0
+    | some (l, ω) =>
+        let μ' : PMF State := lastMuOf c'.e
+        let dq : PMF State := lastStateOf c'.de
+        let q  : State := lastStateOf c'.e
+        if c'.de.init = c.de.init ∧ c'.e.init = c.e.init ∧
+           c'.de.trans = c.de.trans.append (Seq.cons ((l, ω), dq) Seq.nil) ∧
+           c'.e.trans  = c.e.trans.append (Seq.cons ((l, μ'), q) Seq.nil)
+        then (tKernel F (lastStateOf c.de) l ω (lastStateOf c.e)) μ' * μ' q * ω dq
+              * (dq q / (ω.bind id) q) * s.next c'.de c'.h
+        else 0
+
+/-- The chain-state distribution after `n` instructions. `n = 0` is the start:
+`de = ⟨δ_{init}, nil⟩`, `e = ⟨init, nil⟩`, drawing the first pending emission from `s`. -/
+noncomputable def LowerReachAfter (F : Fairness sys) (s : ResolvedScheduler (sys.distF F)) :
+    ℕ → LowerConfig sys → ENNReal := by
+  classical
+  exact fun n c => Nat.rec
+    (motive := fun _ => LowerConfig sys → ENNReal)
+    (fun c =>
+      if c.de = ⟨PMF.pure sys.init, Seq.nil⟩ ∧ c.e = ⟨sys.init, Seq.nil⟩
+      then s.next ⟨PMF.pure sys.init, Seq.nil⟩ c.h
+      else 0)
+    (fun _ ih c => ∑' c₀ : LowerConfig sys, ih c₀ * LowerStep F s c₀ c)
+    n c
+
+/-- **The reaching probability** of a chain state `c`: the total probability, over every instruction
+count, of the algorithm's state being exactly `c`. -/
+noncomputable def LowerReachProb (F : Fairness sys) (s : ResolvedScheduler (sys.distF F))
+    (c : LowerConfig sys) : ENNReal :=
+  ∑' n, LowerReachAfter F s n c
+
+-- Unfolding `LowerReachAfter` at `0` (definitional): the start distribution.
+open Classical in
+theorem LowerReachAfter_zero (F : Fairness sys) (s : ResolvedScheduler (sys.distF F))
+    (c : LowerConfig sys) :
+    LowerReachAfter F s 0 c =
+      (if c.de = ⟨PMF.pure sys.init, Seq.nil⟩ ∧ c.e = ⟨sys.init, Seq.nil⟩
+       then s.next ⟨PMF.pure sys.init, Seq.nil⟩ c.h else 0) := rfl
+
+/-- Unfolding `LowerReachAfter` at `n+1` (definitional): one more instruction convolves with
+`LowerStep`. -/
+theorem LowerReachAfter_succ (F : Fairness sys) (s : ResolvedScheduler (sys.distF F))
+    (n : ℕ) (c : LowerConfig sys) :
+    LowerReachAfter F s (n + 1) c
+      = ∑' c₀ : LowerConfig sys, LowerReachAfter F s n c₀ * LowerStep F s c₀ c := rfl
+
+/-- The coupling invariant carried by every reachable chain state: both runs are finite and the
+concrete end-state lies in the support of the belief end-state. (Reachable states moreover have
+equal length and pointwise-equal labels, giving `sys.trace e = 𝒟f.trace de`.) -/
+def Coupled (c : LowerConfig sys) : Prop :=
+  c.de.trans.Terminates ∧ c.e.trans.Terminates ∧
+    lastStateOf c.e ∈ (lastStateOf c.de).support
+
+/-! ### The reconstructed resolved scheduler `s'` on `sys`
+
+`lowerSched F s` is the concrete resolved-history scheduler read off the lowering chain: at a
+concrete history `e` it emits each option in proportion to the chain's reach-mass of the configs
+that produce it out of `e` (marginalising the abstract run `de` away).
+
+* `lowerArrHalt e` — the **halt numerator**: reach-mass of configs `⟨de, e, none⟩` (the run has
+  reached `e` and `s` scheduled `none`);
+* `lowerArrStep e (l, μ)` — the **step numerator**: reach-mass of configs whose concrete run is `e`
+  extended by one step `((l, μ), q')`, over any `q'`.
+
+`lowerNext e` normalises these by `lowerDenom e := lowerArrHalt e + ∑' t, lowerArrStep e t` — the
+*resolved* mass at `e`, **not** the total arrival mass. The gap between them is the evidence defect,
+which is thereby renormalised into the genuine transitions rather than into `none`. So `none` keeps
+the *genuine-halt* fraction `lowerArrHalt e / lowerDenom e`, which is what makes `halt_fairDeadlock`
+survive (had `none` absorbed the defect, `s'` would halt off the fair deadlocks). `lowerDenom e = 0`
+(an unreachable `e`) falls back to `pure none`. -/
+
+/-- Halt numerator: reach-mass of configs at `e` whose pending emission is `none`. -/
+noncomputable def lowerArrHalt (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) : ENNReal :=
+  ∑' de : ResolvedExec (PMF State) Label, LowerReachProb F sch ⟨de, e, none⟩
+
+/-- Step numerator: reach-mass of configs whose concrete run is `e` extended by `((l, μ), q')`, for
+any next state `q'`. -/
+noncomputable def lowerArrStep (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) (x : Label × PMF State) : ENNReal :=
+  ∑' (de : ResolvedExec (PMF State) Label) (q' : State)
+      (h' : Option (Label × PMF (PMF State))),
+    LowerReachProb F sch ⟨de, ⟨e.init, e.trans.append (Seq.cons (x, q') Seq.nil)⟩, h'⟩
+
+/-- The numerator function of `lowerNext e`: `none ↦ lowerArrHalt`, `some x ↦ lowerArrStep x`. -/
+noncomputable def lowerNumer (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) : Option (Label × PMF State) → ENNReal
+  | none => lowerArrHalt F sch e
+  | some x => lowerArrStep F sch e x
+
+/-- The normalising denominator: the total resolved (halt + step) reach-mass at `e`. -/
+noncomputable def lowerDenom (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) : ENNReal :=
+  ∑' o, lowerNumer F sch e o
+
+/-- **H1.** The induced concrete transition `tOutcome F β l ω qₚ` is a genuine `sys`-step out of
+`qₚ`, whenever `qₚ ∈ β.support` and `(l, ω)` is a valid `𝒟f`-step out of `β`. Reads the "all fair"
+(resp. "all `sys.step`") clause of the fairness (resp. step) witness at the successor state `qₚ`. -/
+theorem tKernel_step (F : Fairness sys) (β : PMF State) (l : Label) (ω : PMF (PMF State))
+    (qₚ : State) (μ' : PMF State) (hμ' : μ' ∈ (tKernel F β l ω qₚ).support)
+    (hq : qₚ ∈ β.support) (hstep : (sys.distF F).step β l ω) :
+    sys.step qₚ l μ' := by
+  classical
+  unfold tKernel at hμ'
+  by_cases hf : F.dist.fair β l ω
+  · rw [dif_pos hf] at hμ'
+    exact F.step_of_fair qₚ l _ (hf.2.choose_spec.1 qₚ hq _ hμ')
+  · rw [dif_neg hf, dif_pos hstep] at hμ'
+    exact hstep.1.choose_spec.1 qₚ hq _ hμ'
+
+/-- Every sampled transition in `tKernel`'s support is `F.fair` when the emission is `F.dist`-fair —
+the clause that carries `inf_fair` down to the concrete run. -/
+theorem tKernel_fair (F : Fairness sys) (β : PMF State) (l : Label) (ω : PMF (PMF State))
+    (qₚ : State) (μ' : PMF State) (hμ' : μ' ∈ (tKernel F β l ω qₚ).support)
+    (hq : qₚ ∈ β.support) (hfair : F.dist.fair β l ω) :
+    F.fair qₚ l μ' := by
+  classical
+  unfold tKernel at hμ'
+  rw [dif_pos hfair] at hμ'
+  exact hfair.2.choose_spec.1 qₚ hq _ hμ'
+
+/-- **H2 (nil).** The last state of a nil-transition execution is its `init`. -/
+theorem lastStateOf_nil {S L : Type} (i : S) :
+    lastStateOf (⟨i, Seq.nil⟩ : AlterSeq S L) = i := by
+  classical
+  unfold lastStateOf
+  rw [dif_pos Stream'.Seq.terminates_nil]
+  exact AlterSeq.endState_of_trans_nil _ rfl _
+
+/-- **H2 (append).** The last state of an execution extended by appending a single transition
+`(lbl, x)` is `x` (the destination of the appended transition), for a terminating base. -/
+theorem lastStateOf_append_singleton {S L : Type} (a : AlterSeq S L)
+    (ha : a.trans.Terminates) (lbl : L) (x : S) :
+    lastStateOf (⟨a.init, a.trans.append (Seq.cons (lbl, x) Seq.nil)⟩ : AlterSeq S L) = x := by
+  classical
+  have hnew_term :
+      (⟨a.init, a.trans.append (Seq.cons (lbl, x) Seq.nil)⟩ : AlterSeq S L).trans.Terminates :=
+    ⟨Nat.find ha + 1, Stream'.Seq.terminatedAt_append_find ha
+      (show (Seq.cons (lbl, x) Seq.nil).TerminatedAt 1 from rfl)⟩
+  unfold lastStateOf
+  rw [dif_pos hnew_term]
+  exact AlterSeq.endState_append_singleton a ha lbl x
+
+omit [Silent Label] in
+/-- The recorded `μ` of the last step of an execution extended by appending `((l, μ), x)` is `μ`. -/
+theorem lastMuOf_append_singleton (a : ResolvedExec State Label)
+    (ha : a.trans.Terminates) (l : Label) (μ : PMF State) (x : State) :
+    lastMuOf (⟨a.init, a.trans.append (Seq.cons ((l, μ), x) Seq.nil)⟩ : ResolvedExec State Label)
+      = μ := by
+  classical
+  have hnew_term :
+      (⟨a.init, a.trans.append (Seq.cons ((l, μ), x) Seq.nil)⟩ :
+        ResolvedExec State Label).trans.Terminates :=
+    ⟨Nat.find ha + 1, Stream'.Seq.terminatedAt_append_find ha
+      (show (Seq.cons ((l, μ), x) Seq.nil).TerminatedAt 1 from rfl)⟩
+  unfold lastMuOf
+  rw [dif_pos hnew_term]
+  have htoList :
+      (⟨a.init, a.trans.append (Seq.cons ((l, μ), x) Seq.nil)⟩ :
+        ResolvedExec State Label).trans.toList hnew_term
+        = a.trans.toList ha ++ [((l, μ), x)] := by
+    change (a.trans.append (Seq.cons ((l, μ), x) Seq.nil)).toList hnew_term
+      = a.trans.toList ha ++ [((l, μ), x)]
+    rw [Stream'.Seq.toList_append a.trans (Seq.cons ((l, μ), x) Seq.nil) ha
+      (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil) hnew_term]
+    congr 1
+    rw [Stream'.Seq.toList_cons]; simp [Stream'.Seq.toList_nil]
+  rw [htoList]
+  simp
+
+/-- Extensionality for `AlterSeq`: equal `init` and `trans` give equal executions. -/
+theorem alterSeq_ext {S L : Type} {a b : AlterSeq S L}
+    (hi : a.init = b.init) (ht : a.trans = b.trans) : a = b := by
+  cases a; cases b; cases hi; cases ht; rfl
+
+/-- A nonzero `ENNReal`-valued tsum has a nonzero term. -/
+theorem tsum_ne_zero_exists {α : Type _} {f : α → ENNReal} (h : ∑' i, f i ≠ 0) :
+    ∃ i, f i ≠ 0 := by
+  by_contra hall
+  push Not at hall
+  exact h (ENNReal.tsum_eq_zero.mpr hall)
+
+/-- **H3.** A config with nonzero reach-mass at any level has a nonzero pending emission
+`s.next c.de c.h`. At level `0` the config is the start (`de = ⟨δ_init, nil⟩`); at level `n+1` the
+weight of the last instruction carries `s.next c.de c.h` as its final factor. -/
+theorem reachAfter_next_ne_zero (F : Fairness sys) (s : ResolvedScheduler (sys.distF F))
+    (n : ℕ) (c : LowerConfig sys) (hne : LowerReachAfter F s n c ≠ 0) :
+    s.next c.de c.h ≠ 0 := by
+  classical
+  induction n generalizing c with
+  | zero =>
+    rw [LowerReachAfter_zero] at hne
+    by_cases hc : c.de = ⟨PMF.pure sys.init, Seq.nil⟩ ∧ c.e = ⟨sys.init, Seq.nil⟩
+    · rw [if_pos hc] at hne
+      rw [hc.1]; exact hne
+    · rw [if_neg hc] at hne; exact absurd rfl hne
+  | succ k ih =>
+    rw [LowerReachAfter_succ] at hne
+    obtain ⟨c₀, hc₀⟩ := tsum_ne_zero_exists hne
+    have hstep : LowerStep F s c₀ c ≠ 0 := fun h => hc₀ (by rw [h, mul_zero])
+    -- unfold LowerStep to extract the final factor s.next c.de c.h
+    revert hstep
+    unfold LowerStep
+    cases hh : c₀.h with
+    | none => intro hstep; exact absurd rfl hstep
+    | some lω =>
+      obtain ⟨l₀, ω₀⟩ := lω
+      simp only
+      by_cases hif : c.de.init = c₀.de.init ∧ c.e.init = c₀.e.init ∧
+          c.de.trans = c₀.de.trans.append (Seq.cons ((l₀, ω₀), lastStateOf c.de) Seq.nil) ∧
+          c.e.trans = c₀.e.trans.append (Seq.cons ((l₀, lastMuOf c.e), lastStateOf c.e) Seq.nil)
+      · rw [if_pos hif]
+        intro hstep
+        exact fun h => hstep (by rw [h, mul_zero])
+      · rw [if_neg hif]; intro hstep; exact absurd rfl hstep
+/-- **H4.** Every config with nonzero reach-mass at any level is `Coupled`: both runs terminate and
+the concrete end-state lies in the belief end-state's support. Preserved by one instruction because
+`de`'s next belief `dq` is drawn reweighted by `dq(q)`, so a nonzero weight forces `dq(q) ≠ 0`,
+i.e. `q ∈ dq.support`. -/
+theorem reachAfter_coupled (F : Fairness sys) (s : ResolvedScheduler (sys.distF F))
+    (n : ℕ) (c : LowerConfig sys) (hne : LowerReachAfter F s n c ≠ 0) : Coupled c := by
+  classical
+  induction n generalizing c with
+  | zero =>
+    rw [LowerReachAfter_zero] at hne
+    by_cases hc : c.de = ⟨PMF.pure sys.init, Seq.nil⟩ ∧ c.e = ⟨sys.init, Seq.nil⟩
+    · refine ⟨?_, ?_, ?_⟩
+      · rw [hc.1]; exact Stream'.Seq.terminates_nil
+      · rw [hc.2]; exact Stream'.Seq.terminates_nil
+      · rw [hc.1, hc.2, lastStateOf_nil, lastStateOf_nil, PMF.mem_support_iff, PMF.pure_apply,
+          if_pos rfl]
+        exact one_ne_zero
+    · rw [if_neg hc] at hne; exact absurd rfl hne
+  | succ k ih =>
+    rw [LowerReachAfter_succ] at hne
+    obtain ⟨c₀, hc₀⟩ := tsum_ne_zero_exists hne
+    have hreach₀ : LowerReachAfter F s k c₀ ≠ 0 := fun h => hc₀ (by rw [h, zero_mul])
+    have hstep : LowerStep F s c₀ c ≠ 0 := fun h => hc₀ (by rw [h, mul_zero])
+    have hcoup₀ : Coupled c₀ := ih c₀ hreach₀
+    -- Unfold LowerStep to extract the if-condition and the nonzero weight.
+    revert hstep
+    unfold LowerStep
+    cases hh : c₀.h with
+    | none => intro hstep; exact absurd rfl hstep
+    | some lω =>
+      obtain ⟨l₀, ω₀⟩ := lω
+      simp only
+      set μ' : PMF State := lastMuOf c.e with hμ'
+      by_cases hif : c.de.init = c₀.de.init ∧ c.e.init = c₀.e.init ∧
+          c.de.trans = c₀.de.trans.append (Seq.cons ((l₀, ω₀), lastStateOf c.de) Seq.nil) ∧
+          c.e.trans = c₀.e.trans.append (Seq.cons ((l₀, μ'), lastStateOf c.e) Seq.nil)
+      · rw [if_pos hif]
+        intro hweight
+        obtain ⟨_, _, hde_trans, he_trans⟩ := hif
+        -- nonzero weight ⇒ dq q ≠ 0
+        have hdq : lastStateOf c.de (lastStateOf c.e) ≠ 0 := by
+          intro h0
+          apply hweight
+          simp only [h0, ENNReal.zero_div, mul_zero, zero_mul]
+        refine ⟨?_, ?_, ?_⟩
+        · rw [hde_trans]
+          exact ⟨Nat.find hcoup₀.1 + 1, Stream'.Seq.terminatedAt_append_find hcoup₀.1
+            (show (Seq.cons ((l₀, ω₀), lastStateOf c.de) Seq.nil).TerminatedAt 1 from rfl)⟩
+        · rw [he_trans]
+          exact ⟨Nat.find hcoup₀.2.1 + 1, Stream'.Seq.terminatedAt_append_find hcoup₀.2.1
+            (show (Seq.cons ((l₀, μ'), lastStateOf c.e) Seq.nil).TerminatedAt 1 from rfl)⟩
+        · rw [PMF.mem_support_iff]; exact hdq
+      · rw [if_neg hif]; intro hstep; exact absurd rfl hstep
+/-- **H5.** If `e` terminates at `n` and its state at `n` is `some st`, then `st = lastStateOf e`.
+The canonical terminating position `Nat.find hT` must equal `n`: it is `≤ n`, and a strictly earlier
+one would leave `e.stateAt n = none` (positions past termination are `none`), contradicting
+`hstate`. -/
+theorem stateAt_terminatedAt_eq_lastStateOf {S L : Type} (e : AlterSeq S L) (n : ℕ) (st : S)
+    (hterm : e.trans.TerminatedAt n) (hstate : e.stateAt n = some st) : st = lastStateOf e := by
+  classical
+  have hT : e.trans.Terminates := ⟨n, hterm⟩
+  have hlast : lastStateOf e = e.endState hT := by unfold lastStateOf; rw [dif_pos hT]
+  have hfind : Nat.find hT = n := by
+    rcases lt_or_eq_of_le (Nat.find_le hterm) with hlt | heq
+    · exfalso
+      -- e.stateAt n = none since a strictly earlier terminated position stabilises to none.
+      have hterm_find : e.trans.TerminatedAt (Nat.find hT) := Nat.find_spec hT
+      have hnpos : 0 < n := Nat.lt_of_le_of_lt (Nat.zero_le _) hlt
+      obtain ⟨m, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hnpos.ne'
+      have hle : Nat.find hT ≤ m := Nat.lt_succ_iff.mp hlt
+      have hget : e.trans.get? m = none := Stream'.Seq.terminated_stable e.trans hle hterm_find
+      have : e.stateAt (m + 1) = none := by
+        change (e.trans.get? m).map Prod.snd = none
+        rw [hget]; rfl
+      rw [this] at hstate; simp at hstate
+    · exact heq
+  have h_eq := AlterSeq.stateAt_find_eq_endState e hT
+  rw [hfind, hstate] at h_eq
+  rw [hlast]; exact Option.some.inj h_eq
+
+/-- A `tsum` over an `Option` type splits as the value at `none` plus the `tsum` over the
+`some`-fibres (local `ENNReal` specialisation; every `ENNReal` family is summable). -/
+theorem lower_tsum_option {β : Type*} (f : Option β → ENNReal) :
+    (∑' x, f x) = f none + ∑' y, f (some y) := by
+  rw [ENNReal.tsum_eq_add_tsum_ite none]
+  congr 1
+  rw [tsum_eq_tsum_of_ne_zero_bij (i := fun y : {y : β // f (some y) ≠ 0} => some y.1)]
+  · intro a b hab; exact Subtype.ext (Option.some_injective β hab)
+  · intro x hx
+    cases hx2 : (x : Option β) with
+    | none => simp [Function.mem_support, hx2] at hx
+    | some y =>
+      refine ⟨⟨y, ?_⟩, ?_⟩
+      · simp only [Function.mem_support] at hx ⊢
+        rw [hx2] at hx; simpa using hx
+      · simp
+  · intro y; simp
+
+/-- **L1 (sub-stochasticity).** One instruction of the lowering chain is a sub-probability kernel:
+out of a config whose two runs terminate, the total transition weight is `≤ 1`. The nonzero
+successors of `c₀` (with pending emission `some (l, ω)`) are parameterised injectively by
+`(dq, q, h')`; reindexing along that bijection, `∑' h', s.next _ h' = 1` (a `PMF`), then
+`μ' q * (dq q / μ' q) ≤ dq q` collapses the `μ'`-factors, leaving
+`∑' dq, ω dq * ∑' q, dq q = ∑' dq, ω dq = 1`. -/
+theorem lowerStep_tsum_le_one (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (c₀ : LowerConfig sys) (hde : c₀.de.trans.Terminates) (he : c₀.e.trans.Terminates) :
+    ∑' c', LowerStep F sch c₀ c' ≤ 1 := by
+  classical
+  cases hh : c₀.h with
+  | none =>
+    have : ∀ c', LowerStep F sch c₀ c' = 0 := by
+      intro c'; unfold LowerStep; rw [hh]
+    simp only [this, tsum_zero]; exact zero_le_one
+  | some lω =>
+    obtain ⟨l, ω⟩ := lω
+    set β := lastStateOf c₀.de with hβ
+    set qₚ := lastStateOf c₀.e with hqₚ
+    -- Successor configs: `de` extended by `dq`, `e` extended by the sampled step `((l, μ), q)`.
+    set De : PMF State → ResolvedExec (PMF State) Label :=
+      fun dq => ⟨c₀.de.init, c₀.de.trans.append (Seq.cons ((l, ω), dq) Seq.nil)⟩ with hDe
+    set Ec : PMF State → State → ResolvedExec State Label :=
+      fun μ q => ⟨c₀.e.init, c₀.e.trans.append (Seq.cons ((l, μ), q) Seq.nil)⟩ with hEc
+    -- The injective reindexing map `(μ, dq, q, h') ↦ c'`.
+    set φ : PMF State × PMF State × State × Option (Label × PMF (PMF State)) → LowerConfig sys :=
+      fun p => ⟨De p.2.1, Ec p.1 p.2.2.1, p.2.2.2⟩ with hφ
+    have hDelast : ∀ dq, lastStateOf (De dq) = dq := fun dq =>
+      lastStateOf_append_singleton ⟨c₀.de.init, c₀.de.trans⟩ hde (l, ω) dq
+    have hEclast : ∀ μ q, lastStateOf (Ec μ q) = q := fun μ q =>
+      lastStateOf_append_singleton ⟨c₀.e.init, c₀.e.trans⟩ he (l, μ) q
+    have hEcmu : ∀ μ q, lastMuOf (Ec μ q) = μ := fun μ q =>
+      lastMuOf_append_singleton ⟨c₀.e.init, c₀.e.trans⟩ he l μ q
+    have hφinj : Function.Injective φ := by
+      rintro ⟨μ₁, dq₁, q₁, h₁⟩ ⟨μ₂, dq₂, q₂, h₂⟩ heq
+      have hdq' := congrArg (fun c => lastStateOf c.de) heq
+      have hq' := congrArg (fun c => lastStateOf c.e) heq
+      have hmu' := congrArg (fun c => lastMuOf c.e) heq
+      have hhh := congrArg LowerConfig.h heq
+      simp only [hφ, hDelast, hEclast, hEcmu] at hdq' hq' hmu' hhh
+      subst hdq'; subst hq'; subst hmu'; subst hhh; rfl
+    -- The value of `LowerStep` on an image config `φ (μ, dq, q, h')`.
+    have hval : ∀ p : PMF State × PMF State × State × Option (Label × PMF (PMF State)),
+        LowerStep F sch c₀ (φ p)
+          = (tKernel F β l ω qₚ) p.1 * p.1 p.2.2.1 * ω p.2.1
+              * (p.2.1 p.2.2.1 / (ω.bind id) p.2.2.1) * sch.next (De p.2.1) p.2.2.2 := by
+      rintro ⟨μ, dq, q, h'⟩
+      change LowerStep F sch c₀ ⟨De dq, Ec μ q, h'⟩ = _
+      unfold LowerStep
+      rw [hh]
+      simp only [hDelast, hEclast, hEcmu]
+      rw [if_pos ⟨rfl, rfl, rfl, rfl⟩]
+    -- The reindexed summand.
+    set g : PMF State × PMF State × State × Option (Label × PMF (PMF State)) → ENNReal :=
+      fun p => (tKernel F β l ω qₚ) p.1 * p.1 p.2.2.1 * ω p.2.1
+        * (p.2.1 p.2.2.1 / (ω.bind id) p.2.2.1) * sch.next (De p.2.1) p.2.2.2 with hg
+    -- Reindex `∑' c', LowerStep c₀ c'` along `φ` to `∑' p, g p`.
+    have hreindex : ∑' c', LowerStep F sch c₀ c' = ∑' p, g p := by
+      refine tsum_eq_tsum_of_ne_zero_bij (i := fun p : Function.support g => φ p.1)
+        ?inj ?supp ?val
+      · rintro ⟨p₁, hp₁⟩ ⟨p₂, hp₂⟩ hab
+        exact Subtype.ext (hφinj hab)
+      · intro c' hc'
+        have hne : LowerStep F sch c₀ c' ≠ 0 := hc'
+        -- Read the shape of a nonzero-weight successor.
+        have hshape : c' = φ (lastMuOf c'.e, lastStateOf c'.de, lastStateOf c'.e, c'.h) := by
+          revert hne
+          unfold LowerStep
+          rw [hh]
+          simp only
+          by_cases hif : c'.de.init = c₀.de.init ∧ c'.e.init = c₀.e.init ∧
+              c'.de.trans = c₀.de.trans.append (Seq.cons ((l, ω), lastStateOf c'.de) Seq.nil) ∧
+              c'.e.trans =
+                c₀.e.trans.append (Seq.cons ((l, lastMuOf c'.e), lastStateOf c'.e) Seq.nil)
+          · intro _
+            obtain ⟨hdinit, heinit, hdt, het⟩ := hif
+            have hde_eq : c'.de = De (lastStateOf c'.de) := by
+              rw [hDe]; exact alterSeq_ext hdinit hdt
+            have he_eq : c'.e = Ec (lastMuOf c'.e) (lastStateOf c'.e) := by
+              rw [hEc]; exact alterSeq_ext heinit het
+            change c' = ⟨De (lastStateOf c'.de), Ec (lastMuOf c'.e) (lastStateOf c'.e), c'.h⟩
+            rw [← hde_eq, ← he_eq]
+          · rw [if_neg hif]; intro h0; exact absurd rfl h0
+        refine ⟨⟨(lastMuOf c'.e, lastStateOf c'.de, lastStateOf c'.e, c'.h), ?_⟩, hshape.symm⟩
+        rw [Function.mem_support]
+        have heq : g (lastMuOf c'.e, lastStateOf c'.de, lastStateOf c'.e, c'.h)
+            = LowerStep F sch c₀ c' := by
+          rw [show g (lastMuOf c'.e, lastStateOf c'.de, lastStateOf c'.e, c'.h)
+            = LowerStep F sch c₀ (φ (lastMuOf c'.e, lastStateOf c'.de, lastStateOf c'.e, c'.h)) from
+            (hval _).symm, ← hshape]
+        rw [heq]; exact hne
+      · rintro ⟨p, hp⟩; exact hval p
+    rw [hreindex, hg]
+    simp only []
+    have hbind : ∀ q : State, ∑' dq : PMF State, ω dq * dq q = (ω.bind id) q := fun q => by
+      simp only [PMF.bind_apply, id_eq]
+    -- The `(ω.bind id)`-normalised belief fibre `≤ 1`.
+    have hfibre : ∀ q : State, ∑' dq : PMF State, ω dq * (dq q / (ω.bind id) q) ≤ 1 := by
+      intro q
+      have h2 : ∑' dq : PMF State, ω dq * (dq q / (ω.bind id) q)
+          = (ω.bind id) q * ((ω.bind id) q)⁻¹ := by
+        calc ∑' dq : PMF State, ω dq * (dq q / (ω.bind id) q)
+            = ∑' dq : PMF State, (ω dq * dq q) * ((ω.bind id) q)⁻¹ := by
+              refine tsum_congr fun dq => ?_; rw [div_eq_mul_inv]; ring
+          _ = (∑' dq : PMF State, ω dq * dq q) * ((ω.bind id) q)⁻¹ := ENNReal.tsum_mul_right
+          _ = (ω.bind id) q * ((ω.bind id) q)⁻¹ := by rw [hbind]
+      rw [h2]
+      rcases eq_or_ne ((ω.bind id) q) 0 with h0 | h0
+      · rw [h0, zero_mul]; exact zero_le_one
+      · exact le_of_eq (ENNReal.mul_inv_cancel h0 (PMF.apply_ne_top (ω.bind id) q))
+    -- Sum out `h'` (a `PMF`); the belief fibre `≤ 1`; the `μ`-kernel and each `μ` are `PMF`s.
+    calc ∑' p : PMF State × PMF State × State × Option (Label × PMF (PMF State)),
+            (tKernel F β l ω qₚ) p.1 * p.1 p.2.2.1 * ω p.2.1
+              * (p.2.1 p.2.2.1 / (ω.bind id) p.2.2.1) * sch.next (De p.2.1) p.2.2.2
+        = ∑' (μ : PMF State) (dq : PMF State) (q : State),
+            (tKernel F β l ω qₚ) μ * μ q * ω dq * (dq q / (ω.bind id) q) := by
+          rw [ENNReal.tsum_prod']
+          refine tsum_congr fun μ => ?_
+          rw [ENNReal.tsum_prod']
+          refine tsum_congr fun dq => ?_
+          rw [ENNReal.tsum_prod']
+          refine tsum_congr fun q => ?_
+          simp only [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
+      _ = ∑' (μ : PMF State) (q : State) (dq : PMF State),
+            (tKernel F β l ω qₚ) μ * μ q * ω dq * (dq q / (ω.bind id) q) := by
+          refine tsum_congr fun μ => ?_; exact ENNReal.tsum_comm
+      _ ≤ ∑' (μ : PMF State) (q : State), (tKernel F β l ω qₚ) μ * μ q := by
+          refine ENNReal.tsum_le_tsum fun μ => ENNReal.tsum_le_tsum fun q => ?_
+          calc ∑' dq : PMF State, (tKernel F β l ω qₚ) μ * μ q * ω dq * (dq q / (ω.bind id) q)
+              = (tKernel F β l ω qₚ) μ * μ q
+                * ∑' dq : PMF State, ω dq * (dq q / (ω.bind id) q) := by
+                  rw [← ENNReal.tsum_mul_left]; exact tsum_congr fun dq => by ring
+            _ ≤ (tKernel F β l ω qₚ) μ * μ q * 1 := by gcongr; exact hfibre q
+            _ = (tKernel F β l ω qₚ) μ * μ q := mul_one _
+      _ = ∑' μ : PMF State, (tKernel F β l ω qₚ) μ := by
+          refine tsum_congr fun μ => ?_
+          rw [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
+      _ = 1 := PMF.tsum_coe _
+
+/-- Appending one transition to a sequence that terminates exactly at `n` gives a sequence that
+terminates exactly at `n + 1`. -/
+theorem terminatedAt_append_singleton_iff {S L : Type} (s : Seq (L × S)) (n : ℕ)
+    (hn : s.TerminatedAt n) (hmin : ∀ k < n, ¬ s.TerminatedAt k) (x : L × S) :
+    (s.append (Seq.cons x Seq.nil)).TerminatedAt (n + 1) ∧
+      ∀ k < n + 1, ¬ (s.append (Seq.cons x Seq.nil)).TerminatedAt k := by
+  classical
+  have hT : s.Terminates := ⟨n, hn⟩
+  have hfind : Nat.find hT = n := by
+    apply le_antisymm (Nat.find_le hn)
+    by_contra h; push Not at h; exact hmin _ h (Nat.find_spec hT)
+  refine ⟨?_, ?_⟩
+  · have := Stream'.Seq.terminatedAt_append_find hT (s' := Seq.cons x Seq.nil) (n := 1)
+      (show (Seq.cons x Seq.nil).TerminatedAt 1 from rfl)
+    rwa [hfind] at this
+  · intro k hk
+    rcases lt_or_eq_of_le (Nat.lt_succ_iff.mp hk) with hlt | heq
+    · intro hterm
+      rw [Stream'.Seq.TerminatedAt, Stream'.Seq.get?_append_before_length (hmin k hlt)] at hterm
+      exact hmin k hlt hterm
+    · subst heq
+      intro hterm
+      have happ : (s.append (Seq.cons x Seq.nil)).get? k = some x := by
+        have hg := Stream'.Seq.get?_append_find hT (Seq.cons x Seq.nil) 0
+        rw [hfind, Nat.add_zero] at hg
+        rw [hg]; rfl
+      rw [Stream'.Seq.TerminatedAt, happ] at hterm
+      exact Option.some_ne_none x hterm
+
+/-- **L2 (length-tracking).** A config with nonzero reach-mass at level `n` has its concrete run
+terminate exactly at `n` (and no earlier). Appending one transition per instruction, so `n` counts
+the length of `c.e.trans`. -/
+theorem reachAfter_length (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (n : ℕ) (c : LowerConfig sys) (hne : LowerReachAfter F sch n c ≠ 0) :
+    c.e.trans.TerminatedAt n ∧ ∀ k < n, ¬ c.e.trans.TerminatedAt k := by
+  classical
+  induction n generalizing c with
+  | zero =>
+    rw [LowerReachAfter_zero] at hne
+    by_cases hc : c.de = ⟨PMF.pure sys.init, Seq.nil⟩ ∧ c.e = ⟨sys.init, Seq.nil⟩
+    · rw [hc.2]
+      exact ⟨Stream'.Seq.terminatedAt_nil, fun k hk => absurd hk (Nat.not_lt_zero k)⟩
+    · rw [if_neg hc] at hne; exact absurd rfl hne
+  | succ k ih =>
+    rw [LowerReachAfter_succ] at hne
+    obtain ⟨c₀, hc₀⟩ := tsum_ne_zero_exists hne
+    have hreach₀ : LowerReachAfter F sch k c₀ ≠ 0 := fun h => hc₀ (by rw [h, zero_mul])
+    have hstep : LowerStep F sch c₀ c ≠ 0 := fun h => hc₀ (by rw [h, mul_zero])
+    obtain ⟨hterm₀, hmin₀⟩ := ih c₀ hreach₀
+    -- Extract the `e`-append shape from `LowerStep c₀ c ≠ 0`.
+    have het : ∃ x : (Label × PMF State) × State,
+        c.e.trans = c₀.e.trans.append (Seq.cons x Seq.nil) := by
+      revert hstep
+      unfold LowerStep
+      cases hh : c₀.h with
+      | none => intro hstep; exact absurd rfl hstep
+      | some lω =>
+        obtain ⟨l₀, ω₀⟩ := lω
+        simp only
+        set μ' : PMF State := lastMuOf c.e with hμ'
+        by_cases hif : c.de.init = c₀.de.init ∧ c.e.init = c₀.e.init ∧
+            c.de.trans = c₀.de.trans.append (Seq.cons ((l₀, ω₀), lastStateOf c.de) Seq.nil) ∧
+            c.e.trans = c₀.e.trans.append (Seq.cons ((l₀, μ'), lastStateOf c.e) Seq.nil)
+        · intro _; exact ⟨((l₀, μ'), lastStateOf c.e), hif.2.2.2⟩
+        · rw [if_neg hif]; intro h0; exact absurd rfl h0
+    obtain ⟨x, hx⟩ := het
+    rw [hx]
+    exact terminatedAt_append_singleton_iff c₀.e.trans k hterm₀ hmin₀ x
+
+/-- **L3 (level-mass).** The total reach-mass at any fixed level is `≤ 1`. Base: the start config's
+mass is `∑' h, s.next _ h = 1`. Step: `∑' c, (∑' c₀, R n c₀ * step c₀ c)` swaps to
+`∑' c₀, R n c₀ * (∑' c, step c₀ c) ≤ ∑' c₀, R n c₀ ≤ 1`. -/
+theorem reachAfter_level_le_one (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (n : ℕ) : ∑' c, LowerReachAfter F sch n c ≤ 1 := by
+  classical
+  induction n with
+  | zero =>
+    -- The start config is determined by its pending emission `c.h`.
+    set D₀ : ResolvedExec (PMF State) Label := ⟨PMF.pure sys.init, Seq.nil⟩ with hD₀
+    set E₀ : ResolvedExec State Label := ⟨sys.init, Seq.nil⟩ with hE₀
+    have heq : ∑' c, LowerReachAfter F sch 0 c
+        = ∑' hopt : Option (Label × PMF (PMF State)), sch.next D₀ hopt := by
+      refine tsum_eq_tsum_of_ne_zero_bij
+        (i := fun hopt : Function.support (fun hopt => sch.next D₀ hopt) =>
+          (⟨D₀, E₀, hopt.1⟩ : LowerConfig sys)) ?inj ?supp ?val
+      · rintro ⟨h₁, _⟩ ⟨h₂, _⟩ hab
+        exact Subtype.ext (congrArg LowerConfig.h hab)
+      · intro c hc
+        rw [Function.mem_support, LowerReachAfter_zero] at hc
+        by_cases hcc : c.de = D₀ ∧ c.e = E₀
+        · refine ⟨⟨c.h, ?_⟩, ?_⟩
+          · rw [if_pos hcc] at hc
+            rw [Function.mem_support]; exact hc
+          · change (⟨D₀, E₀, c.h⟩ : LowerConfig sys) = c
+            rw [← hcc.1, ← hcc.2]
+        · rw [if_neg hcc] at hc; exact absurd rfl hc
+      · rintro ⟨hopt, hne⟩
+        rw [LowerReachAfter_zero, if_pos ⟨rfl, rfl⟩]
+    rw [heq, PMF.tsum_coe]
+  | succ n ih =>
+    -- Convolution: swap the two sums, then bound the inner `LowerStep`-sum by `1` (L1).
+    have hswap : ∑' c, LowerReachAfter F sch (n + 1) c
+        = ∑' c₀, LowerReachAfter F sch n c₀ * (∑' c, LowerStep F sch c₀ c) := by
+      simp_rw [LowerReachAfter_succ]
+      rw [ENNReal.tsum_comm]
+      exact tsum_congr fun c₀ => ENNReal.tsum_mul_left
+    rw [hswap]
+    refine le_trans (ENNReal.tsum_le_tsum fun c₀ => ?_) ih
+    -- Each term `R n c₀ * (∑' c, step c₀ c) ≤ R n c₀`.
+    by_cases h0 : LowerReachAfter F sch n c₀ = 0
+    · rw [h0, zero_mul]
+    · have hcoup : Coupled c₀ := reachAfter_coupled F sch n c₀ h0
+      have hle : ∑' c, LowerStep F sch c₀ c ≤ 1 :=
+        lowerStep_tsum_le_one F sch c₀ hcoup.1 hcoup.2.1
+      exact mul_le_of_le_one_right zero_le hle
+
+/-- The reach-prob of a config collapses to the single level equal to its concrete run's length:
+`LowerReachProb c = LowerReachAfter (Nat.find hE) c` when `c.e.trans` terminates (each
+`LowerReachAfter` at any other level vanishes by **L2**), and `= 0` when it does not. -/
+theorem LowerReachProb_collapse (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (c : LowerConfig sys) (hE : c.e.trans.Terminates) :
+    LowerReachProb F sch c = LowerReachAfter F sch (Nat.find hE) c := by
+  classical
+  unfold LowerReachProb
+  refine tsum_eq_single (Nat.find hE) ?_
+  intro n hn
+  by_contra hne
+  obtain ⟨hterm, hmin⟩ := reachAfter_length F sch n c hne
+  -- `n` is then the minimal terminating position, i.e. `Nat.find hE`.
+  have : n = Nat.find hE := by
+    apply le_antisymm
+    · by_contra h; push Not at h
+      exact hmin _ h (Nat.find_spec hE)
+    · exact Nat.find_le hterm
+  exact hn this
+
+/-- A config whose concrete run does not terminate has zero reach-prob (each level requires the run
+to terminate there, by **L2**). -/
+theorem LowerReachProb_of_not_terminates (F : Fairness sys)
+    (sch : ResolvedScheduler (sys.distF F)) (c : LowerConfig sys)
+    (hE : ¬ c.e.trans.Terminates) : LowerReachProb F sch c = 0 := by
+  classical
+  unfold LowerReachProb
+  rw [ENNReal.tsum_eq_zero]
+  intro n
+  by_contra hne
+  exact hE ⟨n, (reachAfter_length F sch n c hne).1⟩
+
+/-- The **halt arrival** at `e` is `≤ 1`: it is a marginal (over `de`) of the reach-mass at the
+single level `Nat.find hE` (the length of `e`), which is `≤ 1` by **L3**. Zero when `e` does not
+terminate. -/
+theorem lowerArrHalt_le_one (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) : lowerArrHalt F sch e ≤ 1 := by
+  classical
+  unfold lowerArrHalt
+  by_cases hE : e.trans.Terminates
+  · -- Collapse each `LowerReachProb` to level `N := Nat.find hE`.
+    have hcollapse : ∀ de : ResolvedExec (PMF State) Label,
+        LowerReachProb F sch ⟨de, e, none⟩ = LowerReachAfter F sch (Nat.find hE) ⟨de, e, none⟩ := by
+      intro de
+      exact LowerReachProb_collapse F sch ⟨de, e, none⟩ hE
+    simp_rw [hcollapse]
+    -- Inject `de ↦ ⟨de, e, none⟩` into all configs; apply L3.
+    have hinj : Function.Injective
+        (fun de : ResolvedExec (PMF State) Label => (⟨de, e, none⟩ : LowerConfig sys)) := by
+      intro a b hab; exact congrArg LowerConfig.de hab
+    refine le_trans (ENNReal.tsum_comp_le_tsum_of_injective hinj
+      (fun c => LowerReachAfter F sch (Nat.find hE) c)) ?_
+    exact reachAfter_level_le_one F sch (Nat.find hE)
+  · have : ∀ de : ResolvedExec (PMF State) Label, LowerReachProb F sch ⟨de, e, none⟩ = 0 := by
+      intro de; exact LowerReachProb_of_not_terminates F sch ⟨de, e, none⟩ hE
+    simp_rw [this, tsum_zero]; exact zero_le_one
+
+/-- The **total step arrival** at `e` is `≤ 1`: flattening the four sums, it is a marginal (over
+`(x, de, q', h')`) of the reach-mass at the single level `Nat.find hE + 1`, which is `≤ 1` by
+**L3**. The flattening map is injective because the appended last transition `(x, q')` is recovered
+from the concrete run's end. -/
+theorem lowerArrStep_tsum_le_one (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) : ∑' x, lowerArrStep F sch e x ≤ 1 := by
+  classical
+  by_cases hE : e.trans.Terminates
+  · -- Set up the extended concrete run and the flattening injection.
+    set N := Nat.find hE with hN
+    set Ex : (Label × PMF State) → State → ResolvedExec State Label :=
+      fun x q' => ⟨e.init, e.trans.append (Seq.cons (x, q') Seq.nil)⟩ with hEx
+    have hExterm : ∀ x q', (Ex x q').trans.Terminates := by
+      intro x q'
+      exact ⟨Nat.find hE + 1, Stream'.Seq.terminatedAt_append_find hE
+        (show (Seq.cons (x, q') Seq.nil).TerminatedAt 1 from rfl)⟩
+    -- `Ex x q'` has minimal terminating position `N + 1`.
+    have hExfind : ∀ x q', Nat.find (hExterm x q') = N + 1 := by
+      intro x q'
+      obtain ⟨_, hmin⟩ := terminatedAt_append_singleton_iff e.trans N (Nat.find_spec hE)
+        (fun k hk => Nat.find_min hE hk) (x, q')
+      obtain ⟨hterm', _⟩ := terminatedAt_append_singleton_iff e.trans N (Nat.find_spec hE)
+        (fun k hk => Nat.find_min hE hk) (x, q')
+      apply le_antisymm (Nat.find_le hterm')
+      by_contra h; push Not at h
+      exact hmin _ h (Nat.find_spec (hExterm x q'))
+    -- Rewrite each summand's `LowerReachProb` as the single level-`N+1` reach-mass.
+    have hnest : ∑' x, lowerArrStep F sch e x
+        = ∑' (x : Label × PMF State) (de : ResolvedExec (PMF State) Label) (q' : State)
+            (h' : Option (Label × PMF (PMF State))),
+          LowerReachAfter F sch (N + 1) ⟨de, Ex x q', h'⟩ := by
+      unfold lowerArrStep
+      refine tsum_congr fun x => tsum_congr fun de => tsum_congr fun q' => tsum_congr fun h' => ?_
+      rw [show (⟨de, ⟨e.init, e.trans.append (Seq.cons (x, q') Seq.nil)⟩, h'⟩ : LowerConfig sys)
+        = ⟨de, Ex x q', h'⟩ from rfl]
+      rw [LowerReachProb_collapse F sch ⟨de, Ex x q', h'⟩ (hExterm x q'), hExfind x q']
+    -- Flatten the four nested sums into one product sum.
+    have hflat : (∑' (p : (Label × PMF State) × ResolvedExec (PMF State) Label × State ×
+              Option (Label × PMF (PMF State))),
+          LowerReachAfter F sch (N + 1) ⟨p.2.1, Ex p.1 p.2.2.1, p.2.2.2⟩)
+        = ∑' (x : Label × PMF State) (de : ResolvedExec (PMF State) Label) (q' : State)
+            (h' : Option (Label × PMF (PMF State))),
+          LowerReachAfter F sch (N + 1) ⟨de, Ex x q', h'⟩ := by
+      rw [ENNReal.tsum_prod']
+      refine tsum_congr fun x => ?_
+      rw [ENNReal.tsum_prod']
+      refine tsum_congr fun de => ?_
+      rw [ENNReal.tsum_prod']
+    rw [hnest, ← hflat]
+    -- Injection into all configs; apply L3.
+    have hinj : Function.Injective
+        (fun p : (Label × PMF State) × ResolvedExec (PMF State) Label × State ×
+              Option (Label × PMF (PMF State)) =>
+          (⟨p.2.1, Ex p.1 p.2.2.1, p.2.2.2⟩ : LowerConfig sys)) := by
+      rintro ⟨x₁, de₁, q₁, h₁⟩ ⟨x₂, de₂, q₂, h₂⟩ hab
+      have hde := congrArg LowerConfig.de hab
+      have he := congrArg LowerConfig.e hab
+      have hhh := congrArg LowerConfig.h hab
+      simp only at hde he hhh
+      -- `Ex`-equality recovers `(x, q')` from the appended last transition.
+      have hxq : (x₁, q₁) = (x₂, q₂) := by
+        have htrans : e.trans.append (Seq.cons ((x₁, q₁)) Seq.nil)
+            = e.trans.append (Seq.cons ((x₂, q₂)) Seq.nil) := congrArg AlterSeq.trans he
+        exact Stream'.Seq.append_singleton_inj_right _ _ hE hE _ _ htrans
+      have hx : x₁ = x₂ := congrArg Prod.fst hxq
+      have hq : q₁ = q₂ := congrArg Prod.snd hxq
+      subst hde; subst hhh; subst hx; subst hq; rfl
+    refine le_trans (ENNReal.tsum_comp_le_tsum_of_injective hinj
+      (fun c => LowerReachAfter F sch (N + 1) c)) ?_
+    exact reachAfter_level_le_one F sch (N + 1)
+  · -- `e` does not terminate ⇒ every extended run does not either ⇒ all reach-probs vanish.
+    have : ∀ x, lowerArrStep F sch e x = 0 := by
+      intro x
+      unfold lowerArrStep
+      rw [ENNReal.tsum_eq_zero]; intro de
+      rw [ENNReal.tsum_eq_zero]; intro q'
+      rw [ENNReal.tsum_eq_zero]; intro h'
+      apply LowerReachProb_of_not_terminates
+      intro hterm
+      apply hE
+      by_contra hns
+      have heq : e.trans.append (Seq.cons (x, q') Seq.nil) = e.trans := by
+        apply Stream'.Seq.ext
+        intro m
+        rw [Stream'.Seq.get?_append_before_length]
+        intro ht; exact hns ⟨m, ht⟩
+      rw [heq] at hterm; exact hns hterm
+    simp_rw [this, tsum_zero]; exact zero_le_one
+
+/-- **Finiteness of the reach-mass** (`lowerDenom e ≠ ⊤`), needed for `lowerDenom / lowerDenom = 1`.
+The reach-mass at any fixed chain-level is `≤ 1`; both the halt and step arrivals are marginals of a
+single level's mass, so `lowerDenom e ≤ 2`. -/
+theorem lowerDenom_ne_top (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) : lowerDenom F sch e ≠ ⊤ := by
+  classical
+  -- `lowerDenom = lowerArrHalt + ∑' x, lowerArrStep`; bound each by `1`.
+  have hsplit : lowerDenom F sch e
+      = lowerArrHalt F sch e + ∑' x, lowerArrStep F sch e x := by
+    unfold lowerDenom
+    rw [lower_tsum_option (lowerNumer F sch e)]
+    rfl
+  rw [hsplit]
+  refine ENNReal.add_ne_top.mpr ⟨?_, ?_⟩
+  · exact ne_top_of_le_ne_top ENNReal.one_ne_top (lowerArrHalt_le_one F sch e)
+  · exact ne_top_of_le_ne_top ENNReal.one_ne_top (lowerArrStep_tsum_le_one F sch e)
+
+/-- The reconstructed scheduler's emission at `e`: `lowerNumer e / lowerDenom e`, normalised to a
+`PMF`; `pure none` when `e` is unreachable (`lowerDenom e = 0`). -/
+noncomputable def lowerNext (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) : PMF (Option (Label × PMF State)) := by
+  classical
+  exact
+    if h : lowerDenom F sch e = 0 then PMF.pure none
+    else ⟨fun o => lowerNumer F sch e o / lowerDenom F sch e, by
+      have hsum : ∑' o, lowerNumer F sch e o / lowerDenom F sch e = 1 := by
+        simp_rw [div_eq_mul_inv]
+        rw [ENNReal.tsum_mul_right,
+          show (∑' o, lowerNumer F sch e o) = lowerDenom F sch e from rfl]
+        exact ENNReal.mul_inv_cancel h (lowerDenom_ne_top F sch e)
+      rw [← hsum]
+      exact ENNReal.summable.hasSum⟩
+
+theorem lowerNext_valid_step (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F))
+    (e : ResolvedExec State Label) (n : ℕ) (st : State) (l : Label) (μ : PMF State)
+    (hterm : e.trans.TerminatedAt n) (hstate : e.stateAt n = some st)
+    (hmem : some (l, μ) ∈ (lowerNext F sch e).support) : sys.step st l μ := by
+  classical
+  rw [PMF.mem_support_iff] at hmem
+  -- Step 1: reduce to `lowerArrStep F sch e (l, μ) ≠ 0`.
+  have hstepNe : lowerArrStep F sch e (l, μ) ≠ 0 := by
+    unfold lowerNext at hmem
+    by_cases hd : lowerDenom F sch e = 0
+    · rw [dif_pos hd] at hmem
+      exact absurd (by rw [PMF.pure_apply]; simp) hmem
+    · rw [dif_neg hd] at hmem
+      have hmem' : lowerNumer F sch e (some (l, μ)) / lowerDenom F sch e ≠ 0 := hmem
+      exact (ENNReal.div_ne_zero.mp hmem').1
+  -- Step 2: extract a config recording the step `((l, μ), q')` with nonzero reach-prob.
+  unfold lowerArrStep at hstepNe
+  obtain ⟨de, hde⟩ := tsum_ne_zero_exists hstepNe
+  obtain ⟨q', hq'⟩ := tsum_ne_zero_exists hde
+  obtain ⟨h', hh'⟩ := tsum_ne_zero_exists hq'
+  set e' : ResolvedExec State Label :=
+    ⟨e.init, e.trans.append (Seq.cons ((l, μ), q') Seq.nil)⟩ with he'
+  -- Step 3: some level `N` has nonzero reach-after; `N ≠ 0` since `e'.trans` is nonempty.
+  unfold LowerReachProb at hh'
+  obtain ⟨N, hN⟩ := tsum_ne_zero_exists hh'
+  set c : LowerConfig sys := ⟨de, e', h'⟩ with hc
+  have hT : e.trans.Terminates := ⟨n, hterm⟩
+  have he'_get : e'.trans.get? (Nat.find hT) = some ((l, μ), q') := by
+    rw [he']
+    change (e.trans.append (Seq.cons ((l, μ), q') Seq.nil)).get? (Nat.find hT + 0) = _
+    rw [Stream'.Seq.get?_append_find hT]; rfl
+  have he'_ne_nil : e'.trans ≠ Seq.nil := by
+    intro hnil
+    rw [hnil, Stream'.Seq.get?_nil] at he'_get
+    exact absurd he'_get (by simp)
+  have hN0 : N ≠ 0 := by
+    intro h0
+    subst h0
+    rw [LowerReachAfter_zero] at hN
+    by_cases hcnd : c.de = ⟨PMF.pure sys.init, Seq.nil⟩ ∧ c.e = ⟨sys.init, Seq.nil⟩
+    · exact he'_ne_nil (by rw [show e' = c.e from rfl, hcnd.2])
+    · rw [if_neg hcnd] at hN; exact hN rfl
+  obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hN0
+  -- Step 4: the last instruction has a nonzero-mass predecessor `c₀`, which is `Coupled`.
+  rw [LowerReachAfter_succ] at hN
+  obtain ⟨c₀, hc₀ne⟩ := tsum_ne_zero_exists hN
+  have hreach₀ : LowerReachAfter F sch k c₀ ≠ 0 := fun h => hc₀ne (by rw [h, zero_mul])
+  have hstep₀ : LowerStep F sch c₀ c ≠ 0 := fun h => hc₀ne (by rw [h, mul_zero])
+  have hcoup₀ : Coupled c₀ := reachAfter_coupled F sch k c₀ hreach₀
+  -- Step 5: unfold `LowerStep` to read off `c₀.h`, the labels and `μ`, and identify `c₀.e = e`.
+  revert hstep₀
+  unfold LowerStep
+  cases hh : c₀.h with
+  | none => intro hstep₀; exact absurd rfl hstep₀
+  | some lω =>
+    obtain ⟨l₀, ω₀⟩ := lω
+    simp only
+    set μ'₀ : PMF State := lastMuOf c.e with hμ'₀
+    by_cases hif : c.de.init = c₀.de.init ∧ c.e.init = c₀.e.init ∧
+        c.de.trans = c₀.de.trans.append (Seq.cons ((l₀, ω₀), lastStateOf c.de) Seq.nil) ∧
+        c.e.trans = c₀.e.trans.append (Seq.cons ((l₀, μ'₀), lastStateOf c.e) Seq.nil)
+    · rw [if_pos hif]
+      intro hweight
+      obtain ⟨_, hinit_e, _, he_trans⟩ := hif
+      -- Two append-of-singleton forms for `c.e.trans` (`= e'.trans`).
+      have hcet : c.e.trans = e.trans.append (Seq.cons ((l, μ), q') Seq.nil) := by
+        rw [show c.e = e' from rfl, he']
+      have happ : e.trans.append (Seq.cons ((l, μ), q') Seq.nil)
+          = c₀.e.trans.append (Seq.cons ((l₀, μ'₀), lastStateOf c.e) Seq.nil) := by
+        rw [← hcet]; exact he_trans
+      have hlast := Stream'.Seq.append_singleton_inj_right e.trans c₀.e.trans hT hcoup₀.2.1
+        _ _ happ
+      have htrans_eq := Stream'.Seq.append_singleton_inj_left e.trans c₀.e.trans hT hcoup₀.2.1
+        _ _ happ
+      -- Decode the last-element equality: `l₀ = l`, `μ'₀ = μ`.
+      rw [Prod.mk.injEq, Prod.mk.injEq] at hlast
+      obtain ⟨⟨hl, hμeq⟩, _⟩ := hlast
+      -- Identify `c₀.e = e`: same init and same trans.
+      have hce_init : c.e.init = e.init := rfl
+      have hc₀e_init : c₀.e.init = e.init := by rw [← hinit_e, hce_init]
+      have hc₀e_eq : c₀.e = e := alterSeq_ext hc₀e_init htrans_eq.symm
+      -- Step 6: rewrite the goal into `tKernel_step` shape.
+      have hst : st = lastStateOf c₀.e := by
+        rw [hc₀e_eq]; exact stateAt_terminatedAt_eq_lastStateOf e n st hterm hstate
+      -- The sampled `μ'₀` lies in the kernel's support (nonzero first weight factor).
+      have hmemK : μ'₀ ∈ (tKernel F (lastStateOf c₀.de) l₀ ω₀ (lastStateOf c₀.e)).support := by
+        rw [PMF.mem_support_iff]
+        intro h0; apply hweight
+        simp only [h0, zero_mul]
+      -- (b) `(sys.distF F).step (lastStateOf c₀.de) l₀ ω₀` via scheduler validity.
+      have hde_term : c₀.de.trans.Terminates := hcoup₀.1
+      have hnext_ne : sch.next c₀.de c₀.h ≠ 0 :=
+        reachAfter_next_ne_zero F sch k c₀ hreach₀
+      rw [hh] at hnext_ne
+      have hmem_sch : some (l₀, ω₀) ∈ (sch.next c₀.de).support :=
+        (PMF.mem_support_iff _ _).mpr hnext_ne
+      have hde_state : c₀.de.stateAt (Nat.find hde_term) = some (lastStateOf c₀.de) := by
+        have := AlterSeq.stateAt_find_eq_endState c₀.de hde_term
+        rw [this]
+        congr 1
+        unfold lastStateOf; rw [dif_pos hde_term]
+      have hstepF : (sys.distF F).step (lastStateOf c₀.de) l₀ ω₀ :=
+        sch.valid c₀.de (Nat.find hde_term) (lastStateOf c₀.de) (Nat.find_spec hde_term)
+          hde_state l₀ ω₀ hmem_sch
+      -- Assemble: `sys.step st l μ = sys.step (last c₀.e) l₀ μ'₀`.
+      rw [hst, hμeq, hl]
+      exact tKernel_step F (lastStateOf c₀.de) l₀ ω₀ (lastStateOf c₀.e) μ'₀ hmemK hcoup₀.2.2 hstepF
+    · rw [if_neg hif]; intro hstep₀; exact absurd rfl hstep₀
+
+/-- The **reconstructed resolved scheduler** `s'` on `sys`, read off the lowering chain of `sch`. -/
+noncomputable def lowerSched (F : Fairness sys) (sch : ResolvedScheduler (sys.distF F)) :
+    ResolvedScheduler sys where
+  next := fun e => lowerNext F sch e
+  valid := fun e n st hterm hstate l μ hmem =>
+    lowerNext_valid_step F sch e n st l μ hterm hstate hmem
+
+end LoweringChain
 
 end PLTS

@@ -1,9 +1,9 @@
 import MyMathlibProject.Construction.DistFair
-import MyMathlibProject.Construction.DistFairLower
+import MyMathlibProject.Construction.DistFairHalt
+import MyMathlibProject.Construction.DistFairTrace
 import MyMathlibProject.Construction.DistMonad
 import MyMathlibProject.Construction.DistTrace
 import MyMathlibProject.Construction.EndState
-import MyMathlibProject.Construction.LowerGen
 import MyMathlibProject.Construction.TraceMap
 import MyMathlibProject.Construction.WeakClosure
 import MyMathlibProject.Expansion.Algorithm
