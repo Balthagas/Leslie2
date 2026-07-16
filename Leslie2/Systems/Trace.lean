@@ -5,8 +5,6 @@ Authors: Gaspard Reghem
 -/
 
 import Leslie2.Systems.System
-import Leslie2.Other.Seq
-import Mathlib.Data.Seq.Basic
 
 /-!
 # Trace core

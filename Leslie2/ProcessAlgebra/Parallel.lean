@@ -5,7 +5,7 @@ Authors: Gaspard Reghem
 -/
 
 import Leslie2.ProcessAlgebra.Composition
-import Leslie2.Simulation.Defs
+import Leslie2.Simulation.SimDefs
 
 /-!
 # Simulation-congruence machinery for binary parallel composition

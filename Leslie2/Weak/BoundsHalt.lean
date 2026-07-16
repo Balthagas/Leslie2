@@ -4,7 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Weak.Step
+import Leslie2.Other.Ennreal
+import Leslie2.Weak.WeakTransition
 
 /-!
 # Kraft-style halt-mass bounds
@@ -22,25 +23,6 @@ open Stream'
 namespace PLTS
 
 variable {α β State State_C State_A Label : Type} [Silent Label]
-
-/-- **`tsum` over an `Option` type splits** as the value at `none` plus the `tsum`
-over the `some`-fibres. (Local `ENNReal` specialisation; no such `tsum_option`
-exists in this Mathlib revision, and every `ENNReal` family is summable.) -/
-theorem ENNReal.tsum_option' {β : Type*} (f : Option β → ENNReal) :
-    (∑' x, f x) = f none + ∑' y, f (some y) := by
-  rw [_root_.ENNReal.tsum_eq_add_tsum_ite none]
-  congr 1
-  rw [tsum_eq_tsum_of_ne_zero_bij (i := fun y : {y : β // f (some y) ≠ 0} => some y.1)]
-  · intro a b hab; exact Subtype.ext (Option.some_injective β hab)
-  · intro x hx
-    cases hx2 : (x : Option β) with
-    | none => simp [Function.mem_support, hx2] at hx
-    | some y =>
-      refine ⟨⟨y, ?_⟩, ?_⟩
-      · simp only [Function.mem_support] at hx ⊢
-        rw [hx2] at hx; simpa using hx
-      · simp
-  · intro y; simp
 
 open Classical in
 /-- **Halting-mass Kraft bound (path-weight level).** For *any* finite set `F` of
@@ -403,20 +385,6 @@ executions of the same trace are prefix-free, so `probOf_antichain` applies. The
 prefix-freeness reduces to a label-list fact (`traceTightLabs_prefix`). -/
 
 open Classical in
-/-- `Seq.filter` of an `ofList` is the `ofList` of the corresponding `List.filter`. -/
-theorem Stream'.Seq.ofList_filter {α : Type} (p : α → Prop) (l : List α) :
-    (Seq.ofList l).filter p = Seq.ofList (l.filter (fun a => decide (p a))) := by
-  induction l with
-  | nil =>
-    rw [Stream'.Seq.ofList_nil, Stream'.Seq.filter_nil, List.filter_nil, Stream'.Seq.ofList_nil]
-  | cons a t ih =>
-    rw [Stream'.Seq.ofList_cons]
-    by_cases h : p a
-    · rw [Stream'.Seq.filter_cons_pos a _ h, ih, List.filter_cons_of_pos (by simpa using h),
-        Stream'.Seq.ofList_cons]
-    · rw [Stream'.Seq.filter_cons_neg a _ h, ih, List.filter_cons_of_neg (by simpa using h)]
-
-open Classical in
 /-- **Tight label lists of a fixed trace are prefix-free.** If `a` and `b` are both
 tight label lists for the same external trace `τ` and `a` is a prefix of `b`, then
 `a = b`: the extra tail `c` has empty external sublist (all internal), so if nonempty
@@ -497,23 +465,6 @@ theorem System.traceProb_le_one {S L : Type} [Silent L] (ls : System S L)
     show pe.probOf E.1 (hterm E.1 E.2) = g E.1
     simp only [hg, dif_pos (hterm E.1 E.2)]
   rw [← e1, ← e2]; exact key
-
-/-! ### Generic `Seq` / trace helpers (shared upstream)
-
-Small generic lemmas used downstream (by `TraceMap` / `SimulationTrace`). -/
-
-/-- `toList` is invariant under equality of the underlying `Seq` (the termination
-proofs are irrelevant). -/
-theorem Stream'.Seq.toList_congr_pub {γ : Type} {s t : Seq γ} (heq : s = t)
-    (hs : s.Terminates) (ht : t.Terminates) : s.toList hs = t.toList ht := by subst heq; rfl
-
-/-- Public version of `System.map_ofList`: `Seq.map f (ofList L) = ofList (L.map f)`. -/
-theorem Seq.map_ofList_pub {α β : Type} (f : α → β) (L : List α) :
-    (Seq.ofList L).map f = Seq.ofList (L.map f) := by
-  induction L with
-  | nil => rw [Stream'.Seq.ofList_nil, Stream'.Seq.map_nil, List.map_nil, Stream'.Seq.ofList_nil]
-  | cons a L ih =>
-    rw [Stream'.Seq.ofList_cons, Stream'.Seq.map_cons, List.map_cons, Stream'.Seq.ofList_cons, ih]
 
 /-! ### Tight-prefix lower bound `haltMass_trace_le_traceProb`
 

@@ -372,8 +372,6 @@ posterior normaliser cancels the `(κ.bind id) s` weight, as in `baryTrans_bind_
   transfers the rank clause of the refined simulation.
 -/
 
-open scoped Classical
-
 /-- The **posterior-mixed kernel**. Given a distribution `κ` over beliefs and a total per-belief
 kernel `K`, the combined kernel out of state `s` samples `ν` from the posterior given `s`
 (`∝ κ ν · ν s`, with normaliser `(κ.bind id) s`) and then draws from `K ν s`. Junk off the support
@@ -446,6 +444,7 @@ theorem kernelMix_bind_id (κ : PMF (PMF State)) (K : PMF State → State → PM
   refine tsum_congr fun s => ?_
   rw [mul_assoc]
 
+omit [Silent Label] in
 /-- **Convexity of `hyperStep`.** A `κ`-mixture of hypersteps out of the beliefs `ν` (each to `g ν`)
 is a single hyperstep out of the barycenter `κ.bind id` to the mixed target `κ.bind g`. Witnessed by
 the posterior-mixed kernel of the per-`ν` extracted kernels. -/
@@ -544,7 +543,7 @@ theorem dist_fairEnabled_iff_commonFairLabel (F : Fairness sys) (ν : PMF State)
     have hμf_fair : ∀ s ∈ ν.support, F.fair s l (μf s) := by
       intro s hs; rw [hμf]; simp only [dif_pos hs]; exact (hl s hs).choose_spec
     have hM : (((ν.bind μf).map PMF.pure).bind id) = ν.bind μf := by
-      rw [PMF.bind_map]; simp [Function.comp_def, PMF.bind_pure]
+      rw [PMF.bind_map]; simp [PMF.bind_pure]
     refine ⟨l, (ν.bind μf).map PMF.pure, ⟨?_, ?_⟩, fun s => PMF.pure (μf s), ?_, ?_⟩
     · rw [hM]
       exact ⟨fun s => PMF.pure (μf s), fun s hs μ hμ => by
@@ -689,7 +688,7 @@ theorem refinedClosure_step {sys_C : System State_C Label} (F_C : Fairness sys_C
     exact fun h => hnf ((refinedTrans_fair_iff F ω l (κ.bind id) hResA_ω).mpr h)
   have hex : ∃ ν ∈ κ.support, ¬ F.dist.fair ν l (g ν) := by
     by_contra hc
-    push_neg at hc
+    push Not at hc
     exact hnf' (distFair_bind F κ l g hc)
   obtain ⟨ν, hν, hnfν⟩ := hex
   exact hg_rank ν hν hnfν

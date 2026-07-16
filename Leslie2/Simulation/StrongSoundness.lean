@@ -4,7 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Simulation.Defs
+import Leslie2.Other.Ennreal
+import Leslie2.Simulation.SimDefs
 import Leslie2.Simulation.TraceMap
 
 /-!
@@ -343,7 +344,7 @@ private theorem AlterSeq.map_endState (f : State_C → State_A) (e : AlterSeq St
       = (e.trans.toList h).map (fun lq => (lq.1, f lq.2)) := by
     change (e.trans.map (fun lq => (lq.1, f lq.2))).toList _ = _
     apply Stream'.Seq.ofList_injective
-    rw [Stream'.Seq.ofList_toList _ _, ← Seq.map_ofList_pub, Stream'.Seq.ofList_toList _ h]
+    rw [Stream'.Seq.ofList_toList _ _, ← Stream'.Seq.map_ofList_pub, Stream'.Seq.ofList_toList _ h]
   rw [h_toList, List.getLast?_map]
   cases (e.trans.toList h).getLast? with
   | none => rfl
@@ -978,5 +979,14 @@ theorem simProd_achievableTraceDists_superset
   refine ⟨simJointExec pe_C sim, rfl, fun τ => ?_⟩
   rw [simProd_traceProb_eq pe_C sim h_init_C τ]
   exact h_trace_C τ
+
+/-- **Strong simulation preserves achievable trace distributions** (soundness). -/
+theorem StrongProbabilisticSimulation.achievableTraceDists_subset
+    {sys_C : System State_C Label} {sys_A : System State_A Label}
+    {R : State_C → State_A → Prop}
+    (sim : StrongProbabilisticSimulation sys_C sys_A R) :
+    achievableTraceDists sys_C ⊆ achievableTraceDists sys_A :=
+  (simProd_achievableTraceDists_superset sim).trans
+    (achievableTraceDists_map Prod.snd rfl (fun _ _ _ h => h.2.1))
 
 end PLTS

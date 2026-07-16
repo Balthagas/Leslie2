@@ -4,11 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Weak.Step
-import Leslie2.DistMonad.DistMonad
 import Leslie2.Simulation.TraceMap
-import Leslie2.Weak.Bounds
-import Leslie2.Systems.EndState
+import Leslie2.Weak.WeakTransition
 
 /-!
 # Constructions on PLTSs

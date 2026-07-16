@@ -17,8 +17,8 @@ states are beliefs and hence a convex space, we can **re-choose** `μ_A` for its
 many when `sys_C` is finitely-branching), and replace each group by its coupling-average
 `E[ν ∣ s'_C]`.
 
-This file prototypes that re-choice and isolates *exactly* what it demands. The barycenter transition
-`baryTrans ω μ_C`
+This file prototypes that re-choice and isolates *exactly* what it demands. The barycenter
+transition `baryTrans ω μ_C`
 * has **finite support** `≤ |μ_C.support|` (`baryTrans_support_finite`), and
 * has the **same flattened target** as `μ_A` (`baryTrans_bind_id`), so it preserves `hyperStep` and
   the `F.dist`-fairness *status* of the transition.
@@ -30,13 +30,12 @@ things the construction rests on**:
   restriction).
 
 These are conditions on the simulation relation `R` (and how it reflects fairness), *not* free from
-`sys_C.ImageFinite`; the point of the prototype is to make them explicit. The downstream goal (a full
-`FairStrong…` normalisation, giving `SchedFinBranch` for the resulting `abstractMarginal` scheduler)
-builds on this lemma.
+`sys_C.ImageFinite`; the point of the prototype is to make them explicit. The downstream goal (a
+full `FairStrong…` normalisation, giving `SchedFinBranch` for the resulting `abstractMarginal`
+scheduler) builds on this lemma.
 -/
 
 open Stream'
-open scoped Classical
 
 namespace PLTS
 
@@ -82,10 +81,10 @@ theorem baryTrans_support_finite (ω : PMF (State_C × PMF State)) (μ_C : PMF S
   rw [baryTrans, PMF.support_map]
   exact hfin.image _
 
-/-- **Flattened target preserved.** `(baryTrans ω μ_C).bind id = (ω.map Prod.snd).bind id` when `ω`'s
-first marginal is `μ_C`: in the bind, the `μ_C s'_C` weight cancels the conditional normaliser, so
-`baryTrans.bind id = ω.bind Prod.snd = (ω.map Prod.snd).bind id`. This is why the re-choice preserves
-`hyperStep` and the `F.dist`-fairness status. -/
+/-- **Flattened target preserved.** `(baryTrans ω μ_C).bind id = (ω.map Prod.snd).bind id` when
+`ω`'s first marginal is `μ_C`: in the bind, the `μ_C s'_C` weight cancels the conditional
+normaliser, so `baryTrans.bind id = ω.bind Prod.snd = (ω.map Prod.snd).bind id`. This is why the
+re-choice preserves `hyperStep` and the `F.dist`-fairness status. -/
 theorem baryTrans_bind_id (ω : PMF (State_C × PMF State)) (μ_C : PMF State_C)
     (hmar : ω.map Prod.fst = μ_C) :
     (baryTrans ω μ_C).bind id = (ω.map Prod.snd).bind id := by
@@ -114,8 +113,8 @@ theorem baryTrans_bind_id (ω : PMF (State_C × PMF State)) (μ_C : PMF State_C)
 `μ_C` by `R` (i.e. `ω` witnesses `PMFRel R μ_C μ_A` and `hstepA` holds), then its finite-support
 barycenter `baryTrans ω μ_C` is *again* a valid `R`-coupled `𝒟f`-transition — **provided**:
 
-* **(1)** `hR` — `R` is closed under the barycenter (each `E[ν ∣ s'_C]` still simulates `s'_C`); this
-  is what makes the coupling `PMFRel R μ_C (baryTrans ω μ_C)` legal;
+* **(1)** `hR` — `R` is closed under the barycenter (each `E[ν ∣ s'_C]` still simulates `s'_C`);
+  this is what makes the coupling `PMFRel R μ_C (baryTrans ω μ_C)` legal;
 * **(2)** `hRes` — the barycenters are `Resolvable`; this is what makes `baryTrans ω μ_C` a legal
   `𝒟f`-step (the clustering restriction on successors).
 

@@ -5,6 +5,7 @@ Authors: Gaspard Reghem
 -/
 
 import Leslie2.WeakClosure.Scheduler
+import Leslie2.Weak.Bounds
 
 /-!
 # Trace-distribution preservation of the weak closure (the hard direction)

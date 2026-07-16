@@ -244,4 +244,73 @@ def fairAchievableTraceDists {sys : System State Label} (F : Fairness sys) :
   {D | ∃ pe : ResolvedProbabilisticExecution sys,
     pe.initState = PMF.pure sys.init ∧ pe.IsFair F ∧ ∀ τ, pe.traceProbR τ = D τ}
 
+/-! ### Image-finiteness and König's lemma
+
+Two general facts placed here so they are available downstream (in particular the fair
+de-resolution in `Leslie2Extra/Fairness/Model/ResolvedScheduler.lean`). `System.ImageFinite` is the
+finite-branching hypothesis; `exists_infinite_chain` is König's lemma for finitely-branching trees.
+-/
+
+/-- **Image-finiteness**: each state has finitely many outgoing transitions, each with finite
+support. This makes the reachable-state computation tree finitely-branching, so a sure-fair
+scheduler has bounded unfair continuations (König) — closing the infinite-run/stitching front. -/
+def System.ImageFinite (sys : System State Label) : Prop :=
+  (∀ s, {p : Label × PMF State | sys.step s p.1 p.2}.Finite) ∧
+    (∀ s l μ, sys.step s l μ → μ.support.Finite)
+
+/-- **König's lemma (general).** If every node `a` at level `n` has finitely many children
+`{b | succ n a b}`, and there are root-chains of *every* finite length, then there is an infinite
+root-chain. Proof: the "extendable to every depth" predicate `Good` holds at the root and, by
+pigeonhole over the finite children, propagates to some child; `Nat.rec` assembles the path. -/
+theorem exists_infinite_chain {α : Type*} (succ : ℕ → α → α → Prop) (root : α)
+    (hfin : ∀ n a, {b | succ n a b}.Finite)
+    (hchain : ∀ n : ℕ, ∃ f : ℕ → α, f 0 = root ∧ ∀ i, i < n → succ i (f i) (f (i + 1))) :
+    ∃ f : ℕ → α, f 0 = root ∧ ∀ i, succ i (f i) (f (i + 1)) := by
+  classical
+  let Good : ℕ → α → Prop := fun n a =>
+    ∀ m, ∃ f : ℕ → α, f 0 = root ∧ (∀ i, i < m → succ i (f i) (f (i + 1))) ∧ (n ≤ m → f n = a)
+  have hGiff : ∀ n a, Good n a ↔
+      (∀ m, ∃ f : ℕ → α, f 0 = root ∧ (∀ i, i < m → succ i (f i) (f (i + 1))) ∧
+        (n ≤ m → f n = a)) := fun n a => Iff.rfl
+  have hGood0 : Good 0 root := fun m => by
+    obtain ⟨f, hf0, hfv⟩ := hchain m
+    exact ⟨f, hf0, hfv, fun _ => hf0⟩
+  have hkey : ∀ n a, Good n a → ∃ b, succ n a b ∧ Good (n + 1) b := by
+    intro n a ha
+    by_contra hcon
+    simp only [not_exists, not_and] at hcon
+    have hbad : ∀ b, succ n a b → ∃ m, ∀ f : ℕ → α,
+        ¬(f 0 = root ∧ (∀ i, i < m → succ i (f i) (f (i + 1))) ∧
+          (n + 1 ≤ m → f (n + 1) = b)) := by
+      intro b hb
+      have hnb := hcon b hb
+      rw [hGiff (n + 1) b, not_forall] at hnb
+      obtain ⟨m, hm⟩ := hnb
+      rw [not_exists] at hm
+      exact ⟨m, hm⟩
+    have hCfin : {b | succ n a b}.Finite := hfin n a
+    let db : α → ℕ := fun b => if hb : succ n a b then (hbad b hb).choose else 0
+    let Cf : Finset α := hCfin.toFinset
+    obtain ⟨f, hf0, hfv, hfn⟩ := ha (max (n + 1) (Cf.sup db))
+    have hn1M : n + 1 ≤ max (n + 1) (Cf.sup db) := le_max_left _ _
+    have hfa : f n = a := hfn (by omega)
+    have hstepM : succ n (f n) (f (n + 1)) := hfv n (by omega)
+    rw [hfa] at hstepM
+    have hbmem : f (n + 1) ∈ Cf := by rw [Set.Finite.mem_toFinset]; exact hstepM
+    have hdbval : db (f (n + 1)) = (hbad (f (n + 1)) hstepM).choose := dif_pos hstepM
+    have hdb_le : db (f (n + 1)) ≤ max (n + 1) (Cf.sup db) :=
+      le_trans (Finset.le_sup hbmem) (le_max_right _ _)
+    have hspec := (hbad (f (n + 1)) hstepM).choose_spec f
+    apply hspec
+    refine ⟨hf0, ?_, fun _ => rfl⟩
+    intro i hi
+    apply hfv i
+    have hmM : (hbad (f (n + 1)) hstepM).choose ≤ max (n + 1) (Cf.sup db) := by
+      rw [← hdbval]; exact hdb_le
+    omega
+  let g : (n : ℕ) → {a : α // Good n a} := fun n => Nat.rec
+    ⟨root, hGood0⟩
+    (fun n gn => ⟨(hkey n gn.1 gn.2).choose, (hkey n gn.1 gn.2).choose_spec.2⟩) n
+  exact ⟨fun n => (g n).1, rfl, fun i => (hkey i (g i).1 (g i).2).choose_spec.1⟩
+
 end PLTS

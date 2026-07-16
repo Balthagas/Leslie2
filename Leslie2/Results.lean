@@ -4,12 +4,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Simulation.Soundness
+import Leslie2.Simulation.StrongSoundness
 import Leslie2.Simulation.Transitivity
+import Leslie2.Simulation.Equivalences
 import Leslie2.DistMonad.DistTrace
+import Leslie2.WeakClosure.TraceProb
 import Leslie2.ProcessAlgebra.Parallel
 import Leslie2.ProcessAlgebra.Interleave
 import Leslie2.ProcessAlgebra.Abstract
+
 
 /-!
 # The five main results

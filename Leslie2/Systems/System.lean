@@ -4,11 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Mathlib.Probability.ProbabilityMassFunction.Monad
-import Mathlib.Probability.ProbabilityMassFunction.Constructions
-import Mathlib.Data.Seq.Defs
-import Mathlib.Data.Seq.Basic
 import Leslie2.Other.Seq
+import Leslie2.Other.Pmf
 
 /-!
 # Probabilistic Labelled Transition System (PLTS)
@@ -368,74 +365,46 @@ theorem probOf_congr (pe : ProbabilisticExecution sys)
 
 end ProbabilisticExecution
 
-/-! ### Image-finiteness and König's lemma
+/-!
+# Execution-structure helpers
 
-Two general facts placed here so they are available downstream (in particular the fair
-de-resolution in `Leslie2Extra/Fairness/Model/ResolvedScheduler.lean`). `System.ImageFinite` is the
-finite-branching hypothesis; `exists_infinite_chain` is König's lemma for finitely-branching trees.
+Two generic `AlterSeq.endState` lemmas used downstream (by `TraceMap` /
+`SimulationTrace`): `endState` is invariant under equality of the underlying
+`AlterSeq`, and `endState` equals the `.2` of the last transition (or `init` when
+there are none).
 -/
 
-/-- **Image-finiteness**: each state has finitely many outgoing transitions, each with finite
-support. This makes the reachable-state computation tree finitely-branching, so a sure-fair
-scheduler has bounded unfair continuations (König) — closing the infinite-run/stitching front. -/
-def System.ImageFinite (sys : System State Label) : Prop :=
-  (∀ s, {p : Label × PMF State | sys.step s p.1 p.2}.Finite) ∧
-    (∀ s l μ, sys.step s l μ → μ.support.Finite)
+/-- `endState` depends only on the underlying `AlterSeq` (termination proofs are
+irrelevant). -/
+theorem AlterSeq.endState_congr_pub {e₁ e₂ : AlterSeq State Label}
+    (heq : e₁ = e₂) (h₁ : e₁.trans.Terminates) (h₂ : e₂.trans.Terminates) :
+    e₁.endState h₁ = e₂.endState h₂ := by subst heq; rfl
 
-/-- **König's lemma (general).** If every node `a` at level `n` has finitely many children
-`{b | succ n a b}`, and there are root-chains of *every* finite length, then there is an infinite
-root-chain. Proof: the "extendable to every depth" predicate `Good` holds at the root and, by
-pigeonhole over the finite children, propagates to some child; `Nat.rec` assembles the path. -/
-theorem exists_infinite_chain {α : Type*} (succ : ℕ → α → α → Prop) (root : α)
-    (hfin : ∀ n a, {b | succ n a b}.Finite)
-    (hchain : ∀ n : ℕ, ∃ f : ℕ → α, f 0 = root ∧ ∀ i, i < n → succ i (f i) (f (i + 1))) :
-    ∃ f : ℕ → α, f 0 = root ∧ ∀ i, succ i (f i) (f (i + 1)) := by
+/-- `endState e` is the `.2` of the last transition of `e` (or `e.init` if there
+are none), read off `e.trans.toList`. -/
+theorem AlterSeq.endState_eq_getLast? (e : AlterSeq State Label) (h : e.trans.Terminates) :
+    e.endState h = ((e.trans.toList h).getLast?).elim e.init Prod.snd := by
   classical
-  let Good : ℕ → α → Prop := fun n a =>
-    ∀ m, ∃ f : ℕ → α, f 0 = root ∧ (∀ i, i < m → succ i (f i) (f (i + 1))) ∧ (n ≤ m → f n = a)
-  have hGiff : ∀ n a, Good n a ↔
-      (∀ m, ∃ f : ℕ → α, f 0 = root ∧ (∀ i, i < m → succ i (f i) (f (i + 1))) ∧
-        (n ≤ m → f n = a)) := fun n a => Iff.rfl
-  have hGood0 : Good 0 root := fun m => by
-    obtain ⟨f, hf0, hfv⟩ := hchain m
-    exact ⟨f, hf0, hfv, fun _ => hf0⟩
-  have hkey : ∀ n a, Good n a → ∃ b, succ n a b ∧ Good (n + 1) b := by
-    intro n a ha
-    by_contra hcon
-    simp only [not_exists, not_and] at hcon
-    have hbad : ∀ b, succ n a b → ∃ m, ∀ f : ℕ → α,
-        ¬(f 0 = root ∧ (∀ i, i < m → succ i (f i) (f (i + 1))) ∧
-          (n + 1 ≤ m → f (n + 1) = b)) := by
-      intro b hb
-      have hnb := hcon b hb
-      rw [hGiff (n + 1) b, not_forall] at hnb
-      obtain ⟨m, hm⟩ := hnb
-      rw [not_exists] at hm
-      exact ⟨m, hm⟩
-    have hCfin : {b | succ n a b}.Finite := hfin n a
-    let db : α → ℕ := fun b => if hb : succ n a b then (hbad b hb).choose else 0
-    let Cf : Finset α := hCfin.toFinset
-    obtain ⟨f, hf0, hfv, hfn⟩ := ha (max (n + 1) (Cf.sup db))
-    have hn1M : n + 1 ≤ max (n + 1) (Cf.sup db) := le_max_left _ _
-    have hfa : f n = a := hfn (by omega)
-    have hstepM : succ n (f n) (f (n + 1)) := hfv n (by omega)
-    rw [hfa] at hstepM
-    have hbmem : f (n + 1) ∈ Cf := by rw [Set.Finite.mem_toFinset]; exact hstepM
-    have hdbval : db (f (n + 1)) = (hbad (f (n + 1)) hstepM).choose := dif_pos hstepM
-    have hdb_le : db (f (n + 1)) ≤ max (n + 1) (Cf.sup db) :=
-      le_trans (Finset.le_sup hbmem) (le_max_right _ _)
-    have hspec := (hbad (f (n + 1)) hstepM).choose_spec f
-    apply hspec
-    refine ⟨hf0, ?_, fun _ => rfl⟩
-    intro i hi
-    apply hfv i
-    have hmM : (hbad (f (n + 1)) hstepM).choose ≤ max (n + 1) (Cf.sup db) := by
-      rw [← hdbval]; exact hdb_le
-    omega
-  let g : (n : ℕ) → {a : α // Good n a} := fun n => Nat.rec
-    ⟨root, hGood0⟩
-    (fun n gn => ⟨(hkey n gn.1 gn.2).choose, (hkey n gn.1 gn.2).choose_spec.2⟩) n
-  exact ⟨fun n => (g n).1, rfl, fun i => (hkey i (g i).1 (g i).2).choose_spec.1⟩
+  rcases Nat.eq_zero_or_pos (e.trans.length h) with hl | hl
+  · have htoNil : e.trans.toList h = [] := by
+      apply List.eq_nil_of_length_eq_zero; rw [Stream'.Seq.length_toList]; exact hl
+    have hnil : e.trans = Seq.nil := by
+      have := Stream'.Seq.ofList_toList e.trans h
+      rw [htoNil] at this; rw [← this]; rfl
+    rw [AlterSeq.endState_of_trans_nil e hnil h, htoNil]; rfl
+  · have hgl : (e.trans.toList h).getLast? = e.trans.get? (e.trans.length h - 1) :=
+      Stream'.Seq.getLast?_toList e.trans h
+    have hfind : Nat.find h = e.trans.length h := rfl
+    have hes := AlterSeq.stateAt_find_eq_endState e h
+    rw [hfind] at hes
+    obtain ⟨m, hm⟩ : ∃ m, e.trans.length h = m + 1 := Nat.exists_eq_succ_of_ne_zero (by omega)
+    rw [hm] at hes
+    change (e.trans.get? m).map Prod.snd = some (e.endState h) at hes
+    rw [hgl, hm, Nat.add_sub_cancel]
+    cases hg : e.trans.get? m with
+    | none => rw [hg] at hes; simp at hes
+    | some p =>
+      rw [hg] at hes; simp only [Option.map_some, Option.some.injEq] at hes; simp [hes]
 
 /-! ### Kraft-bound infrastructure: front-peel of `probOf`
 

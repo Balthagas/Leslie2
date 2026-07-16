@@ -4,8 +4,6 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.ProcessAlgebra.Composition
-import Leslie2.Simulation.Defs
 import Leslie2.Weak.WeakChar
 
 /-!
@@ -27,9 +25,33 @@ scheduler is reused verbatim — rather than any scheduler reconstruction.
 
 namespace PLTS
 
+variable {State Label : Type} [Silent Label]
+
 section Abstract
 
-variable {State Label : Type} [Silent Label]
+/-! ### Abstraction: hiding a set of labels as `τ` -/
+
+namespace System
+
+/-- **Abstraction.** `sys.abstract L` relabels every `L`-labelled transition of `sys` to `τ`,
+leaving labels outside `L` (and original `τ`-transitions) untouched. On the silent label the
+outgoing transitions are the original `τ`-steps *together with* every `L`-labelled step; on a
+label `l' ∉ L` they are exactly the original `l'`-steps. -/
+def abstract (sys : System State Label) (L : Set Label) : System State Label where
+  init := sys.init
+  step s l' μ :=
+    (l' = Silent.τ ∧ ∃ l ∈ L, sys.step s l μ) ∨ (l' ∉ L ∧ sys.step s l' μ)
+
+@[simp] theorem abstract_init (sys : System State Label) (L : Set Label) :
+    (sys.abstract L).init = sys.init := rfl
+
+theorem abstract_step (sys : System State Label) (L : Set Label)
+    (s : State) (l' : Label) (μ : PMF State) :
+    (sys.abstract L).step s l' μ ↔
+      (l' = Silent.τ ∧ ∃ l ∈ L, sys.step s l μ) ∨ (l' ∉ L ∧ sys.step s l' μ) :=
+  Iff.rfl
+
+end System
 
 /-- Every `τ`-step of `sys` is a `τ`-step of `sys.abstract L`: if `τ ∉ L` it survives untouched
 (right disjunct); if `τ ∈ L` it is a hidden `L`-step relabeled to `τ` (left disjunct). -/

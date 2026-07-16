@@ -4,8 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Weak.Step
-import Leslie2.WeakClosure.WeakClosure
+import Leslie2.Weak.WeakTransition
 
 /-!
 # Simulation definitions
@@ -66,34 +65,6 @@ structure StrongProbabilisticSimulation
   step : ∀ s_C s_A, R s_C s_A →
     ∀ l μ_C, sys_C.step s_C l μ_C →
     ∃ μ_A, sys_A.step s_A l μ_A ∧ PMFRel R μ_C μ_A
-
-/-- A *weak* probabilistic forward simulation from `sys_C` to `sys_A` along the
-state relation `R : State_C → State_A → Prop`. Both systems carry an
-internal/external label partition.
-
-* `init`: every initial concrete state is matched by some initial abstract
-  state with which it is `R`-related;
-* `step`: every concrete transition `s_C -[l]→ μ_C` from an `R`-related pair
-  `(s_C, s_A)` is matched on the abstract side by:
-  - a `weakTau` (a τ-closure from `PMF.pure s_A`) when `l` is *internal* in
-    `sys_C` — the concrete invisible step is matched by zero-or-more invisible
-    abstract steps;
-  - a `weakStep` with the same label `l` from `PMF.pure s_A` when `l` is
-    *external* in `sys_C` — the concrete visible step is matched by
-    τ-closure + one strong `l`-step + τ-closure on the abstract side;
-
-  in both cases the resulting abstract distribution `μ_A` must be related to
-  `μ_C` by `PMFRel R`. -/
-structure WeakProbabilisticSimulation
-    (sys_C : System State_C Label) (sys_A : System State_A Label)
-    (R : State_C → State_A → Prop) where
-  init : R sys_C.init sys_A.init
-  step : ∀ s_C s_A, R s_C s_A →
-    ∀ l μ_C, sys_C.step s_C l μ_C →
-    ∃ μ_A : PMF State_A,
-      (((l = Silent.τ) ∧ weakTau sys_A (PMF.pure s_A) μ_A) ∨
-       (¬ (l = Silent.τ) ∧ weakStep sys_A (PMF.pure s_A) l μ_A)) ∧
-      PMFRel R μ_C μ_A
 
 /-- A *probabilistic* forward simulation from `sys_C` to `sys_A`, parameterised
 by a relation `R : State_C → PMF State_A → Prop` linking each concrete state to

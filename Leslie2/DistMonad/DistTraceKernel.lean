@@ -5,9 +5,6 @@ Authors: Gaspard Reghem
 -/
 
 import Leslie2.DistMonad.DistMonad
-import Leslie2.Other.Pmf
-import Leslie2.Weak.Step
-import Leslie2.Simulation.TraceMap
 
 /-!
 # Inverting the distribution-monad lift: the disintegration kernel

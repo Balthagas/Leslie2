@@ -153,6 +153,7 @@ theorem piPMF_update_apply (i : ι) (μ_ : ∀ j, PMF (α j)) (ρ : PMF (α i)) 
   exact congrArg _ (Finset.prod_congr rfl
     (fun x hx => by rw [Function.update_of_ne (Finset.ne_of_mem_erase hx)]))
 
+omit [DecidableEq ι] in
 theorem mem_support_piPMF {μ : ∀ i, PMF (α i)} {f : ∀ i, α i} :
     f ∈ (piPMF μ).support ↔ ∀ i, f i ∈ (μ i).support := by
   rw [PMF.mem_support_iff, piPMF_apply, Finset.prod_ne_zero_iff]
@@ -182,7 +183,7 @@ theorem piPMF_update_pure (s : ∀ i, α i) (i : ι) (μ : PMF (α i)) :
     have h := congrFun heq i
     rw [Function.update_self] at h
     exact h.symm
-  · push_neg at hC
+  · push Not at hC
     obtain ⟨x, hx, hne⟩ := hC
     rw [Finset.prod_eq_zero hx (if_neg hne), mul_zero]
     symm
@@ -282,35 +283,5 @@ theorem interleave_step (sys : ∀ i, System (State i) Label)
 end System
 
 end Family
-
-/-! ### Abstraction: hiding a set of labels as `τ` -/
-
-section Abstraction
-
-variable {State Label : Type} [Silent Label]
-
-namespace System
-
-/-- **Abstraction.** `sys.abstract L` relabels every `L`-labelled transition of `sys` to `τ`,
-leaving labels outside `L` (and original `τ`-transitions) untouched. On the silent label the
-outgoing transitions are the original `τ`-steps *together with* every `L`-labelled step; on a
-label `l' ∉ L` they are exactly the original `l'`-steps. -/
-def abstract (sys : System State Label) (L : Set Label) : System State Label where
-  init := sys.init
-  step s l' μ :=
-    (l' = Silent.τ ∧ ∃ l ∈ L, sys.step s l μ) ∨ (l' ∉ L ∧ sys.step s l' μ)
-
-@[simp] theorem abstract_init (sys : System State Label) (L : Set Label) :
-    (sys.abstract L).init = sys.init := rfl
-
-theorem abstract_step (sys : System State Label) (L : Set Label)
-    (s : State) (l' : Label) (μ : PMF State) :
-    (sys.abstract L).step s l' μ ↔
-      (l' = Silent.τ ∧ ∃ l ∈ L, sys.step s l μ) ∨ (l' ∉ L ∧ sys.step s l' μ) :=
-  Iff.rfl
-
-end System
-
-end Abstraction
 
 end PLTS

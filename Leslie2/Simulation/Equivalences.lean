@@ -4,7 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Simulation.Defs
+import Leslie2.Simulation.SimDefs
+import Leslie2.WeakClosure.WeakClosure
 import Leslie2.Weak.WeakChar
 import Leslie2.DistMonad.DistMonad
 
@@ -30,43 +31,61 @@ namespace PLTS
 
 variable {α β State State_C State_A Label : Type} [Silent Label]
 
-/-- **Weak simulation = strong simulation into the weak closure of the abstract
-system.** A `WeakProbabilisticSimulation` of `sys` by `sys'` is the *same data*
-as a `StrongProbabilisticSimulation` of `sys` by `sys'^w` (the weak closure of
-the abstract system). The two systems agree on which labels are internal
-automatically — the silent label `τ` is canonical (from `Silent Label`).
+/-- **(A1).** A `weakTau` from a distribution `μ` is a `hyperStep` over the weak
+closure `sys^w`. -/
+theorem hyperStep_weakClosure_of_weakTau {sys : System State Label}
+    {μ ν : PMF State} {l : Label} (hl : (l = Silent.τ)) (h : weakTau sys μ ν) :
+    hyperStep sys^w μ l ν := by
+  obtain ⟨ρ, hρ, hν⟩ := weakTau_exists_pointwise h
+  refine ⟨fun s => PMF.pure (ρ s), ?_, ?_⟩
+  · intro s hs τ hτ
+    rw [PMF.mem_support_pure_iff] at hτ; subst hτ
+    exact Or.inl ⟨hl, hρ s hs⟩
+  · rw [hν]; simp only [PMF.pure_bind, id_eq]
 
-The reason this is purely definitional — with no weak-transition transfer
-argument — is that *both* notions match a **strong** concrete step
-`sys.step s_C l μ_C`: the concrete system is left unclosed. A weak simulation
-matches such a step by a `weakTau`/`weakStep` from `PMF.pure s_A`, which is
-exactly a strong step of `sys'^w`. The only bookkeeping is that
-`WeakProbabilisticSimulation` keys its `weakTau`/`weakStep` case split on
-`sys.internal` whereas `sys'^w` keys it on `sys'.internal`; these coincide
-because the internal/external classification is canonical (the silent label
-`τ`). -/
-theorem weakProbabilisticSimulation_iff_strong_weakClosure
-    (sys : System State_C Label) (sys' : System State_A Label)
-    (R : State_C → State_A → Prop) :
-    WeakProbabilisticSimulation sys sys' R ↔
-      StrongProbabilisticSimulation sys (sys'^w) R := by
-  constructor
-  · intro h
-    refine ⟨h.init, fun s_C s_A hR l μ_C hstep => ?_⟩
-    obtain ⟨μ_A, hdisj, hrel⟩ := h.step s_C s_A hR l μ_C hstep
-    refine ⟨μ_A, ?_, hrel⟩
-    change ((l = Silent.τ) ∧ weakTau sys' (PMF.pure s_A) μ_A) ∨
-         (¬ (l = Silent.τ) ∧ weakStep sys' (PMF.pure s_A) l μ_A)
-    rcases hdisj with ⟨hi, hw⟩ | ⟨hi, hw⟩
-    · exact Or.inl ⟨hi, hw⟩
-    · exact Or.inr ⟨hi, hw⟩
-  · intro h
-    refine ⟨h.init, fun s_C s_A hR l μ_C hstep => ?_⟩
-    obtain ⟨μ_A, hdisj, hrel⟩ := h.step s_C s_A hR l μ_C hstep
-    refine ⟨μ_A, ?_, hrel⟩
-    rcases hdisj with ⟨hi, hw⟩ | ⟨hi, hw⟩
-    · exact Or.inl ⟨hi, hw⟩
-    · exact Or.inr ⟨hi, hw⟩
+/-- **(A2).** A `hyperStep` over `sys^w` at an internal label collapses to a
+single `weakTau` from the distribution. -/
+theorem weakTau_of_hyperStep_weakClosure {sys : System State Label}
+    {μ ν : PMF State} {l : Label} (hl : (l = Silent.τ)) (h : hyperStep sys^w μ l ν) :
+    weakTau sys μ ν := by
+  obtain ⟨p, hp, hν⟩ := h
+  have hpt : ∀ s ∈ μ.support, weakTau sys (PMF.pure s) ((p s).bind id) := by
+    intro s hs
+    refine weakTau_bind ?_
+    intro τ hτ
+    rcases hp s hs τ hτ with ⟨_, hwt⟩ | ⟨hi, _⟩
+    · exact hwt
+    · exact absurd hl hi
+  rw [hν]
+  exact weakTau_of_pointwise _ hpt
+
+/-- **(B1).** A `weakStep` from a distribution `μ` is a `hyperStep` over the weak
+closure `sys^w`. -/
+theorem hyperStep_weakClosure_of_weakStep {sys : System State Label}
+    {μ ν : PMF State} {l : Label} (hl : ¬ (l = Silent.τ)) (h : weakStep sys μ l ν) :
+    hyperStep sys^w μ l ν := by
+  obtain ⟨ρ, hρ, hν⟩ := weakStep_exists_pointwise h
+  refine ⟨fun s => PMF.pure (ρ s), ?_, ?_⟩
+  · intro s hs τ hτ
+    rw [PMF.mem_support_pure_iff] at hτ; subst hτ
+    exact Or.inr ⟨hl, hρ s hs⟩
+  · rw [hν]; simp only [PMF.pure_bind, id_eq]
+
+/-- **(B2).** A `hyperStep` over `sys^w` at an external label collapses to a
+single `weakStep` from the distribution. -/
+theorem weakStep_of_hyperStep_weakClosure {sys : System State Label}
+    {μ ν : PMF State} {l : Label} (hl : ¬ (l = Silent.τ)) (h : hyperStep sys^w μ l ν) :
+    weakStep sys μ l ν := by
+  obtain ⟨p, hp, hν⟩ := h
+  have hpt : ∀ s ∈ μ.support, weakStep sys (PMF.pure s) l ((p s).bind id) := by
+    intro s hs
+    refine weakStep_bind ?_
+    intro τ hτ
+    rcases hp s hs τ hτ with ⟨hi, _⟩ | ⟨_, hws⟩
+    · exact absurd hi hl
+    · exact hws
+  rw [hν]
+  exact weakStep_of_pointwise _ hpt
 
 /-! ### Forward simulation = strong simulation into `𝒟(·^w)`
 

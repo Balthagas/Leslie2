@@ -4,8 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Other.Pmf
-import Leslie2.Weak.Step
+import Leslie2.DistMonad.HyperStep
 import Leslie2.Simulation.TraceMap
 
 /-!

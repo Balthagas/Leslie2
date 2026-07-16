@@ -237,6 +237,7 @@ private noncomputable def hyperStepSched {μ₁ μ₂ : PMF State} {l : Label}
 variable {μ₁ μ₂ : PMF State}
 
 open Classical in
+omit [Silent Label] in
 /-- The defining `next` of `hyperStepSched` (definitional unfolding). -/
 private theorem hyperStepSched_next_eq {l : Label} (hhs : hyperStep sys μ₁ l μ₂)
     (e : AlterSeq State Label) :
@@ -244,12 +245,14 @@ private theorem hyperStepSched_next_eq {l : Label} (hhs : hyperStep sys μ₁ l 
       = if e.trans = Seq.nil ∧ e.init ∈ μ₁.support
         then (hhs.kernel e.init).map (fun μ' => some (l, μ')) else PMF.pure none := rfl
 
+omit [Silent Label] in
 /-- `hyperStepSched` halts (`next ⊥ = 1`) off the active empty-history prefix. -/
 private theorem hyperStepSched_next_none {l : Label} (hhs : hyperStep sys μ₁ l μ₂)
     (e : AlterSeq State Label) (hc : ¬(e.trans = Seq.nil ∧ e.init ∈ μ₁.support)) :
     (hyperStepSched hhs).next e none = 1 := by
   rw [hyperStepSched_next_eq, if_neg hc, PMF.pure_apply_self]
 
+omit [Silent Label] in
 /-- The one-step kernel of `hyperStepSched` at the empty history `⟨s₁, nil⟩`
 (with `s₁ ∈ μ₁.support`) sends `(l, s'')` to `((kernel s₁).bind id) s''`. -/
 private theorem hyperStepSched_kernel_nil {l : Label} (hhs : hyperStep sys μ₁ l μ₂)
@@ -276,6 +279,7 @@ private theorem hyperStepSched_kernel_nil {l : Label} (hhs : hyperStep sys μ₁
   rw [PMF.bind_apply]
   rfl
 
+omit [Silent Label] in
 /-- The halting mass of `hyperStepSched` on the single-transition fiber
 `⟨s₁, [(l, s'')]⟩` is `((kernel s₁).bind id) s''`. -/
 private theorem hyperStepSched_fiber {l : Label} (hhs : hyperStep sys μ₁ l μ₂)
@@ -303,6 +307,7 @@ private theorem hyperStepSched_fiber {l : Label} (hhs : hyperStep sys μ₁ l μ
       ⟨s₁, Seq.nil⟩ (l, s'') = _
   rw [PMF.pure_apply_self, one_mul, hyperStepSched_kernel_nil hhs hs₁ s'']
 
+omit [Silent Label] in
 /-- A nonzero-halt-mass run of `hyperStepSched` (from `pure s₁`, `s₁ ∈ μ₁.support`)
 is the single-transition fiber `⟨s₁, [(l, s'')]⟩` for some `s''`. -/
 private theorem hyperStepSched_supp {l : Label} (hhs : hyperStep sys μ₁ l μ₂)
@@ -392,6 +397,7 @@ private theorem hyperStepSched_trace {l : Label} (hl : ¬ l = Silent.τ)
   obtain ⟨s'', hs''⟩ := hyperStepSched_supp hhs hs₁ e hne
   rw [← hs'', trace_singleton s₁ l s'', if_neg hl]
 
+omit [Silent Label] in
 /-- **`g`-integrated single step.** Integrating `ψ` over the halting end-state of
 `hyperStepSched` from `pure s₁` (for `s₁ ∈ μ₁.support`) equals integrating `ψ`
 against the hyper-step outcome `(kernel s₁).bind id`. -/

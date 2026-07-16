@@ -4,10 +4,10 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Mathlib.Data.Seq.Defs
-import Mathlib.Data.Seq.Basic
 import Mathlib.Tactic.Ring
 import Mathlib.Data.List.Basic
+import Mathlib.Data.Seq.Defs
+import Mathlib.Data.Seq.Basic
 
 /-!
 # `Stream'.Seq` helpers
@@ -546,5 +546,48 @@ theorem terminates_filter (p : α → Prop) (s : Seq α)
       · rw [Stream'.Seq.filter_cons_neg a _ h_p]
         exact ih
   exact h_t l
+
+/-- `toList` is invariant under equality of the underlying `Seq` (the termination
+proofs are irrelevant). -/
+theorem toList_congr_pub {γ : Type} {s t : Seq γ} (heq : s = t)
+    (hs : s.Terminates) (ht : t.Terminates) : s.toList hs = t.toList ht := by subst heq; rfl
+
+/-- Public version of `System.map_ofList`: `Seq.map f (ofList L) = ofList (L.map f)`. -/
+theorem map_ofList_pub {α β : Type} (f : α → β) (L : List α) :
+    (Seq.ofList L).map f = Seq.ofList (L.map f) := by
+  induction L with
+  | nil => rw [Stream'.Seq.ofList_nil, Stream'.Seq.map_nil, List.map_nil, Stream'.Seq.ofList_nil]
+  | cons a L ih =>
+    rw [Stream'.Seq.ofList_cons, Stream'.Seq.map_cons, List.map_cons, Stream'.Seq.ofList_cons, ih]
+
+/-- The length of `(ofList rest).append (cons x nil)` is `rest.length + 1`. -/
+theorem append_singleton_length' {γ : Type} (rest : List γ) (x : γ) :
+    ((Seq.ofList rest).append (Seq.cons x Seq.nil) : Seq γ).length' = rest.length + 1 := by
+  have hcons : (Seq.cons x Seq.nil : Seq γ).Terminates :=
+    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil
+  have hfin : ((Seq.ofList rest).append (Seq.cons x Seq.nil) : Seq γ).Terminates :=
+    ⟨_, Stream'.Seq.terminatedAt_append_find (Stream'.Seq.terminates_ofList rest)
+      (show (Seq.cons x Seq.nil).TerminatedAt 1 from rfl)⟩
+  rw [Stream'.Seq.length'_of_terminates hfin]
+  have h_eq := Stream'.Seq.length_toList ((Seq.ofList rest).append (Seq.cons x Seq.nil)) hfin
+  rw [Stream'.Seq.toList_append (Seq.ofList rest) (Seq.cons x Seq.nil)
+    (Stream'.Seq.terminates_ofList rest) hcons hfin,
+    Stream'.Seq.toList_ofList, List.length_append, Stream'.Seq.toList_cons,
+    Stream'.Seq.toList_nil] at h_eq
+  rw [← h_eq]; simp
+
+open Classical in
+/-- `Seq.filter` of an `ofList` is the `ofList` of the corresponding `List.filter`. -/
+theorem ofList_filter {α : Type} (p : α → Prop) (l : List α) :
+    (Seq.ofList l).filter p = Seq.ofList (l.filter (fun a => decide (p a))) := by
+  induction l with
+  | nil =>
+    rw [Stream'.Seq.ofList_nil, Stream'.Seq.filter_nil, List.filter_nil, Stream'.Seq.ofList_nil]
+  | cons a t ih =>
+    rw [Stream'.Seq.ofList_cons]
+    by_cases h : p a
+    · rw [Stream'.Seq.filter_cons_pos a _ h, ih, List.filter_cons_of_pos (by simpa using h),
+        Stream'.Seq.ofList_cons]
+    · rw [Stream'.Seq.filter_cons_neg a _ h, ih, List.filter_cons_of_neg (by simpa using h)]
 
 end Stream'.Seq

@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Simulation.Defs
+import Leslie2.Simulation.SimDefs
 
 /-!
 # Weak-transition lifting for transitivity of forward simulation

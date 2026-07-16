@@ -5,7 +5,7 @@ Authors: Gaspard Reghem
 -/
 
 import Leslie2Extra.Fairness.Model.Fairness
-import Leslie2.Weak.Step
+import Leslie2.Weak.WeakTransition
 import Leslie2.Simulation.TraceMap
 
 /-!

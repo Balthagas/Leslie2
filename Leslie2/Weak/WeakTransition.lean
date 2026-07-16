@@ -4,7 +4,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Weak.Scheduler
+import Leslie2.DistMonad.HyperStep
+import Leslie2.Weak.WeakScheduler
 
 /-!
 # Weak transitions
@@ -20,10 +21,6 @@ joint distribution with the appropriate marginals whose support lies in `R`.
 open Stream'
 
 namespace PLTS
-
--- The canonical-`τ` instance `[Silent Label]` is threaded as a section variable
--- but is unused by the pure helper lemmas; silence the over-inclusion linter.
-set_option linter.unusedSectionVars false
 
 variable {α β State State_C State_A Label : Type} [Silent Label]
 
@@ -217,65 +214,6 @@ theorem weakTau_refl (ls : System State Label) (μ : PMF State) :
         unfold WeakScheduler.haltMass Scheduler.haltMass
         rw [← hpe, hprob_nonnil e.1 e.2 htrans, zero_mul]
       rw [this, zero_mul]
-
-/-- The lifting of `sys.step` from `State → Label → PMF State → Prop` to a
-relation on initial and final distributions, parameterised by a label, *closed
-under convex combinations* of valid system steps.
-
-`hyperStep sys μ_pre l μ_post` holds iff there is an assignment
-`p : State → PMF (PMF State)` choosing, for every starting state, a
-randomised mixture of successor-distributions, such that
-
-* every `s ∈ μ_pre.support` and every `μ ∈ (p s).support` takes a valid step
-  `sys.step s l μ`;
-* `μ_post` is the resulting bind:
-  `μ_post = μ_pre.bind (fun s => (p s).bind id)`.
-
-Allowing `p s` to be a `PMF (PMF State)` (rather than a single `PMF State`)
-makes the relation closed under convex combinations of hyper-steps. In the
-singleton case `μ_pre = PMF.pure s` it reduces to: `μ_post` is in the convex
-hull of `{μ | sys.step s l μ}`. Every state in `μ_pre.support` must
-contribute a real step — there is no stutter freedom for internal labels. -/
-def hyperStep (sys : System State Label)
-    (μ_pre : PMF State) (l : Label) (μ_post : PMF State) : Prop :=
-  ∃ p : State → PMF (PMF State),
-    (∀ s ∈ μ_pre.support, ∀ μ ∈ (p s).support, sys.step s l μ) ∧
-    μ_post = μ_pre.bind (fun s => (p s).bind id)
-
-namespace hyperStep
-
-variable {sys : System State Label} {μ_pre μ_post : PMF State} {l : Label}
-
-/-- Classical extraction of the per-state successor kernel from a `hyperStep`
-proof. -/
-noncomputable def kernel (h : hyperStep sys μ_pre l μ_post) :
-    State → PMF (PMF State) := h.choose
-
-/-- Every distribution in the kernel's support is a valid system step. -/
-theorem kernel_step (h : hyperStep sys μ_pre l μ_post) :
-    ∀ s ∈ μ_pre.support, ∀ μ ∈ (h.kernel s).support, sys.step s l μ :=
-  h.choose_spec.1
-
-/-- The post-distribution is the bind of `μ_pre` with the flattened kernel. -/
-theorem post_eq_bind (h : hyperStep sys μ_pre l μ_post) :
-    μ_post = μ_pre.bind (fun s => (h.kernel s).bind id) :=
-  h.choose_spec.2
-
-end hyperStep
-
-/-- A strong system step lifts to a hyper-step on a singleton initial
-distribution: if `sys.step s l μ`, then `hyperStep sys (PMF.pure s) l μ`. -/
-theorem hyperStep_pure_of_step
-    {sys : System State Label} {s : State} {l : Label} {μ : PMF State}
-    (h : sys.step s l μ) :
-    hyperStep sys (PMF.pure s) l μ := by
-  refine ⟨fun _ => PMF.pure μ, ?_, ?_⟩
-  · intro s' h_s' μ' h_μ'
-    rw [PMF.mem_support_pure_iff] at h_s' h_μ'
-    subst h_s'
-    subst h_μ'
-    exact h
-  · simp [PMF.pure_bind]
 
 /-- The weak external step `μ_init ⇒^l μ_final`, composing the three layers
 `τ-closure → hyper-step with label l → τ-closure`. Concretely there exist
@@ -557,11 +495,13 @@ theorem weakTau_of_step {ls : System State Label}
 
 /-! ### Helpers for `weakTau` transitivity -/
 
+omit [Silent Label] in
 /-- `AlterSeq` equality from equal components. -/
 private theorem AlterSeq.ext_of {e₁ e₂ : AlterSeq State Label}
     (hi : e₁.init = e₂.init) (ht : e₁.trans = e₂.trans) : e₁ = e₂ := by
   cases e₁; cases e₂; simp_all
 
+omit [Silent Label] in
 /-- `endState` only depends on the underlying `AlterSeq` (termination proofs are
 irrelevant). -/
 private theorem AlterSeq.endState_congr {e₁ e₂ : AlterSeq State Label}
@@ -598,11 +538,13 @@ noncomputable def WeakScheduler.concat
     AlterSeq State Label :=
   ⟨f₁.1.init, Seq.ofList (f₁.1.trans.toList f₁.2 ++ f₂.1.trans.toList f₂.2)⟩
 
+omit [Silent Label] in
 theorem WeakScheduler.concat_terminates
     (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
     (WeakScheduler.concat f₁ f₂).trans.Terminates :=
   Stream'.Seq.terminates_ofList _
 
+omit [Silent Label] in
 /-- The length of the concatenation is the sum of the two lengths. -/
 private theorem WeakScheduler.length_concat
     (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
@@ -612,6 +554,7 @@ private theorem WeakScheduler.length_concat
   rw [length_ofList, List.length_append, Stream'.Seq.length_toList,
     Stream'.Seq.length_toList]
 
+omit [Silent Label] in
 /-- The `|f₁|`-prefix of `concat f₁ f₂` recovers `f₁`'s transition sequence. -/
 private theorem WeakScheduler.take_concat
     (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
@@ -623,6 +566,7 @@ private theorem WeakScheduler.take_concat
     (Stream'.Seq.length_toList _ _).symm]
   rw [List.take_left, Stream'.Seq.ofList_toList]
 
+omit [Silent Label] in
 /-- The `|f₁|`-suffix of `concat f₁ f₂` recovers `f₂`'s transition sequence. -/
 private theorem WeakScheduler.drop_concat
     (f₁ f₂ : {e : AlterSeq State Label // e.trans.Terminates}) :
@@ -658,6 +602,7 @@ private theorem WeakScheduler.stateAfter_concat
   rw [hstateAt, hinit]
   exact WeakScheduler.stateAfter_length_eq_endState f₁.1 f₁.2
 
+omit [Silent Label] in
 /-- `stateAfter` only depends on the underlying `AlterSeq`. -/
 private theorem WeakScheduler.stateAfter_congr {e₁ e₂ : AlterSeq State Label}
     (heq : e₁ = e₂) (j : ℕ) : WeakScheduler.stateAfter e₁ j = WeakScheduler.stateAfter e₂ j := by
@@ -713,6 +658,7 @@ private theorem WeakScheduler.concat_split (e : {e : AlterSeq State Label // e.t
   simp only
   rw [Stream'.Seq.ofList_toList]
 
+omit [Silent Label] in
 /-- The prefix `pre e j` has length exactly `j` (for `j ≤ length`). -/
 private theorem WeakScheduler.length_pre (e : {e : AlterSeq State Label // e.trans.Terminates})
     (j : ℕ) (hj : j ≤ e.1.trans.length e.2) :

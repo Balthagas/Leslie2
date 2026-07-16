@@ -4,8 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Gaspard Reghem
 -/
 
-import Leslie2.Weak.Step
-import Leslie2.WeakClosure.WeakClosure
+import Leslie2.Weak.BoundsHalt
 
 /-!
 # Weak-transition characterizations
@@ -314,6 +313,7 @@ theorem weakStep_exists_pointwise {sys : System State Label}
   · rw [hν, hm', hm, hρ]
     simp only [hM, PMF.bind_bind]
 
+omit [Silent Label] in
 /-- **Posterior-mixing for `hyperStep`.** A `q`-indexed family of hyper-steps
 `hyperStep sys (m x) l (n x)` combines into a single hyper-step from the mixed
 source `q.bind m` to the mixed target `q.bind n`. The mixing kernel routes each
@@ -821,62 +821,6 @@ theorem weakStep_bind {sys : System State Label} {s : State} {l : Label}
     exact (hspec τ hτ).1
   · exact hyperStep_mix q a b (fun τ hτ => (hspec τ hτ).2.1)
   · exact weakTau_mix q b id (fun τ hτ => (hspec τ hτ).2.2)
-
-/-- **(A1).** A `weakTau` from a distribution `μ` is a `hyperStep` over the weak
-closure `sys^w`. -/
-theorem hyperStep_weakClosure_of_weakTau {sys : System State Label}
-    {μ ν : PMF State} {l : Label} (hl : (l = Silent.τ)) (h : weakTau sys μ ν) :
-    hyperStep sys^w μ l ν := by
-  obtain ⟨ρ, hρ, hν⟩ := weakTau_exists_pointwise h
-  refine ⟨fun s => PMF.pure (ρ s), ?_, ?_⟩
-  · intro s hs τ hτ
-    rw [PMF.mem_support_pure_iff] at hτ; subst hτ
-    exact Or.inl ⟨hl, hρ s hs⟩
-  · rw [hν]; simp only [PMF.pure_bind, id_eq]
-
-/-- **(A2).** A `hyperStep` over `sys^w` at an internal label collapses to a
-single `weakTau` from the distribution. -/
-theorem weakTau_of_hyperStep_weakClosure {sys : System State Label}
-    {μ ν : PMF State} {l : Label} (hl : (l = Silent.τ)) (h : hyperStep sys^w μ l ν) :
-    weakTau sys μ ν := by
-  obtain ⟨p, hp, hν⟩ := h
-  have hpt : ∀ s ∈ μ.support, weakTau sys (PMF.pure s) ((p s).bind id) := by
-    intro s hs
-    refine weakTau_bind ?_
-    intro τ hτ
-    rcases hp s hs τ hτ with ⟨_, hwt⟩ | ⟨hi, _⟩
-    · exact hwt
-    · exact absurd hl hi
-  rw [hν]
-  exact weakTau_of_pointwise _ hpt
-
-/-- **(B1).** A `weakStep` from a distribution `μ` is a `hyperStep` over the weak
-closure `sys^w`. -/
-theorem hyperStep_weakClosure_of_weakStep {sys : System State Label}
-    {μ ν : PMF State} {l : Label} (hl : ¬ (l = Silent.τ)) (h : weakStep sys μ l ν) :
-    hyperStep sys^w μ l ν := by
-  obtain ⟨ρ, hρ, hν⟩ := weakStep_exists_pointwise h
-  refine ⟨fun s => PMF.pure (ρ s), ?_, ?_⟩
-  · intro s hs τ hτ
-    rw [PMF.mem_support_pure_iff] at hτ; subst hτ
-    exact Or.inr ⟨hl, hρ s hs⟩
-  · rw [hν]; simp only [PMF.pure_bind, id_eq]
-
-/-- **(B2).** A `hyperStep` over `sys^w` at an external label collapses to a
-single `weakStep` from the distribution. -/
-theorem weakStep_of_hyperStep_weakClosure {sys : System State Label}
-    {μ ν : PMF State} {l : Label} (hl : ¬ (l = Silent.τ)) (h : hyperStep sys^w μ l ν) :
-    weakStep sys μ l ν := by
-  obtain ⟨p, hp, hν⟩ := h
-  have hpt : ∀ s ∈ μ.support, weakStep sys (PMF.pure s) l ((p s).bind id) := by
-    intro s hs
-    refine weakStep_bind ?_
-    intro τ hτ
-    rcases hp s hs τ hτ with ⟨hi, _⟩ | ⟨_, hws⟩
-    · exact absurd hi hl
-    · exact hws
-  rw [hν]
-  exact weakStep_of_pointwise _ hpt
 
 /-! ### Monotonicity of weak transitions in the step relation
 

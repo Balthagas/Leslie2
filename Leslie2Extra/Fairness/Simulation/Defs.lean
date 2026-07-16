@@ -5,7 +5,7 @@ Authors: Gaspard Reghem
 -/
 
 import Leslie2Extra.Fairness.Simulation.Descent
-import Leslie2.Simulation.Trace
+import Leslie2.Simulation.StrongSoundness
 import Leslie2Extra.Fairness.Model.ResolvedScheduler
 
 /-!

@@ -664,14 +664,6 @@ theorem ProbabilisticForwardSimulation.achievableTraceMeasures_subset
     achievableTraceMeasures sys_C ⊆ achievableTraceMeasures sys_A :=
   achievableTraceMeasures_subset_of_traceDists sim.achievableTraceDists_subset
 
-/-- **Measure-theoretic soundness of weak simulation.** -/
-theorem WeakProbabilisticSimulation.achievableTraceMeasures_subset
-    {sys_C : System State_C Label} {sys_A : System State_A Label}
-    {R : State_C → State_A → Prop}
-    (sim : WeakProbabilisticSimulation sys_C sys_A R) :
-    achievableTraceMeasures sys_C ⊆ achievableTraceMeasures sys_A :=
-  achievableTraceMeasures_subset_of_traceDists sim.achievableTraceDists_subset
-
 /-- **Measure-theoretic soundness of strong simulation.** -/
 theorem StrongProbabilisticSimulation.achievableTraceMeasures_subset
     {sys_C : System State_C Label} {sys_A : System State_A Label}
