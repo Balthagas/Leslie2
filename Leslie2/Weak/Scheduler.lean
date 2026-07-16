@@ -51,6 +51,20 @@ noncomputable def stop (sys : System State Label) : WeakScheduler sys where
   valid e _ _ _ _ l μ h := by simp at h
   internal_only e l μ h := by simp at h
 
+/-- **Monotonicity in the step relation.** A weak scheduler for `sys` is reusable *verbatim* as a
+weak scheduler for any `sys'` whose `τ`-steps include all of `sys`'s: since a weak scheduler only
+ever emits internal (`τ`) steps (`internal_only`), validating those same emissions against `sys'`
+needs only that `sys`-`τ`-steps are `sys'`-`τ`-steps. The `next` function is unchanged, so
+`haltMass`/`probOf` are definitionally identical. -/
+noncomputable def mono {sys' : System State Label} (σ : WeakScheduler sys)
+    (hstep : ∀ s μ, sys.step s Silent.τ μ → sys'.step s Silent.τ μ) : WeakScheduler sys' where
+  next := σ.next
+  valid := fun e n s ht hs l μ hsupp => by
+    have hl := σ.internal_only e l μ hsupp
+    subst hl
+    exact hstep s μ (σ.valid e n s ht hs _ μ hsupp)
+  internal_only := σ.internal_only
+
 /-! ### Sequential composition of weak schedulers (`bind`) -/
 
 /-- Dropping a prefix of a terminating execution's transition sequence again

@@ -878,4 +878,40 @@ theorem weakStep_of_hyperStep_weakClosure {sys : System State Label}
   rw [hν]
   exact weakStep_of_pointwise _ hpt
 
+/-! ### Monotonicity of weak transitions in the step relation
+
+Transport lemmas for a *step-relation weakening* on the **same** state space (used by the
+abstraction precongruence, where `sys.abstract L` only relabels/adds steps). These reuse the
+witnessing scheduler verbatim (`WeakScheduler.mono`) or the convex kernel (`hyperStep_mono`); they
+build no new scheduler. -/
+
+/-- **Monotonicity of `weakTau`.** A τ-closure of `sys` is a τ-closure of any `sys'` whose
+`τ`-steps include all of `sys`'s. The witnessing scheduler is reused unchanged
+(`WeakScheduler.mono`), so `haltMass` is definitionally the same. -/
+theorem weakTau_mono {sys sys' : System State Label}
+    (hstep : ∀ s μ, sys.step s Silent.τ μ → sys'.step s Silent.τ μ)
+    {μ_init ν : PMF State} (h : weakTau sys μ_init ν) : weakTau sys' μ_init ν := by
+  obtain ⟨σ, h1, h2⟩ := h
+  exact ⟨σ.mono hstep, h1, h2⟩
+
+omit [Silent Label] in
+/-- **Monotonicity of `hyperStep`.** A hyper-step at label `l` transports to a hyper-step at label
+`l'` whenever every `l`-step of `sys` is an `l'`-step of `sys'`. Purely structural (the convex
+kernel `p` is reused); the label may change (used to relabel a hidden `l ∈ L` step to `τ`). -/
+theorem hyperStep_mono {sys sys' : System State Label} {μ ν : PMF State} {l l' : Label}
+    (hstep : ∀ s μ'', sys.step s l μ'' → sys'.step s l' μ'')
+    (h : hyperStep sys μ l ν) : hyperStep sys' μ l' ν := by
+  obtain ⟨p, hp, hν⟩ := h
+  exact ⟨p, fun s hs μ'' hμ'' => hstep s μ'' (hp s hs μ'' hμ''), hν⟩
+
+/-- A single `τ`-hyper-step collapses to a `weakTau`: each forced internal step is a one-step
+τ-closure (`weakTau_of_step`), recombined by target-convexity (`weakTau_bind`) and source-mixing
+(`weakTau_of_pointwise`). -/
+theorem weakTau_of_hyperStep {sys : System State Label} {μ ν : PMF State}
+    (h : hyperStep sys μ Silent.τ ν) : weakTau sys μ ν := by
+  obtain ⟨p, hp, hν⟩ := h
+  rw [hν]
+  exact weakTau_of_pointwise (fun s => (p s).bind id)
+    (fun s hs => weakTau_bind (fun τ hτ => weakTau_of_step rfl (hp s hs τ hτ)))
+
 end PLTS
