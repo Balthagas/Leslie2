@@ -12,10 +12,12 @@ import Leslie2.ProcessAlgebra.Interleave
 import Leslie2.ProcessAlgebra.Parallel
 import Leslie2.Results
 import Leslie2.Simulation.Equivalences
+import Leslie2.Simulation.ForwardLTS
 import Leslie2.Simulation.SimDefs
 import Leslie2.Simulation.StrongSoundness
 import Leslie2.Simulation.TraceMap
 import Leslie2.Simulation.Transitivity
+import Leslie2.Systems.LTS
 import Leslie2.Systems.System
 import Leslie2.Systems.Trace
 import Leslie2.Weak.Bounds
