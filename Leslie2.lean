@@ -11,6 +11,7 @@ import Leslie2.ProcessAlgebra.Composition
 import Leslie2.ProcessAlgebra.Interleave
 import Leslie2.ProcessAlgebra.Parallel
 import Leslie2.Results
+import Leslie2.Simulation.DistCollapse
 import Leslie2.Simulation.Equivalences
 import Leslie2.Simulation.ForwardLTS
 import Leslie2.Simulation.SimDefs
