@@ -319,7 +319,7 @@ omit [Silent Label] in
 source `q.bind m` to the mixed target `q.bind n`. The mixing kernel routes each
 end-state `t` through the Bayesian posterior over `x` given `t` (numerator
 `q x * (m x) t`, normalized by `(q.bind m) t`). -/
-private theorem hyperStep_mix {sys : System State Label} {X : Type}
+theorem hyperStep_mix {sys : System State Label} {X : Type}
     {l : Label} (q : PMF X) (m n : X → PMF State)
     (H : ∀ x ∈ q.support, hyperStep sys (m x) l (n x)) :
     hyperStep sys (q.bind m) l (q.bind n) := by
@@ -677,7 +677,7 @@ theorem weakTau_bind {sys : System State Label} {s : State}
 `q.bind m` to the mixed target `q.bind ν`, via the same Bayesian-posterior
 mixing scheduler (composed with the per-point τ-witnesses through
 `weakTau_bind`). -/
-private theorem weakTau_mix {sys : System State Label} {X : Type}
+theorem weakTau_mix {sys : System State Label} {X : Type}
     (q : PMF X) (m ν : X → PMF State)
     (H : ∀ x ∈ q.support, weakTau sys (m x) (ν x)) :
     weakTau sys (q.bind m) (q.bind ν) := by

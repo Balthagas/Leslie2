@@ -162,13 +162,13 @@ theorem ProbabilisticForwardSimulation.parallel_right
       · refine ⟨ω_A.map (fun ρ => prodPMF ρ (PMF.pure s_B)), ?_, ?_⟩
         · exact pmfRel_parallel_left s_B hPMFRelA
         · rw [bindId_left]
-          exact Or.inl ⟨hl, weakTau_parallel_left sys_A sys_B (PMF.pure s_B) htauA⟩
+          exact Or.inl ⟨hl, weakTau_parallel_left sys_A sys_B s_B htauA⟩
       · exact absurd hl hτ
     · -- τ-right interleaving (sys_B moves)
       refine ⟨μ_B.map (fun b => prodPMF μ_A (PMF.pure b)), ?_, ?_⟩
       · exact pmfRel_parallel_right μ_B hR
       · rw [bindId_right]
-        exact Or.inl ⟨hl, weakTau_parallel_right sys_A sys_B μ_A (weakTau_of_step hl hB)⟩
+        exact Or.inl ⟨hl, weakTau_parallel_right sys_A sys_B μ_A (hl ▸ hB)⟩
 
 end Parallel
 
