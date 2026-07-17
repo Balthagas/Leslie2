@@ -54,7 +54,7 @@ private theorem AlterSeq.mapFib_labs (f : X → Y) (e : AlterSeq X L) :
   rw [← Stream'.Seq.map_comp]; rfl
 
 /-- `stateAt` commutes with `AlterSeq.map`. -/
-private theorem AlterSeq.mapFib_stateAt (f : X → Y) (e : AlterSeq X L) (n : ℕ) :
+theorem AlterSeq.mapFib_stateAt (f : X → Y) (e : AlterSeq X L) (n : ℕ) :
     (e.map f).stateAt n = (e.stateAt n).map f := by
   cases n with
   | zero => rfl
@@ -82,7 +82,7 @@ private theorem AlterSeq.mapFib_get?_fst (f : X → Y) (e : AlterSeq X L) (n : �
   | some lq => rfl
 
 /-- `TerminatedAt n` is preserved under `AlterSeq.map`. -/
-private theorem AlterSeq.mapFib_terminatedAt (f : X → Y) (e : AlterSeq X L) (n : ℕ) :
+theorem AlterSeq.mapFib_terminatedAt (f : X → Y) (e : AlterSeq X L) (n : ℕ) :
     (e.map f).trans.TerminatedAt n ↔ e.trans.TerminatedAt n := by
   change ((e.trans.map (fun lq => (lq.1, f lq.2))).get? n) = none ↔ e.trans.get? n = none
   rw [Stream'.Seq.map_get?]
@@ -154,7 +154,7 @@ private theorem AlterSeq.fibre_len_eq (f : X → Y) (E_Y : AlterSeq Y L)
     (by exact_mod_cast heq : E1.trans.length h1 = E2.trans.length h2)]
 
 /-- `(μ.map f) y'` is the total `μ`-mass on the `f`-fibre of `y'`. -/
-private theorem AlterSeq.map_apply_fibre (f : X → Y) (μ : PMF X) (y' : Y) :
+theorem AlterSeq.map_apply_fibre (f : X → Y) (μ : PMF X) (y' : Y) :
     (μ.map f) y' = ∑' x' : {x // f x = y'}, μ x'.1 := by
   classical
   rw [PMF.map_apply, show (∑' x' : {x // f x = y'}, μ x'.1)
@@ -430,7 +430,7 @@ noncomputable def mapBeliefNum (f : X → Y) (pe_X : ProbabilisticExecution sys_
       * ((pe_X.scheduler.next E_X).map (mapEmit f)) o
 
 /-- `∑' o, mapBeliefNum … o = mapWeight …` (the pushforward emission PMF sums to 1). -/
-private theorem mapBeliefNum_tsum (f : X → Y) (pe_X : ProbabilisticExecution sys_X)
+theorem mapBeliefNum_tsum (f : X → Y) (pe_X : ProbabilisticExecution sys_X)
     (E_Y : AlterSeq Y L) :
     (∑' o, mapBeliefNum f pe_X E_Y o) = mapWeight f pe_X E_Y := by
   classical
@@ -440,7 +440,7 @@ private theorem mapBeliefNum_tsum (f : X → Y) (pe_X : ProbabilisticExecution s
   rw [ENNReal.tsum_mul_left, ((pe_X.scheduler.next E_X).map (mapEmit f)).tsum_coe, mul_one]
 
 /-- `mapWeight` never equals `⊤` (it is bounded by `1` via the Kraft antichain bound). -/
-private theorem mapWeight_ne_top (f : X → Y) (pe_X : ProbabilisticExecution sys_X)
+theorem mapWeight_ne_top (f : X → Y) (pe_X : ProbabilisticExecution sys_X)
     (E_Y : AlterSeq Y L) : mapWeight f pe_X E_Y ≠ ⊤ :=
   ne_top_of_le_ne_top ENNReal.one_ne_top (W_le_one pe_X f E_Y)
 

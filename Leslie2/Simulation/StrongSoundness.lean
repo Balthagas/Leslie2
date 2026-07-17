@@ -336,7 +336,7 @@ private theorem simSumA_eq_mapFst (ω : PMF (State_C × State_A)) (s_C' : State_
 
 /-- `AlterSeq.map` commutes with `endState`: projecting an execution and taking
 its end-state equals projecting the end-state. -/
-private theorem AlterSeq.map_endState (f : State_C → State_A) (e : AlterSeq State_C Label)
+theorem AlterSeq.map_endState (f : State_C → State_A) (e : AlterSeq State_C Label)
     (h : e.trans.Terminates) :
     (e.map f).endState ((AlterSeq.map_trans_terminates_iff f e).mpr h) = f (e.endState h) := by
   rw [AlterSeq.endState_eq_getLast?, AlterSeq.endState_eq_getLast?]
