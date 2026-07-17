@@ -34,12 +34,24 @@ def PMFRel (R : α → β → Prop) (μ₁ : PMF α) (μ₂ : PMF β) : Prop :=
     PMF.map Prod.snd ω = μ₂ ∧
     ∀ p ∈ ω.support, R p.1 p.2
 
-/-- **Forward (Kleisli) lift of a state-to-distribution relation to distributions.**
-`Simulates R μ ν` — read "`ν` simulates `μ`" — holds iff `ν` is a bind `μ.bind f` where
-every `s ∈ μ.support` is `R`-matched by `f s`. This is the distribution-level form of the
-relation `R` carried by a `ProbabilisticForwardSimulation`. -/
+/-- **Forward (coupling) lift of a state-to-distribution relation to distributions.**
+`Simulates R μ ν` — read "`ν` simulates `μ`" — holds iff every source state `s ∈ μ.support`
+is matched by a *mixture* `K s : PMF (PMF T)` of `R`-related abstract distributions, and `ν`
+is the resulting flatten `μ.bind (fun s => (K s).bind id)`.
+
+This is the **coupling lifting** of `R` in its disintegrated (Kleisli-into-mixtures) form: it is
+equivalent to `∃ ω, PMFRel R μ ω ∧ ν = ω.bind id`, but presented as a *source-indexed* kernel
+`K`, which is what makes it convex-closed (so it mixes: see `simulates_bind_mix`) and lets the
+composite relation compose along a single global witness (see the transitivity theorem).
+
+The earlier *functional* form (`∃ f : S → PMF T, ν = μ.bind f ∧ ∀ s ∈ μ.support, R s (f s)`) is
+the special case `K s = PMF.pure (f s)`; it is **not** liftable through weak transitions for a
+non-convex `R` (it forces a single abstract partner per source state, which mixing violates), which
+is why the mixture form is used. -/
 def Simulates {S T : Type} (R : S → PMF T → Prop) (μ : PMF S) (ν : PMF T) : Prop :=
-  ∃ f : S → PMF T, ν = μ.bind f ∧ ∀ s ∈ μ.support, R s (f s)
+  ∃ K : S → PMF (PMF T),
+    ν = μ.bind (fun s => (K s).bind id) ∧
+    ∀ s ∈ μ.support, ∀ ρ ∈ (K s).support, R s ρ
 
 /-- **Composite simulation relation.** `compRel R_BC R_AB` relates a concrete `State_C`
 state `s_C` to an abstract distribution `μ_A` iff some `μ_B` with `R_BC s_C μ_B` is

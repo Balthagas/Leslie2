@@ -81,12 +81,15 @@ theorem ProbabilisticForwardSimulation.trans
   · -- init: bind the concrete initial distribution against the constant abstract one.
     obtain ⟨μ_B, hμ_B_supp, hR_BC⟩ := sim_BC.init
     obtain ⟨μ_A0, hμ_A0_supp, hR_AB⟩ := sim_AB.init
-    refine ⟨μ_B.bind (fun _ => μ_A0), ?_, μ_B, hR_BC, fun _ => μ_A0, rfl, ?_⟩
+    refine ⟨μ_B.bind (fun _ => μ_A0), ?_, μ_B, hR_BC, fun _ => PMF.pure μ_A0, ?_, ?_⟩
     · intro s_A hs
       rw [PMF.mem_support_bind_iff] at hs
       obtain ⟨_, _, hs2⟩ := hs
       exact hμ_A0_supp s_A hs2
-    · intro q_B hq
+    · simp only [PMF.pure_bind, id_eq]
+    · intro q_B hq ρ hρ
+      rw [PMF.mem_support_pure_iff] at hρ
+      subst hρ
       rw [hμ_B_supp q_B hq]
       exact hR_AB
   · -- step
@@ -96,26 +99,26 @@ theorem ProbabilisticForwardSimulation.trans
     obtain ⟨ω_B, hPMFRel_B, hweakB_raw⟩ := sim_BC.step s_C μ_B hR_BC l μ_C hstep
     have hweakB : weakTransition sys_B μ_B l (ω_B.bind id) := hweakB_raw
     -- Lift that `sys_B` weak transition to a `sys_A` weak transition (the crux).
-    obtain ⟨ν_A, hweakA, g, hνA, hg_supp⟩ := weakTransition_lift sim_AB hsimBA hweakB
+    obtain ⟨ν_A, hweakA, K, hνA, hK_supp⟩ := weakTransition_lift sim_AB hsimBA hweakB
     obtain ⟨Ω_B, hfst_B, hsnd_B, hsupp_B⟩ := hPMFRel_B
-    -- Push each `sys_B`-coupled distribution forward through `g` to an `sys_A` one.
-    refine ⟨ω_B.map (fun ρ => ρ.bind g), ?_, ?_⟩
-    · -- `PMFRel (compRel R_BC R_AB) μ_C (ω_B.map (·.bind g))`, witnessed by pushing `Ω_B`.
-      refine ⟨Ω_B.map (fun p => (p.1, p.2.bind g)), ?_, ?_, ?_⟩
+    -- Push each `sys_B`-coupled distribution forward through the mixture kernel `K`.
+    refine ⟨ω_B.map (fun ρ => ρ.bind (fun t => (K t).bind id)), ?_, ?_⟩
+    · -- `PMFRel (compRel R_BC R_AB) μ_C (ω_B.map (·.bind K̂))`, witnessed by pushing `Ω_B`.
+      refine ⟨Ω_B.map (fun p => (p.1, p.2.bind (fun t => (K t).bind id))), ?_, ?_, ?_⟩
       · rw [PMF.map_comp]; exact hfst_B
       · rw [← hsnd_B, PMF.map_comp, PMF.map_comp]; rfl
       · intro p hp
         rw [PMF.mem_support_map_iff] at hp
         obtain ⟨p', hp', rfl⟩ := hp
-        refine ⟨p'.2, hsupp_B p' hp', g, rfl, ?_⟩
-        intro s hs
-        apply hg_supp
+        refine ⟨p'.2, hsupp_B p' hp', K, rfl, ?_⟩
+        intro s hs ρ hρ
+        refine hK_supp s ?_ ρ hρ
         rw [PMF.mem_support_bind_iff]
         refine ⟨p'.2, ?_, hs⟩
         rw [← hsnd_B, PMF.mem_support_map_iff]
         exact ⟨p', hp', rfl⟩
-    · -- the weak `sys_A`-transition, after identifying `(ω_B.map (·.bind g)).bind id = ν_A`.
-      have hbind : (ω_B.map (fun ρ => ρ.bind g)).bind id = ν_A := by
+    · -- the weak `sys_A`-transition, after identifying `(ω_B.map (·.bind K̂)).bind id = ν_A`.
+      have hbind : (ω_B.map (fun ρ => ρ.bind (fun t => (K t).bind id))).bind id = ν_A := by
         rw [hνA, PMF.bind_map, PMF.bind_bind]; rfl
       rw [hbind]
       exact hweakA
