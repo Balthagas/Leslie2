@@ -545,7 +545,175 @@ simulation into ordinary states --- and, crucially,
 Theorems~\ref{thm:weakclosure-eq} and~\ref{thm:dist-eq} guarantee that neither
 transformation changes the observable trace distributions. The analogous soundness
 statement for \emph{weak} simulation
-(\lean{PLTS.WeakProbabilisticSimulation.achievableTraceDists_subset}) is the same
+% NOTE: PLTS.WeakProbabilisticSimulation is described in SimDefs.lean docstrings but
+% not (yet) declared in the code; the \lean{} cross-link is demoted to \texttt{} so
+% checkdecls stays green. Restore the \lean{} macro when the declaration lands.
+(\texttt{PLTS.WeakProbabilisticSimulation.achievableTraceDists\_subset}) is the same
 argument using only $\cdot^w$ (Theorem~\ref{thm:weakclosure-eq}), since a weak
 simulation is a strong simulation into $sys_A^w$.
 
+
+\section{Case study: Asynchronous Byzantine Agreement}
+
+This section tracks the protocol case study built on top of the five results:
+the correctness of ABDY22's Asynchronous Byzantine Agreement, with the weak
+common coin held at specification level. The development lives in the opt-in
+\texttt{Leslie2Protocols} library.
+
+\begin{definition}[Parameters and coin]
+  \label{def:aba-params}
+  \lean{PLTS.ABA.Params}\lean{PLTS.ABA.Params.coinPMF}\leanok
+  The parameters: $n$ processes, at most $f$ corrupted with $3f < n$, and coin
+  goodness $\epsilon$ with $2\epsilon \le 1$. One coin resolution follows
+  $\mathrm{coinPMF}$: each bit with probability $\epsilon$, the adversarial
+  outcome $\top$ otherwise.
+\end{definition}
+
+\begin{definition}[Shared alphabet]
+  \label{def:aba-labels}
+  \lean{PLTS.ABA.Lab}\lean{PLTS.ABA.Lab.hiddenAPI}\leanok
+  \uses{def:aba-params}
+  All systems of the case study share one label type: the ABA API, the
+  round-tagged GBCA/WCC APIs (hidden in the hybrids), corruption
+  $\mathrm{fail}(id)$, and $\tau$.
+\end{definition}
+
+\begin{definition}[Idle padding and instance families]
+  \label{def:idle-family}
+  \lean{PLTS.System.withIdle}\lean{PLTS.System.family}\leanok
+  Idle self-loops on foreign labels make the full-synchronisation
+  \lean{PLTS.System.parallel} emulate sync-set composition; the
+  $\mathbb{N}$-indexed instance family moves one instance per owned or silent
+  label, broadcasts corruption to all instances, and idles otherwise. Families
+  of LTS instances are LTS (\lean{PLTS.System.family_isLTS}\leanok).
+\end{definition}
+
+\begin{definition}[The ABA specification, repaired]
+  \label{def:aba-spec}
+  \lean{PLTS.ABA.SpecStep}\lean{PLTS.ABA.spec}\leanok
+  \uses{def:aba-labels}
+  Transition System 1 of the ABA blueprint, with two deviations: corruption is
+  a total deterministic transform (D1), and the re-propose transition carries
+  the guard $val = \bot \lor b = val$ (D3). The repair is necessary: read
+  literally, the blueprint's rule admits an Agreement-violating trace in which
+  a $bind \ne coin$ round re-proposes $1-v$ unanimously and overwrites a
+  decision value $v$ that has already been returned.
+\end{definition}
+
+\begin{definition}[Sub-protocol specifications]
+  \label{def:aba-subspecs}
+  \lean{PLTS.ABA.WCC.Step}\lean{PLTS.ABA.WCC.specFamily}\lean{PLTS.ABA.GBCA.Step}\lean{PLTS.ABA.GBCA.specFamily}\leanok
+  \uses{def:aba-labels, def:idle-family}
+  Transition Systems 2 and 3 (round-indexed instances and their families):
+  GBCA with linearised binding and graded returns, WCC with the
+  $\epsilon$-probabilistic coin resolution. The GBCA side is an LTS
+  (\lean{PLTS.ABA.GBCA.specFamily_isLTS}\leanok).
+\end{definition}
+
+\begin{theorem}[Trace-support bridge]
+  \label{thm:trace-support}
+  \lean{PLTS.exists_exec_of_traceProb_ne_zero}\lean{PLTS.is_exec_of_probOf_ne_zero}\lean{PLTS.safety_transfer}\leanok
+  A trace with positive trace probability under a Dirac-initialised
+  probabilistic execution is the trace of a genuine execution of the system,
+  with trace membership characterised by the execution's events; safety of
+  trace supports transfers along inclusion of achievable trace distributions.
+\end{theorem}
+
+\begin{theorem}[Safety of the ABA specification]
+  \label{thm:aba-spec-safe}
+  \lean{PLTS.ABA.spec_safe}\leanok
+  \uses{def:aba-spec, thm:trace-support}
+  Every trace in the support of every achievable trace distribution of the
+  repaired specification satisfies Validity
+  (\lean{PLTS.ABA.ValidityTrace}\leanok) and Agreement
+  (\lean{PLTS.ABA.AgreementTrace}\leanok). The proof is invariant induction
+  along genuine executions: the decision value is write-once (the unanimity
+  rule can only rewrite it to itself, by the quorum argument $f < n - f$ —
+  exactly the point where the D3 guard is load-bearing), and a
+  label-history-aware invariant attributes the decision value to
+  $\mathrm{call}$ events.
+\end{theorem}
+
+\begin{theorem}[GBCA instance refinement]
+  \label{thm:gbca-inst-refines}
+  \lean{PLTS.ABA.GBCA.implRefines}\leanok
+  \uses{def:aba-subspecs}
+  ABDY22's GBCA implementation (INPUT/ECHO/VOTE/BIND message exchange with
+  adversary-scheduled delivery and Byzantine injection, plus the linearising
+  ghost bound value) is forward-simulated, instance by instance, by the GBCA
+  specification: an LTS-level forward simulation whose invariant carries the
+  quorum-intersection arguments ($f < n - f$) for the binding witness, the
+  honest-dissent witnesses, and A/C grade exclusivity.
+\end{theorem}
+
+\begin{theorem}[Family congruence and the GBCA family refinement]
+  \label{thm:gbca-family-refines}
+  \lean{PLTS.ForwardSimulation.family}\lean{PLTS.ABA.GBCA.familyRefines}\leanok
+  \uses{thm:gbca-inst-refines, def:idle-family}
+  Per-instance forward simulations lift to the $\mathbb{N}$-indexed families
+  (pointwise relation; broadcast labels matched by the abstract family's own
+  broadcast under a corruption-compatibility lemma), and the lift to a
+  probabilistic forward simulation is by the LTS bridge, once, at family
+  level.
+\end{theorem}
+
+\begin{definition}[The hybrids]
+  \label{def:aba-hybrids}
+  \lean{PLTS.ABA.hybridImpl}\lean{PLTS.ABA.hybridSpec}\leanok
+  \uses{def:aba-subspecs, def:aba-labels}
+  The composed systems $\mathsf{GBCA} \parallel (\mathsf{Core} \parallel
+  \mathsf{WCC.Spec})$ with the sub-protocol API hidden, at implementation and
+  specification level for the GBCA slot respectively. GBCA occupies the
+  refinable slot of the parallel composition.
+\end{definition}
+
+\begin{theorem}[Substitution]
+  \label{thm:aba-substitution}
+  \lean{PLTS.ABA.substSim}\lean{PLTS.ABA.substitution}\leanok
+  \uses{def:aba-hybrids, thm:gbca-family-refines}
+  Replacing the GBCA implementation family by its specification family under
+  the fixed context is a probabilistic forward simulation — the parallel and
+  abstraction precongruences applied to the family refinement — and hence a
+  trace-distribution inclusion, by soundness.
+\end{theorem}
+
+\begin{theorem}[The core simulation]
+  \label{thm:aba-coresim}
+  \lean{PLTS.ABA.coreSim}\leanok
+  \uses{def:aba-hybrids, def:aba-spec}
+  The specification-side hybrid is forward-simulated by the (repaired) ABA
+  specification. The abstract twin is \emph{lazy}: it never resolves its own
+  coin (its rules 3/4 keep the coin at $\bot$, so the arbitrary-fill rule
+  stays available), banks external inputs while unbound, binds just-in-time
+  under an $f{+}1$ input-pool invariant, and sets its decision value only
+  under a permanent A-lock certificate; every hidden handshake and every
+  concrete coin flip is matched by a stutter (constant coupling). The
+  concrete invariant carries the cross-round Graded Agreement machinery
+  (downward C-lock propagation, upward bind commitment).
+\end{theorem}
+
+\begin{theorem}[Refinement and correctness of ABA]
+  \label{thm:aba-main}
+  \lean{PLTS.ABA.refines}\lean{PLTS.ABA.main}\leanok
+  \uses{thm:aba-substitution, thm:aba-coresim, thm:aba-spec-safe}
+  Every trace distribution achievable by the implementation-side hybrid is
+  achievable by the ABA specification (soundness applied to the substitution
+  and core simulations separately, chained by transitivity of set inclusion —
+  the transitivity of probabilistic forward simulation is not used), and
+  hence every positive-probability trace of the implementation-side hybrid
+  satisfies Validity and Agreement. Machine-checked axiom-clean; the composed
+  simulation \lean{PLTS.ABA.simComposed} is additionally provided via
+  Theorem 2 and inherits that theorem's outstanding gap, documented by a
+  pinned axiom guard.
+\end{theorem}
+
+\begin{definition}[Non-vacuity]
+  \label{def:aba-examples}
+  \lean{PLTS.ABA.P4}\leanok
+  \uses{def:aba-hybrids}
+  Machine-checked witnesses (at $n = 4$, $f = 1$) that the hybrids execute: a
+  connected eight-step run of the specification-side hybrid through three
+  external inputs, three hidden GBCA handshakes, the quorum-gated binding
+  step and a graded return, plus a synchronised corruption broadcast and the
+  first step of the implementation-side hybrid.
+\end{definition}

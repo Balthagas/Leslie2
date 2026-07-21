@@ -32,3 +32,9 @@ name = "Leslie2"
 # `lake build Leslie2Extra`.
 [[lean_lib]]
 name = "Leslie2Extra"
+
+# Opt-in library for the protocol case studies (the ABA development following
+# the "Verifying ABA with Leslie" blueprint). Builds on top of the core; not a
+# default target. Build it explicitly with `lake build Leslie2Protocols`.
+[[lean_lib]]
+name = "Leslie2Protocols"

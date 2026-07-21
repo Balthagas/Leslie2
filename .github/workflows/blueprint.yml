@@ -50,6 +50,9 @@ jobs:
       - name: Build extras library (fairness + measure)
         run: lake build Leslie2Extra
 
+      - name: Build protocols library (ABA case study)
+        run: lake build Leslie2Protocols
+
       - name: Compile blueprint and documentation
         uses: leanprover-community/docgen-action@deed0cdc44dd8e5de07a300773eb751d33e32fc8 # 2025-10-26
         with:
