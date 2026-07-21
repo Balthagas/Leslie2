@@ -13,3 +13,15 @@ blueprint/src/*.out
 blueprint/src/*.pdf
 blueprint/src/*.synctex.gz
 blueprint/src/*.paux
+
+# macOS
+.DS_Store
+
+# Lean compiled artifacts (normally under .lake/, listed for safety)
+*.olean
+*.ilean
+
+# Jekyll site build (home_page/)
+home_page/_site/
+home_page/.jekyll-cache/
+home_page/.sass-cache/
