@@ -7,7 +7,7 @@ Authors: Gaspard Reghem
 import Leslie2Protocols.ABA.Hybrid
 
 /-!
-# Non-vacuity witnesses for the ABA hybrids (M7)
+# Non-vacuity witnesses for the ABA hybrids
 
 Machine-checked evidence that the composed system `hybridSpec P` can actually
 execute a nontrivial prefix: the refinement theorem `ABA.substitution` about it

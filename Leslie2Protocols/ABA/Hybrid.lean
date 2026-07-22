@@ -18,7 +18,7 @@ between them:
 * `hybridImpl` — `GBCA.implFamily ∥ (ABA.core ∥ WCC.specFamily)`, sub-protocol
   API hidden. The "real" system (up to WCC being held at spec level).
 * `hybridSpec` — the same with `GBCA.implFamily` replaced by
-  `GBCA.specFamily`. The system the hand-built core simulation (M6) relates
+  `GBCA.specFamily`. The system the hand-built core simulation relates
   to `ABA.spec`.
 
 GBCA sits in the **left** (refinable) slot of `System.parallel`, so the

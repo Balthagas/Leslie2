@@ -7,10 +7,10 @@ Authors: Gaspard Reghem
 import Leslie2Protocols.ABA.Hybrid
 
 /-!
-# The core-simulation relation (M6, design v2: the lazy abstract twin)
+# The core-simulation relation: the lazy abstract twin
 
 The relation and invariant for `coreSim : hybridSpec ⊑ ABA.spec`, following
-`DESIGN-CoreSim.md` (v2). The abstract twin is *lazy*: it answers most hidden
+`DESIGN-CoreSim.md`. The abstract twin is *lazy*: it answers most hidden
 (τ) rows by stuttering and catches up in τ-bursts only when forced — at
 `GBCA` bind rows (to keep its `bind`/`coin` aligned, constraints C5/C6), at
 coin rows (the ε-coupling), and at `retABA` rows (forcing `val`).
@@ -44,9 +44,9 @@ Concrete-only; still used by `Inv.agree_locked` (I3a). -/
 def IsLastBound (g : ℕ → GBCA.SpecState P.n) (r : ℕ) : Prop :=
   (g r).bind ≠ none ∧ (g (r + 1)).bind = none
 
-/-! ### Abs: the abstract-twin constraints (C1–C8, design v2.1) -/
+/-! ### Abs: the abstract-twin constraints -/
 
-/-- Constraints tying the abstract twin `a` to the concrete state (v2.2, the
+/-- Constraints tying the abstract twin `a` to the concrete state (the
 never-flipping twin: the abstract never fires rule 5, so `a.coin` is
 permanently `⊥` and rule 7 is always available post-bind; `call_pre`/
 `call_post` split on whether the abstract has bound). -/
@@ -65,7 +65,7 @@ structure Abs (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
   /-- C7: the abstract decision value, if set, is permanently certified by an
   `A`-lock at the round it was read off. -/
   val_cert : ∀ v, a.val = some v → ∃ r, (g r).grade = some true ∧ (g r).bind = some v
-  /-- Just-in-time readiness (v2.2 amendment): while the abstract is unbound, (1) no round is
+  /-- Just-in-time readiness: while the abstract is unbound, (1) no round is
   `C`-locked, and (2) every bound round's value is the unanimous honest input, backed by an
   `f + 1`-strong input pool (`F`-insensitive count). Honest-input unanimity is asserted only
   once a round is bound — early mixed inputs simply bank (rule 1) and stutter. -/
@@ -79,7 +79,7 @@ structure Abs (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
 some process exited `GBCA_r` via a `B`/`C`-return": round `r`'s bind `v` has provenance either
 from round `0`'s external input (`input_g0`-style, if `r = 0`) or from round `r - 1`'s bind/
 `C`-lock (`call_prov`-style, if `r ≥ 1`) being the opposite bit — both permanent facts, so this
-survives every later `fail`/step once established (design v2.1 §4). -/
+survives every later `fail`/step once established. -/
 def DissentResidue (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
     (r : ℕ) : Prop :=
   ∃ v, (g r).bind = some v ∧
@@ -110,8 +110,8 @@ theorem DissentResidue.transport {P : Params} {g₀ g : ℕ → GBCA.SpecState P
 
 /-! ### Inv: the concrete invariant (I1–I7) -/
 
-/-- The concrete invariant of `hybridSpec`-reachable states (design v2,
-I1–I7). All conjuncts are about the concrete `(g, c, w)` only. -/
+/-- The concrete invariant of `hybridSpec`-reachable states. All conjuncts are
+about the concrete `(g, c, w)` only. -/
 structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
     (w : ℕ → WCC.SpecState P.n) : Prop where
   /-- I1: F-lockstep across every component copy. -/
@@ -124,7 +124,7 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
   /-- I2': honest GBCA callers (any round) have committed an external input. -/
   input_called : ∀ r id, id ∉ c.F → (g r).call id ≠ none →
     (c.procs id).input ≠ none
-  /-- I2'' (new, M6-B): once a proc has left `idle` its input is committed (write-once, never
+  /-- I2'' : once a proc has left `idle` its input is committed (write-once, never
   cleared; the sole idle-exit is `callABA`'s honest `input` ctor, which sets it). -/
   phase_input : ∀ id, id ∉ c.F → (c.procs id).phase ≠ .idle → (c.procs id).input ≠ none
   /-- I6: bound rounds are downward closed. -/
@@ -152,28 +152,28 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
   agree_locked : ∀ r v, IsLastBound g r → (g r).bind = some v →
     (w r).val = .bit v →
     ∀ id, id ∉ c.F → r < (c.procs id).round → (c.procs id).est = some v
-  /-- I8' (new, M6-B): a graded `GBCA_r` round has already bound (`retA`/`retB`/`retC` all
+  /-- I8' : a graded `GBCA_r` round has already bound (`retA`/`retB`/`retC` all
   require `bind ≠ none` as precondition, and `bind` is write-once). -/
   grade_needs_bind : ∀ r, (g r).grade ≠ none → (g r).bind ≠ none
-  /-- I8 (new, M6-B): honest `GBCA_r` callers have reached round `r` (rounds only grow). -/
+  /-- I8 : honest `GBCA_r` callers have reached round `r` (rounds only grow). -/
   call_round : ∀ r id, id ∉ c.F → (g r).call id ≠ none → r ≤ (c.procs id).round
-  /-- I9 (new, M6-B): an honest `WCC_r` caller has already gotten `retG r` (round `r` bound). -/
+  /-- I9 : an honest `WCC_r` caller has already gotten `retG r` (round `r` bound). -/
   w_called : ∀ r id, id ∉ c.F → (w r).called id = true → (g r).bind ≠ none
-  /-- I10 (new, M6-B): an honest proc past round `r` has already resolved round `r`'s coin
+  /-- I10 : an honest proc past round `r` has already resolved round `r`'s coin
   (flips are permanent). -/
   round_flip : ∀ r id, id ∉ c.F → r < (c.procs id).round → (w r).val ≠ .bot
-  /-- I11 (new, M6-B): round-0 pre-`retG` honest ests are the external input. -/
+  /-- I11 : round-0 pre-`retG` honest ests are the external input. -/
   est0 : ∀ id, id ∉ c.F → (c.procs id).round = 0 →
     ((c.procs id).phase = .idle ∨ (c.procs id).phase = .toCallG ∨
       (c.procs id).phase = .awaitG) →
     (c.procs id).est = (c.procs id).input
-  /-- I12 (new, M6-B): an `A`-grade traces back to a genuine `GBCA` `A`-return. Honesty-free:
+  /-- I12 : an `A`-grade traces back to a genuine `GBCA` `A`-return. Honesty-free:
   `CoreStep.retG`'s `out`/`bound` are synchronised with the genuine `GBCA` return guards
   (`retA`/`retB`/`retC`) regardless of `id`'s corruption, and this is needed corruption-free
   in `step_retW`'s `recv_sound`/`decided_src` rows, which have no honesty hypothesis. -/
   grade_A_src : ∀ id b, (c.procs id).lastGrade = some (.A b) →
     ∃ r, (g r).grade = some true ∧ (g r).bind = some b
-  /-- I13 (new, M6-B): post-`retG` est provenance — honest procs between `retG r` and
+  /-- I13 : post-`retG` est provenance — honest procs between `retG r` and
   `retW r` have `est` equal to round `r`'s bind (the `A`/`B` case) or `none` with a
   `C`-return certificate. The `C`-certificate is phrased as "no round `≤ r` is `A`-locked"
   (not as an honest-dissent witness: the witness process could itself get corrupted by a
@@ -184,7 +184,7 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
       (g r).grade = some false ∧
       ∀ r₀ b₀, r₀ ≤ r → (g r₀).grade = some true → (g r₀).bind = some b₀ → False) ∧
     (∀ b, (c.procs id).est = some b → (g r).bind = some b)
-  /-- I14 (new, M6-B2): binds are write-once, so a freshly-bound round `r + 1`'s value was
+  /-- I14 : binds are write-once, so a freshly-bound round `r + 1`'s value was
   already carried at round `r`: either round `r` had already bound to it, or round `r` just
   closed with a `C`-lock and the coin pins the adopted value (the `⊤` disjunct: an
   unresolved-to-a-bit coin lets the adopting return pick an arbitrary matching bit, so the
@@ -193,12 +193,12 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
   bind_succ : ∀ r v, (g (r + 1)).bind = some v →
     (g r).bind = some v ∨
       ((g r).grade = some false ∧ ((w r).val = .bit v ∨ (w r).val = .top))
-  /-- I15 (new, M6-B2): an honest call to round `r + 1` carries est-provenance from finishing
+  /-- I15 : an honest call to round `r + 1` carries est-provenance from finishing
   round `r`. -/
   call_prov : ∀ r id v, id ∉ c.F → (g (r + 1)).call id = some v →
     (g r).bind = some v ∨
       ((g r).grade = some false ∧ ((w r).val = .bit v ∨ (w r).val = .top))
-  /-- I16 (new, M6-B2): honest procs at the start of round `r + 1` carry est-provenance from
+  /-- I16 : honest procs at the start of round `r + 1` carry est-provenance from
   finishing round `r`. -/
   est_prev : ∀ r id, id ∉ c.F → (c.procs id).round = r + 1 →
     ((c.procs id).phase = .idle ∨ (c.procs id).phase = .toCallG ∨
@@ -206,9 +206,9 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
     ∀ v, (c.procs id).est = some v →
       (g r).bind = some v ∨
         ((g r).grade = some false ∧ ((w r).val = .bit v ∨ (w r).val = .top))
-  /-- I17 (new, M6-B2): `C`-locks propagate downward. -/
+  /-- I17 : `C`-locks propagate downward. -/
   c_chain : ∀ r, (g (r + 1)).grade = some false → (g r).grade = some false
-  /-- I18 (new, M6-B2): an honest proc that hasn't yet `retG`'d this round has a committed
+  /-- I18 : an honest proc that hasn't yet `retG`'d this round has a committed
   (non-`⊥`) estimate — `retW`'s `est := some (est.getD b)` is always non-`none` by
   construction, and neither `callG` nor bookkeeping steps ever clear it; only a later
   `retG`'s `C`-output (which also flips the phase away from `toCallG`/`awaitG`) can. -/
@@ -216,31 +216,31 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
     ((c.procs id).phase = .idle ∨ (c.procs id).phase = .toCallG ∨
       (c.procs id).phase = .awaitG) →
     (c.procs id).est ≠ none
-  /-- I19 (new, M6-D, design v2.1 §4): flips happen in round order. Established at the flip
+  /-- I19 : flips happen in round order. Established at the flip
   row: the threshold on `w (r + 1)` yields an honest caller (`Finset` pigeonhole, as in
   `w_bound`), which by `round_flip` has already resolved round `r`'s coin. -/
   w_order : ∀ r, (w (r + 1)).val ≠ .bot → (w r).val ≠ .bot
-  /-- I20 (new, M6-D): `F`-free residue of round-`0` `GBCA` call provenance — either the input
+  /-- I20 : `F`-free residue of round-`0` `GBCA` call provenance — either the input
   is genuinely committed (write-once, permanent) or the caller was already corrupted (`F` only
   grows, so this disjunct is permanent too). Established at the `callG` round-`0` row (honest:
   `est0`; byz: the corruption ctor). -/
   input_g0_perm : ∀ id b, (g 0).call id = some b → (c.procs id).input = some b ∨ id ∈ c.F
-  /-- I21' (new, M6-D): the `WCC`-side analogue of `call_round` (I8) — an honest `WCC_r`
+  /-- I21' : the `WCC`-side analogue of `call_round` (I8) — an honest `WCC_r`
   caller has reached round `r`. Established at the `callW` row exactly like `call_round` is at
   `callG`; feeds `w_order`/`flip_alock`'s flip-row establishment (an honest caller of the
   newly-flipped round has already resolved every earlier round's coin via `round_flip`). -/
   w_call_round : ∀ r id, id ∉ c.F → (w r).called id = true → r ≤ (c.procs id).round
-  /-- I21 (new, M6-D, design v2.1 §4): a flip-threshold consequence — once round `r`'s coin has
+  /-- I21 : a flip-threshold consequence — once round `r`'s coin has
   resolved, round `r` is either already `A`/`C`-graded or a `DissentResidue` certifies why a
-  `B`/`C`-return could have fired there. Used (next tranche) to decide rule 3 vs.\ rule 4 at
+  `B`/`C`-return could have fired there. Used to decide rule 3 vs.\ rule 4 at
   the flip burst. -/
   flip_alock : ∀ r, (w r).val ≠ .bot → (g r).grade ≠ none ∨ DissentResidue P g c r
-  /-- I22 (new, M6-D2): an honest process that has never received its external input has never
+  /-- I22 : an honest process that has never received its external input has never
   called any `WCC` instance (the sole idle-exit, `callABA`'s honest `input` ctor, is what first
   makes a `callW` handshake reachable; `input` is write-once, so this is preserved trivially
   once `input ≠ none`). Feeds `w_call_round`'s self-corner at the fresh `callABA` row. -/
   idle_no_wcall : ∀ id, id ∉ c.F → (c.procs id).input = none → ∀ r, (w r).called id = false
-  /-- I23 (new, M6-D2): a `GBCA_r`-side residue analogous to `flip_alock` (I21), but keyed on an
+  /-- I23 : a `GBCA_r`-side residue analogous to `flip_alock` (I21), but keyed on an
   honest process's own round-`r` progress rather than round `r`'s coin: once an honest process
   has reached (or passed) the "done with `GBCA_r`" point, round `r` is either already graded or
   a `DissentResidue` certifies why not. Established at the `retG` row (the genuine GBCA return
@@ -251,13 +251,13 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
         ((c.procs id).phase = .toCallW ∨ (c.procs id).phase = .awaitW)) ∨
       r < (c.procs id).round) →
     (g r).grade ≠ none ∨ DissentResidue P g c r
-  /-- I24 (new, M6-D2): an honest `WCC_r` caller inherits `retg_residue`'s conclusion outright
+  /-- I24 : an honest `WCC_r` caller inherits `retg_residue`'s conclusion outright
   (it called `GBCA_r` and reached `toCallW`/`awaitW` in the same handshake). Established at the
   `callW` row from `retg_residue`; preserved trivially (conclusion permanent, `fail` shrinks the
   quantifier). Feeds `flip_alock`'s flip-row establishment via the threshold's honest caller. -/
   wcalled_residue : ∀ r id, id ∉ c.F → (w r).called id = true →
     (g r).grade ≠ none ∨ DissentResidue P g c r
-  /-- I25 (M6-E2): every bound round permanently retains its firing quorum (`bindSet`'s
+  /-- I25 : every bound round permanently retains its firing quorum (`bindSet`'s
   guard, monotone under later call-growth and `F`-growth). Transfers to the abstract's
   rule-3/4 quorum guard via `abstract_quorum`. -/
   bound_quorum : ∀ r, (g r).bind ≠ none → (g r).quorum P
@@ -286,7 +286,7 @@ theorem GBCA.SpecState.quorum_of_eq {P : Params} {s s' : GBCA.SpecState P.n}
     (hF : s'.F = s.F) (hcall : s'.call = s.call) (h : s.quorum P) : s'.quorum P := by
   unfold GBCA.SpecState.quorum at h ⊢; rw [hF, hcall]; exact h
 
-/-- **Quorum transfer** (M6-E2): a bound concrete round's firing quorum (`Inv.bound_quorum`)
+/-- **Quorum transfer** : a bound concrete round's firing quorum (`Inv.bound_quorum`)
 transfers to the abstract's quorum guard, for any abstract `F`/`call` that agrees with `c.F`
 and is non-`⊥` on every honest process holding a committed external input. Stated on raw
 `aF`/`aCall` so it also serves the banked abstract at the `callABA` burst. -/
@@ -3240,13 +3240,13 @@ theorem Inv.step_retW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
     · intro r' id' hmem hcalled
       rw [hCalledEq] at hcalled; exact hI.wcalled_residue r' id' hmem hcalled
 
-/-! ### Stage C: `Abs` preservation for the stutter rows (design v2.1)
+/-! ### Stage C: `Abs` preservation for the stutter rows
 
 Six of the seven `hybrid_step_tau` disjuncts answer by stuttering (the abstract twin `a` is
-untouched): `bindSet` (v2.1 moves the bind-burst to the coin-flip row), core `τ`
+untouched): `bindSet`, core `τ`
 (DECIDED-delivery/echo/byz), and the four handshake rows (`callG`/`retG`/`callW`/`retW`). The
-seventh disjunct (`flip`, the WCC family's own `τ`) is the burst row and is not attempted here
-(next tranche), together with `callABA`/`retABA`/`fail`. Every lemma below mirrors its
+seventh disjunct (`flip`, the WCC family's own `τ`) is handled with its coupling in
+`CoreSim.lean`, together with `callABA`/`retABA`/`fail`. Every lemma below mirrors its
 `Inv.step_*` counterpart's frame facts but only needs the (much smaller) subset `Abs` inspects:
 `F`, `.procs _.input`/`.returned`, and `g _.bind`/`.grade` at the flipped frontier of `w`
 (`.val` is untouched by every row here except `bindSet`, which cannot touch the frontier since
@@ -3254,7 +3254,7 @@ its guard `(g r).bind = none` rules out `r` already being flipped by `Inv.w_boun
 
 /-- Quorum transfer at round `0`: from a quorum over `g0`'s callers all agreeing (via
 provenance `hg0` and pairwise input agreement `hPair`) on `b`, the global input pool for `b`
-is `f + 1`-strong. Reused by the `callABA` dissent row (M6-E2). -/
+is `f + 1`-strong. Reused by the `callABA` dissent row. -/
 private theorem pool0_of_quorum {P : Params} {g0 : GBCA.SpecState P.n} {c : CoreState P.n}
     (hF : g0.F = c.F) (hFcard : c.F.card ≤ P.f) (hq : g0.quorum P)
     (hg0 : ∀ id b, id ∉ c.F → g0.call id = some b → (c.procs id).input = some b)

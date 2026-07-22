@@ -8,7 +8,7 @@ import Leslie2Protocols.ABA.CoreSimRel
 import Leslie2Protocols.ABA.CoreSimBurst
 
 /-!
-# The core simulation `hybridSpec ⊑ ABA.spec` (M6-E2, design v2.2)
+# The core simulation `hybridSpec ⊑ ABA.spec`
 
 Assembles `CoreSimRel`'s invariant/relation and `CoreSimBurst`'s burst kit into the theorem
 `coreSim`, the probabilistic forward simulation `hybridSpec P ⊑ spec P` along `coreRel P`.
@@ -86,7 +86,7 @@ theorem CoreState.corrupt_F_subset {P : Params} (c : CoreState P.n) (id : Fin P.
   · exact Finset.Subset.refl _
 
 /-- None of `Abs`'s seven fields mention `w`: the abstract twin never fires rule 5, so it is
-completely insensitive to the WCC family's state (v2.2). -/
+completely insensitive to the WCC family's state. -/
 theorem Abs.w_irrelevant {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreState P.n}
     {w w' : ℕ → WCC.SpecState P.n} {a : SpecState P.n} (hA : Abs P g c w a) :
     Abs P g c w' a :=
@@ -170,7 +170,7 @@ private theorem hidden_label_impossible {P : Params} {s_C : HState P} {l : Lab P
   · exact h hmem
 
 /-- **The core simulation.** `hybridSpec P` is a probabilistic forward simulation of `spec P`
-along `coreRel P` (design v2.2, the never-flipping abstract twin). -/
+along `coreRel P` (the never-flipping abstract twin). -/
 theorem coreSim (P : Params) :
     ProbabilisticForwardSimulation (hybridSpec P) (spec P) (coreRel P) := by
   refine ⟨⟨PMF.pure (SpecState.initial P.n), ?_, SpecState.initial P.n, rfl, Inv.initial P,
@@ -187,7 +187,7 @@ theorem coreSim (P : Params) :
         ⟨r, id, b, μr, μc, hstepG, hstepC, rfl⟩ |
         ⟨r, id, out, bound, μr, μc, hstepG, hstepC, rfl⟩ |
         ⟨r, id, μw', μc, hstepW, hstepC, rfl⟩ | ⟨r, id, b, μw', μc, hstepW, hstepC, rfl⟩
-      · -- row 3: `bindSet` (`gbcaTau`).  v2.2 amendment: the abstract twin bursts (rule 4)
+      · -- row 3: `bindSet` (`gbcaTau`).  The abstract twin bursts (rule 4)
         -- exactly when it is still unbound and the honest banked inputs are genuinely mixed;
         -- otherwise it stutters (`Abs.step_gbcaTau`, unanimity supplied through `hUnan`).
         by_cases hmix : a.bind = none ∧
@@ -271,7 +271,7 @@ theorem coreSim (P : Params) :
           obtain ⟨h1, h2, h3⟩ := hs'
           exact ⟨hI', by rw [h1, h3]; exact hAbs.step_coreTau hstepC h2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
-      · -- row 6: WCC flip — always a constant-coupled stutter (v2.2: `coin_bot`, `Abs` never
+      · -- row 6: WCC flip — always a constant-coupled stutter (`coin_bot`: `Abs` never
         -- reads `w`, so every outcome of the coin lands on the same abstract twin `a`)
         obtain ⟨ω, hRel, hWeak⟩ := stutter_step _ a (fun s' hs' => by
           obtain ⟨g', c', w'⟩ := s'
@@ -329,7 +329,7 @@ theorem coreSim (P : Params) :
         have hIA' : Inv P g c' w := Inv.step_callABA hI id b hstepC hc'mem
         by_cases hbindNone : a.bind = none
         · by_cases hdis : ∃ id', id' ∉ c.F ∧ (c.procs id').input = some (!b)
-          · -- dissent (design v2.2): an honest process holds the opposite input `!b`.
+          · -- dissent: an honest process holds the opposite input `!b`.
             obtain ⟨idd, hiddF, hiddin⟩ := hdis
             have hidd_ne : idd ≠ id := by
               rintro rfl; rw [hin] at hiddin; exact absurd hiddin (by simp)
@@ -377,7 +377,7 @@ theorem coreSim (P : Params) :
               rw [hbid]
               exact weakStep_strong (SpecStep.callSet a id b hcallnone hbindNone)
             · -- fresh input is honest: the first genuine honest dissent.  Split on whether any
-              -- round is already bound (v2.2 amendment).
+              -- round is already bound.
               by_cases hb : ∃ rr, (g rr).bind ≠ none
               case neg =>
                 -- no round bound anywhere: `bind_ready`'s pool conjunct is vacuous, so plain
