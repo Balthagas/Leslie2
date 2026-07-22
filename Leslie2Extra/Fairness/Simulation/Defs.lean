@@ -71,12 +71,12 @@ is fair, and (sharing labels with the concrete run) realises the same trace dist
 ## Proof architecture for `fairAchievableTraceDists_subset`
 
 `fairAchievableTraceDists_subset` is **fully proven and axiom-clean** (`propext`,
-`Classical.choice`, `Quot.sound`; no `sorryAx`): trace/initial preservation, the halt clause
+`Classical.choice`, `Quot.sound`): trace/initial preservation, the halt clause
 (`pe_A_halt_fairDeadlock`),
 the infinite clause (`pe_A_inf_fair`, including the well-founded descent), and the König lift
 `exists_infinite_coupled_lift` (step 4 for infinite runs — the finitely-branching-tree construction
 that turns an infinite consistent abstract run into an infinite consistent coupled run under
-`sys_C.ImageFinite`) are all `sorry`-free. The architecture, reusing the existing resolved-scheduler
+`sys_C.ImageFinite`) are all proven. The architecture, reusing the existing resolved-scheduler
 machinery:
 
 1. **Resolved coupling lift.** Build a `ResolvedProbabilisticExecution (simProd sys_C sys_A R)`

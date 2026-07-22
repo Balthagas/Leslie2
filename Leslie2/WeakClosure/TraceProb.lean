@@ -242,7 +242,7 @@ residual was a limit `RA (pE exec) N → 0`). Decompose `τ = τ' ⌢ [l]` with 
 
 `abs_eq_con` then follows from `base · 1 = base · 1`.
 
-Both shape equalities are now **proven** (the file is `sorry`-free):
+Both shape equalities are **proven**:
 
 * **ABS = base** (`abs_eq_baseSum`): telescoping the entry-config sum over `τ = τ' ⌢ [l]` via
   `reachProb_we_step` + `base_sum` (the outer commit weight `∑_x kernel_w (l,x)` collapsing

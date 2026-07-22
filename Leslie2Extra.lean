@@ -12,6 +12,7 @@ import Leslie2Extra.Fairness.Simulation.Defs
 import Leslie2Extra.Fairness.Simulation.Descent
 import Leslie2Extra.Fairness.Simulation.Soundness
 import Leslie2Extra.Fairness.Simulation.Trace
+import Leslie2Extra.FlattenAttic
 import Leslie2Extra.Measure.Coordinates
 import Leslie2Extra.Measure.Examples.ConvergingInfiniteTraceExample
 import Leslie2Extra.Measure.Examples.HalfInfiniteTraceExample

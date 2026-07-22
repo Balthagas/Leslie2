@@ -1048,7 +1048,7 @@ supplies the arbitrary-length chains):
   `¬ r_J.trans.Terminates`.
 
 Everything else in the fairness half (`pe_A_inf_fair`, the descent, the halt case) is proven on top
-of this interface and is `sorry`-free. -/
+of this interface. -/
 private theorem exists_infinite_coupled_lift
     (pe_C : ResolvedProbabilisticExecution sys_C)
     (sim : FairStrongProbabilisticSimulation F_C F_A R)

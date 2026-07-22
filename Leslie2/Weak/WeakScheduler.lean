@@ -256,7 +256,7 @@ open Classical in
 terminating execution `e`. `none` = σ produced all of `e` (and is still active);
 `some j` = σ halted after `j` transitions and `k` produced the rest. Source-
 independent: Dirac sources `PMF.pure` are used throughout. -/
-private noncomputable def bindWeight (σ : Scheduler sys)
+noncomputable def bindWeight (σ : Scheduler sys)
     (k : State → Scheduler sys)
     (e : AlterSeq State Label) (hT : e.trans.Terminates) : Option ℕ → ENNReal
   | none => (⟨PMF.pure e.init, σ⟩ : ProbabilisticExecution sys).probOf e hT
@@ -858,8 +858,10 @@ private theorem reach_step (σ : Scheduler sys) (k : State → Scheduler sys)
 open Classical in
 /-- **Reach (Lemma A).** Running the `bind σ k` scheduler from `pure s₀` produces
 the execution `e` with probability equal to the total belief weight `Z(e)`. Proven
-by reverse (cons-end) induction on `L`, with `reach_step` as the inductive step. -/
-private theorem reach (σ : Scheduler sys) (k : State → Scheduler sys)
+by reverse (cons-end) induction on `L`, with `reach_step` as the inductive step.
+(Exposed for the σ\* cylinder-monotonicity route, F5b: it turns the normalized-`next`
+path measure into the `n`-monotone *unnormalized* belief-weight sum.) -/
+theorem reach (σ : Scheduler sys) (k : State → Scheduler sys)
     (s₀ : State) (L : List (Label × State)) :
     (⟨PMF.pure s₀, (bind σ k)⟩ : ProbabilisticExecution sys).probOf
         ⟨s₀, Stream'.Seq.ofList L⟩ (Stream'.Seq.terminates_ofList L)

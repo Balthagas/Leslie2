@@ -311,3 +311,4 @@ i.e. honest-input unanimity is asserted only once a round is bound. Consequences
   `bind_succ` force the new value to equal the standing consensus (unchanged).
 - retC-impossibility while unbound: retC requires a bound round, so the
   conditioned unanimity applies — same refutation as before.
+
