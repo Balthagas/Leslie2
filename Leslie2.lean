@@ -17,6 +17,7 @@ import Leslie2.Simulation.SimDefs
 import Leslie2.Simulation.StrongSoundness
 import Leslie2.Simulation.TraceMap
 import Leslie2.Simulation.Transitivity
+import Leslie2.Simulation.WeakTauFlatten
 import Leslie2.Simulation.WeakTauLift
 import Leslie2.Systems.LTS
 import Leslie2.Systems.System
