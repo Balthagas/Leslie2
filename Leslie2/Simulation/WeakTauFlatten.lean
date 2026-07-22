@@ -1621,5 +1621,524 @@ theorem reachDepM_sum_le (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
       · simp [hdc, hcnil, reachM]
     · simp [hdc]
 
+/-- Append a single transition `(l, s')` at the end of a terminating prefix. -/
+private noncomputable def snocT (cur : {q : AlterSeq State Label // q.trans.Terminates})
+    (l : Label) (s' : State) : {q : AlterSeq State Label // q.trans.Terminates} :=
+  ⟨⟨cur.1.init, cur.1.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil)⟩,
+    ⟨_, Stream'.Seq.terminatedAt_append_find cur.2
+      (Nat.find_spec (Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil))⟩⟩
+
+/-- The current prefix of a `snocT` is nonempty (it ends in the appended step). -/
+private theorem snocT_trans_ne_nil (cur : {q : AlterSeq State Label // q.trans.Terminates})
+    (l : Label) (s' : State) : (snocT cur l s').1.trans ≠ Stream'.Seq.nil := by
+  show cur.1.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil) ≠ Stream'.Seq.nil
+  generalize cur.1.trans = t
+  apply Stream'.Seq.recOn t
+  · rw [Stream'.Seq.nil_append]; exact Stream'.Seq.cons_ne_nil
+  · intro x t'; rw [Stream'.Seq.cons_append]; exact Stream'.Seq.cons_ne_nil
+
+/-- `segTrans` distributes over a right `append`: the completed segments'
+concatenation is prepended, so appending after the current prefix commutes. -/
+private theorem segTrans_append (segs : List (FlatSeg State Label))
+    (X Y : Stream'.Seq (Label × State)) :
+    segTrans segs (X.append Y) = (segTrans segs X).append Y := by
+  induction segs with
+  | nil => rfl
+  | cons seg rest ih =>
+    show seg.run.trans.append (segTrans rest (X.append Y))
+      = (seg.run.trans.append (segTrans rest X)).append Y
+    rw [ih, Stream'.Seq.append_assoc]
+
+/-- **Landing identity (pointwise).** The current-run reach at a prefix extended
+by `(l, s')` equals the departure move mass at `(l, ν)` mixed against the drawn
+`ν`'s mass at `s'`. Uses `probOf_append_singleton` inside the inner witness. -/
+private theorem curReach_snoc (S : WeakScheduler (𝒟(sys^w))) (src : PMF State)
+    (Ec : AlterSeq (PMF State) Label)
+    (cur : {q : AlterSeq State Label // q.trans.Terminates}) (l : Label) (s' : State) :
+    curReach S src Ec (snocT cur l s')
+      = ∑' ν : PMF State, moveTerm S src Ec cur (some (l, ν)) * ν s' := by
+  have hkey : ∀ ω : PMF (PMF State),
+      (⟨src, (innerWitness sys src ω).toScheduler⟩ : ProbabilisticExecution sys).probOf
+          (snocT cur l s').1 (snocT cur l s').2
+        = (⟨src, (innerWitness sys src ω).toScheduler⟩ : ProbabilisticExecution sys).probOf
+              cur.1 cur.2
+          * ∑' ν : PMF State, (innerWitness sys src ω).next cur.1 (some (l, ν)) * ν s' := by
+    intro ω
+    rw [ProbabilisticExecution.probOf_congr _ (snocT cur l s').1
+        ⟨cur.1.init, cur.1.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil)⟩ rfl
+        (snocT cur l s').2 (snocT cur l s').2,
+      ProbabilisticExecution.probOf_append_singleton _ cur.1.init cur.1.trans cur.2 (l, s')
+        (snocT cur l s').2]
+    rfl
+  have hL : curReach S src Ec (snocT cur l s')
+      = ∑' ω : PMF (PMF State), S.next Ec (some (Silent.τ, ω))
+          * ((⟨src, (innerWitness sys src ω).toScheduler⟩ : ProbabilisticExecution sys).probOf
+                cur.1 cur.2
+            * ∑' ν : PMF State, (innerWitness sys src ω).next cur.1 (some (l, ν)) * ν s') := by
+    rw [curReach]; exact tsum_congr (fun ω => by rw [hkey ω])
+  rw [hL]
+  have e1 : ∀ ν : PMF State, moveTerm S src Ec cur (some (l, ν)) * ν s'
+      = ∑' ω : PMF (PMF State), S.next Ec (some (Silent.τ, ω))
+          * (⟨src, (innerWitness sys src ω).toScheduler⟩ : ProbabilisticExecution sys).probOf
+              cur.1 cur.2
+          * (innerWitness sys src ω).next cur.1 (some (l, ν)) * ν s' := by
+    intro ν; rw [moveTerm, ENNReal.tsum_mul_right]
+  rw [tsum_congr e1, ENNReal.tsum_comm]
+  refine tsum_congr (fun ω => ?_)
+  rw [← mul_assoc, ← ENNReal.tsum_mul_left]
+  refine tsum_congr (fun ν => ?_)
+  exact (mul_assoc _ _ _).symm
+
+/-- `segTrans` of a terminating current prefix (all segment runs terminate) again
+terminates. -/
+private theorem segTrans_terminates (segs : List (FlatSeg State Label))
+    (c : Stream'.Seq (Label × State)) (hc : c.Terminates) :
+    (segTrans segs c).Terminates := by
+  induction segs with
+  | nil => exact hc
+  | cons seg rest ih =>
+    exact ⟨_, Stream'.Seq.terminatedAt_append_find seg.runT (Nat.find_spec ih)⟩
+
+/-- **Consistency is preserved by a shared final `snoc`.** A config with current
+prefix extended by `(l, s')` is consistent with the `snoc`-extended history iff the
+original config is consistent with the original history (append cancels via
+`segTrans_append` + `append_singleton_inj_left`). -/
+private theorem dConsistent_snoc_iff (e : {q : AlterSeq State Label // q.trans.Terminates})
+    (l : Label) (s' : State) (segs : List (FlatSeg State Label))
+    (cur : {q : AlterSeq State Label // q.trans.Terminates}) :
+    dConsistent (snocT e l s').1 ⟨segs, (snocT cur l s').1, (snocT cur l s').2⟩
+      ↔ dConsistent e.1 ⟨segs, cur.1, cur.2⟩ := by
+  have hAterm : (segTrans segs cur.1.trans).Terminates :=
+    segTrans_terminates segs cur.1.trans cur.2
+  unfold dConsistent
+  constructor
+  · rintro ⟨h2, h3⟩
+    refine ⟨?_, h3⟩
+    rw [show (⟨segs, (snocT cur l s').1, (snocT cur l s').2⟩ : DConfig State Label).cur.trans
+        = cur.1.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil) from rfl,
+      segTrans_append] at h2
+    exact Stream'.Seq.append_singleton_inj_left _ _ hAterm e.2 (l, s') (l, s') h2
+  · rintro ⟨h2, h3⟩
+    refine ⟨?_, h3⟩
+    show segTrans segs (cur.1.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil))
+      = e.1.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil)
+    rw [segTrans_append, h2]
+
+open Classical in
+/-- For a nonempty observed history, `reachArrM` is the `genW`-carrier of the
+current-run kernel guarded by a nonempty current prefix. -/
+private theorem reachArrM_of_ne_nil (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {q : AlterSeq State Label // q.trans.Terminates}) (h : e.1.trans ≠ Stream'.Seq.nil) :
+    reachArrM S μ0 E e = genW (curReachG S) S μ0 E e := by
+  rw [reachArrM, if_neg h, genW_eq_dconfig]
+  refine tsum_congr (fun c => ?_)
+  simp only [curReachG]
+  by_cases hdc : dConsistent e.1 c
+  · by_cases hcnil : c.cur.trans = Stream'.Seq.nil
+    · simp [hdc, hcnil]
+    · simp [hdc, hcnil, reachM]
+  · simp [hdc]
+
+open Classical in
+/-- The `genW`-carrier of the landing kernel is the departure reach mixed against
+the drawn `ν`. -/
+private theorem genW_landKer (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {q : AlterSeq State Label // q.trans.Terminates}) (l : Label) (s' : State) :
+    genW (fun (s : PMF State) (Ec : AlterSeq (PMF State) Label)
+        (c : {q : AlterSeq State Label // q.trans.Terminates}) =>
+        ∑' ν : PMF State, moveTerm S s Ec c (some (l, ν)) * ν s') S μ0 E e
+      = ∑' ν : PMF State, reachDepM S μ0 E e l ν * ν s' := by
+  rw [genW_eq_dconfig]
+  have hr : ∀ ν : PMF State, reachDepM S μ0 E e l ν * ν s'
+      = ∑' c : DConfig State Label, ((if dConsistent e.1 c then (1 : ENNReal) else 0)
+          * segWeight S μ0 E c.segs
+          * moveTerm S (segSrc μ0 c.segs) (segHist E c.segs) ⟨c.cur, c.curT⟩ (some (l, ν)))
+        * ν s' := by
+    intro ν; rw [reachDepM, ENNReal.tsum_mul_right]
+  rw [tsum_congr hr, ENNReal.tsum_comm]
+  refine tsum_congr (fun c => ?_)
+  rw [← ENNReal.tsum_mul_left]
+  refine tsum_congr (fun ν => ?_)
+  ring
+
+/-- Appending a fixed final step is injective on terminating prefixes. -/
+private theorem snocT_injective (l : Label) (s' : State) :
+    Function.Injective
+      (fun cur : {q : AlterSeq State Label // q.trans.Terminates} => snocT cur l s') := by
+  rintro ⟨⟨ai, at'⟩, aT⟩ ⟨⟨bi, bt'⟩, bT⟩ h
+  have h1 : (⟨ai, at'.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil)⟩ : AlterSeq State Label)
+      = ⟨bi, bt'.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil)⟩ := congrArg Subtype.val h
+  have hi : ai = bi := congrArg AlterSeq.init h1
+  have ht : at' = bt' :=
+    Stream'.Seq.append_singleton_inj_left _ _ aT bT _ _ (congrArg AlterSeq.trans h1)
+  subst hi; subst ht; rfl
+
+open Classical in
+/-- A nonempty current prefix consistent with a `snoc`-history must itself end in
+the appended step, hence lies in the range of the `snoc` map. -/
+private theorem dcon_snoc_mem_range (e : {q : AlterSeq State Label // q.trans.Terminates})
+    (l : Label) (s' : State) (segs : List (FlatSeg State Label))
+    (cur : {q : AlterSeq State Label // q.trans.Terminates})
+    (hnil : cur.1.trans ≠ Stream'.Seq.nil)
+    (hdc : dConsistent (snocT e l s').1 ⟨segs, cur.1, cur.2⟩) :
+    cur ∈ Set.range (fun cur' : {q : AlterSeq State Label // q.trans.Terminates} =>
+      snocT cur' l s') := by
+  have hne : cur.1.trans.toList cur.2 ≠ [] := by
+    intro h0
+    exact hnil (by rw [← Stream'.Seq.ofList_toList cur.1.trans cur.2, h0, Stream'.Seq.ofList_nil])
+  obtain ⟨prev, lastEl, hprevT, hsplit, -, -⟩ :=
+    Stream'.Seq.exists_split_last cur.1.trans cur.2 hne
+  have h2 : segTrans segs cur.1.trans
+      = e.1.trans.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil) := hdc.1
+  rw [hsplit, segTrans_append] at h2
+  have hlast : lastEl = (l, s') :=
+    Stream'.Seq.append_singleton_inj_right _ _
+      (segTrans_terminates segs prev hprevT) e.2 _ _ h2
+  refine ⟨⟨⟨cur.1.init, prev⟩, hprevT⟩, ?_⟩
+  apply Subtype.ext
+  show (⟨cur.1.init, prev.append (Stream'.Seq.cons (l, s') Stream'.Seq.nil)⟩ : AlterSeq State Label)
+    = cur.1
+  rw [← hlast, ← hsplit]
+
+open Classical in
+/-- **The arrival-config reindex.** The arrival `genW`-carrier at the `snoc`-history
+equals the landing `genW`-carrier at the original history: an arrival config whose
+current run ends in `(l, s')` is exactly a config at `e` whose current run then
+departs with a `(l, ν)`-move landing at `s'` (bijection via `snocT`). -/
+private theorem genW_curReachG_snoc (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {q : AlterSeq State Label // q.trans.Terminates}) (l : Label) (s' : State) :
+    genW (curReachG S) S μ0 E (snocT e l s')
+      = genW (fun (s : PMF State) (Ec : AlterSeq (PMF State) Label)
+          (c : {q : AlterSeq State Label // q.trans.Terminates}) =>
+          ∑' ν : PMF State, moveTerm S s Ec c (some (l, ν)) * ν s') S μ0 E e := by
+  rw [genW, genW]
+  set F0 : (List (FlatSeg State Label) × {q : AlterSeq State Label // q.trans.Terminates})
+      → ENNReal := fun p =>
+    (if dConsistent (snocT e l s').1 ⟨p.1, p.2.1, p.2.2⟩ then (1 : ENNReal) else 0)
+      * segWeight S μ0 E p.1
+      * curReachG S (segSrc μ0 p.1) (segHist E p.1) p.2 with hF0
+  have hΦinj : Function.Injective
+      (fun p : List (FlatSeg State Label) × {q : AlterSeq State Label // q.trans.Terminates} =>
+        (p.1, snocT p.2 l s')) := by
+    intro p1 p2 h
+    obtain ⟨a1, b1⟩ := p1
+    obtain ⟨a2, b2⟩ := p2
+    have hfst : a1 = a2 := congrArg Prod.fst h
+    have hsnd : b1 = b2 := snocT_injective l s' (congrArg Prod.snd h)
+    rw [hfst, hsnd]
+  have hf : Function.support F0 ⊆ Set.range
+      (fun p : List (FlatSeg State Label) × {q : AlterSeq State Label // q.trans.Terminates} =>
+        (p.1, snocT p.2 l s')) := by
+    intro p hp
+    rw [Function.mem_support, hF0] at hp
+    have hdc : dConsistent (snocT e l s').1 ⟨p.1, p.2.1, p.2.2⟩ := by
+      by_contra hc
+      exact hp (by simp only [hc, if_false, zero_mul])
+    have hnil : p.2.1.trans ≠ Stream'.Seq.nil := by
+      intro h0
+      exact hp (by simp only [curReachG, h0, ne_eq, not_true_eq_false, if_false, mul_zero])
+    obtain ⟨cur', hcur'⟩ := dcon_snoc_mem_range e l s' p.1 p.2 hnil hdc
+    have hcur'' : snocT cur' l s' = p.2 := hcur'
+    refine ⟨(p.1, cur'), ?_⟩
+    show (p.1, snocT cur' l s') = p
+    rw [hcur'']
+  rw [← Function.Injective.tsum_eq hΦinj hf]
+  refine tsum_congr (fun p => ?_)
+  have hcr : curReachG S (segSrc μ0 p.1) (segHist E p.1) (snocT p.2 l s')
+      = ∑' ν : PMF State, moveTerm S (segSrc μ0 p.1) (segHist E p.1) p.2 (some (l, ν)) * ν s' := by
+    have h1 : curReachG S (segSrc μ0 p.1) (segHist E p.1) (snocT p.2 l s')
+        = curReach S (segSrc μ0 p.1) (segHist E p.1) (snocT p.2 l s') :=
+      if_pos (snocT_trans_ne_nil p.2 l s')
+    rw [h1, curReach_snoc]
+  show (if dConsistent (snocT e l s').1 ⟨p.1, (snocT p.2 l s').1, (snocT p.2 l s').2⟩
+        then (1 : ENNReal) else 0) * segWeight S μ0 E p.1
+      * curReachG S (segSrc μ0 p.1) (segHist E p.1) (snocT p.2 l s')
+    = (if dConsistent e.1 ⟨p.1, p.2.1, p.2.2⟩ then (1 : ENNReal) else 0) * segWeight S μ0 E p.1
+      * (∑' ν : PMF State, moveTerm S (segSrc μ0 p.1) (segHist E p.1) p.2 (some (l, ν)) * ν s')
+  simp only [hcr, dConsistent_snoc_iff]
+
+/-- **The arrival-step identity (the crux).** Extending the observed history by a
+step `(l, s')` decomposes the arrival reach as: depart at `e` with move `(l, ν)`,
+then the drawn `ν` lands at `s'`. -/
+theorem reachArrM_snoc (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {q : AlterSeq State Label // q.trans.Terminates}) (l : Label) (s' : State) :
+    reachArrM S μ0 E (snocT e l s') = ∑' ν : PMF State, reachDepM S μ0 E e l ν * ν s' := by
+  rw [reachArrM_of_ne_nil S μ0 E (snocT e l s') (snocT_trans_ne_nil e l s'),
+    genW_curReachG_snoc, genW_landKer]
+
+/-- `reachArrM` depends only on the underlying execution, not its termination proof. -/
+private theorem reachArrM_congr (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (a b : {q : AlterSeq State Label // q.trans.Terminates}) (h : a.1 = b.1) :
+    reachArrM S μ0 E a = reachArrM S μ0 E b := by
+  obtain ⟨av, aT⟩ := a
+  obtain ⟨bv, bT⟩ := b
+  cases h
+  rfl
+
+/-- The mass function of `flatSched` at observed history `e`: a proper step
+`some (l,ν)` gets the posterior `reachDepM / reachArrM`; the halt label `⊥` takes
+the remaining (halt-or-diverge) mass. Mirrors `expandMass`. -/
+noncomputable def flatMass (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {q : AlterSeq State Label // q.trans.Terminates}) :
+    Option (Label × PMF State) → ENNReal
+  | some (l, ν) => reachDepM S μ0 E e l ν / reachArrM S μ0 E e
+  | none => 1 - ∑' p : Label × PMF State, reachDepM S μ0 E e p.1 p.2 / reachArrM S μ0 E e
+
+/-- `flatMass` is a probability distribution: the proper-step masses sum to `≤ 1`
+(departures ⊆ arrivals, `reachDepM_sum_le`), so `⊥` gets a well-defined remainder
+and the total is `1`. Mirrors `expandMass_hasSum`. -/
+theorem flatMass_hasSum (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {q : AlterSeq State Label // q.trans.Terminates}) :
+    HasSum (flatMass S μ0 E e) 1 := by
+  rw [ENNReal.summable.hasSum_iff, tsumOpt (flatMass S μ0 E e)]
+  have hsome : ∀ p : Label × PMF State,
+      flatMass S μ0 E e (some p) = reachDepM S μ0 E e p.1 p.2 / reachArrM S μ0 E e := by
+    rintro ⟨l, ν⟩; rfl
+  have hnone : flatMass S μ0 E e none
+      = 1 - ∑' p : Label × PMF State, reachDepM S μ0 E e p.1 p.2 / reachArrM S μ0 E e := rfl
+  rw [tsum_congr hsome, hnone]
+  apply tsub_add_cancel_of_le
+  rw [show (∑' p : Label × PMF State, reachDepM S μ0 E e p.1 p.2 / reachArrM S μ0 E e)
+        = (∑' p : Label × PMF State, reachDepM S μ0 E e p.1 p.2) / reachArrM S μ0 E e from by
+      simp_rw [div_eq_mul_inv]; rw [ENNReal.tsum_mul_right]]
+  exact ENNReal.div_le_of_le_mul (by rw [one_mul]; exact reachDepM_sum_le S μ0 E e)
+
+open Classical in
+/-- **The honest reach-arrival flattening scheduler.** At each observed history the
+posterior over the next inner draw is `reachDepM / reachArrM` (halt takes the
+remainder). `valid`/`internal_only` delegate to the departure config's inner
+witness `innerWitness`. -/
+noncomputable def flatSched (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label) : WeakScheduler sys where
+  next e := if hT : e.trans.Terminates then
+      ⟨flatMass S μ0 E ⟨e, hT⟩, flatMass_hasSum S μ0 E ⟨e, hT⟩⟩
+    else PMF.pure none
+  valid := by
+    classical
+    intro e n s hterm hstate l ν hsupp
+    by_cases hT : e.trans.Terminates
+    · rw [dif_pos hT, PMF.mem_support_iff] at hsupp
+      change flatMass S μ0 E ⟨e, hT⟩ (some (l, ν)) ≠ 0 at hsupp
+      have hgne : reachDepM S μ0 E ⟨e, hT⟩ l ν ≠ 0 := by
+        intro h0
+        apply hsupp
+        show reachDepM S μ0 E ⟨e, hT⟩ l ν / reachArrM S μ0 E ⟨e, hT⟩ = 0
+        rw [h0, ENNReal.zero_div]
+      rw [reachDepM] at hgne
+      obtain ⟨c, hc⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hgne)
+      have hguard : dConsistent e c := by
+        by_contra hcon
+        rw [if_neg hcon, zero_mul, zero_mul] at hc; exact hc rfl
+      have hmove : moveTerm S (segSrc μ0 c.segs) (segHist E c.segs) ⟨c.cur, c.curT⟩
+          (some (l, ν)) ≠ 0 := right_ne_zero_of_mul hc
+      simp only [moveTerm] at hmove
+      obtain ⟨ω, hω⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hmove)
+      have hnext : (innerWitness sys (segSrc μ0 c.segs) ω).next c.cur (some (l, ν)) ≠ 0 :=
+        right_ne_zero_of_mul hω
+      have hsend : s = e.endState hT := by
+        have hle1 : Nat.find hT ≤ n := Nat.find_le hterm
+        have hle2 : n ≤ Nat.find hT := by
+          by_contra hlt
+          push_neg at hlt
+          obtain ⟨m, hm⟩ : ∃ m, n = m + 1 := Nat.exists_eq_succ_of_ne_zero (by omega)
+          have hget : e.trans.get? m = none :=
+            Stream'.Seq.terminated_stable e.trans (by omega) (Nat.find_spec hT)
+          rw [hm] at hstate
+          change (e.trans.get? m).map Prod.snd = some s at hstate
+          rw [hget] at hstate; simp at hstate
+        have hn : n = Nat.find hT := le_antisymm hle2 hle1
+        rw [hn, AlterSeq.stateAt_find_eq_endState e hT] at hstate
+        exact (Option.some.inj hstate).symm
+      have heqe : (⟨e.init, segTrans c.segs c.cur.trans⟩ : AlterSeq State Label) = e := by
+        rw [hguard.1]
+      have hTeq' : (⟨e.init, segTrans c.segs c.cur.trans⟩ :
+          AlterSeq State Label).trans.Terminates := by rw [heqe]; exact hT
+      have hcend : e.endState hT = c.cur.endState c.curT := by
+        rw [← AlterSeq.endState_congr_pub heqe hTeq' hT]
+        exact chained_endState c.segs e.init ⟨c.cur, c.curT⟩ hTeq' hguard.2
+      have hstepIW := (innerWitness sys (segSrc μ0 c.segs) ω).valid c.cur
+        (Nat.find c.curT) (c.cur.endState c.curT) (Nat.find_spec c.curT)
+        (AlterSeq.stateAt_find_eq_endState c.cur c.curT) l ν
+        ((PMF.mem_support_iff _ _).mpr hnext)
+      rw [hsend, hcend]; exact hstepIW
+    · rw [dif_neg hT, PMF.mem_support_iff, PMF.pure_apply_of_ne _ _ (by simp)] at hsupp
+      exact absurd rfl hsupp
+  internal_only := by
+    classical
+    intro e l ν hsupp
+    by_cases hT : e.trans.Terminates
+    · rw [dif_pos hT, PMF.mem_support_iff] at hsupp
+      change flatMass S μ0 E ⟨e, hT⟩ (some (l, ν)) ≠ 0 at hsupp
+      have hgne : reachDepM S μ0 E ⟨e, hT⟩ l ν ≠ 0 := by
+        intro h0
+        apply hsupp
+        show reachDepM S μ0 E ⟨e, hT⟩ l ν / reachArrM S μ0 E ⟨e, hT⟩ = 0
+        rw [h0, ENNReal.zero_div]
+      rw [reachDepM] at hgne
+      obtain ⟨c, hc⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hgne)
+      have hmove : moveTerm S (segSrc μ0 c.segs) (segHist E c.segs) ⟨c.cur, c.curT⟩
+          (some (l, ν)) ≠ 0 := right_ne_zero_of_mul hc
+      simp only [moveTerm] at hmove
+      obtain ⟨ω, hω⟩ := not_forall.mp (mt ENNReal.tsum_eq_zero.mpr hmove)
+      have hnext : (innerWitness sys (segSrc μ0 c.segs) ω).next c.cur (some (l, ν)) ≠ 0 :=
+        right_ne_zero_of_mul hω
+      exact (innerWitness sys (segSrc μ0 c.segs) ω).internal_only c.cur l ν
+        ((PMF.mem_support_iff _ _).mpr hnext)
+    · rw [dif_neg hT, PMF.mem_support_iff, PMF.pure_apply_of_ne _ _ (by simp)] at hsupp
+      exact absurd rfl hsupp
+
+open Classical in
+/-- **List-indexed core of the fidelity theorem.** For the canonical terminating
+execution `⟨s0, ofList L⟩`, the composite `flatSched`-probability equals its arrival
+reach. Proved by cons-end induction on `L`. -/
+private theorem reachArrM_aux (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label) (s0 : State) (L : List (Label × State)) :
+    (⟨μ0, (flatSched S μ0 E).toScheduler⟩ : ProbabilisticExecution sys).probOf
+        ⟨s0, Stream'.Seq.ofList L⟩ (Stream'.Seq.terminates_ofList L)
+      = reachArrM S μ0 E ⟨⟨s0, Stream'.Seq.ofList L⟩, Stream'.Seq.terminates_ofList L⟩ := by
+  induction L using List.reverseRecOn with
+  | nil =>
+    rw [ProbabilisticExecution.probOf_congr _ ⟨s0, Stream'.Seq.ofList []⟩ ⟨s0, Stream'.Seq.nil⟩
+        (by rw [Stream'.Seq.ofList_nil]) (Stream'.Seq.terminates_ofList [])
+        Stream'.Seq.terminates_nil,
+      ProbabilisticExecution.probOf_nil,
+      reachArrM_congr S μ0 E ⟨⟨s0, Stream'.Seq.ofList []⟩, Stream'.Seq.terminates_ofList []⟩
+        ⟨⟨s0, Stream'.Seq.nil⟩, Stream'.Seq.terminates_nil⟩
+        (by show (⟨s0, Stream'.Seq.ofList []⟩ : AlterSeq State Label) = ⟨s0, Stream'.Seq.nil⟩
+            rw [Stream'.Seq.ofList_nil]),
+      reachArrM, if_pos rfl]
+    rfl
+  | append_singleton L' last ih =>
+    obtain ⟨l, x⟩ := last
+    have hofl : (Stream'.Seq.ofList (L' ++ [(l, x)]) : Stream'.Seq (Label × State))
+        = (Stream'.Seq.ofList L').append (Stream'.Seq.cons (l, x) Stream'.Seq.nil) := by
+      rw [Stream'.Seq.ofList_append, Stream'.Seq.ofList_cons, Stream'.Seq.ofList_nil]
+    have happ_term : ((Stream'.Seq.ofList L').append
+        (Stream'.Seq.cons (l, x) Stream'.Seq.nil)).Terminates := by
+      rw [← hofl]; exact Stream'.Seq.terminates_ofList _
+    have hnext : ∀ ν : PMF State,
+        (flatSched S μ0 E).next ⟨s0, Stream'.Seq.ofList L'⟩ (some (l, ν))
+          = reachDepM S μ0 E ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩ l ν
+            / reachArrM S μ0 E ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩ := by
+      intro ν
+      rw [show (flatSched S μ0 E).next ⟨s0, Stream'.Seq.ofList L'⟩
+          = ⟨flatMass S μ0 E ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩,
+              flatMass_hasSum S μ0 E
+                ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩⟩
+          from dif_pos (Stream'.Seq.terminates_ofList L')]
+      rfl
+    have hker : (⟨μ0, (flatSched S μ0 E).toScheduler⟩ : ProbabilisticExecution sys).kernel
+          ⟨s0, Stream'.Seq.ofList L'⟩ (l, x)
+        = ∑' ν : PMF State,
+            (reachDepM S μ0 E ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩ l ν
+              / reachArrM S μ0 E ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩)
+              * ν x := by
+      rw [ProbabilisticExecution.kernel]
+      exact tsum_congr (fun ν => by rw [hnext ν])
+    rw [ProbabilisticExecution.probOf_congr _ ⟨s0, Stream'.Seq.ofList (L' ++ [(l, x)])⟩
+        ⟨s0, (Stream'.Seq.ofList L').append (Stream'.Seq.cons (l, x) Stream'.Seq.nil)⟩
+        (by rw [hofl]) (Stream'.Seq.terminates_ofList _) happ_term,
+      ProbabilisticExecution.probOf_append_singleton _ s0 (Stream'.Seq.ofList L')
+        (Stream'.Seq.terminates_ofList L') (l, x) happ_term, ih, hker,
+      reachArrM_congr S μ0 E
+        ⟨⟨s0, Stream'.Seq.ofList (L' ++ [(l, x)])⟩, Stream'.Seq.terminates_ofList _⟩
+        (snocT ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩ l x)
+        (by show (⟨s0, Stream'.Seq.ofList (L' ++ [(l, x)])⟩ : AlterSeq State Label)
+              = ⟨s0, (Stream'.Seq.ofList L').append (Stream'.Seq.cons (l, x) Stream'.Seq.nil)⟩
+            rw [hofl]),
+      reachArrM_snoc]
+    by_cases hz : reachArrM S μ0 E
+        ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩ = 0
+    · rw [hz, zero_mul, eq_comm]
+      refine ENNReal.tsum_eq_zero.mpr (fun ν => ?_)
+      have hle := reachDepM_sum_le S μ0 E ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩
+      rw [hz, nonpos_iff_eq_zero] at hle
+      rw [ENNReal.tsum_eq_zero.mp hle (l, ν), zero_mul]
+    · have hle : reachArrM S μ0 E
+          ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩ ≤ 1 := by
+        rw [← ih]
+        exact (ProbabilisticExecution.probOf_le_init _ _ _).trans (PMF.coe_le_one _ _)
+      have htop : reachArrM S μ0 E
+          ⟨⟨s0, Stream'.Seq.ofList L'⟩, Stream'.Seq.terminates_ofList L'⟩ ≠ ⊤ :=
+        (hle.trans_lt ENNReal.one_lt_top).ne
+      rw [← ENNReal.tsum_mul_left]
+      refine tsum_congr (fun ν => ?_)
+      rw [← mul_assoc, ENNReal.mul_div_cancel hz htop]
+
+/-- **The fidelity lemma.** The probability that the honest reach-arrival
+flattening scheduler `flatSched` (sourced at `μ0`) produces the terminating
+concrete execution `e` equals its arrival reach `reachArrM`. -/
+theorem probOf_eq_reachArrM (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {q : AlterSeq State Label // q.trans.Terminates}) :
+    (⟨μ0, (flatSched S μ0 E).toScheduler⟩ : ProbabilisticExecution sys).probOf e.1 e.2
+      = reachArrM S μ0 E e := by
+  obtain ⟨⟨ei, et⟩, eT⟩ := e
+  rw [ProbabilisticExecution.probOf_congr _ ⟨ei, et⟩ ⟨ei, Stream'.Seq.ofList (et.toList eT)⟩
+      (by rw [Stream'.Seq.ofList_toList et eT]) eT (Stream'.Seq.terminates_ofList _),
+    reachArrM_congr S μ0 E ⟨⟨ei, et⟩, eT⟩
+      ⟨⟨ei, Stream'.Seq.ofList (et.toList eT)⟩, Stream'.Seq.terminates_ofList _⟩
+      (by show (⟨ei, et⟩ : AlterSeq State Label) = ⟨ei, Stream'.Seq.ofList (et.toList eT)⟩
+          rw [Stream'.Seq.ofList_toList et eT])]
+  exact reachArrM_aux S μ0 E ei (et.toList eT)
+
+/-- **The honest halted-arrival reach** at observed history `e`: the arrival reach
+`reachArrM` minus the total departure reach `∑' p, reachDepM`. This is the mass
+that arrives at a decision point consistent with `e` and does NOT depart next — the
+`haltReach`-side of `curReach_split`, plus the fresh-reset boundary — i.e. the
+composite halts here. Departures ⊆ arrivals (`reachDepM_sum_le`) keeps it honest. -/
+noncomputable def reachArrHalt (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {e : AlterSeq State Label // e.trans.Terminates}) : ENNReal :=
+  reachArrM S μ0 E e - ∑' p : Label × PMF State, reachDepM S μ0 E e p.1 p.2
+
+/-- **The halt-mass identity.** The halting mass of `flatSched` at the
+terminating execution `e` is exactly the honest halted-arrival reach. The
+haltMass-side analogue of the fidelity `probOf_eq_reachArrM`: `haltMass =
+probOf · next(⊥) = reachArrM · flatMass(⊥) = reachArrM − ∑ reachDepM`, the last
+step by ENNReal div-cancel under the departures ⊆ arrivals bound. -/
+theorem flatSched_haltMass (S : WeakScheduler (𝒟(sys^w))) (μ0 : PMF State)
+    (E : AlterSeq (PMF State) Label)
+    (e : {e : AlterSeq State Label // e.trans.Terminates}) :
+    (flatSched S μ0 E).haltMass μ0 e = reachArrHalt S μ0 E e := by
+  obtain ⟨ev, eT⟩ := e
+  have key : ∀ x y : ENNReal, y ≤ x → x ≠ ⊤ → x * (1 - y / x) = x - y := by
+    intro x y hyx hxtop
+    rcases eq_or_ne x 0 with hx | hx
+    · subst hx; rw [le_zero_iff.mp hyx]; simp
+    · rw [ENNReal.mul_sub (fun _ _ => hxtop), mul_one, ← mul_div_assoc, mul_comm x y,
+        mul_div_assoc, ENNReal.div_self hx hxtop, mul_one]
+  have hnext : (flatSched S μ0 E).toScheduler.next ev none
+      = flatMass S μ0 E ⟨ev, eT⟩ none := by
+    show (flatSched S μ0 E).next ev none = _
+    simp only [flatSched, dif_pos eT]
+    rfl
+  rw [WeakScheduler.haltMass, Scheduler.haltMass]
+  show (⟨μ0, (flatSched S μ0 E).toScheduler⟩ : ProbabilisticExecution sys).probOf ev eT
+      * (flatSched S μ0 E).toScheduler.next ev none = _
+  rw [hnext, probOf_eq_reachArrM S μ0 E ⟨ev, eT⟩]
+  show reachArrM S μ0 E ⟨ev, eT⟩ * flatMass S μ0 E ⟨ev, eT⟩ none = _
+  have hdiv : (∑' p : Label × PMF State,
+        reachDepM S μ0 E ⟨ev, eT⟩ p.1 p.2 / reachArrM S μ0 E ⟨ev, eT⟩)
+      = (∑' p : Label × PMF State, reachDepM S μ0 E ⟨ev, eT⟩ p.1 p.2)
+          / reachArrM S μ0 E ⟨ev, eT⟩ := by
+    simp_rw [div_eq_mul_inv]; rw [ENNReal.tsum_mul_right]
+  have htop : reachArrM S μ0 E ⟨ev, eT⟩ ≠ ⊤ := by
+    rw [← probOf_eq_reachArrM S μ0 E ⟨ev, eT⟩]
+    exact ((ProbabilisticExecution.probOf_le_init _ _ _).trans (PMF.coe_le_one _ _)).trans_lt
+      ENNReal.one_lt_top |>.ne
+  show reachArrM S μ0 E ⟨ev, eT⟩
+      * (1 - ∑' p : Label × PMF State,
+          reachDepM S μ0 E ⟨ev, eT⟩ p.1 p.2 / reachArrM S μ0 E ⟨ev, eT⟩) = _
+  rw [hdiv, key _ _ (reachDepM_sum_le S μ0 E ⟨ev, eT⟩) htop]
+  rfl
+
 
 end PLTS
