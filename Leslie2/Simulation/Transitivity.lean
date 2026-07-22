@@ -5,6 +5,8 @@ Authors: Gaspard Reghem
 -/
 
 import Leslie2.Simulation.SimDefs
+import Leslie2.Simulation.WeakTauFlatten
+import Leslie2.Simulation.WeakTauLift
 import Leslie2.Weak.WeakChar
 
 /-!
@@ -22,7 +24,9 @@ forward simulation to a weak transition on the (abstract) `sys_A` side.
   `weakTau_lift_pure` — lift a `weakTau` **out of a single concrete state** `PMF.pure q_B`,
 
 which is the genuine analytic crux (the run-to-halt of an internal scheduler, matched step-by-step
-on the abstract side) and is left as the sole `sorry`. Everything else is *coupling algebra*:
+on the abstract side); it is proven by reduction through the distribution-lifted weak closure
+(`Equivalences.lean`, `WeakTauLift.lean`) and the ω-composition `weakTau_flatten`
+(`WeakTauFlatten.lean`). Everything else is *coupling algebra*:
 
 * `simulates_bind_mix` — `Simulates` is closed under mixing sources (posterior/Bayesian mixing of
   the per-source kernels), the convex-closure property the coupling form of `Simulates` was chosen
@@ -212,14 +216,22 @@ This is the genuine analytic core: the concrete internal scheduler runs to halt 
 internal steps), and the abstract side must mirror it step-by-step through `sim.step` and take the
 a.s.-halting limit. Everything else in this file is coupling algebra on top of this lemma.
 
-*Left as `sorry`.* -/
+Proven: Stage 1 converts `sim` to a strong simulation into `𝒟(sys_A^w)` and lifts the weak
+transition there (`probabilisticForwardSimulation_iff_strong_dist_weakClosure`,
+`StrongProbabilisticSimulation.weakTau_lift`); Stage 2 flattens the lifted transition back down
+to `sys_A` via the ω-composition `weakTau_flatten` (`WeakTauFlatten.lean`). -/
 theorem weakTau_lift_pure
     (sim : ProbabilisticForwardSimulation sys_B sys_A R_AB)
     {q_B : State_B} {ν_B : PMF State_B} {μ_A : PMF State_A}
     (hR : R_AB q_B μ_A)
     (hweak : weakTau sys_B (PMF.pure q_B) ν_B) :
     ∃ ν_A, weakTau sys_A μ_A ν_A ∧ Simulates R_AB ν_B ν_A := by
-  sorry
+  -- Stage 1 + Stage 2: convert to a strong simulation into `𝒟(sys_A^w)`,
+  -- lift the weak transition there, and flatten back down to `sys_A`.
+  have hstrong : StrongProbabilisticSimulation sys_B (𝒟(sys_A^w)) R_AB :=
+    (probabilisticForwardSimulation_iff_strong_dist_weakClosure sys_B sys_A R_AB).mp sim
+  obtain ⟨Ν, hwtD, hPMFRel⟩ := hstrong.weakTau_lift hR hweak
+  exact ⟨Ν.bind id, weakTau_flatten sys_A hwtD, simulates_of_pmfRel hPMFRel⟩
 
 /-- Extract the pointwise membership from the standard `(K0)`-joint `Ω`. -/
 private theorem mem_bindMap_support {μ_B : PMF State_B} {K0 : State_B → PMF (PMF State_A)}
