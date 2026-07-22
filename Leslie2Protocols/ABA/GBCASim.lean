@@ -1,7 +1,7 @@
 /-
 Copyright (c) 2026 Gaspard Reghem. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
-Authors: Gaspard Reghem
+Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.GBCAImpl
