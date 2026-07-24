@@ -156,10 +156,16 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
   quiescent : ∃ R, ∀ r, R ≤ r → (g r).bind = none
   /-- I5: coins flip only at bound rounds. -/
   w_bound : ∀ r, (w r).val ≠ .bot → (g r).bind ≠ none
-  /-- I4: delivery soundness for DECIDED. -/
-  recv_sound : ∀ i j b, j ∉ c.F → c.decidedRecv i j = some b → c.decidedSent j = some b
-  /-- I4: honest DECIDEDs come from an A-locked bound round. -/
-  decided_src : ∀ id b, id ∉ c.F → c.decidedSent id = some b →
+  /-- I4: delivery soundness for DECIDED, per (receiver, sender, bit) (D12′).
+  Honesty-free: sent pools only ever grow, so every receipt stays covered even
+  after the sender is corrupted or equivocates. -/
+  recv_sound : ∀ i j b, b ∈ c.decidedRecv i j → b ∈ c.decidedSent j
+  /-- I4: honest DECIDEDs come from an A-locked bound round — per pooled bit
+  (D12′). Equivocation-robust form: a corrupted sender may pool both bits (and
+  its receipts count toward either tally), but any `n − f`-sender tally for `b`
+  contains a never-corrupted sender of `b` (pigeonhole, at the `retABA` row),
+  and *that* sender's pooled `b` carries the `A`-lock certificate. -/
+  decided_src : ∀ id b, id ∉ c.F → b ∈ c.decidedSent id →
     ∃ r, (g r).grade = some true ∧ (g r).bind = some b
   /-- I3b: an A-locked bound round commits everything at and above it. -/
   a_commit : ∀ r b, (g r).grade = some true → (g r).bind = some b →
@@ -407,7 +413,7 @@ theorem Inv.initial (P : Params) :
   down_closed := fun _ h => absurd rfl h
   quiescent := ⟨0, fun _ _ => rfl⟩
   w_bound := fun _ h => absurd rfl h
-  recv_sound := fun i j b _hj h => absurd h (by simp [CoreState.initial])
+  recv_sound := fun i j b h => absurd h (by simp [CoreState.initial])
   decided_src := fun id b _ h => absurd h (by simp [CoreState.initial])
   a_commit := fun r b hg => absurd hg (by simp [GBCA.SpecState.initial])
   round_bound := fun id _ r h => absurd h (by simp [CoreState.initial])
@@ -834,7 +840,7 @@ theorem Inv.step_retABA {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreS
   · intro id' b' hmem hcall; rw [hInput]; exact hI.input_g0 id' b' (hF ▸ hmem) hcall
   · intro r id' hmem hcall; rw [hInput]; exact hI.input_called r id' (hF ▸ hmem) hcall
   · intro id' hmem hne; rw [hPhase] at hne; rw [hInput]; exact hI.phase_input id' (hF ▸ hmem) hne
-  · intro i j b' hj h; rw [hDR] at h; rw [hDS]; exact hI.recv_sound i j b' (hF ▸ hj) h
+  · intro i j b' h; rw [hDR] at h; rw [hDS]; exact hI.recv_sound i j b' h
   · intro id' b' hmem h; rw [hDS] at h; exact hI.decided_src id' b' (hF ▸ hmem) h
   · intro r b' hg hb
     obtain ⟨h1, h2, h3⟩ := hI.a_commit r b' hg hb
@@ -937,7 +943,7 @@ theorem Inv.step_callABA {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
       by_cases h : id' = id
       · rw [h]; simp [hSelf]
       · rw [hNe id' h] at hne ⊢; exact hI.phase_input id' (hF ▸ hmem) hne
-    · intro i j b' hj h; rw [hDR] at h; rw [hDS]; exact hI.recv_sound i j b' (hF ▸ hj) h
+    · intro i j b' h; rw [hDR] at h; rw [hDS]; exact hI.recv_sound i j b' h
     · intro id' b' hmem h; rw [hDS] at h; exact hI.decided_src id' b' (hF ▸ hmem) h
     · intro r b' hg hb
       obtain ⟨h1, h2, h3⟩ := hI.a_commit r b' hg hb
@@ -1088,9 +1094,9 @@ theorem Inv.step_fail {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
   · intro r h
     rw [hval r] at h; rw [hbind r]
     exact hI.w_bound r h
-  · intro i j b' hj h
+  · intro i j b' h
     rw [hDR] at h; rw [hDS]
-    exact hI.recv_sound i j b' (fun h' => hj (hFsub h')) h
+    exact hI.recv_sound i j b' h
   · intro id' b' hmem h
     rw [hDS] at h
     obtain ⟨r, hgrade0, hbind0⟩ := hI.decided_src id' b' (fun h' => hmem (hFsub h')) h
@@ -1570,7 +1576,7 @@ theorem Inv.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
     {c' : CoreState P.n} (hc' : c' ∈ μc.support) :
     Inv P g c' w := by
   rw [coreStep_tau_iff] at hstep
-  rcases hstep with ⟨i, j, b, hs, hr, rfl⟩ | ⟨id, b, hcnt, hs, rfl⟩ | ⟨id, b, hF, hs, rfl⟩
+  rcases hstep with ⟨i, j, b, hs, hr, rfl⟩ | ⟨id, b, hcnt, hs, rfl⟩ | ⟨id, b, hF, rfl⟩
   · -- deliver
     rw [PMF.mem_support_pure_iff] at hc'; subst hc'
     have hProcs : (c.deliverDecided i j b).procs = c.procs := CoreState.deliverDecided_procs _ _ _ _
@@ -1591,15 +1597,16 @@ theorem Inv.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
       rw [hProcs]; exact hI.input_called r id' (hFeq ▸ hmem) hcall
     · intro id' hmem hne
       rw [hProcs] at hne ⊢; exact hI.phase_input id' (hFeq ▸ hmem) hne
-    · intro i' j' b' hj h
+    · intro i' j' b' h
       rw [hDS]
       by_cases hij : i' = i ∧ j' = j
       · obtain ⟨rfl, rfl⟩ := hij
-        rw [CoreState.deliverDecided_decidedRecv_self] at h
-        rw [Option.some_inj] at h
-        exact h ▸ hs
+        rw [CoreState.deliverDecided_decidedRecv_self, Finset.mem_insert] at h
+        rcases h with rfl | h
+        · exact hs
+        · exact hI.recv_sound i' j' b' h
       · rw [CoreState.deliverDecided_decidedRecv_of_ne _ _ _ _ (by tauto)] at h
-        exact hI.recv_sound i' j' b' (hFeq ▸ hj) h
+        exact hI.recv_sound i' j' b' h
     · intro id' b' hmem h
       rw [hDS] at h; exact hI.decided_src id' b' (hFeq ▸ hmem) h
     · intro r b' hgr hbr
@@ -1649,16 +1656,16 @@ theorem Inv.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
     have hFeq : (c.sendDecided id b).F = c.F := CoreState.sendDecided_F _ _ _
     have hDR : (c.sendDecided id b).decidedRecv = c.decidedRecv :=
       CoreState.sendDecided_decidedRecv _ _ _
-    have hcnt' : P.f + 1 ≤ (Finset.univ.filter (fun j => c.decidedRecv id j = some b)).card :=
+    have hcnt' : P.f + 1 ≤ (Finset.univ.filter (fun j => b ∈ c.decidedRecv id j)).card :=
       hcnt
-    have hcard : c.F.card < (Finset.univ.filter (fun j => c.decidedRecv id j = some b)).card := by
+    have hcard : c.F.card < (Finset.univ.filter (fun j => b ∈ c.decidedRecv id j)).card := by
       have := hI.F_card
       omega
     obtain ⟨j, hjmem, hjF⟩ :=
-      (Finset.not_subset (s := Finset.univ.filter (fun j => c.decidedRecv id j = some b))
+      (Finset.not_subset (s := Finset.univ.filter (fun j => b ∈ c.decidedRecv id j))
         (t := c.F)).mp (fun hsub => absurd (Finset.card_le_card hsub) (by omega))
     rw [Finset.mem_filter] at hjmem
-    have hjsent : c.decidedSent j = some b := hI.recv_sound id j b hjF hjmem.2
+    have hjsent : b ∈ c.decidedSent j := hI.recv_sound id j b hjmem.2
     obtain ⟨r0, hgrade0, hbind0⟩ := hI.decided_src j b hjF hjsent
     refine ⟨fun r => by rw [hFeq]; exact hI.F_g r, fun r => by rw [hFeq]; exact hI.F_w r,
       hFeq ▸ hI.F_card, ?_, ?_, ?_, hI.down_closed, hI.quiescent, hI.w_bound, ?_, ?_, ?_, ?_, ?_,
@@ -1674,24 +1681,17 @@ theorem Inv.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
       rw [hProcs]; exact hI.input_called r id' (hFeq ▸ hmem) hcall
     · intro id' hmem hne
       rw [hProcs] at hne ⊢; exact hI.phase_input id' (hFeq ▸ hmem) hne
-    · intro i' j' b' hj h
+    · intro i' j' b' h
       rw [hDR] at h
-      have hjne : j' ≠ id := by
-        intro heq
-        rw [heq] at h
-        have hidH : id ∉ c.F := by rw [← heq]; exact hFeq ▸ hj
-        have hcontra := hI.recv_sound i' id b' hidH h
-        rw [hs] at hcontra
-        exact absurd hcontra (by simp)
-      rw [CoreState.sendDecided_decidedSent, Function.update_of_ne hjne]
-      exact hI.recv_sound i' j' b' (hFeq ▸ hj) h
+      exact CoreState.sendDecided_decidedSent_mono _ _ _ (hI.recv_sound i' j' b' h)
     · intro id' b' hmem h
       rw [CoreState.sendDecided_decidedSent] at h
       by_cases hid : id' = id
       · subst hid
-        rw [Function.update_self] at h
-        obtain rfl := Option.some_inj.mp h
-        exact ⟨r0, hgrade0, hbind0⟩
+        rw [Function.update_self, Finset.mem_insert] at h
+        rcases h with rfl | h
+        · exact ⟨r0, hgrade0, hbind0⟩
+        · exact hI.decided_src id' b' (hFeq ▸ hmem) h
       · rw [Function.update_of_ne hid] at h
         exact hI.decided_src id' b' (hFeq ▸ hmem) h
     · intro r b' hgr hbr
@@ -1755,14 +1755,9 @@ theorem Inv.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
       rw [hProcs]; exact hI.input_called r id' (hFeq ▸ hmem) hcall
     · intro id' hmem hne
       rw [hProcs] at hne ⊢; exact hI.phase_input id' (hFeq ▸ hmem) hne
-    · intro i' j' b' hj h
+    · intro i' j' b' h
       rw [hDR] at h
-      have hjne : j' ≠ id := by
-        intro heq
-        rw [heq] at hj
-        exact hj (by rw [hFeq]; exact hF)
-      rw [CoreState.sendDecided_decidedSent, Function.update_of_ne hjne]
-      exact hI.recv_sound i' j' b' (hFeq ▸ hj) h
+      exact CoreState.sendDecided_decidedSent_mono _ _ _ (hI.recv_sound i' j' b' h)
     · intro id' b' hmem h
       rw [CoreState.sendDecided_decidedSent] at h
       by_cases hid : id' = id
@@ -1886,7 +1881,7 @@ theorem Inv.step_callW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSt
         exact hI.phase_input id' (hCF ▸ hmem) hne'
     · rw [hc'eq] at hne; rw [(hCprocs id').1]; exact hI.phase_input id' (hCF ▸ hmem) hne
   · intro r' h; rw [hValeq] at h; exact hI.w_bound r' h
-  · intro i j b hj h; rw [hCDR] at h; rw [hCDS]; exact hI.recv_sound i j b (hCF ▸ hj) h
+  · intro i j b h; rw [hCDR] at h; rw [hCDS]; exact hI.recv_sound i j b h
   · intro id' b' hmem h; rw [hCDS] at h; exact hI.decided_src id' b' (hCF ▸ hmem) h
   · intro r' b' hgr hbr
     obtain ⟨h1, h2, h3⟩ := hI.a_commit r' b' hgr hbr
@@ -2243,7 +2238,7 @@ theorem Inv.step_callG {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSt
     exact ⟨R, fun r' hr' => by rw [hBindeq r']; exact hR r' hr'⟩
   · -- w_bound
     intro r' h; rw [hBindeq r']; exact hI.w_bound r' h
-  · intro i j b' hj h; rw [hCDR] at h; rw [hCDS]; exact hI.recv_sound i j b' (hCF ▸ hj) h
+  · intro i j b' h; rw [hCDR] at h; rw [hCDS]; exact hI.recv_sound i j b' h
   · intro id' b' hmem h
     rw [hCDS] at h
     obtain ⟨r0, hgrade0, hbind0⟩ := hI.decided_src id' b' (hCF ▸ hmem) h
@@ -2641,7 +2636,7 @@ theorem Inv.step_retG {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
   · obtain ⟨R, hR⟩ := hI.quiescent
     exact ⟨R, fun r' hr' => by rw [hBindeq r']; exact hR r' hr'⟩
   · intro r' h; rw [hBindeq r']; exact hI.w_bound r' h
-  · intro i j b' hj h; rw [hCDR] at h; rw [hCDS]; exact hI.recv_sound i j b' (hCF ▸ hj) h
+  · intro i j b' h; rw [hCDR] at h; rw [hCDS]; exact hI.recv_sound i j b' h
   · intro id' b' hmem h
     rw [hCDS] at h
     obtain ⟨r0, hgrade0, hbind0⟩ := hI.decided_src id' b' (hCF ▸ hmem) h
@@ -3136,7 +3131,8 @@ theorem Inv.step_retW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
       rw [hProcSelf]
     have hDSeq : (c.stepRound id b).decidedSent = c.decidedSent ∨
         ∃ b0, (c.procs id).lastGrade = some (.A b0) ∧
-          (c.stepRound id b).decidedSent = Function.update c.decidedSent id (some b0) := by
+          (c.stepRound id b).decidedSent =
+            Function.update c.decidedSent id (insert b0 (c.decidedSent id)) := by
       by_cases hA : ∃ b0, (c.procs id).lastGrade = some (.A b0)
       · obtain ⟨b0, hlg⟩ := hA
         exact Or.inr ⟨b0, hlg, CoreState.stepRound_decidedSent_of_A c id b b0 hlg⟩
@@ -3181,36 +3177,26 @@ theorem Inv.step_retW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
         exact hI.phase_input id (hFeq ▸ hmem) (by rw [hph]; simp)
       · rw [hProcNe id' h] at hne ⊢
         exact hI.phase_input id' (hFeq ▸ hmem) hne
-    · intro i j b' hj h
+    · intro i j b' h
+      rw [hDReq] at h
       rcases hDSeq with heq | ⟨b0, hlg, heq⟩
-      · rw [hDReq] at h; rw [heq]; exact hI.recv_sound i j b' (hFeq ▸ hj) h
-      · rw [hDReq] at h; rw [heq]
+      · rw [heq]; exact hI.recv_sound i j b' h
+      · rw [heq]
         by_cases hji : j = id
-        · rw [hji, Function.update_self]
-          rw [hji] at h hj
-          obtain ⟨r'', hg0, hb0⟩ := hI.grade_A_src id b0 hlg
-          by_cases hidF : id ∈ c.F
-          -- `hj : id ∉ c'.F` (post-`stepRound` `F` is unchanged, `hFeq`) directly contradicts
-          -- `hidF : id ∈ c.F`: the honest-sender hypothesis rules out a corrupted `id` here.
-          · exact absurd hidF (hFeq ▸ hj)
-          · have hsent : c.decidedSent id = some b' := hI.recv_sound i id b' hidF h
-            obtain ⟨r''', hg0', hb0'⟩ := hI.decided_src id b' hidF hsent
-            by_cases hle : r'' ≤ r'''
-            · obtain ⟨h1, -, -⟩ := hI.a_commit r'' b0 hg0 hb0
-              rw [h1 r''' b' hle hb0']
-            · obtain ⟨h1, -, -⟩ := hI.a_commit r''' b' hg0' hb0'
-              rw [h1 r'' b0 (by omega) hb0]
-        · rw [Function.update_of_ne hji]; exact hI.recv_sound i j b' (hFeq ▸ hj) h
+        -- the sent pool only grows (D12′): the old receipt stays covered
+        · rw [hji] at h ⊢
+          rw [Function.update_self]
+          exact Finset.mem_insert_of_mem (hI.recv_sound i id b' h)
+        · rw [Function.update_of_ne hji]; exact hI.recv_sound i j b' h
     · intro id' b' hmem h
       rcases hDSeq with heq | ⟨b0, hlg, heq⟩
       · rw [heq] at h; exact hI.decided_src id' b' (hFeq ▸ hmem) h
       · rw [heq] at h
         by_cases hid : id' = id
-        · rw [hid, Function.update_self] at h
-          rw [Option.some_inj] at h
-          obtain ⟨r'', hg0, hb0⟩ := hI.grade_A_src id b0 hlg
-          rw [h] at hb0
-          exact ⟨r'', hg0, hb0⟩
+        · rw [hid, Function.update_self, Finset.mem_insert] at h
+          rcases h with rfl | h
+          · exact hI.grade_A_src id b' hlg
+          · exact hI.decided_src id b' (hFeq ▸ hid ▸ hmem) h
         · rw [Function.update_of_ne hid] at h
           exact hI.decided_src id' b' (hFeq ▸ hmem) h
     · intro r0 b0 hgr hbr
@@ -3482,7 +3468,7 @@ theorem Abs.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
     fun c'' hFeq hProcs => hA.frame hFeq (fun id => by rw [hProcs])
       (fun id => by rw [hProcs]) (fun r v hg hb => ⟨r, hg, hb⟩)
   rw [coreStep_tau_iff] at hstep
-  rcases hstep with ⟨i, j, b, hs, hr, rfl⟩ | ⟨id, b, hcnt, hs, rfl⟩ | ⟨id, b, hF, hs, rfl⟩ <;>
+  rcases hstep with ⟨i, j, b, hs, hr, rfl⟩ | ⟨id, b, hcnt, hs, rfl⟩ | ⟨id, b, hF, rfl⟩ <;>
     rw [PMF.mem_support_pure_iff] at hc' <;> subst hc'
   · exact main _ (CoreState.deliverDecided_F _ _ _ _) (CoreState.deliverDecided_procs _ _ _ _)
   · exact main _ (CoreState.sendDecided_F _ _ _) (CoreState.sendDecided_procs _ _ _)

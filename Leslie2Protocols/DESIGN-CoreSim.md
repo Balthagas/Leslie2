@@ -16,8 +16,8 @@ target     : ProbabilisticForwardSimulation hybridSpec (ABA.spec P) coreRel
 `ABA.core` needs no `withIdle` padding — it participates genuinely in every label
 class (τ interleaves inside `parallel` by itself); corrupted-process handshakes are
 covered by the dedicated `…Byz` constructors (D11). See `Core.lean`'s module
-docstring for the 15-constructor table and deviations D9–D12 (0-based rounds, fused
-DECIDED-send in `retW`/`stepRound`, single-slot DECIDED gossip).
+docstring for the 15-constructor table and deviations D9–D12′ (0-based rounds, fused
+DECIDED-send in `retW`/`stepRound`, per-process DECIDED pools — see § D12′ below).
 
 Concrete state: `(g, (c, w))` with `g : ℕ → GBCA.SpecState`, `c : ABA.CoreState`,
 `w : ℕ → WCC.SpecState`. Abstract state: `a : ABA.SpecState`.
@@ -96,8 +96,12 @@ Grouped conjuncts (names as in the code):
   the previous round's bind/`C`-lock or dissent), `c_chain`.
 - **Locks and DECIDED**: `a_commit` (an `A`-lock at bind `b` forces every later
   bound round to bind `b`, honest ests to `b`, honest DECIDEDs to `b`),
-  `agree_locked`, `grade_needs_bind`, `grade_A_src`, `decided_src`, `recv_sound`
-  (delivery soundness; with `n − f > f` this yields an honest DECIDED source),
+  `agree_locked`, `grade_needs_bind`, `grade_A_src`, `decided_src` (per pooled
+  bit since D12′: an honest sender's pooled `b` carries an `A`-lock
+  certificate), `recv_sound` (per-(receiver, sender, bit) delivery soundness,
+  honesty-free since D12′ — sent pools only grow; with `n − f > f` the
+  `retABA`-row pigeonhole still yields a never-corrupted DECIDED source of the
+  returned bit even when corrupted equivocators pad the tally),
   `bound_quorum`.
 - **Dissent bookkeeping**: `flip_alock` — a flipped round is graded or carries a
   `DissentResidue`, the permanent `F`-free residue of an honest-at-the-time
@@ -412,4 +416,44 @@ an in-state honest witness via `GBCA.exists_honest_caller` (count + `|F| ≤ f`)
 Supersedes: the `Abs` field list, the binding-policy row table, and the burst
 inventory in the sections above (historical record of V0); `Inv` is unchanged
 except for I26/I27. Green: full `Leslie2Protocols`, `Main` guards unchanged
+(`[propext, Classical.choice, Quot.sound]`).
+
+## D12′: closing the DECIDED equivocation gap (AUDIT finding #4)
+
+The original D12 modeled DECIDED gossip as a single per-process slot
+(`decidedSent : Option Bool`, `byzDecided` filling only an *empty* slot,
+delivery at most once per (receiver, sender) edge). That adversary cannot send
+`DECIDED 0` to X and `DECIDED 1` to Y — an under-approximation, and
+inconsistent with the GBCA layer's D5 sent-pool (which does equivocate).
+
+**Model (Core.lean).** Mirror D5 at the DECIDED layer:
+`decidedSent : Fin n → Finset Bool` and
+`decidedRecv : Fin n → Fin n → Finset Bool` (pools). `sendDecided` inserts
+(pools only grow); `deliver` is per (receiver, sender, bit) with soundness
+`b ∈ decidedSent j` and at-most-once guard `b ∉ decidedRecv i j`;
+`byzDecided` is guarded *only* by `id ∈ F` — a corrupted process may pool
+either or both bits at any time, delivered selectively. `echo` keeps the
+paper's "not having multicast" as `decidedSent id = ∅`; `ret` keeps "having
+multicast ⟨DECIDED, b⟩" as `b ∈ decidedSent id`; `decidedCount` counts
+distinct senders per bit, unchanged in spirit. Honest pools stay at card ≤ 1
+in reachable states (all A-grade certificates pin one bit via
+`grade_A_src` + `a_commit`), but no card invariant is needed anywhere.
+
+**Invariant rewiring (CoreSimRel.lean).** `recv_sound` becomes per-bit and
+*honesty-free* (`b ∈ decidedRecv i j → b ∈ decidedSent j` — preserved by pure
+monotonicity since sent pools never shrink; the old form needed `j ∉ F`
+against slot overwrites). `decided_src` becomes per pooled bit
+(`id ∉ F → b ∈ decidedSent id → ∃ r` A-lock cert for `b`): this is the
+equivocation-robust form — corrupted equivocators may pad any bit's tally,
+but the `retABA`-row pigeonhole (`n − f` distinct senders of `b`, `|F| ≤ f`,
+`n − f > f`) recovers a never-corrupted sender of `b`, whose pooled `b`
+carries the A-lock certificate feeding `decide_burst` exactly as before.
+Preservation: `byzDecided` rows are vacuous at the corrupted sender and
+monotone elsewhere; the `echo`/`retW`-A-send rows extend the pool by a
+certified bit (pigeonhole resp. `grade_A_src`). The `retW` `recv_sound` row
+*simplified* (the old overwrite argument via `a_commit` dropped to
+`mem_insert_of_mem`). DECIDED gossip rows stay τ-stutters; the unguarded
+`byzDecided` is the same stutter case with one fewer hypothesis. `Abs`, the
+burst kit, `Examples`, and `Main` needed no repair beyond the two inversion
+destructurings. Green: full `Leslie2Protocols`, `Main` guards unchanged
 (`[propext, Classical.choice, Quot.sound]`).

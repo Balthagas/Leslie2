@@ -555,10 +555,12 @@ theorem coreSim (P : Params) :
         have := Inv.step_retABA hI id b (by
           rw [coreStep_retABA_iff]; exact ⟨hcnt, hs, hret, rfl⟩) hc'mem
         exact this
-      -- Honest DECIDED-sender pigeonhole: `n − f` deliveries of `b` to `id`, only `f` corrupted.
-      have hex : ∃ j, j ∉ c.F ∧ c.decidedRecv id j = some b := by
+      -- Honest DECIDED-sender pigeonhole: `n − f` distinct senders of `b` delivered to `id`,
+      -- only `f` corrupted — equivocating byzantine senders may count toward the tally, but
+      -- at least one counted sender is never-corrupted (D12′).
+      have hex : ∃ j, j ∉ c.F ∧ b ∈ c.decidedRecv id j := by
         by_contra hcon; push Not at hcon
-        have hsub : (Finset.univ.filter (fun j => c.decidedRecv id j = some b)) ⊆ c.F := by
+        have hsub : (Finset.univ.filter (fun j => b ∈ c.decidedRecv id j)) ⊆ c.F := by
           intro j hj
           simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hj
           by_contra hnf; exact hcon j hnf hj
@@ -568,7 +570,7 @@ theorem coreSim (P : Params) :
         unfold CoreState.decidedCount at hcnt
         omega
       obtain ⟨j, hjF, hjrecv⟩ := hex
-      have hjsent : c.decidedSent j = some b := hI.recv_sound id j b hjF hjrecv
+      have hjsent : b ∈ c.decidedSent j := hI.recv_sound id j b hjrecv
       obtain ⟨rA, hrA_grade, hrA_bind⟩ := hI.decided_src j b hjF hjsent
       have hretfalse : a.ret id = false := by rw [hAbs.ret_eq id]; exact hret
       have hCF : c'.F = c.F := CoreState.setProc_F _ _ _

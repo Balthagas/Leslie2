@@ -57,12 +57,22 @@ byzantine handshake drivers (D11).
   has a `…Byz` constructor guarded only by `id ∈ F`, with no phase/estimate
   constraint and no state change. Under full synchronisation the family-side
   call/return rules for corrupted ids are therefore never blocked by the core.
-* **D12 (single-slot DECIDED gossip).** The DECIDED multicast state is the
-  single per-process slot `CoreState.decidedSent` (chosen as the one
-  representation — no mirror field inside `ProcCore`). Byzantine injection
-  (`byzDecided`) only fills an empty slot, so even a corrupted process gossips
-  one consistent DECIDED payload to all receivers; `deliver` moves it into
-  `decidedRecv i j` at most once per (receiver, sender) edge.
+* **D12′ (per-process DECIDED pools, equivocation-capable).** The DECIDED
+  multicast state is the per-process pool `CoreState.decidedSent : Finset Bool`
+  (chosen as the one representation — no mirror field inside `ProcCore`),
+  mirroring the GBCA layer's D5 sent-pool pattern. Honest sends insert into
+  the pool (the `retW`/`stepRound` fused send and the `echo` rule; in
+  reachable states DECIDED coherence keeps every honest pool at card ≤ 1, so
+  the insert is a first write or a no-op re-send of the same bit). Byzantine
+  injection (`byzDecided`, guarded only by `id ∈ F`) may insert either or
+  both bits at any time — a corrupted process may send `DECIDED 0` to one
+  receiver and `DECIDED 1` to another (delivery is selective). `deliver`
+  moves one pooled bit into the receiver-side pool `decidedRecv i j` at most
+  once per (receiver, sender, bit) triple, with soundness
+  `b ∈ decidedSent j`; the `retABA` quorum guard counts distinct *senders*
+  per bit (`decidedCount`), exactly as before. (This replaces the earlier
+  D12 single-slot model, whose adversary could not equivocate at the DECIDED
+  layer — an under-approximation inconsistent with the GBCA layer.)
 
 Two further notes: the return rule `ret` has **no** honesty check — corrupted
 returns must pass the same `n − f` quorum guard, exactly like the spec's
@@ -155,11 +165,12 @@ gossip layer (deviation D12) and the corrupted set. -/
 structure CoreState (n : ℕ) : Type where
   /-- Per-process control states. -/
   procs : Fin n → ProcCore n
-  /-- `decidedSent id = some b` — process `id` has multicast `⟨DECIDED, b⟩`. -/
-  decidedSent : Fin n → Option Bool
-  /-- `decidedRecv i j = some b` — the adversary has delivered `j`'s
+  /-- `b ∈ decidedSent id` — process `id` has multicast `⟨DECIDED, b⟩`
+  (a pool: a corrupted process may hold both bits, deviation D12′). -/
+  decidedSent : Fin n → Finset Bool
+  /-- `b ∈ decidedRecv i j` — the adversary has delivered `j`'s
   `⟨DECIDED, b⟩` multicast to receiver `i`. -/
-  decidedRecv : Fin n → Fin n → Option Bool
+  decidedRecv : Fin n → Fin n → Finset Bool
   /-- The corrupted set (local copy, kept in lockstep by `fail` broadcast). -/
   F : Finset (Fin n)
   deriving DecidableEq
@@ -172,25 +183,25 @@ variable {n : ℕ}
 corrupted. -/
 def initial (n : ℕ) : CoreState n where
   procs := fun _ => ProcCore.initial n
-  decidedSent := fun _ => none
-  decidedRecv := fun _ _ => none
+  decidedSent := fun _ => ∅
+  decidedRecv := fun _ _ => ∅
   F := ∅
 
 @[simp] theorem initial_procs (n : ℕ) (id : Fin n) :
     (initial n).procs id = ProcCore.initial n := rfl
 
 @[simp] theorem initial_decidedSent (n : ℕ) (id : Fin n) :
-    (initial n).decidedSent id = none := rfl
+    (initial n).decidedSent id = ∅ := rfl
 
 @[simp] theorem initial_decidedRecv (n : ℕ) (i j : Fin n) :
-    (initial n).decidedRecv i j = none := rfl
+    (initial n).decidedRecv i j = ∅ := rfl
 
 @[simp] theorem initial_F (n : ℕ) : (initial n).F = ∅ := rfl
 
 /-- The number of distinct senders whose `⟨DECIDED, b⟩` has been delivered to
 receiver `id`. -/
 def decidedCount (s : CoreState n) (id : Fin n) (b : Bool) : ℕ :=
-  (Finset.univ.filter (fun j => s.decidedRecv id j = some b)).card
+  (Finset.univ.filter (fun j => b ∈ s.decidedRecv id j)).card
 
 @[simp] theorem initial_decidedCount (n : ℕ) (id : Fin n) (b : Bool) :
     (initial n).decidedCount id b = 0 := by
@@ -220,9 +231,10 @@ theorem setProc_procs_ne (s : CoreState n) (id : Fin n) (p : ProcCore n)
     {k : Fin n} (h : k ≠ id) : (s.setProc id p).procs k = s.procs k := by
   simp [setProc, Function.update_of_ne h]
 
-/-- Process `id` multicasts `⟨DECIDED, b⟩`. -/
+/-- Process `id` multicasts `⟨DECIDED, b⟩`: insert `b` into `id`'s sent pool
+(deviation D12′ — the pool only ever grows). -/
 def sendDecided (s : CoreState n) (id : Fin n) (b : Bool) : CoreState n :=
-  { s with decidedSent := Function.update s.decidedSent id (some b) }
+  { s with decidedSent := Function.update s.decidedSent id (insert b (s.decidedSent id)) }
 
 @[simp] theorem sendDecided_procs (s : CoreState n) (id : Fin n) (b : Bool) :
     (s.sendDecided id b).procs = s.procs := rfl
@@ -231,15 +243,40 @@ def sendDecided (s : CoreState n) (id : Fin n) (b : Bool) : CoreState n :=
 @[simp] theorem sendDecided_F (s : CoreState n) (id : Fin n) (b : Bool) :
     (s.sendDecided id b).F = s.F := rfl
 @[simp] theorem sendDecided_decidedSent (s : CoreState n) (id : Fin n) (b : Bool) :
-    (s.sendDecided id b).decidedSent = Function.update s.decidedSent id (some b) := rfl
+    (s.sendDecided id b).decidedSent =
+      Function.update s.decidedSent id (insert b (s.decidedSent id)) := rfl
+
+/-- Sent pools only grow under `sendDecided`. -/
+theorem sendDecided_decidedSent_mono (s : CoreState n) (id : Fin n) (b : Bool)
+    {k : Fin n} {b' : Bool} (h : b' ∈ s.decidedSent k) :
+    b' ∈ (s.sendDecided id b).decidedSent k := by
+  by_cases hk : k = id
+  · subst hk
+    simp only [sendDecided_decidedSent, Function.update_self]
+    exact Finset.mem_insert_of_mem h
+  · simp only [sendDecided_decidedSent, Function.update_of_ne hk]
+    exact h
+
+/-- Membership in a post-`sendDecided` sent pool: the fresh bit at `id`, or an
+old pool member. -/
+theorem mem_sendDecided_decidedSent_iff (s : CoreState n) (id : Fin n) (b : Bool)
+    (k : Fin n) (b' : Bool) :
+    b' ∈ (s.sendDecided id b).decidedSent k ↔
+      (k = id ∧ b' = b) ∨ b' ∈ s.decidedSent k := by
+  by_cases hk : k = id
+  · subst hk
+    simp [sendDecided_decidedSent, Function.update_self, Finset.mem_insert]
+  · simp [sendDecided_decidedSent, hk]
 @[simp] theorem sendDecided_decidedCount (s : CoreState n) (id : Fin n) (b : Bool)
     (i : Fin n) (b' : Bool) :
     (s.sendDecided id b).decidedCount i b' = s.decidedCount i b' := rfl
 
-/-- The adversary delivers `⟨DECIDED, b⟩` from sender `j` to receiver `i`. -/
+/-- The adversary delivers `⟨DECIDED, b⟩` from sender `j` to receiver `i`:
+insert `b` into the `(i, j)` receipt pool (per-(receiver, sender, bit),
+deviation D12′). -/
 def deliverDecided (s : CoreState n) (i j : Fin n) (b : Bool) : CoreState n :=
-  { s with decidedRecv :=
-      Function.update s.decidedRecv i (Function.update (s.decidedRecv i) j (some b)) }
+  { s with decidedRecv := Function.update s.decidedRecv i
+              (Function.update (s.decidedRecv i) j (insert b (s.decidedRecv i j))) }
 
 @[simp] theorem deliverDecided_procs (s : CoreState n) (i j : Fin n) (b : Bool) :
     (s.deliverDecided i j b).procs = s.procs := rfl
@@ -249,7 +286,7 @@ def deliverDecided (s : CoreState n) (i j : Fin n) (b : Bool) : CoreState n :=
     (s.deliverDecided i j b).F = s.F := rfl
 
 @[simp] theorem deliverDecided_decidedRecv_self (s : CoreState n) (i j : Fin n) (b : Bool) :
-    (s.deliverDecided i j b).decidedRecv i j = some b := by
+    (s.deliverDecided i j b).decidedRecv i j = insert b (s.decidedRecv i j) := by
   simp [deliverDecided]
 
 /-- Deliveries to other (receiver, sender) edges are untouched. -/
@@ -317,7 +354,8 @@ theorem stepRound_procs_ne (s : CoreState n) (id : Fin n) (c : Bool)
 /-- On an `A b` grade the round advance multicasts `⟨DECIDED, b⟩`. -/
 theorem stepRound_decidedSent_of_A (s : CoreState n) (id : Fin n) (c b : Bool)
     (h : (s.procs id).lastGrade = some (.A b)) :
-    (s.stepRound id c).decidedSent = Function.update s.decidedSent id (some b) := by
+    (s.stepRound id c).decidedSent =
+      Function.update s.decidedSent id (insert b (s.decidedSent id)) := by
   unfold stepRound
   rw [h]
   rfl
@@ -410,26 +448,29 @@ inductive CoreStep (P : Params) :
   /-- Byzantine WCC-return driver (deviation D11). -/
   | retWByz (s : CoreState P.n) (r : ℕ) (id : Fin P.n) (c : Bool) (hF : id ∈ s.F) :
       CoreStep P s (.retW r id c) (PMF.pure s)
-  /-- DECIDED delivery: the adversary moves a multicast `⟨DECIDED, b⟩` from
-  sender `j` into receiver `i`'s delivered slot (at most once per edge). -/
+  /-- DECIDED delivery: the adversary moves a pooled `⟨DECIDED, b⟩` from
+  sender `j` into receiver `i`'s receipt pool (at most once per
+  (receiver, sender, bit); soundness `b ∈ decidedSent j`, deviation D12′). -/
   | deliver (s : CoreState P.n) (i j : Fin P.n) (b : Bool)
-      (hs : s.decidedSent j = some b) (hr : s.decidedRecv i j = none) :
+      (hs : b ∈ s.decidedSent j) (hr : b ∉ s.decidedRecv i j) :
       CoreStep P s .tau (PMF.pure (s.deliverDecided i j b))
   /-- DECIDED echo: `f + 1` delivered `⟨DECIDED, b⟩` and not having multicast
-  triggers the multicast (the process keeps running its round loop). -/
+  (empty sent pool) triggers the multicast (the process keeps running its
+  round loop). -/
   | echo (s : CoreState P.n) (id : Fin P.n) (b : Bool)
-      (hcnt : P.f + 1 ≤ s.decidedCount id b) (hs : s.decidedSent id = none) :
+      (hcnt : P.f + 1 ≤ s.decidedCount id b) (hs : s.decidedSent id = ∅) :
       CoreStep P s .tau (PMF.pure (s.sendDecided id b))
-  /-- Byzantine DECIDED injection (deviation D12): a corrupted process fills
-  its empty DECIDED slot with an arbitrary payload. -/
+  /-- Byzantine DECIDED injection (deviation D12′): a corrupted process may
+  insert an arbitrary payload into its sent pool at any time — either or both
+  bits, so a corrupted process can equivocate at the DECIDED layer. -/
   | byzDecided (s : CoreState P.n) (id : Fin P.n) (b : Bool)
-      (hF : id ∈ s.F) (hs : s.decidedSent id = none) :
+      (hF : id ∈ s.F) :
       CoreStep P s .tau (PMF.pure (s.sendDecided id b))
-  /-- Return: `n − f` delivered `⟨DECIDED, b⟩` and having multicast
-  `⟨DECIDED, b⟩` oneself. **No honesty check** — corrupted returns must pass
-  the same quorum guard (as in the spec's return rule). -/
+  /-- Return: `n − f` delivered `⟨DECIDED, b⟩` (distinct senders) and having
+  multicast `⟨DECIDED, b⟩` oneself. **No honesty check** — corrupted returns
+  must pass the same quorum guard (as in the spec's return rule). -/
   | ret (s : CoreState P.n) (id : Fin P.n) (b : Bool)
-      (hcnt : P.n - P.f ≤ s.decidedCount id b) (hs : s.decidedSent id = some b)
+      (hcnt : P.n - P.f ≤ s.decidedCount id b) (hs : b ∈ s.decidedSent id)
       (hret : (s.procs id).returned = false) :
       CoreStep P s (.retABA id b)
         (PMF.pure (s.setProc id { s.procs id with returned := true }))
@@ -535,27 +576,26 @@ theorem core_isLTS (P : Params) : (core P).IsLTS := by
 @[simp] theorem coreStep_tau_iff (P : Params) (s : CoreState P.n)
     (μ : PMF (CoreState P.n)) :
     CoreStep P s .tau μ ↔
-      (∃ i j b, s.decidedSent j = some b ∧ s.decidedRecv i j = none ∧
+      (∃ i j b, b ∈ s.decidedSent j ∧ b ∉ s.decidedRecv i j ∧
         μ = PMF.pure (s.deliverDecided i j b)) ∨
-      (∃ id b, P.f + 1 ≤ s.decidedCount id b ∧ s.decidedSent id = none ∧
+      (∃ id b, P.f + 1 ≤ s.decidedCount id b ∧ s.decidedSent id = ∅ ∧
         μ = PMF.pure (s.sendDecided id b)) ∨
-      (∃ id b, id ∈ s.F ∧ s.decidedSent id = none ∧
-        μ = PMF.pure (s.sendDecided id b)) := by
+      (∃ id b, id ∈ s.F ∧ μ = PMF.pure (s.sendDecided id b)) := by
   constructor
   · rintro h
     cases h
     case deliver i j b hs hr => exact Or.inl ⟨i, j, b, hs, hr, rfl⟩
     case echo id b hcnt hs => exact Or.inr (Or.inl ⟨id, b, hcnt, hs, rfl⟩)
-    case byzDecided id b hF hs => exact Or.inr (Or.inr ⟨id, b, hF, hs, rfl⟩)
-  · rintro (⟨i, j, b, hs, hr, rfl⟩ | ⟨id, b, hcnt, hs, rfl⟩ | ⟨id, b, hF, hs, rfl⟩)
+    case byzDecided id b hF => exact Or.inr (Or.inr ⟨id, b, hF, rfl⟩)
+  · rintro (⟨i, j, b, hs, hr, rfl⟩ | ⟨id, b, hcnt, hs, rfl⟩ | ⟨id, b, hF, rfl⟩)
     · exact .deliver s i j b hs hr
     · exact .echo s id b hcnt hs
-    · exact .byzDecided s id b hF hs
+    · exact .byzDecided s id b hF
 
 @[simp] theorem coreStep_retABA_iff (P : Params) (s : CoreState P.n) (id : Fin P.n)
     (b : Bool) (μ : PMF (CoreState P.n)) :
     CoreStep P s (.retABA id b) μ ↔
-      P.n - P.f ≤ s.decidedCount id b ∧ s.decidedSent id = some b ∧
+      P.n - P.f ≤ s.decidedCount id b ∧ b ∈ s.decidedSent id ∧
         (s.procs id).returned = false ∧
         μ = PMF.pure (s.setProc id { s.procs id with returned := true }) := by
   constructor
