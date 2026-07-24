@@ -213,6 +213,46 @@ theorem Seq_mem_ofList {α : Type} {a : α} {L : List α} :
   · rintro ⟨i, hi⟩; exact ⟨i, by rw [← Seq.ofList_get?]; exact hi.symm⟩
   · rintro ⟨i, hi⟩; exact ⟨i, by rw [Seq.ofList_get?]; exact hi.symm⟩
 
+/-! ### Positional bridge: filtered-list positions vs original positions -/
+
+/-- Pull a position of a filtered list back to a position of the original
+list: the element sits at some original index `j`, and the filter of the
+`j`-prefix has exactly the target length (its position in the filtered
+list). -/
+theorem filter_getElem?_pullback {α : Type} (p : α → Bool) :
+    ∀ (L : List α) (m : ℕ) (a : α), (L.filter p)[m]? = some a →
+      ∃ j, L[j]? = some a ∧ ((L.take j).filter p).length = m := by
+  intro L
+  induction L with
+  | nil => intro m a h; simp at h
+  | cons x xs ih =>
+    intro m a h
+    by_cases hx : p x
+    · rw [List.filter_cons_of_pos hx] at h
+      cases m with
+      | zero =>
+        obtain rfl : x = a := by simpa using h
+        exact ⟨0, rfl, by simp⟩
+      | succ m' =>
+        rw [List.getElem?_cons_succ] at h
+        obtain ⟨j, hj, hlen⟩ := ih m' a h
+        refine ⟨j + 1, by simpa using hj, ?_⟩
+        rw [show (x :: xs).take (j + 1) = x :: xs.take j from rfl,
+          List.filter_cons_of_pos hx, List.length_cons, hlen]
+    · rw [List.filter_cons_of_neg hx] at h
+      obtain ⟨j, hj, hlen⟩ := ih m a h
+      refine ⟨j + 1, by simpa using hj, ?_⟩
+      rw [show (x :: xs).take (j + 1) = x :: xs.take j from rfl,
+        List.filter_cons_of_neg hx, hlen]
+
+/-- The filter of a `take`-prefix is the corresponding `take`-prefix of the
+filter. -/
+theorem take_filter_eq_take {α : Type} (p : α → Bool) (L : List α) {j m : ℕ}
+    (hm : ((L.take j).filter p).length = m) :
+    (L.take j).filter p = (L.filter p).take m := by
+  have h := (List.take_prefix j L).filter p
+  rw [List.prefix_iff_eq_take.mp h, hm]
+
 variable [Silent Label]
 
 open Classical in
@@ -272,6 +312,39 @@ theorem exists_exec_of_traceProb_ne_zero
       rw [h_map]
     rw [Seq.map_get?, Seq.ofList_get?, h_get] at h_get_eq
     refine ⟨List.mem_iff_getElem?.mpr ⟨k, h_get_eq.symm⟩, by simpa using h_ext⟩
+
+open Classical in
+/-- Ordered strengthening of `exists_exec_of_traceProb_ne_zero`: the witness
+execution's full label list is exposed, together with the fact that the
+trace is its external filter — enabling position-aware (ordered) safety
+predicates. -/
+theorem exists_exec_of_traceProb_ne_zero_ord
+    {sys : System State Label} (pe : ProbabilisticExecution sys)
+    (hinit : pe.initState = PMF.pure sys.init)
+    (t : Seq Label) (h : sys.traceProb pe t ≠ 0) :
+    ∃ (e : AlterSeq State Label) (labs : List Label),
+      is_exec e sys ∧ e.trans.map Prod.fst = Seq.ofList labs ∧
+      (Seq.ofList labs).filter (fun l => ¬ l = Silent.τ) = t := by
+  rw [sys.traceProb_eq_labProb_sum pe t] at h
+  obtain ⟨labs, h_labs⟩ : ∃ labs : List Label, _ ≠ (0 : ENNReal) := by
+    by_contra hc
+    push_neg at hc
+    exact h (ENNReal.tsum_eq_zero.mpr hc)
+  have h_tt : sys.traceTightLabs t labs := by
+    by_contra hc
+    rw [if_neg hc] at h_labs
+    exact h_labs rfl
+  rw [if_pos h_tt] at h_labs
+  obtain ⟨e, h_e⟩ : ∃ e : AlterSeq State Label, _ ≠ (0 : ENNReal) := by
+    by_contra hc
+    push_neg at hc
+    exact h_labs (ENNReal.tsum_eq_zero.mpr hc)
+  by_cases h_cond : e.trans.Terminates ∧ e.trans.map Prod.fst = Seq.ofList labs
+  swap
+  · rw [dif_neg h_cond] at h_e; exact absurd rfl h_e
+  rw [dif_pos h_cond] at h_e
+  obtain ⟨hFin, h_map⟩ := h_cond
+  exact ⟨e, labs, is_exec_of_probOf_ne_zero pe hinit e hFin h_e, h_map, h_tt.1⟩
 
 /-! ### Invariant induction along genuine executions -/
 
@@ -367,6 +440,19 @@ theorem AlterSeq.mem_labelsUpTo {e : AlterSeq State Label} {l : Label} :
         rw [hg] at h_last
         simp only [Option.map_some, Option.toList_some, List.mem_singleton] at h_last
         exact ⟨k, by omega, p.2, by rw [hg, h_last]⟩
+
+omit [Silent Label] in
+/-- `labelsUpTo` is the `take`-prefix of the execution's label list. -/
+theorem AlterSeq.labelsUpTo_eq_take {e : AlterSeq State Label}
+    {labs : List Label} (h : e.trans.map Prod.fst = Seq.ofList labs) :
+    ∀ n, e.labelsUpTo n = labs.take n := by
+  intro n
+  induction n with
+  | zero => rfl
+  | succ k ih =>
+    have hk : (e.trans.get? k).map Prod.fst = labs[k]? := by
+      rw [← Seq.map_get?, h, Seq.ofList_get?]
+    rw [AlterSeq.labelsUpTo, ih, hk, ← List.take_add_one]
 
 omit [Silent Label] in
 /-- **Label-history-aware invariant induction.** An invariant over (seen

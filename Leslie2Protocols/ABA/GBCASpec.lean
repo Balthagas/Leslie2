@@ -19,7 +19,34 @@ Grades: `A b` (decide `b`), `B b` (adopt `b`), `C` (no output; adopt the
 coin). The `grade` field (`some true` ≈ grade `1`/A-side, `some false` ≈
 grade `0`/C-side) enforces the A/C exclusivity of Graded Agreement: once an
 `A`-return happened no `C`-return can, and vice versa. `B`- and `C`-returns
-additionally require an honest dissenting input (`call id' = 1 − bind`).
+additionally require `f + 1` dissenting callers (`call id' = 1 − bind`).
+
+* **D14 (repair, load-bearing).** The blueprint's TS 2 certifies `bindSet`
+  by a *single* honest witness (`∃ id ∉ F, call id = b`), and `B`/`C`
+  dissent likewise by a single honest dissenter. That singular witness is
+  the same provenance loss the D13 audit found one level up: the witness
+  may be corrupted later in the trace, after which nothing attributes the
+  bound value to a never-corrupted input — and `hybridSpec` built on this
+  TS 2 provably violates the papers' Validity (deterministic witness at
+  `n = 4, f = 1`, inputs `1,0,0,0`: `bindSet 1` off the sole `1`-holder,
+  `retB`-adopt everywhere, round-1 unanimity decides `1`, `fail 0`,
+  `retABA 1 1` — never-corrupted processes all input `0`). ABDY22's
+  implementation carries the `f + 1` via Valid-set relay thresholds; TS 2
+  abstracted it to one witness. Repair (D15-R1): `bindSet`'s witness and
+  the `retB`/`retC` dissent guards become
+  `f + 1 ≤ #{id | call id = some b ∨ id ∈ F}` (resp. for `!v`) — exactly
+  TS 1's `SuppOK` shape (D13), directly `F`-blind: the count is monotone
+  in `F` and in `call`, so it is immune to later `fail`s. Provenance
+  survives verbatim: `F` is monotone with `|F_final| ≤ f`, so among `f + 1`
+  distinct supporters some member is outside the *final* `F`, hence outside
+  the current `F`, hence a never-corrupted genuine caller — corrupt
+  supporters are paid for by the `F` budget itself, with no phantom-call
+  bookkeeping. An earlier iteration (D14 as first landed) instead kept the
+  strict-caller count and added a τ-rule `byzFill` filling empty `F` slots;
+  D15's witness traces (pre-corruption genuine call; byz double-send) show
+  fill-only designs cannot be value-pinned by any forward simulation, so
+  R1 supersedes `byzFill` and the rule is removed — see the `## D15`
+  record in `DESIGN-CoreSim.md`.
 
 Every transition is Dirac, so the instance is an LTS and the `ForwardLTS`
 bridge applies. `fail` is the determinised D1 `corrupt`; the family
@@ -78,16 +105,20 @@ inductive Step (P : Params) (r : ℕ) :
   /-- Input-enabledness loop for `call`. -/
   | callLoop (s : SpecState P.n) (id : Fin P.n) (b : Bool) :
       Step P r s (.callG r id b) (PMF.pure s)
-  /-- Binding: a quorum has spoken and an honest process input `b`;
-  fix the bound value. -/
+  /-- Binding: a quorum has spoken and `f + 1` processes support `b`
+  (D15-R1, SuppOK form: caller or `F`-member); fix the bound value. -/
   | bindSet (s : SpecState P.n) (b : Bool)
-      (hq : s.quorum P) (hw : ∃ id, id ∉ s.F ∧ s.call id = some b)
+      (hq : s.quorum P)
+      (hw : P.f + 1 ≤ (Finset.univ.filter
+        (fun id => s.call id = some b ∨ id ∈ s.F)).card)
       (hb : s.bind = none) :
       Step P r s .tau (PMF.pure { s with bind := some b })
-  /-- `B`-return: adopt the bound value (an honest dissent exists). -/
+  /-- `B`-return: adopt the bound value (`f + 1` dissenting supporters,
+  D15-R1). -/
   | retB (s : SpecState P.n) (id : Fin P.n) (v : Bool)
       (hb : s.bind = some v)
-      (hw : ∃ id', id' ∉ s.F ∧ s.call id' = some (!v))
+      (hw : P.f + 1 ≤ (Finset.univ.filter
+        (fun id' => s.call id' = some (!v) ∨ id' ∈ s.F)).card)
       (hr : s.ret id = false) :
       Step P r s (.retG r id (.B v) v)
         (PMF.pure { s with ret := Function.update s.ret id true })
@@ -98,11 +129,12 @@ inductive Step (P : Params) (r : ℕ) :
       (hr : s.ret id = false) :
       Step P r s (.retG r id (.A v) v)
         (PMF.pure { s with grade := some true, ret := Function.update s.ret id true })
-  /-- `C`-return: no output (locks the grade to the C-side; honest dissent
-  exists). -/
+  /-- `C`-return: no output (locks the grade to the C-side; `f + 1`
+  dissenting supporters, D15-R1). -/
   | retC (s : SpecState P.n) (id : Fin P.n) (v : Bool)
       (hb : s.bind = some v)
-      (hw : ∃ id', id' ∉ s.F ∧ s.call id' = some (!v))
+      (hw : P.f + 1 ≤ (Finset.univ.filter
+        (fun id' => s.call id' = some (!v) ∨ id' ∈ s.F)).card)
       (hg : s.grade = none ∨ s.grade = some false)
       (hr : s.ret id = false) :
       Step P r s (.retG r id .C v)

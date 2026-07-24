@@ -50,7 +50,9 @@ private theorem fillState_call (a : SpecState P.n) (t : Fin P.n → Option Bool)
 -/
 theorem fill_chain {a : SpecState P.n} {vb : Bool} (hbind : a.bind = some vb)
     {t : Fin P.n → Option Bool}
-    (hlegal : ∀ id b, t id = some b → a.val = none ∨ a.val = some b)
+    (hlegal : ∀ id b, t id = some b →
+      ((a.val = none ∧ (a.input id = some b ∨ a.bind = some b)) ∨ a.val = some b) ∨
+        id ∈ a.F)
     (havail : TVal.agrees a.bind a.coin → ∀ id b, t id = some b → b = vb)
     (hempty : ∀ id, a.call id = none) :
     weakTau (spec P) (PMF.pure a) (PMF.pure { a with call := t }) := by
@@ -97,26 +99,80 @@ theorem fill_chain {a : SpecState P.n} {vb : Bool} (hbind : a.bind = some vb)
               exact hout id' (by simp [List.mem_cons, heq, hid'])
         refine weakTau_trans (weakTau_of_step rfl ?_) hchain
         rw [hcur'eq]
-        by_cases hagree : TVal.agrees a.bind a.coin
-        · have hbeq : b = vb := havail hagree id b hc
-          have hstep := SpecStep.adopt (P := P) { a with call := cur } id hcurid hagree
-          have hupdate : Function.update cur id a.bind = Function.update cur id (some b) := by
-            rw [hbind, ← hbeq]
-          rwa [hupdate] at hstep
-        · exact SpecStep.repropose (P := P) { a with call := cur } id b hcurid hagree
-            (hlegal id b hc)
+        rcases hlegal id b hc with hlic | hidF
+        · by_cases hagree : TVal.agrees a.bind a.coin
+          · have hbeq : b = vb := havail hagree id b hc
+            have hstep := SpecStep.adopt (P := P) { a with call := cur } id hcurid hagree
+            have hupdate : Function.update cur id a.bind = Function.update cur id (some b) := by
+              rw [hbind, ← hbeq]
+            rwa [hupdate] at hstep
+          · exact SpecStep.repropose (P := P) { a with call := cur } id b hcurid hagree hlic
+        · exact SpecStep.callByzFill (P := P) { a with call := cur } id b hidF hcurid
       exact hcont _ rfl
+
+/-- Byzantine fill chain (D13, V2b): a τ-chain of `callByzFill`s reaching any target
+that agrees with the current `call` row except on empty `F`-slots. Unlike `fill_chain`
+it needs no `bind`/`coin` side conditions (`callByzFill` is unguarded beyond `id ∈ F`
+and slot emptiness), so it also serves *pre-bind* bursts. -/
+theorem byz_fill_chain {a : SpecState P.n} {t : Fin P.n → Option Bool}
+    (ht : ∀ id, t id = a.call id ∨ (a.call id = none ∧ id ∈ a.F)) :
+    weakTau (spec P) (PMF.pure a) (PMF.pure { a with call := t }) := by
+  suffices h : ∀ l : List (Fin P.n), l.Nodup → ∀ cur : Fin P.n → Option Bool,
+      (∀ id, id ∈ l → cur id = a.call id) → (∀ id, id ∉ l → cur id = t id) →
+      weakTau (spec P) (PMF.pure { a with call := cur }) (PMF.pure { a with call := t }) by
+    have hres := h (List.finRange P.n) (List.nodup_finRange P.n) a.call
+      (fun _ _ => rfl) (fun id hid => absurd (List.mem_finRange id) hid)
+    simpa using hres
+  intro l
+  induction l with
+  | nil =>
+    intro _ cur _ hout
+    have hceq : cur = t := funext (fun id => hout id List.not_mem_nil)
+    rw [hceq]; exact weakTau_refl _ _
+  | cons id l' ih =>
+    intro hnodup cur hin hout
+    have hidnl' : id ∉ l' := (List.nodup_cons.mp hnodup).1
+    have hnodup' : l'.Nodup := (List.nodup_cons.mp hnodup).2
+    have hcurid : cur id = a.call id := hin id List.mem_cons_self
+    by_cases hskip : t id = a.call id
+    · -- nothing to fill at `id`: reindex to `l'`
+      refine ih hnodup' cur ?_ ?_
+      · intro id' hid'; exact hin id' (List.mem_cons_of_mem id hid')
+      · intro id' hid'
+        by_cases heq : id' = id
+        · rw [heq, hcurid, hskip]
+        · exact hout id' (by simp [List.mem_cons, heq, hid'])
+    · rcases ht id with heq | ⟨hnone, hidF⟩
+      · exact absurd heq hskip
+      rcases hc : t id with _ | b
+      · exact absurd (hc.trans hnone.symm) hskip
+      have hchain : weakTau (spec P) (PMF.pure { a with call := Function.update cur id (some b) })
+          (PMF.pure { a with call := t }) := by
+        refine ih hnodup' _ ?_ ?_
+        · intro id' hid'
+          rw [Function.update_of_ne (ne_of_mem_of_not_mem hid' hidnl')]
+          exact hin id' (List.mem_cons_of_mem id hid')
+        · intro id' hid'
+          by_cases heq : id' = id
+          · rw [heq, Function.update_self, hc]
+          · rw [Function.update_of_ne heq]
+            exact hout id' (by simp [List.mem_cons, heq, hid'])
+      refine weakTau_trans (weakTau_of_step rfl ?_) hchain
+      exact SpecStep.callByzFill (P := P) { a with call := cur } id b hidF
+        (hcurid.trans hnone)
 
 /-! ### B2: quorum rebind rules -/
 
-/-- Rule 4 (mixed): both bits present among honest calls, a quorum has spoken — a single τ step
-clears `call` and rebinds to any chosen `b'` (`val`/`ret`/`F` untouched, `coin` reset to `⊥`). -/
+/-- Rule 4 (mixed, D13): both bits present among honest calls, a quorum has spoken, and the
+chosen `b'` carries `f + 1` callers (`hs`, F-blind) — a single τ step clears `call` and rebinds
+to `b'` (`val`/`ret`/`F` untouched, `coin` reset to `⊥`). -/
 theorem rebind_mixed {a : SpecState P.n} (hq : a.quorum P)
     (h1 : ∃ id, id ∉ a.F ∧ a.call id = some true) (h0 : ∃ id, id ∉ a.F ∧ a.call id = some false)
-    (b' : Bool) :
+    (b' : Bool)
+    (hs : P.f + 1 ≤ (Finset.univ.filter (fun id => a.call id = some b')).card) :
     weakTau (spec P) (PMF.pure a)
       (PMF.pure { a with call := fun _ => none, bind := some b', coin := .bot }) :=
-  weakTau_of_step rfl (SpecStep.mixed a b' hq h1 h0)
+  weakTau_of_step rfl (SpecStep.mixed a b' hq h1 h0 hs)
 
 /-- Rule 3 (unanimity): every honest call avoids `b`, a quorum has spoken — a single τ step
 clears `call` and decides `!b` (`ret`/`F` untouched, `coin` reset to `⊥`). -/
@@ -159,7 +215,9 @@ theorem val_force {a : SpecState P.n} {b : Bool} (hbind : a.bind = some b)
     · intro id b' hb'
       have hbb' : b = b' := Option.some_inj.mp hb'
       rw [← hbb']
-      exact hval
+      rcases hval with h | h
+      · exact Or.inl (Or.inl ⟨h, Or.inr hbind⟩)
+      · exact Or.inl (Or.inr h)
     · intro _ id b' hb'; exact (Option.some_inj.mp hb').symm
   have ha1quorum : a1.quorum P := quorum_of_full_call (s := a1) (fun id => by simp [ha1def])
   have ha1avoid : ∀ id, id ∉ a1.F → a1.call id ≠ some (!b) := by

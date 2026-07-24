@@ -208,7 +208,7 @@ theorem step_bindSet :
   refine Or.inr (Or.inl ⟨rfl, PMF.pure Gb, ?_, ?_⟩)
   · refine Or.inl ⟨rfl, 0, _, ?_, by rw [PMF.pure_map]; rfl⟩
     exact GBCA.Step.bindSet (P := P4) (r := 0) (G3 0) true
-      (by unfold GBCA.SpecState.quorum; decide) ⟨(0 : Fin 4), by decide, by decide⟩ rfl
+      (by unfold GBCA.SpecState.quorum; decide) (by decide) rfl
   · rw [prodPMF_pure_pure]
 
 /-! ### Step 8: process `0`'s hidden GBCA `A`-return (`retG 0`, hidden to `τ`) -/

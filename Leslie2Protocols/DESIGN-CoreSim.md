@@ -279,3 +279,137 @@ abstract call/byz-fill material for `b`); (5) `CoreSim` deltas: the dissent
 burst binds the pool value, and the `retABA`-bound row rebinds to `b` via
 byz-fill/input-branch fills + rule 4 instead of `val_force'`. With (1)–(5) every
 row of the table has a named supplier; without (2), no design does.
+
+## D15: V2a′ finding — fill-only byz fills cannot be value-pinned (GBCASim wall)
+
+Attempting the recorded item-4/5 repair (D14 guards + `byzFill` + disjunctive
+`call_eq` + eager fills) hits a genuine wall at the `bindGhost` row: the
+obligation `bindSet.hw : f + 1 ≤ #{id | t.call id = some b}` is
+**undischargeable** by any forward simulation whose relation makes honest
+(`∉ F`) spec slots mirror the genuine inputs — and the quorum and dissent
+harvests (`quorum_of_vote_quorum`, `retB`/`retC`) force exactly that (at
+`f = 0` any honest slot left empty breaks the spec quorum outright).
+
+**Witness W1 (pre-corruption call; kills every fill-only design).**
+`n = 4, f = 1`: `callG 3 0` (genuine mirror forced: slot 3 := `0`),
+`fail 3`, `byz 3 (INPUT 1)`, `callG 0 1`, `callG 1 0`, `callG 2 0`;
+deliver `INPUT 1` from `{0,3}` to 1, 2 → both `relay 1` (`f+1 = 2`
+receipts); now 4 `INPUT 1` senders → echoes/votes/`BIND 1` at 0 →
+`bindGhost 1`, and later visible `retA 0 1`. Related spec state:
+`call = [1,0,0,0]`, `F = {3}` (budget full), `#callers(1) = 1 < 2`; no τ
+helps — `byzFill` needs an *empty* `F` slot and slot 3 is genuinely full.
+
+**Witness W2 (byz double-send; kills value-pinned eager fills).** `3 ∈ F`
+from the start sends `INPUT 0` then `INPUT 1`: the single-write slot is
+eagerly filled `0`, and the same amplification of bit `1` follows. (W2 alone
+is dodged by lazy fills + `callLoop`-answering calls to already-corrupted
+ids; W1 is not dodged by anything fill-only.) The gap in the item-5 site
+decomposition is twofold: honest *relayers* of `b` are not genuine holders
+of `b`, and filled `F` slots are not necessarily filled *with* `b`.
+
+**Not a soundness gap.** The spec emits W1's visible trace via a different
+run: answer `callG 3 0` with `callLoop`, insert `byzFill 3 1` after
+`fail 3`, then `bindSet 1` (`callers(1) = {0,3}`). The choice needs
+knowledge of the later `fail` — a prophecy/backward-simulation situation,
+out of reach of any forward simulation.
+
+### Repair candidates (recorded, not implemented — designer's call)
+
+- **R1 (recommended): guards in SuppOK form.** `bindSet.hw` (and the
+  `retB`/`retC` twins for `!v`) become
+  `f + 1 ≤ #{id | call id = some b ∨ id ∈ F}` — exactly TS 1's `SuppOK`
+  shape (D13). Validity pigeonhole survives verbatim: `F` is monotone and
+  `|F_final| ≤ f`, so some member of the `f + 1` is outside `F_final`,
+  hence outside `F_now`, hence a never-corrupted genuine caller. Then
+  `call_eq` stays **exact**, no fills, no byz mirror rows, `instRel_corrupt`
+  untouched; `byzFill` becomes unused (harmless). Impl side: one new `Inv`
+  conjunct, the relayer-inductivized first-relayer argument
+  `input_supp : ∀ b j, j ∉ F → Msg.input b ∈ sent j →
+  (proc j).input = some b ∨ f + 1 ≤ #{id | (proc id).input = some b ∨ id ∈ F}`
+  (preservation checked: `call` adds a holder; `relay`'s `f + 1` receipt
+  senders are each in `F`, a holder, or a prior honest non-holder sender —
+  the pre-state conjunct closes; `byz` senders are in `F`; `fail` grows the
+  count and shrinks the triggers; the count is monotone throughout). Harvest
+  lemma: an `n − f` `INPUT b` sent-quorum yields the count (some honest
+  non-holder sender → conjunct; else all senders are `F`-or-holders and
+  `n − f ≥ f + 1`). All three sites discharge through `call_eq`/`F_eq`.
+- **R2: `byzFill` → `byzSet` overwrite** (`id ∈ F → call id := some b`,
+  slot full or not). Keeps the D14 guard form; each site is answered by a
+  `byzSet` burst re-pointing `F` slots to the harvest bit; needs a
+  `t`-dependent `InstRel` count conjunct and burst machinery. Post-burst
+  the count *equals* R1's `∨ id ∈ F` count — R2 is R1 with state surgery;
+  strictly heavier, and corrupted slots lose single-write meaning.
+
+Both change the spec (R1 weakens the guard predicate, R2 adds adversary
+power), which V2a′ was told not to do unilaterally: stopped at the green
+Stage-1 commit (`byzFill` landed, sound, currently unused). `GBCASim`,
+`GBCAFamily`, `Hybrid` remained red pending the decision; `SpecSafety` green.
+
+**Resolution (V2a″): R1 implemented.** `GBCASpec`'s three guards are the
+SuppOK counts and `byzFill` is removed; `GBCASim` carries `Inv.input_supp`
+exactly as recorded (preservation as checked above — the relay case closes
+through `Inv.supp_of_input_receipts`, the same harvest that answers all
+three sites: `suppI_of_bind` chases `BIND → VOTE → ECHO` to an honest
+`ECHO b` sender's `n − f` `INPUT b` receipts, and `retB`/`retC`'s dissent
+bit is covered by `bothValid`'s own `n − f` `INPUT (!v)` receipt quorum at
+the returner — no separate dissent-relay argument needed). `call_eq` exact,
+`instRel_corrupt` untouched. Green: `GBCASpec`, `SpecSafety`, `GBCAImpl`,
+`GBCASim`, `GBCAFamily`, `Hybrid`, `Examples` (the D14 witness satisfies
+the superset count). Red for V2b as scoped: `CoreSimRel`, `CoreSimBurst`,
+`CoreSim`, `Main`.
+
+## D16: V2b — the eager twin is unhealable; the ultra-lazy twin
+
+Healing V0's CoreSim against the D13/D15-R1 specs surfaced a wall *behind* the
+D13 gate table: the eager-binding twin (bursts at `bindSet`-mixed and
+`callABA`-dissent, `bind_ready` discipline) cannot discharge the repaired
+`retABA` row at all — its row-5 "ghost mirror is free" verdict is wrong.
+
+**The junk witness.** Rule 2's ghost record is first-write-wins, and rule 1
+(unconditional overwrite) is dead once the twin binds. The concrete `inputLoop`
+answers `callABA id b̂` as a no-op even while `id`'s input is uncommitted, and
+the twin — bound, so forced onto rule 2 — must bank ghost `b̂`. A later genuine
+`callABA id b` (`b ≠ b̂`, still bound → rule 2 keeps `b̂`) leaves
+`a.input id = b̂` against concrete input `b` *permanently*. Adversary schedule
+(n = 4, f = 1): mixed round-0 inputs force the eager twin to bind at `bindSet₀`;
+pre-emptive self-loops junk every future `b`-inputter; a round-0 `retC` plus a
+`⊤`-coin flip develop an A-lock for `b` whose f+1 support is carried entirely by
+post-bind (junked) inputters — the twin has at most `|F| ≤ f` fillable slots for
+`b` and rule 4's `hs` for `b` is undischargeable. (The spec emits the trace by
+answering the *first* self-loop event with rule 2 and the genuine one with
+rule 1 — a prophecy choice, the W1 shape one level up.)
+
+**Resolution: the ultra-lazy twin (implemented).** The twin never binds between
+rows. `Abs` is a two-phase invariant keyed on `a.val`: phase 1 (pre-first-
+return) — `bind = val = ⊥`, `a.call` = the concrete write-once inputs, and
+ghost synced on every *committed* input (genuine banks always answer rule 1
+while unbound, whose unconditional overwrite erases junk-pending ghosts);
+phase 2 (post-first-return) — `bind = val = some v` with a permanent concrete
+A-lock certificate, board clear. Consequences: every hidden row stutters
+(`Abs.frame` subsumes all six Stage-C lemmas), `bind_ready` and the
+`bindSet`/`callABA` bursts are gone, and the whole burst load concentrates in
+the phase-1 `retABA` answer (`decide_burst`): (i) no honest dissent from the
+returned bit `b` → rule 3 outright; (ii) else byz-fill empty `F`-slots with the
+majority bit `v'` (the quorum pigeonholes `n − f ≥ 2f + 1` callers-or-`F` onto
+two bits) and rule-4 rebind to `v'` — **clearing the board**, which is what
+makes every `F`-slot fillable afterwards (the D15-W1 objection to fill-only
+designs does not apply to TS 1: rules 3/4 reset `call`); (iii) fill the
+`f + 1` material for `b` (ghost/byz branches; supplied by the new concrete pool
+`Inv.bind_supp` at the A-locked round, transferred through phase 1's call/ghost
+sync) plus bind-branch `v'`s, rule-4 rebind to `b` (rule 3 if all-material);
+(iv) `val_force` (all-`b` bind-branch fill + rule 3), rule 8. Phase-2 `retABA`
+is rule 8 directly (`commit_up` pins `b`); `callABA` is rule 1 (phase 1,
+genuine) or rule 2 (everything else).
+
+**New `Inv` conjuncts** (established at `bindSet`/`retC` from the D15-R1 count
+guards; permanent, monotone): `bind_supp` (I26) — every bound round's value has
+`f + 1` input-or-`F` support (`InputSupp`, TS 1's V-P1 shape one level down) —
+and `clock_supp` (I27), its C-lock dissent twin; round 0 transfers wholesale via
+`input_g0_perm`, `r ≥ 1` recurses through `call_prov` into the previous round's
+pools (`Inv.supp_of_call_count`). The D15-R1 guard inversions elsewhere harvest
+an in-state honest witness via `GBCA.exists_honest_caller` (count + `|F| ≤ f`).
+
+Supersedes: the `Abs` field list, the binding-policy row table, and the burst
+inventory in the sections above (historical record of V0); `Inv` is unchanged
+except for I26/I27. Green: full `Leslie2Protocols`, `Main` guards unchanged
+(`[propext, Classical.choice, Quot.sound]`).

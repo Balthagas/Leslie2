@@ -47,7 +47,7 @@ every positive-probability trace of the implementation-side hybrid satisfies
 Validity and Agreement. -/
 theorem main (P : Params) :
     ∀ D ∈ achievableTraceDists (hybridImpl P), ∀ t, D t ≠ 0 →
-      ValidityTrace t ∧ AgreementTrace t :=
+      ValidityTrace P t ∧ AgreementTrace t :=
   safety_transfer (refines P) (spec_safe P)
 
 /-- **The composed simulation** `hybridImpl ⊑ ABA.spec` along the composite

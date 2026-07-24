@@ -33,6 +33,11 @@ The simulation relation `instRel` pairs the concrete inductive invariant
   always contains a sender outside `G`, so the pre-state clause — already
   quantified over the same `G` — supplies the witness, and corruption steps
   only shrink the range of `G`;
+* the first-relayer support clause (`input_supp`, D15-R1): an honest
+  `INPUT b` multicast is by a genuine holder of `b` or already certifies
+  `f + 1` F-blind genuine-holder support (`ImplSupp`) — inductive because
+  the first honest relayer's `f + 1` `INPUT b` receipt senders are each in
+  `F` or genuine holders, and the count is monotone under every step;
 * the grade witnesses (`gradeA`, `gradeC`): a recorded `A`- or `C`-return is
   backed by the `n − f` `BIND` receipt quorum that fired it, which is how
   A/C-exclusivity (the spec's grade lock) is discharged: two opposing
@@ -42,13 +47,15 @@ The simulation relation `instRel` pairs the concrete inductive invariant
 The spec guards are derived as follows. `bindSet`'s quorum: the honest
 `BIND b` sender's `n − f` `VOTE b` receipt quorum consists of senders that,
 when honest, hold an input (`vote_input`, D8), and corrupted members are
-absorbed into the `∪ F` of the spec's quorum. `bindSet`'s honest witness:
-chase `BIND b → VOTE b → ECHO b → INPUT b` quorums through conformance,
-extracting an honest sender at each level (`n − f > f ≥ |F|`), and finish
-with `input_orig`. The honest dissent of `retB`/`retC` comes from the
-`|Valid| > 1` guard: the `n − f` `INPUT (¬v)` receipt quorum contains an
-honest sender, and `input_orig` produces an honest process whose input is
-`¬v`.
+absorbed into the `∪ F` of the spec's quorum. The `f + 1` SuppOK counts
+(D15-R1): `Inv.supp_of_input_receipts` harvests any `f + 1` `INPUT b`
+receipt count into `ImplSupp` — for `bindSet`, chase
+`BIND b → VOTE b → ECHO b` quorums through conformance to an honest
+`ECHO b` sender, whose `n − f ≥ f + 1` `INPUT b` receipts close it
+(`suppI_of_bind`); for `retB`/`retC`'s dissent bit `!v`, the `|Valid| > 1`
+guard *is* an `n − f` `INPUT (!v)` receipt quorum at the returner itself
+(`suppI_of_valid`). `InstRel.spec_supp` transports the counts to the spec
+side along `call_eq`/`F_eq`.
 -/
 
 open Stream'
@@ -106,6 +113,23 @@ end WeakHelpers
 
 variable {P : Params}
 
+/-- `f + 1` F-blind genuine-holder support for `b` (D15-R1): the impl-side
+counterpart of the spec guards' SuppOK counts — the spec-side count follows
+along `call_eq`/`F_eq` (`InstRel.spec_supp`). -/
+def ImplSupp (P : Params) (s : ImplState P.n) (b : Bool) : Prop :=
+  P.f + 1 ≤ (Finset.univ.filter
+    (fun id => (s.proc id).input = some b ∨ id ∈ s.F)).card
+
+/-- The support count is monotone: it survives any step that preserves
+genuine holders and grows `F`. -/
+theorem ImplSupp.mono {s s' : ImplState P.n} {b : Bool}
+    (hproc : ∀ id, (s.proc id).input = some b → (s'.proc id).input = some b)
+    (hF : s.F ⊆ s'.F) (h : ImplSupp P s b) : ImplSupp P s' b := by
+  unfold ImplSupp at h ⊢
+  refine le_trans h (Finset.card_le_card fun id hid => ?_)
+  rw [Finset.mem_filter] at hid ⊢
+  exact ⟨hid.1, hid.2.imp (hproc id) (fun hm => hF hm)⟩
+
 /-- The inductive invariant of the GBCA implementation instance. See the
 module docstring for the role of each clause. -/
 structure Inv (P : Params) (s : ImplState P.n) : Prop where
@@ -134,6 +158,12 @@ structure Inv (P : Params) (s : ImplState P.n) : Prop where
   input_orig : ∀ (b : Bool) (G : Finset (Fin P.n)), s.F ⊆ G → G.card ≤ P.f →
     ∀ j, j ∉ G → Msg.input b ∈ s.sent j →
     ∃ m, m ∉ G ∧ (s.proc m).input = some b
+  /-- Relayer-inductivized first-relayer support (D15-R1): an honest `INPUT b`
+  multicast is by a genuine holder of `b`, or certifies the `f + 1` F-blind
+  genuine-holder support outright — the first honest relayer's `f + 1`
+  `INPUT b` receipt senders are each in `F` or genuine holders. -/
+  input_supp : ∀ (b : Bool) (j : Fin P.n), j ∉ s.F → Msg.input b ∈ s.sent j →
+    (s.proc j).input = some b ∨ ImplSupp P s b
   /-- An `A`-side grade lock is backed by an `n − f` `BIND v` receipt quorum
   for the bound value `v`. -/
   gradeA : s.grade = some true →
@@ -152,8 +182,31 @@ theorem Inv.initial (P : Params) : Inv P (ImplState.initial P.n) where
   bind_once := fun j w _ h => absurd h (by simp [ImplState.initial])
   bind_conf := fun j b _ h => absurd h (by simp [ImplState.initial])
   input_orig := fun b G _ _ j _ h => absurd h (by simp [ImplState.initial])
+  input_supp := fun b j _ h => absurd h (by simp [ImplState.initial])
   gradeA := fun h => absurd h (by simp [ImplState.initial])
   gradeC := fun h => absurd h (by simp [ImplState.initial])
+
+/-- Harvest (D15-R1): any `f + 1` `INPUT b` receipt count yields the F-blind
+genuine-holder support — some honest non-holder sender's `input_supp` clause
+closes, or else every sender is a holder-or-`F`-member and the senders
+themselves witness the count. -/
+theorem Inv.supp_of_input_receipts {s : ImplState P.n} (hI : Inv P s)
+    {i : Fin P.n} {b : Bool} (h : P.f + 1 ≤ s.recvCount i (.input b)) :
+    ImplSupp P s b := by
+  by_cases hc : ∃ k, Msg.input b ∈ s.recv i k ∧ k ∉ s.F ∧ (s.proc k).input ≠ some b
+  · obtain ⟨k, hkr, hkF, hkin⟩ := hc
+    rcases hI.input_supp b k hkF (hI.recv_sub i k _ hkr) with h' | h'
+    · exact absurd h' hkin
+    · exact h'
+  · push Not at hc
+    unfold ImplState.recvCount at h
+    unfold ImplSupp
+    refine le_trans h (Finset.card_le_card fun k hk => ?_)
+    rw [Finset.mem_filter] at hk ⊢
+    refine ⟨hk.1, ?_⟩
+    by_cases hkF : k ∈ s.F
+    · exact Or.inr hkF
+    · exact Or.inl (hc k hk.2 hkF)
 
 /-- The sender's `setProc` in a send step does not affect other processes. -/
 private theorem proc_send_ne {s : ImplState P.n} {j : Fin P.n} {p : ProcState}
@@ -168,6 +221,58 @@ private theorem proc_ret_ne {s : ImplState P.n} {j : Fin P.n} {p : ProcState}
     ((s.setProc j p).setGrade g).proc k = s.proc k := by
   rw [ImplState.setGrade_proc, ImplState.setProc_proc_ne _ _ _ hk]
 
+/-- `input_supp` is preserved by an honest non-`INPUT` send that keeps the
+sender's input. -/
+private theorem input_supp_send {s : ImplState P.n} (hI : Inv P s) {j : Fin P.n}
+    {p : ProcState} {m : Msg} (hp : p.input = (s.proc j).input)
+    (hm : ∀ b, m ≠ .input b) (b : Bool) (j' : Fin P.n)
+    (hF : j' ∉ ((s.setProc j p).mcast j m).F)
+    (hm' : Msg.input b ∈ ((s.setProc j p).mcast j m).sent j') :
+    (((s.setProc j p).mcast j m).proc j').input = some b ∨
+      ImplSupp P ((s.setProc j p).mcast j m) b := by
+  rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
+  · exact absurd heq.symm (hm b)
+  · rcases hI.input_supp b j' hF hold with hin | hsupp
+    · left
+      by_cases hk : j' = j
+      · subst hk
+        rw [ImplState.mcast_proc, ImplState.setProc_proc_self, hp]
+        exact hin
+      · rw [proc_send_ne hk]
+        exact hin
+    · right
+      refine ImplSupp.mono (s := s) (fun k hk => ?_) (fun _ hh => hh) hsupp
+      by_cases hk0 : k = j
+      · subst hk0
+        rw [ImplState.mcast_proc, ImplState.setProc_proc_self, hp]
+        exact hk
+      · rw [proc_send_ne hk0]
+        exact hk
+
+/-- `input_supp` is preserved by a local update that keeps the process's
+input (the return steps). -/
+private theorem input_supp_setProc {s : ImplState P.n} (hI : Inv P s)
+    {j : Fin P.n} {p : ProcState} (hp : p.input = (s.proc j).input)
+    (b : Bool) (j' : Fin P.n) (hF : j' ∉ (s.setProc j p).F)
+    (hm' : Msg.input b ∈ (s.setProc j p).sent j') :
+    ((s.setProc j p).proc j').input = some b ∨ ImplSupp P (s.setProc j p) b := by
+  rcases hI.input_supp b j' hF hm' with hin | hsupp
+  · left
+    by_cases hk : j' = j
+    · subst hk
+      rw [ImplState.setProc_proc_self, hp]
+      exact hin
+    · rw [ImplState.setProc_proc_ne _ _ _ hk]
+      exact hin
+  · right
+    refine ImplSupp.mono (s := s) (fun k hk => ?_) (fun _ hh => hh) hsupp
+    by_cases hk0 : k = j
+    · subst hk0
+      rw [ImplState.setProc_proc_self, hp]
+      exact hk
+    · rw [ImplState.setProc_proc_ne _ _ _ hk0]
+      exact hk
+
 /-- **Invariant preservation.** `Inv` is preserved by every implementation
 step. -/
 theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
@@ -177,7 +282,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
   | call id b h =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
+    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro i' j' m' hm'
       exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
     · intro j' b' hF hm'
@@ -219,6 +324,28 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
           exact absurd hmi (by simp)
         rw [proc_send_ne hne]
         exact hmi
+    · intro b' j' hF hm'
+      rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
+      · injection heq with heq
+        subst heq
+        left
+        simp
+      · rcases hI.input_supp b' j' hF hold with hin | hsupp
+        · left
+          have hne : j' ≠ id := by
+            rintro rfl
+            rw [h] at hin
+            exact absurd hin (by simp)
+          rw [proc_send_ne hne]
+          exact hin
+        · right
+          refine ImplSupp.mono (s := s) (fun k hk => ?_) (fun _ hh => hh) hsupp
+          have hne : k ≠ id := by
+            rintro rfl
+            rw [h] at hk
+            exact absurd hk (by simp)
+          rw [proc_send_ne hne]
+          exact hk
   | callLoop id b =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
@@ -227,7 +354,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine ⟨hI.F_card, ?_, ?_, hI.vote_input, ?_, hI.bind_once, ?_,
-      hI.input_orig, ?_, ?_⟩
+      hI.input_orig, hI.input_supp, ?_, ?_⟩
     · intro i' j' m' hm'
       rcases ImplState.mem_recvMsg_recv.mp hm' with ⟨rfl, rfl, rfl⟩ | hold
       · exact hsent
@@ -250,7 +377,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
   | relay j b hin hcnt hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
+    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro i' j' m' hm'
       exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
     · intro j' b' hF hm'
@@ -296,10 +423,30 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
         by_cases hm0 : m0 = j
         · subst hm0; simpa using hmi
         · rw [proc_send_ne hm0]; exact hmi
+    · intro b' j' hF hm'
+      rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
+      · injection heq with heq
+        subst heq
+        right
+        refine ImplSupp.mono (s := s) (fun k hk => ?_) (fun _ hh => hh)
+          (hI.supp_of_input_receipts hcnt)
+        by_cases hk0 : k = j'
+        · subst hk0; simpa using hk
+        · rw [proc_send_ne hk0]; exact hk
+      · rcases hI.input_supp b' j' hF hold with hji | hsupp
+        · left
+          by_cases hk : j' = j
+          · subst hk; simpa using hji
+          · rw [proc_send_ne hk]; exact hji
+        · right
+          refine ImplSupp.mono (s := s) (fun k hk => ?_) (fun _ hh => hh) hsupp
+          by_cases hk0 : k = j
+          · subst hk0; simpa using hk
+          · rw [proc_send_ne hk0]; exact hk
   | echo j b hin hcnt hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
+    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro i' j' m' hm'
       exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
     · intro j' b' hF hm'
@@ -338,10 +485,11 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
         by_cases hm0 : m0 = j
         · subst hm0; simpa using hmi
         · rw [proc_send_ne hm0]; exact hmi
+    · exact input_supp_send hI rfl (by simp)
   | voteBit j b hin hcnt hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
+    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro i' j' m' hm'
       exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
     · intro j' b' hF hm'
@@ -381,10 +529,11 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
         by_cases hm0 : m0 = j
         · subst hm0; simpa using hmi
         · rw [proc_send_ne hm0]; exact hmi
+    · exact input_supp_send hI rfl (by simp)
   | voteBot j hin hcnt hval hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
+    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro i' j' m' hm'
       exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
     · intro j' b' hF hm'
@@ -421,10 +570,11 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
         by_cases hm0 : m0 = j
         · subst hm0; simpa using hmi
         · rw [proc_send_ne hm0]; exact hmi
+    · exact input_supp_send hI rfl (by simp)
   | bindBit j b hin hcnt hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
+    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro i' j' m' hm'
       exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
     · intro j' b' hF hm'
@@ -469,10 +619,11 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
         by_cases hm0 : m0 = j
         · subst hm0; simpa using hmi
         · rw [proc_send_ne hm0]; exact hmi
+    · exact input_supp_send hI rfl (by simp)
   | bindBot j hin hcnt hval hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
+    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro i' j' m' hm'
       exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
     · intro j' b' hF hm'
@@ -514,10 +665,11 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
         by_cases hm0 : m0 = j
         · subst hm0; simpa using hmi
         · rw [proc_send_ne hm0]; exact hmi
+    · exact input_supp_send hI rfl (by simp)
   | byz j m hjF =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
+    refine ⟨hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro i' j' m' hm'
       exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
     · intro j' b' hF hm'
@@ -544,11 +696,15 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
       · exact absurd (hFG hjF) hjG
       · exact hI.input_orig b' G hFG hGc j' hjG hold
+    · intro b' j' hF hm'
+      rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
+      · exact absurd hjF hF
+      · exact hI.input_supp b' j' hF hold
   | bindGhost i b hi hm hb =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine ⟨hI.F_card, hI.recv_sub, hI.echo_conf, hI.vote_input, hI.vote_conf,
-      hI.bind_once, hI.bind_conf, hI.input_orig, ?_, hI.gradeC⟩
+      hI.bind_once, hI.bind_conf, hI.input_orig, hI.input_supp, ?_, hI.gradeC⟩
     intro hg
     obtain ⟨v, i', hbv, _⟩ := hI.gradeA hg
     rw [hb] at hbv
@@ -557,7 +713,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine ⟨hI.F_card, hI.recv_sub, hI.echo_conf, ?_, hI.vote_conf, ?_,
-      hI.bind_conf, ?_, ?_, ?_⟩
+      hI.bind_conf, ?_, ?_, ?_, ?_⟩
     · intro j' w hF hm'
       by_cases hk : j' = id
       · subst hk; simpa using hI.vote_input j' w hF hm'
@@ -574,6 +730,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       by_cases hm0 : m0 = id
       · subst hm0; simpa using hmi
       · rw [proc_ret_ne hm0]; exact hmi
+    · exact input_supp_setProc hI rfl
     · intro _
       exact ⟨v, id, hb, hcnt⟩
     · intro hg
@@ -582,7 +739,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine ⟨hI.F_card, hI.recv_sub, hI.echo_conf, ?_, hI.vote_conf, ?_,
-      hI.bind_conf, ?_, hI.gradeA, hI.gradeC⟩
+      hI.bind_conf, ?_, ?_, hI.gradeA, hI.gradeC⟩
     · intro j' w hF hm'
       by_cases hk : j' = id
       · subst hk; simpa using hI.vote_input j' w hF hm'
@@ -599,11 +756,12 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       by_cases hm0 : m0 = id
       · subst hm0; simpa using hmi
       · rw [ImplState.setProc_proc_ne _ _ _ hm0]; exact hmi
+    · exact input_supp_setProc hI rfl
   | retC id v hb hcnt hval hr =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine ⟨hI.F_card, hI.recv_sub, hI.echo_conf, ?_, hI.vote_conf, ?_,
-      hI.bind_conf, ?_, ?_, ?_⟩
+      hI.bind_conf, ?_, ?_, ?_, ?_⟩
     · intro j' w hF hm'
       by_cases hk : j' = id
       · subst hk; simpa using hI.vote_input j' w hF hm'
@@ -620,6 +778,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       by_cases hm0 : m0 = id
       · subst hm0; simpa using hmi
       · rw [proc_ret_ne hm0]; exact hmi
+    · exact input_supp_setProc hI rfl
     · intro hg
       simp at hg
     · intro _
@@ -629,7 +788,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
     subst hs'
     have hsub := ImplState.corrupt_F_subset s id
     refine ⟨ImplState.corrupt_card_le s id hI.F_card, ?_, ?_, ?_, ?_, ?_, ?_,
-      ?_, ?_, ?_⟩
+      ?_, ?_, ?_, ?_⟩
     · intro i' j' m' hm'
       rw [ImplState.corrupt_recv] at hm'
       rw [ImplState.corrupt_sent]
@@ -659,6 +818,16 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       obtain ⟨m0, hmG, hmi⟩ :=
         hI.input_orig b' G (Finset.Subset.trans hsub hFG) hGc j' hjG hm'
       exact ⟨m0, hmG, by rw [ImplState.corrupt_proc]; exact hmi⟩
+    · intro b' j' hF' hm'
+      rw [ImplState.corrupt_sent] at hm'
+      rcases hI.input_supp b' j' (fun hj => hF' (hsub hj)) hm' with hin | hsupp
+      · left
+        rw [ImplState.corrupt_proc]
+        exact hin
+      · right
+        refine ImplSupp.mono (s := s) (fun k hk => ?_) hsub hsupp
+        rw [ImplState.corrupt_proc]
+        exact hk
     · intro hg
       rw [ImplState.corrupt_grade] at hg
       obtain ⟨v, i', h1, h2⟩ := hI.gradeA hg
@@ -761,6 +930,47 @@ theorem exists_honest_input_of_valid {s : ImplState P.n} (hI : Inv P s)
   obtain ⟨j, hjF, hjr⟩ := ImplState.exists_sender_notMem s.F h1'
   exact hI.input_orig b s.F (Finset.Subset.refl _) hFc j hjF
     (hI.recv_sub i j _ hjr)
+
+/-- D15-R1 harvest at `bindGhost`: an honest `BIND b` multicast yields the
+`f + 1` F-blind genuine-holder support for `b` — chase the `VOTE`/`ECHO`
+quorums to an honest `ECHO b` sender, whose `n − f ≥ f + 1` `INPUT b`
+receipts feed `Inv.supp_of_input_receipts`. -/
+theorem suppI_of_bind {s : ImplState P.n} (hI : Inv P s)
+    {i : Fin P.n} {b : Bool} (hiF : i ∉ s.F)
+    (hm : Msg.bind (some b) ∈ s.sent i) : ImplSupp P s b := by
+  have hfn := P.f_lt_n_sub_f
+  have hFc := hI.F_card
+  have h1 := hI.bind_conf i b hiF hm
+  have h1' : s.F.card < s.recvCount i (Msg.vote (some b)) := by omega
+  obtain ⟨j, hjF, hjr⟩ := ImplState.exists_sender_notMem s.F h1'
+  have h2 := hI.vote_conf j b hjF (hI.recv_sub i j _ hjr)
+  have h2' : s.F.card < s.recvCount j (Msg.echo b) := by omega
+  obtain ⟨k, hkF, hkr⟩ := ImplState.exists_sender_notMem s.F h2'
+  have h3 := hI.echo_conf k b hkF (hI.recv_sub j k _ hkr)
+  exact hI.supp_of_input_receipts (le_trans (by omega) h3)
+
+/-- D15-R1 harvest at `retB`/`retC`: `|Valid| > 1` evidence yields the
+`f + 1` F-blind genuine-holder support for either bit — in particular for
+the dissent bit `!v`, whose `n − f ≥ f + 1` `INPUT` receipt quorum sits at
+the returner itself. -/
+theorem suppI_of_valid {s : ImplState P.n} (hI : Inv P s)
+    {i : Fin P.n} (hv : s.bothValid P i) (b : Bool) : ImplSupp P s b := by
+  have hfn := P.f_lt_n_sub_f
+  exact hI.supp_of_input_receipts
+    (le_trans (by omega) (ImplState.bothValid_le hv b))
+
+/-- Transport an impl-side support count to the spec side along
+`call_eq`/`F_eq`: the spec guards' SuppOK counts (D15-R1). -/
+theorem InstRel.spec_supp {s : ImplState P.n} {t : SpecState P.n}
+    (hR : InstRel P s t) {b : Bool} (h : ImplSupp P s b) :
+    P.f + 1 ≤ (Finset.univ.filter
+      (fun id => t.call id = some b ∨ id ∈ t.F)).card := by
+  unfold ImplSupp at h
+  refine le_trans h (Finset.card_le_card fun k hk => ?_)
+  rw [Finset.mem_filter] at hk ⊢
+  refine ⟨hk.1, ?_⟩
+  rw [hR.call_eq, hR.F_eq]
+  exact hk.2
 
 /-- A/C-exclusivity, `A`-side: an `n − f` `BIND v` receipt quorum rules out
 a `C`-side grade lock (the two `BIND` quorums would intersect in an honest
@@ -973,9 +1183,9 @@ theorem implRefines (P : Params) (r : ℕ) :
     subst hq1'
     have hq : q2.quorum P :=
       quorum_of_vote_quorum hRR (hRR.inv.bind_conf i b hi hm)
-    have hw : ∃ id', id' ∉ q2.F ∧ q2.call id' = some b := by
-      obtain ⟨m0, hmF, hmi⟩ := exists_honest_input_of_bind hRR.inv hi hm
-      exact ⟨m0, by rw [hRR.F_eq]; exact hmF, by rw [hRR.call_eq]; exact hmi⟩
+    have hw : P.f + 1 ≤ (Finset.univ.filter
+        (fun id => q2.call id = some b ∨ id ∈ q2.F)).card :=
+      hRR.spec_supp (suppI_of_bind hRR.inv hi hm)
     have hbnone : q2.bind = none := by rw [hRR.bind_eq]; exact hb
     exact ⟨{ q2 with bind := some b },
       Or.inl ⟨rfl, weakLSilent_single (Step.bindSet q2 b hq hw hbnone)⟩,
@@ -1016,9 +1226,9 @@ theorem implRefines (P : Params) (r : ℕ) :
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     have hbnd : q2.bind = some v := by rw [hRR.bind_eq]; exact hb
-    have hw : ∃ id', id' ∉ q2.F ∧ q2.call id' = some (!v) := by
-      obtain ⟨m0, hmF, hmi⟩ := exists_honest_input_of_valid hRR.inv hval (!v)
-      exact ⟨m0, by rw [hRR.F_eq]; exact hmF, by rw [hRR.call_eq]; exact hmi⟩
+    have hw : P.f + 1 ≤ (Finset.univ.filter
+        (fun id' => q2.call id' = some (!v) ∨ id' ∈ q2.F)).card :=
+      hRR.spec_supp (suppI_of_valid hRR.inv hval (!v))
     have hret : q2.ret id = false := by rw [hRR.ret_eq]; exact hr
     refine ⟨{ q2 with ret := Function.update q2.ret id true },
       Or.inr ⟨by simp,
@@ -1042,9 +1252,9 @@ theorem implRefines (P : Params) (r : ℕ) :
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     have hbnd : q2.bind = some v := by rw [hRR.bind_eq]; exact hb
-    have hw : ∃ id', id' ∉ q2.F ∧ q2.call id' = some (!v) := by
-      obtain ⟨m0, hmF, hmi⟩ := exists_honest_input_of_valid hRR.inv hval (!v)
-      exact ⟨m0, by rw [hRR.F_eq]; exact hmF, by rw [hRR.call_eq]; exact hmi⟩
+    have hw : P.f + 1 ≤ (Finset.univ.filter
+        (fun id' => q2.call id' = some (!v) ∨ id' ∈ q2.F)).card :=
+      hRR.spec_supp (suppI_of_valid hRR.inv hval (!v))
     have hgr : q2.grade = none ∨ q2.grade = some false := by
       have hne := grade_ne_true_of_bot_quorum hRR.inv hcnt
       rw [hRR.grade_eq]
