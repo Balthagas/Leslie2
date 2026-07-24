@@ -148,3 +148,134 @@ recording because each kills a natural simpler alternative.
    fresh inputs with nothing bound yet are perfectly reachable and would force a
    bind the quorum cannot support. Hence `bind_ready` conditions unanimity on a
    round actually being bound; early mixed inputs are just banked.
+
+## D13: the Validity repair
+
+The audit (`ABA/AUDIT.md` §2.1) shows TS 1 fails the papers' Validity: rule 7's
+free re-propose (while `val = ⊥`) and rule 4's free mixed-bind lose input
+provenance, so a bit input only by a later-corrupted process can win. The repair
+principle: a value may circulate only with `f + 1` distinct supporters — at most
+`f` processes are *ever* corrupted, so `f + 1` distinct supporters always include
+a never-corrupted one, and provenance survives dynamic corruption with no
+future-peeking guard (`3f < n` supplies `n − 2f ≥ f + 1`).
+
+### The repaired TS 1 (exact deltas to `Spec.lean`)
+
+- **Ghost** `input : Fin n → Option Bool` in `SpecState` (initial `fun _ => none`).
+  Rule 1 records unconditionally: `input := Function.update s.input id (some b)`
+  (write-once for free: pre-bind `call` is written only by rule 1 — rule 6 writes
+  `none`, rule 7 is disabled since `coin = ⊥` and `TVal.agrees none ⊥` — and
+  `call` is never cleared while `bind = none`, so rule 1 fires at most once per
+  id). Rule 2 records first-write-wins:
+  `input := if s.input id = none then Function.update s.input id (some b) else s.input`
+  — sound (rule-2 events are genuine `callABA` trace events) and load-bearing:
+  it is what lets an abstract twin mirror concrete inputs banked after the
+  abstract binds (the rows it answers with rule 2). No honesty guards anywhere;
+  all support counts are `F`-blind, which is exactly what makes them immune to
+  later `fail`s.
+- **Rule 4** gains
+  `hs : P.f + 1 ≤ (Finset.univ.filter (fun id => s.call id = some b)).card`
+  (support among ALL callers). Refuted en route: the quorum + `h1`/`h0` do *not*
+  imply some bit has `f + 1` total callers (`n − 2f` honest callers can split as
+  low as `⌈(f+1)/2⌉` per bit), so the guard genuinely shrinks enabledness — by
+  design; spec liveness is unclaimed.
+- **Rule 7**: `h₃` becomes
+  `(s.val = none ∧ (s.input id = some b ∨ s.bind = some b)) ∨ s.val = some b`.
+  Coin values are deliberately *not* licensed: `b = coin-bit` would resurrect the
+  audit trace through a probability-ε flip.
+- **New rule** `callByzFill` (τ):
+  `(hF : id ∈ s.F) (h : s.call id = none) : call := Function.update s.call id (some b)`,
+  no ghost record. Necessity: in TS 1 the only writers of `call` are rules 1/6/7
+  (rules 3/4 clear; `corrupt` touches only `F`), so counting corrupt callers in
+  `hs` is *sound* — but the concrete adversary fills GBCA call slots via hidden
+  byz `callG` drivers with **no** `callABA` event, and without an abstract
+  counterpart `hs` is undischargeable precisely on the validity-*satisfying*
+  traces where byz phantoms complete the `f + 1` pool around one never-corrupted
+  inputter. Byz entries are accounted by the `id ∈ F` disjunct below: the `F`
+  budget, not the ghost, pays for them.
+- Rules 3, 5, 6, 8, 9 unchanged. Rule 3 needs nothing: its quorum leaves
+  `≥ n − f − f = n − 2f ≥ f + 1` *honest* callers, all of the decided bit.
+  Rule 6 writes `bind`, which V-P1 already supports.
+
+### The provenance invariant (extending `SpecSafety.SpecInv`)
+
+`SuppOK s v := P.f + 1 ≤ #{id | s.input id = some v ∨ id ∈ s.F}` (monotone in
+`F` and `input`, hence stable under `fail` and banking). New conjuncts:
+
+- **V-P0** `s.bind = none → ∀ id b, s.call id = some b → s.input id = some b ∨ id ∈ s.F`
+- **V-P1** `∀ v, s.bind = some v → SuppOK s v`
+- **V-P2** `∀ v, s.val = some v → SuppOK s v`
+- **V-P3** `∀ v, s.bind = some v → ∀ id b, s.call id = some b → s.input id = some b ∨ b = v ∨ id ∈ s.F`
+  (post-`val`, `bind_val` collapses rule 7's `val`-branch writes into `b = v`).
+
+Preservation: rules 1/2 grow `input` (all conjuncts monotone); rule 4 harvests
+its `f + 1` callers through V-P0/V-P3 — each is an `input`-supporter, an
+`F`-member, or carries `b = old bind` (then old V-P1 closes); rule 3 harvests its
+`n − 2f ≥ f + 1` honest callers the same way (the `F` disjunct is vacuous for
+them); rules 5/6/8 touch nothing relevant; `callByzFill` lands in the `id ∈ F`
+disjuncts; rule 9 grows `F` (monotone). The audit trace now fails exactly at
+`mixed (b := 1)`: `hs` demands 2 callers of `1` and only id 0 qualifies; the
+rule-7 detour is also dead (only id 0 may re-propose `1`, and a `val := 1`
+unanimity can never reach quorum from `|{0} ∪ F| ≤ 1 + f < n − f`).
+
+Validity endgame (the budget pigeonhole): at any `retABA _ v`, V-P2 gives `f + 1`
+supporters; if every `input`-supporter of `v` were ever-corrupted, all `f + 1`
+supporters would lie in the final `F`, contradicting `|F| ≤ f`. So some supporter
+is never corrupted and its recorded input is a genuine prior `callABA`.
+
+Paper-form target (`fail` is total under D1, so *fail-event presence* is the
+wrong notion — no-op fails can name more than `f` ids; refuted by: supporters
+`{0,1}`, `fail 0` effective, `fail 1` a no-op at budget): define
+`failSet t k : Finset (Fin n)` as the fold of D1-`corrupt` over the first `k`
+labels (it provably equals the reachable state's `F`), and
+`NeverCorrupted t id := ∀ k, id ∉ failSet t k`. Then
+
+```
+ValidityTraceP t := ∀ m id b, t m = retABA id b →
+  ∃ k < m, ∃ id', t k = callABA id' b ∧ NeverCorrupted t id'
+```
+
+— returner-unconditional (stronger than the paper, like `AgreementTrace`), and
+the "no `fail id` event" phrasing survives only as a hypothesis-side corollary.
+`ValInv`'s call-attribution must except `F`-members (byz fills have no event).
+
+### The gate: CoreSim feasibility — NO-GO as scoped
+
+Adjudication of every abstract rule-4/7 use by the lazy twin:
+
+| twin use | new obligation | verdict / supplier |
+|---|---|---|
+| `bindSet`-mixed burst (`SpecStep.mixed`, `b` = concrete bind) | `hs`: `f+1` abstract callers of `b`; abstract `call` = banked inputs (`call_pre`) | **not dischargeable**: TS 2's `bindSet` certifies a *single* honest witness (`hw`) for `b` |
+| `callABA`-dissent burst (`SpecStep.mixed`, `b` = fresh dissent bit) | `hs` for `b` | not dischargeable for `b`; **dischargeable after a delta**: bind the standing pool value `v` instead — `bind_ready`'s `f+1` input pool + `call_pre` supply `hs`, and `h1`/`h0` survive (fresh honest dissent + a currently-honest pool member by `|F| ≤ f`) |
+| `retABA`-unbound (rule 3 + rule 8) | none new | dischargeable (guards unchanged) |
+| `retABA`-bound (`val_force'`: rule-7 fill of `b` with `a.bind = some vb`, `vb` unpinned) | per-id `input id = some b ∨ bind = some b ∨ val = some b` | `val = some b` branch fine (`val_cert` + `commit_up`); `val = ⊥ ∧ vb ≠ b` **not dischargeable** — nothing pins `a.bind`'s value and a fill needs all `n` ids licensed |
+| ghost mirror at rules 1/2 | `a.input = concrete banked inputs` | free, *given* rule-2 recording and a new `Abs` conjunct `input_eq : ∀ id, a.input id = (c.procs id).input` (`call_pre` alone dies at `a.bind ≠ none`) |
+
+No local (`Inv`/`Abs`) strengthening fixes the two failing rows, because
+`hybridSpec` itself violates paper-Validity — refinement into any Validity-sound
+spec is impossible. Witness (deterministic; both WCC flips are outcome-
+irrelevant), `n = 4`, `f = 1`: inputs `1,0,0,0`; GBCA₀ calls mirror them;
+`bindSet b := 1` off the single honest witness id 0; ids 1–3 `retB` (singular
+dissent witness id 1) and adopt `est := 1` (B keeps `est` through `retW`);
+round 1: ids 1–3 call `1`, bind `1`, `retA`, DECIDED `1`, `n − f` receipts;
+`fail 0`; `retABA 1 1`. Never-corrupted = `{1,2,3}`, all inputs `0`. The repaired
+spec can never emit these visible labels (bit `1` has one supporter), and forward
+simulation preserves visible traces. Root cause: TS 2's `bindSet` witness and
+`retB`/`retC` dissent are *singular* — the same provenance loss one level down
+(ABDY22's implementation has the `f + 1` via Valid-set relay thresholds; TS 2
+abstracted it to one witness). A second, probabilistic channel does the same
+through `retC` + WCC `⊤` free adoption.
+
+Scope of the actual repair (recorded for V-next, not softened): (1) TS 1 as
+above; (2) TS 2: `bindSet`'s `hw` → `f + 1 ≤ #{id | call id = some b}`,
+`retB`/`retC`'s `hw` → the same for `!v` (F-blind; GBCA.Impl's relay threshold
+should re-close `GBCASim`, to be re-proven); (3) new `Inv` conjuncts
+`bind_supp : (g r).bind = some v → f + 1 ≤ #{id | (g r).call id = some v}` and
+its C-lock dissent twin — both permanent and `F`-free, likely subsuming much of
+the `DissentResidue` transport machinery — bottoming at `input_g0`; (4) new
+`Abs` conjuncts `input_eq`, byz-call banking (abstract `callByzFill` mirrors
+hidden byz `callG`), and `ret_support` (an A-lock at bind `b` yields `f + 1`
+abstract call/byz-fill material for `b`); (5) `CoreSim` deltas: the dissent
+burst binds the pool value, and the `retABA`-bound row rebinds to `b` via
+byz-fill/input-branch fills + rule 4 instead of `val_force'`. With (1)–(5) every
+row of the table has a named supplier; without (2), no design does.
