@@ -7,11 +7,22 @@ Authors: Sathiya / Claude
 import Leslie2Protocols.ABA.GBCASpec
 
 /-!
-# The GBCA implementation instance (blueprint Algorithm 2)
+# The GBCA implementation instance (blueprint `alg:GBCA`)
 
-The round-`r` instance of ABDY22's Graded Binding Crusader Agreement protocol
-(blueprint Algorithm 2), as an LTS over the shared alphabet `ABA.Lab n`. Each
-process runs the message pattern
+The round-`r` instance of the **blueprint's** Graded Binding Crusader Agreement
+protocol (`alg:GBCA`), as an LTS over the shared alphabet `ABA.Lab n`.
+
+*Attribution.* `alg:GBCA` is a **4-round compression** of
+ABDY22's 5-round Algorithm 6, not a transcription of it: ABDY22 adds an `echo4`
+*and* an `echo5` round to BCA and decides on `echo5` evidence (`⟨echo4,·,v⟩`
+from `≥ t+1`), whereas the blueprint elides the `echo5` round and reads the
+decide conditions one level down (`f + 1` `VOTE b` where ABDY22 has `t + 1`
+`echo4 v`). Graded agreement and validity still go through for the 4-round
+variant under `n > 3f` (and the machine-checked `GBCA.Impl ⊑ GBCA.Spec`
+corroborates it), so no theorem here is false; but this is the blueprint's
+algorithm, not the cited ABDY22 Algorithm 6.
+
+Each process runs the message pattern
 
 * `INPUT b` — multicast on being called; relayed after `f + 1` receipts;
 * `ECHO b` — multicast once `INPUT b` was received from `n − f` senders
@@ -46,8 +57,10 @@ behaviour are modelled by nondeterministic `τ`-transitions.
   evidence, so every return label carries the bound value, as demanded by the
   enhanced `retG` labels. This gating is a pure scheduling restriction: the
   quorum intersection argument shows the `A`/`B` return evidence implies the
-  ghost trigger fired or is enabled (for `C`-returns in an all-`⊥` run the
-  gate may additionally delay the return — a liveness-only restriction,
+  ghost trigger fired or is enabled (for `C`-returns in an all-`⊥` run with no
+  honest real-bit `BIND` the gate can block the return **permanently** — a
+  liveness-shaped restriction forced by the blueprint's linearised Binding
+  interface (its TS `retC` also requires `bind ≠ ⊥`); safety-neutral and
   irrelevant to the refinement).
 * **D7 (ghost `grade`).** The write-only ghost field `grade` records whether
   an `A`- or a `C`-return has fired (mirroring the spec's grade lock). No

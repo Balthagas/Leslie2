@@ -1060,7 +1060,7 @@ the **belief-tracking invariant** `abstractArr_eq`:
 `abstractArr D qₚ = pe.probOfR D · (lastStateOf D) qₚ` — conditioned on the abstract run `D`, the
 concrete endpoint is distributed as the running belief `lastStateOf D`. This is TRUE precisely
 because
-`μ'` is sampled from `tKernel` (it was false for the old deterministic `tOutcome`): the averaging
+`μ'` is sampled from `tKernel` (it is false for the deterministic `tOutcome`): the averaging
 over
 the concrete endpoint uses the GLOBAL witness identity `tKernel_bind_avg`. -/
 

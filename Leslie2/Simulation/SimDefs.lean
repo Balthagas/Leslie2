@@ -44,7 +44,7 @@ equivalent to `∃ ω, PMFRel R μ ω ∧ ν = ω.bind id`, but presented as a *
 `K`, which is what makes it convex-closed (so it mixes: see `simulates_bind_mix`) and lets the
 composite relation compose along a single global witness (see the transitivity theorem).
 
-The earlier *functional* form (`∃ f : S → PMF T, ν = μ.bind f ∧ ∀ s ∈ μ.support, R s (f s)`) is
+The simpler *functional* form (`∃ f : S → PMF T, ν = μ.bind f ∧ ∀ s ∈ μ.support, R s (f s)`) is
 the special case `K s = PMF.pure (f s)`; it is **not** liftable through weak transitions for a
 non-convex `R` (it forces a single abstract partner per source state, which mixing violates), which
 is why the mixture form is used. -/

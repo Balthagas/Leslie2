@@ -33,7 +33,7 @@ The simulation relation `instRel` pairs the concrete inductive invariant
   always contains a sender outside `G`, so the pre-state clause — already
   quantified over the same `G` — supplies the witness, and corruption steps
   only shrink the range of `G`;
-* the first-relayer support clause (`input_supp`, D15-R1): an honest
+* the first-relayer support clause (`input_supp`, D15): an honest
   `INPUT b` multicast is by a genuine holder of `b` or already certifies
   `f + 1` F-blind genuine-holder support (`ImplSupp`) — inductive because
   the first honest relayer's `f + 1` `INPUT b` receipt senders are each in
@@ -48,7 +48,7 @@ The spec guards are derived as follows. `bindSet`'s quorum: the honest
 `BIND b` sender's `n − f` `VOTE b` receipt quorum consists of senders that,
 when honest, hold an input (`vote_input`, D8), and corrupted members are
 absorbed into the `∪ F` of the spec's quorum. The `f + 1` SuppOK counts
-(D15-R1): `Inv.supp_of_input_receipts` harvests any `f + 1` `INPUT b`
+(D15): `Inv.supp_of_input_receipts` harvests any `f + 1` `INPUT b`
 receipt count into `ImplSupp` — for `bindSet`, chase
 `BIND b → VOTE b → ECHO b` quorums through conformance to an honest
 `ECHO b` sender, whose `n − f ≥ f + 1` `INPUT b` receipts close it
@@ -113,7 +113,7 @@ end WeakHelpers
 
 variable {P : Params}
 
-/-- `f + 1` F-blind genuine-holder support for `b` (D15-R1): the impl-side
+/-- `f + 1` F-blind genuine-holder support for `b` (D15): the impl-side
 counterpart of the spec guards' SuppOK counts — the spec-side count follows
 along `call_eq`/`F_eq` (`InstRel.spec_supp`). -/
 def ImplSupp (P : Params) (s : ImplState P.n) (b : Bool) : Prop :=
@@ -158,7 +158,7 @@ structure Inv (P : Params) (s : ImplState P.n) : Prop where
   input_orig : ∀ (b : Bool) (G : Finset (Fin P.n)), s.F ⊆ G → G.card ≤ P.f →
     ∀ j, j ∉ G → Msg.input b ∈ s.sent j →
     ∃ m, m ∉ G ∧ (s.proc m).input = some b
-  /-- Relayer-inductivized first-relayer support (D15-R1): an honest `INPUT b`
+  /-- Relayer-inductivized first-relayer support (D15): an honest `INPUT b`
   multicast is by a genuine holder of `b`, or certifies the `f + 1` F-blind
   genuine-holder support outright — the first honest relayer's `f + 1`
   `INPUT b` receipt senders are each in `F` or genuine holders. -/
@@ -186,7 +186,7 @@ theorem Inv.initial (P : Params) : Inv P (ImplState.initial P.n) where
   gradeA := fun h => absurd h (by simp [ImplState.initial])
   gradeC := fun h => absurd h (by simp [ImplState.initial])
 
-/-- Harvest (D15-R1): any `f + 1` `INPUT b` receipt count yields the F-blind
+/-- Harvest (D15): any `f + 1` `INPUT b` receipt count yields the F-blind
 genuine-holder support — some honest non-holder sender's `input_supp` clause
 closes, or else every sender is a holder-or-`F`-member and the senders
 themselves witness the count. -/
@@ -895,43 +895,7 @@ theorem quorum_of_vote_quorum {s : ImplState P.n} {t : SpecState P.n}
     rw [hR.call_eq]
     exact hR.inv.vote_input k w hkF' (hR.inv.recv_sub i k _ hk.2)
 
-/-- From an honest `BIND b` multicast (a real bit), an honest process whose
-input is `b`: chase the `VOTE`, `ECHO`, `INPUT` quorums and close with
-`input_orig`. -/
-theorem exists_honest_input_of_bind {s : ImplState P.n} (hI : Inv P s)
-    {i : Fin P.n} {b : Bool} (hiF : i ∉ s.F) (hm : Msg.bind (some b) ∈ s.sent i) :
-    ∃ m, m ∉ s.F ∧ (s.proc m).input = some b := by
-  have hfn := P.f_lt_n_sub_f
-  have hFc := hI.F_card
-  -- the `VOTE b` quorum at `i`
-  have h1 := hI.bind_conf i b hiF hm
-  have h1' : s.F.card < s.recvCount i (Msg.vote (some b)) := by omega
-  obtain ⟨j, hjF, hjr⟩ := ImplState.exists_sender_notMem s.F h1'
-  -- the `ECHO b` quorum at `j`
-  have h2 := hI.vote_conf j b hjF (hI.recv_sub i j _ hjr)
-  have h2' : s.F.card < s.recvCount j (Msg.echo b) := by omega
-  obtain ⟨k, hkF, hkr⟩ := ImplState.exists_sender_notMem s.F h2'
-  -- the `INPUT b` quorum at `k`
-  have h3 := hI.echo_conf k b hkF (hI.recv_sub j k _ hkr)
-  have h3' : s.F.card < s.recvCount k (Msg.input b) := by omega
-  obtain ⟨m0, hmF, hmr⟩ := ImplState.exists_sender_notMem s.F h3'
-  exact hI.input_orig b s.F (Finset.Subset.refl _) hFc m0 hmF
-    (hI.recv_sub k m0 _ hmr)
-
-/-- From `|Valid| > 1` evidence at any process, an honest process whose
-input is `b` — for either bit `b`. -/
-theorem exists_honest_input_of_valid {s : ImplState P.n} (hI : Inv P s)
-    {i : Fin P.n} (hv : s.bothValid P i) (b : Bool) :
-    ∃ m, m ∉ s.F ∧ (s.proc m).input = some b := by
-  have hfn := P.f_lt_n_sub_f
-  have hFc := hI.F_card
-  have h1 := ImplState.bothValid_le hv b
-  have h1' : s.F.card < s.recvCount i (Msg.input b) := by omega
-  obtain ⟨j, hjF, hjr⟩ := ImplState.exists_sender_notMem s.F h1'
-  exact hI.input_orig b s.F (Finset.Subset.refl _) hFc j hjF
-    (hI.recv_sub i j _ hjr)
-
-/-- D15-R1 harvest at `bindGhost`: an honest `BIND b` multicast yields the
+/-- D15 harvest at `bindGhost`: an honest `BIND b` multicast yields the
 `f + 1` F-blind genuine-holder support for `b` — chase the `VOTE`/`ECHO`
 quorums to an honest `ECHO b` sender, whose `n − f ≥ f + 1` `INPUT b`
 receipts feed `Inv.supp_of_input_receipts`. -/
@@ -949,7 +913,7 @@ theorem suppI_of_bind {s : ImplState P.n} (hI : Inv P s)
   have h3 := hI.echo_conf k b hkF (hI.recv_sub j k _ hkr)
   exact hI.supp_of_input_receipts (le_trans (by omega) h3)
 
-/-- D15-R1 harvest at `retB`/`retC`: `|Valid| > 1` evidence yields the
+/-- D15 harvest at `retB`/`retC`: `|Valid| > 1` evidence yields the
 `f + 1` F-blind genuine-holder support for either bit — in particular for
 the dissent bit `!v`, whose `n − f ≥ f + 1` `INPUT` receipt quorum sits at
 the returner itself. -/
@@ -960,7 +924,7 @@ theorem suppI_of_valid {s : ImplState P.n} (hI : Inv P s)
     (le_trans (by omega) (ImplState.bothValid_le hv b))
 
 /-- Transport an impl-side support count to the spec side along
-`call_eq`/`F_eq`: the spec guards' SuppOK counts (D15-R1). -/
+`call_eq`/`F_eq`: the spec guards' SuppOK counts (D15). -/
 theorem InstRel.spec_supp {s : ImplState P.n} {t : SpecState P.n}
     (hR : InstRel P s t) {b : Bool} (h : ImplSupp P s b) :
     P.f + 1 ≤ (Finset.univ.filter

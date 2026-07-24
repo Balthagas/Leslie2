@@ -78,7 +78,7 @@ step with silence).
 probabilistic setting is needed — i.e., the not-yet-formalized §6.3, for which Leslie2's
 proven weak-simulation stack is the natural substrate.
 
-*The warning* (empirical, from the possibilistic campaign itself): **both flagship
+*The warning* (empirical, from the possibilistic-liveness proofs themselves): **both flagship
 protocol proofs on that branch (BRB, BCA) abandoned the witness-transfer route** — a
 "corrupt-sender fairness mismatch": an action that is unconditionally fair on the ideal
 side corresponds, under a corrupt sender, to only-unfair concrete steps, making the
@@ -89,7 +89,7 @@ chains (sorry-free), keeping simulation for safety only. ABA has the same corrup
 structure (Byzantine processes, adversarial delivery), so the same mismatch should be
 expected at the `hybridImpl ↔ ABA.spec` boundary.
 
-## 4. Recommended shape of an ABA liveness campaign
+## 4. Recommended shape of an ABA liveness effort
 
 Ordered by expected value-for-effort:
 

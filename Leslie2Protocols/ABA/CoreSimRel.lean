@@ -47,7 +47,7 @@ def IsLastBound (g : ℕ → GBCA.SpecState P.n) (r : ℕ) : Prop :=
 /-! ### Abs: the abstract-twin constraints -/
 
 /-- Constraints tying the abstract twin `a` to the concrete state — the
-**ultra-lazy, never-flipping twin** (V2b/D16). The twin never fires rule 5
+**ultra-lazy, never-flipping twin** (D16). The twin never fires rule 5
 (`coin` permanently `⊥`), and it never binds *between* rows: it lives in one
 of two phases keyed on `a.val`. In **phase 1** (before the first visible
 return) it is fully unbound, its `call` row mirrors the concrete write-once
@@ -68,7 +68,7 @@ structure Abs (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
   ret_eq : ∀ id, a.ret id = (c.procs id).returned
   /-- The abstract twin never fires the coin-flip rule: its coin is always `⊥`. -/
   coin_bot : a.coin = .bot
-  /-- C3/C7 (V2b): the two-phase discipline. Phase 1 (pre-return): unbound,
+  /-- C3/C7: the two-phase discipline. Phase 1 (pre-return): unbound,
   undecided, `call` = concrete inputs, ghost synced on committed inputs.
   Phase 2 (post-return): `bind = val = some v`, board clear, `v` certified by
   an `A`-lock. -/
@@ -112,7 +112,7 @@ theorem DissentResidue.transport {P : Params} {g₀ g : ℕ → GBCA.SpecState P
     · left; rw [hbind1]; exact h
     · right; exact hgrade1 h
 
-/-- The permanent input-or-`F` support pool for a bit `v` (D13/D15-R1 SuppOK shape,
+/-- The permanent input-or-`F` support pool for a bit `v` (D13/D15 SuppOK shape,
 one level down): `f + 1` processes that either committed `v` as their genuine external
 input (write-once) or are corrupted (`F` only grows). Both disjuncts are permanent, so
 the count is monotone along every step. -/
@@ -290,14 +290,14 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreState P.n)
   guard, monotone under later call-growth and `F`-growth). Transfers to the abstract's
   rule-3/4 quorum guard via `abstract_quorum`. -/
   bound_quorum : ∀ r, (g r).bind ≠ none → (g r).quorum P
-  /-- I26 (D13/V2b) : every bound round's value carries a permanent `f + 1`
+  /-- I26 (D13) : every bound round's value carries a permanent `f + 1`
   input-or-`F` support pool — the concrete mirror of TS 1's V-P1 `SuppOK`.
-  Established at the `bindSet` row from the D15-R1 count guard (round 0
+  Established at the `bindSet` row from the D15 count guard (round 0
   wholesale via `input_g0_perm`; `r ≥ 1` through `call_prov` and the previous
   round's pools); preserved everywhere by monotonicity. -/
   bind_supp : ∀ r v, (g r).bind = some v → InputSupp P c v
-  /-- I27 (D13/V2b) : every `C`-locked round's *dissent* bit carries the same
-  permanent pool — the concrete mirror of the D15-R1 `retC` dissent guard.
+  /-- I27 (D13) : every `C`-locked round's *dissent* bit carries the same
+  permanent pool — the concrete mirror of the D15 `retC` dissent guard.
   Established at the `retC` row; preserved by monotonicity. -/
   clock_supp : ∀ r v, (g r).grade = some false → (g r).bind = some v →
     InputSupp P c (!v)
@@ -326,7 +326,7 @@ theorem GBCA.SpecState.quorum_of_eq {P : Params} {s s' : GBCA.SpecState P.n}
     (hF : s'.F = s.F) (hcall : s'.call = s.call) (h : s.quorum P) : s'.quorum P := by
   unfold GBCA.SpecState.quorum at h ⊢; rw [hF, hcall]; exact h
 
-/-- **Witness harvest (D15-R1)**: the SuppOK-form support count (`f + 1` callers-or-`F`)
+/-- **Witness harvest (D15)**: the SuppOK-form support count (`f + 1` callers-or-`F`)
 plus the `F` budget recover an honest caller *at fire time* — the in-state honest witness
 the pre-repair guards carried directly (at most `f` of the `f + 1` are `F`-members). -/
 theorem GBCA.exists_honest_caller {P : Params} {s : GBCA.SpecState P.n} {b : Bool}
@@ -363,7 +363,7 @@ theorem abstract_quorum_of_call {P : Params} {g : ℕ → GBCA.SpecState P.n}
     exact Or.inl ⟨by rw [haF]; exact hxc', hcall x hxc' (hI.input_called r x hxc' hxc)⟩
   · exact Or.inr (by rw [haF, ← hFgr]; exact hxF)
 
-/-- **Pool establishment (D13/V2b).** A D15-R1 count over round-`r` calls (`f + 1`
+/-- **Pool establishment (D13).** A D15 count over round-`r` calls (`f + 1`
 callers-or-`F` of `b`) yields the permanent input-or-`F` pool for `b`: wholesale via
 `input_g0_perm` at round `0`; at `r ≥ 1` by harvesting one honest caller, whose
 `call_prov` provenance routes through the previous round's `bind_supp` (same bit) or
@@ -1418,7 +1418,7 @@ theorem Inv.step_gbcaTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
         exact GBCA.SpecState.quorum_of_eq (hFeq r) (hCalleq r) _hq
       · rw [hBindNe r' h2] at h
         exact GBCA.SpecState.quorum_of_eq (hFeq r') (hCalleq r') (hI.bound_quorum r' h)
-    · -- I26 establishment: the fresh round-`r` bind's D15-R1 count is the pool source
+    · -- I26 establishment: the fresh round-`r` bind's D15 count is the pool source
       intro r' v hb'
       by_cases h2 : r' = r
       · rw [h2, hBindSelf, Option.some.injEq] at hb'
@@ -3047,7 +3047,7 @@ theorem Inv.step_retG {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
     exact (hI.bind_supp r' v hb).mono
       (fun id' b' h => by rw [(hCprocs id').1]; exact h) (fun x hx => by rw [hCF]; exact hx)
   · -- I27: pass-through off the round (`hGeq`), `retB` keeps the grade, `retA` locks
-    -- `some true` (vacuous), and `retC` *establishes* the dissent pool from its D15-R1 guard
+    -- `some true` (vacuous), and `retC` *establishes* the dissent pool from its D15 guard
     intro r' v hgf hb
     rw [hBindeq r'] at hb
     have hmain : InputSupp P c (!v) := by
@@ -3412,7 +3412,7 @@ theorem Inv.step_retW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
 /-! ### Stage C: `Abs` preservation for the stutter rows
 
 Every one of `hybrid_step_tau`'s seven disjuncts is answered by a stutter — the
-ultra-lazy twin (V2b/D16) is untouched by every hidden row and only moves at the
+ultra-lazy twin (D16) is untouched by every hidden row and only moves at the
 visible rows (`callABA`/`retABA`/`fail`), handled in `CoreSim.lean`. All six
 lemmas below are instances of a single frame argument: `Abs` inspects only `F`,
 the per-process `input`/`returned` projections, and the `g`-side `A`-lock

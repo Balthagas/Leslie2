@@ -7,13 +7,14 @@ Authors: Sathiya / Claude
 import Leslie2.Simulation.WeakTauFlatten
 
 /-!
-# Attic: superseded constructions from the `weakTau_flatten` development
+# Attic: alternative constructions for weakTau-flattening
 
-Self-contained studies superseded during the development of `weakTau_flatten`
-(`Leslie2.Simulation.WeakTauFlatten`), kept buildable for reference. Nothing
-here is used by the library.
+Alternative constructions for the weakTau-flattening problem (opaque and
+concrete belief towers, the `oneDecision` kit, cylinder-measure limit theory),
+kept buildable for reference; not used by the library
+(`Leslie2.Simulation.WeakTauFlatten` is the construction in use).
 
-Contents, in original order:
+Contents:
 
 * the depth-truncated macro-future `macroFuture_trunc` with its classical
   weak-transition witnesses, and the halted/residual split
@@ -31,11 +32,10 @@ Contents, in original order:
   `cylP_ne_top`.
 
 The small private helpers `tsumOpt` and `tsum_bind_mul` are duplicated
-(private) from `WeakTauFlatten`. Other superseded scraps from the same
-development are omitted (preserved in git history): the `macroHaltTotal`
-partial-sum bridge and its root corollaries, the stall kit
+(private) from `WeakTauFlatten`. Further related scraps are not included here:
+the `macroHaltTotal` partial-sum bridge and its root corollaries, the stall kit
 (`iwHaltMass`/`iwMoveMass`/`stallPart`/`stallSum`/`stall_unfold`),
-`innerWitness_halts`, `macroHalt_bind_id_eq_iSup`, and the late bound lemmas
+`innerWitness_halts`, `macroHalt_bind_id_eq_iSup`, and the bound lemmas
 (`genW_g_peel`, `condDepthSum_le_one`, `reachArrHalt_ne`/`_peel`,
 `fHM_le_one`, `junction_avg_le_one`, `gap_le_one`).
 -/

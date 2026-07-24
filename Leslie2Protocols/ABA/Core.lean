@@ -70,9 +70,9 @@ byzantine handshake drivers (D11).
   moves one pooled bit into the receiver-side pool `decidedRecv i j` at most
   once per (receiver, sender, bit) triple, with soundness
   `b ∈ decidedSent j`; the `retABA` quorum guard counts distinct *senders*
-  per bit (`decidedCount`), exactly as before. (This replaces the earlier
-  D12 single-slot model, whose adversary could not equivocate at the DECIDED
-  layer — an under-approximation inconsistent with the GBCA layer.)
+  per bit (`decidedCount`). The per-process pools (D12′) let a corrupted
+  process equivocate at the DECIDED layer; a single-slot model would bar
+  that — an under-approximation inconsistent with the GBCA layer.
 
 Two further notes: the return rule `ret` has **no** honesty check — corrupted
 returns must pass the same `n − f` quorum guard, exactly like the spec's
@@ -456,7 +456,9 @@ inductive CoreStep (P : Params) :
       CoreStep P s .tau (PMF.pure (s.deliverDecided i j b))
   /-- DECIDED echo: `f + 1` delivered `⟨DECIDED, b⟩` and not having multicast
   (empty sent pool) triggers the multicast (the process keeps running its
-  round loop). -/
+  round loop). The empty-pool guard is stricter than the blueprint's "not
+  having sent *it*" (that payload); on reachable states the two coincide
+  (honest pools hold at most one bit). -/
   | echo (s : CoreState P.n) (id : Fin P.n) (b : Bool)
       (hcnt : P.f + 1 ≤ s.decidedCount id b) (hs : s.decidedSent id = ∅) :
       CoreStep P s .tau (PMF.pure (s.sendDecided id b))

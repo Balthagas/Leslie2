@@ -53,15 +53,6 @@ private theorem stutter_step {P : Params} (μ_C : PMF (HState P)) (a : SpecState
   · rw [PMF.pure_bind]
     exact weakTau_refl _ _
 
-/-- A `weakTau` burst followed by a genuine (possibly visible) single step, in `weakStep`'s other
-associativity: the burst happens *after* the visible step (needed for `callABA`'s bank-then-
-rebind row, where the visible `rule 1` fires first and the `rule 4` τ-tail follows). -/
-theorem weakStep_of_step_then_burst {a a' a'' : SpecState P.n} {l : Lab P.n}
-    (hstep : SpecStep P a l (PMF.pure a'))
-    (hburst : weakTau (spec P) (PMF.pure a') (PMF.pure a'')) :
-    weakStep (spec P) (PMF.pure a) l (PMF.pure a'') :=
-  ⟨PMF.pure a, PMF.pure a', weakTau_refl _ _, hyperStep_pure_of_step hstep, hburst⟩
-
 /-- Abstract-side corruption (deviation D1) only ever touches `F`. -/
 theorem SpecState.corrupt_ret {P : Params} (id : Fin P.n) (s : SpecState P.n) :
     (s.corrupt P id).ret = s.ret := by unfold SpecState.corrupt; split <;> rfl
@@ -110,7 +101,7 @@ private theorem quorum_of_full_call' {P : Params} {s : SpecState P.n}
   rw [heq, Finset.card_univ, Fintype.card_fin]
   omega
 
-/-- Like `CoreSimBurst.val_force`, but decoupled from the pre-existing bind value: since the
+/-- Force `val`/`bind` to a chosen bit, decoupled from the pre-existing bind value: since the
 abstract twin never fires rule 5 (`coin_bot`), `TVal.agrees` is always `False`, so the
 bind-branch of rule 7's repaired `h₃` licenses an all-`b` fill only when `a.bind = some b` —
 which is exactly how it is invoked (post-rebind-to-`b`). -/
@@ -160,7 +151,7 @@ private theorem pair_of_dissent {P : Params} {s : SpecState P.n} {b : Bool}
   · exact ⟨by simpa using h0, by simpa using h1⟩
   · exact ⟨by simpa using h1, by simpa using h0⟩
 
-/-- **The phase-1 decide burst (V2b/D16).** From an unbound, undecided twin with `coin ⊥`,
+/-- **The phase-1 decide burst (D16).** From an unbound, undecided twin with `coin ⊥`,
 a quorum on the standing calls, and `f + 1` call-and-ghost-or-`F` material for `b`, a
 τ-chain reaches `bind = val = some b` with the board clear and `ret`/`F` untouched.
 Route: if no honest call dissents from `b`, one rule-3 step decides outright; otherwise

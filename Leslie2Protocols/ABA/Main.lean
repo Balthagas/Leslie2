@@ -22,10 +22,18 @@ the core simulation (`CoreSim.lean`), and spec safety (`SpecSafety.lean`):
   Agreement.
 * `ABA.simComposed` — the single composed simulation
   `hybridImpl ⊑ ABA.spec`, via `ProbabilisticForwardSimulation.trans`
-  (Result 2). Originally this routed through the repo's one `sorry`
-  (`weakTau_lift_pure`); that lemma is now closed upstream
-  (`WeakTauFlatten.lean`), so `simComposed` is **fully proven and
-  axiom-clean** with zero changes to its definition here.
+  (Result 2); axiom-clean (guard below).
+
+**Scope of the headline.** `hybridImpl` refines GBCA to
+*implementation* level but keeps **WCC at specification level** (the ε-coin is
+`Params.coinPMF`, not a Gather/SRSD implementation), so the honest reading is
+*GBCA verified to implementation level; WCC assumed at specification level*.
+And `ValidityTrace` (`SpecSafety.lean`) is the D13 predicate: a decided bit
+must carry the paper-form provenance clause — witnessed by a *never-corrupted*
+(`NeverCorrupted`) supporter — matching the papers' correct-process Validity.
+What is proven is safety
+(Validity ∧ Agreement) for every positive-probability trace; termination,
+liveness, unpredictability, and fairness are **not** claimed.
 
 The `#guard_msgs`/`#print axioms` checks below are the mechanical firewall:
 `main` must never acquire a `sorryAx` dependence.
@@ -51,9 +59,8 @@ theorem main (P : Params) :
   safety_transfer (refines P) (spec_safe P)
 
 /-- **The composed simulation** `hybridImpl ⊑ ABA.spec` along the composite
-relation, via Result 2 (`ProbabilisticForwardSimulation.trans`). Fully proven:
-`weakTau_lift_pure` is closed upstream, so this carries no `sorryAx`
-(see the axiom guard below). -/
+relation, via Result 2 (`ProbabilisticForwardSimulation.trans`). Axiom-clean
+(see the guard below). -/
 noncomputable def simComposed (P : Params) :
     ProbabilisticForwardSimulation (hybridImpl P) (spec P)
       (compRel
@@ -64,8 +71,7 @@ noncomputable def simComposed (P : Params) :
 /-! ### Mechanical axiom firewall
 
 `main` (and the whole safety chain) must never acquire a `sorryAx`
-dependence; `simComposed` is likewise pinned to the clean axiom list now
-that `weakTau_lift_pure` is closed upstream. -/
+dependence; all three theorems are pinned to the clean axiom list. -/
 
 /-- info: 'PLTS.ABA.main' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

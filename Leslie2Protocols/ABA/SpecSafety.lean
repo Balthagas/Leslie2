@@ -14,7 +14,7 @@ Validity and Agreement, stated as predicates on traces and proven for every
 trace in the support of every achievable trace distribution of `ABA.spec`
 (`ABA.spec_safe`). This validates the D3 and D13 repairs: Agreement is
 *false* for the blueprint's unrepaired Transition System 1, and the papers'
-Validity is false for the D3-only repair (`ABA/AUDIT.md` §2.1).
+Validity is false for the D3-only repair (a later-corrupted caller's input can win).
 
 The proof is invariant reasoning along genuine executions (via
 `TraceSupport`):
@@ -39,10 +39,9 @@ statement (D13): every return of `b` is *preceded* (positionally) by a
 `callABA _ b` event whose caller is never corrupted anywhere along the
 trace (`NeverCorrupted`, via the trace-level corruption fold `failSet`) —
 returner-unconditional, hence stronger than the papers on the returns axis
-and now faithful on the witness axis. (The previous membership-based
-statement was strictly *weaker* there — its witness could be corrupted
-later in the same trace — so the old claim that both predicates are
-"slightly stronger" than the blueprint's was wrong for Validity.)
+and faithful on the witness axis: the witnessing caller must be never
+corrupted, not merely a member of some support set that a later `fail`
+could taint.
 
 The Validity endgame is a budget pigeonhole: at any return, `val_supp`
 yields `f + 1` supporters of the returned bit; every supporter is either

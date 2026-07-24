@@ -13,7 +13,7 @@ The PLTS encoding of Asynchronous Byzantine Agreement, transcribed from the
 blueprint's Transition System 1 with four deviations:
 
 * **D13 (repair, load-bearing).** The blueprint's TS 1 fails the papers'
-  Validity (see `ABA/AUDIT.md` §2.1): rule 7's free re-propose while
+  Validity: rule 7's free re-propose while
   `val = ⊥` and rule 4's free mixed bind lose input provenance, so a bit
   input only by a process corrupted *later in the same trace* can win
   (achievable at `n = 4, f = 1` with inputs `1,0,0,0`: bind `1`, `fail` the
@@ -26,7 +26,7 @@ blueprint's Transition System 1 with four deviations:
   unconditionally, rule 2 first-write-wins); rule 4 requires `f + 1` callers
   of the bound bit (`hs`); rule 7 re-proposes only a recorded own input, the
   bound value, or the decision value (coin values are deliberately *not*
-  licensed — they would resurrect the audit trace through a probability-`ε`
+  licensed — they would resurrect the counterexample through a probability-`ε`
   flip); the new τ-rule `callByzFill` lets a corrupted process fill an empty
   call slot with **no** ghost record — the Byzantine phantom-call channel of
   the concrete adversary's hidden byz `callG` drivers. All support counts
@@ -200,7 +200,7 @@ inductive SpecStep (P : Params) :
   | fail (s : SpecState P.n) (id : Fin P.n) :
       SpecStep P s (.fail id) (PMF.pure (s.corrupt P id))
 
-/-- **Audit-trace check (D13).** The AUDIT §2.1 trace dies exactly at
+/-- **Counterexample check (D13).** The Validity-violating trace dies exactly at
 `mixed (b := 1)`: with inputs `1,0,0,0` (`n = 4`, `f = 1`) only id `0` calls
 `1`, so the new support guard `hs` — demanding `f + 1 = 2` callers of `1` —
 fails. (The rule-7 detour is also dead: only id `0` may re-propose `1`, and

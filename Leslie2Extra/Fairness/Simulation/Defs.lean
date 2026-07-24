@@ -392,7 +392,7 @@ theorem le_of_lt (sim : FairStrongProbabilisticSimulation F_C F_A R) {a b : Stat
     (h : sim.lt a b) : sim.le a b := h.1
 
 /-- `lt` is compatible with `le`: a `le`-step below a `lt`-step is a `lt`-step (derived from the
-pre-order axioms, no longer taken as data). -/
+pre-order axioms, not taken as data). -/
 theorem lt_of_le_of_lt (sim : FairStrongProbabilisticSimulation F_C F_A R) {a b c : State_C}
     (hab : sim.le a b) (hbc : sim.lt b c) : sim.lt a c :=
   ⟨sim.le_trans hab hbc.1, fun hca => hbc.2 (sim.le_trans hca hab)⟩
