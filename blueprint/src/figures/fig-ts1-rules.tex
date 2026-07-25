@@ -1,0 +1,24 @@
+% ABA specification, Transition System 1 rule graph (PLTS.ABA.SpecStep).
+\begin{tikzpicture}[
+    ->, >={Stealth[round]}, auto, semithick, node distance=4.8cm, on grid,
+    every state/.style={draw, minimum size=1.25cm, align=center, font=\small},
+    lbl/.style={font=\footnotesize, align=center, fill=white, inner sep=1.5pt}]
+  \node[state, initial, initial text={}] (unb) {unbound\\$bind{=}\bot$};
+  \node[state] (bnd) [right=of unb] {bound\\$val{=}\bot$};
+  \node[state, accepting] (dec) [right=of bnd] {decided\\$val$ set};
+  % self-loops (short mono labels; details in caption)
+  \path
+    (unb) edge[loop above, looseness=5]
+      node[lbl, above]{1 \texttt{callSet}\\ 2 \texttt{callLoop}} (unb)
+    (bnd) edge[loop above, looseness=5]
+      node[lbl, above]{5 \texttt{coinFlip}\\ 6 \texttt{adopt}\\ 7 \texttt{repropose}} (bnd)
+    (dec) edge[loop above, looseness=5]
+      node[lbl, above]{7 \texttt{repropose}\\ 8 \texttt{ret}} (dec);
+  % forward edges
+  \path
+    (unb) edge node[lbl, above]{4 \texttt{mixed}} (bnd)
+    (bnd) edge node[lbl, above]{3 \texttt{unanim}} (dec);
+  % direct decide, routed below to keep its own lane
+  \draw[->] (unb) to[bend right=32]
+    node[lbl, below]{3 \texttt{unanim} (direct)} (dec);
+\end{tikzpicture}

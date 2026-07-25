@@ -24,4 +24,5 @@ blueprint/src/*.paux
 # Jekyll site build (home_page/)
 home_page/_site/
 home_page/.jekyll-cache/
-home_page/.sass-cache/
+home_page/.sass-cache/*.xdv
+*.xdv

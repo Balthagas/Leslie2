@@ -3,3 +3,7 @@
 % version in macros/print.tex.
 % Typically the printed version could have more fancy decorations.
 % This will probably be a very short file.
+
+% The web edition carries no imager, so TikZ figures cannot render.
+% Emit the caption text only; the figure file (#1) is never read on this path.
+\newcommand{\blueprintfig}[2]{\begin{quote}\textit{Figure (print edition): #2}\end{quote}}

@@ -178,8 +178,10 @@ coupling of the resulting distributions.
 
 \begin{definition}[Weak probabilistic simulation]
   \label{def:weaksim}
-  \lean{PLTS.WeakProbabilisticSimulation}\leanok
   \uses{def:weaktau, def:weakstep, def:pmfrel}
+  % Paper-level definition; not a standalone Lean declaration (see the NOTE
+  % below: the Lean development phrases weak simulation via
+  % ProbabilisticForwardSimulation directly).
   As above, but the abstract side may stutter: a concrete step is matched from
   $\delta_{s_A}$ by a $weakTau$ (internal $l$) or a $weakStep$ with the same label
   (external $l$), again with $\operatorname{PMFRel} R\ \mu_C\ \mu_A$.
@@ -592,13 +594,44 @@ common coin held at specification level. The development lives in the opt-in
   \label{def:aba-spec}
   \lean{PLTS.ABA.SpecStep}\lean{PLTS.ABA.spec}\leanok
   \uses{def:aba-labels}
-  Transition System 1 of the ABA blueprint, with two deviations: corruption is
-  a total deterministic transform (D1), and the re-propose transition carries
-  the guard $val = \bot \lor b = val$ (D3). The repair is necessary: read
-  literally, the blueprint's rule admits an Agreement-violating trace in which
-  a $bind \ne coin$ round re-proposes $1-v$ unanimously and overwrites a
-  decision value $v$ that has already been returned.
+  Transition System 1 of the ABA blueprint, ten rules, with four deviations.
+  Corruption is a total deterministic transform (D1).
+  A ghost map $input$ records genuine $\mathrm{callABA}$ events: rule 1 writes it unconditionally, the input-enabledness loop rule 2 writes it first-write-wins (D13).
+  The mixed-bind rule 4 carries an $f{+}1$-support guard, requiring $f{+}1$ callers of the bound bit, counted $F$-blind (D13).
+  The re-propose rule 7 carries the guard $(val = \bot \wedge (input\,id = b \vee bind = b)) \vee val = b$: while undecided a process re-proposes only a recorded own input or the bound value, and once the decision value is fixed it re-proposes only $val$ (D3, D13).
+  A tenth rule, $\mathrm{callByzFill}$, lets a corrupted process fill an empty call slot with an arbitrary bit and no ghost record (D13), the abstract image of the concrete adversary's hidden Byzantine $\mathrm{callG}$ drivers.
+  The blueprint's $Initial$ clause mentions an undeclared $out$ field and is omitted.
+  The guards are load-bearing.
+  Without the rule-7 guard the specification violates Agreement: after a unanimous-$v$ round sets $val := v$ and a process returns $v$, an arbitrary re-proposal of $1-v$ lets the unanimity rule overwrite $val := 1-v$ and a second process return $1-v$.
+  Without the rule-4 support guard the specification violates Validity: at $n = 4$, $f = 1$ with inputs $1,0,0,0$ the value $1$ binds off its sole holder, that holder is then corrupted, and $1$ is re-proposed everywhere and decided, yet every never-corrupted process inputs $0$.
+  At most $f$ processes are ever corrupted, so $f{+}1$ distinct supporters always include a never-corrupted one, and $3f < n$ supplies $n - 2f \ge f + 1$.
 \end{definition}
+
+\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification: the three control states, the ten rules as labelled transitions, and the provenance guards on rules 4 and 7.
+Rule 4 (\texttt{mixed}) binds under a quorum on both bits with an $f{+}1$-support guard on the bound bit; rule 3 (\texttt{unanim}) decides, either directly from \emph{unbound} or from \emph{bound}, with $val\leftarrow\,!b$ when no honest process holds $b$.
+Rule 9 (\texttt{fail}) is a global corruption broadcast to all instances (D1), and rule 10 (\texttt{callByzFill}) lets a corrupted $id\in F$ fill an empty call slot with no ghost record (D13); both are omitted from the diagram.
+The provenance guards on rules 4 and 7 exclude the unanimity-overwrite (D3) and later-corrupted-input (D13) traces.}
+
+\begin{theorem}[Safety of the ABA specification]
+  \label{thm:aba-spec-safe}
+  \lean{PLTS.ABA.spec_safe}\leanok
+  \uses{def:aba-spec, thm:trace-support}
+  Every trace in the support of every achievable trace distribution of the repaired specification satisfies Validity (\lean{PLTS.ABA.ValidityTrace}\leanok) and Agreement (\lean{PLTS.ABA.AgreementTrace}\leanok).
+  Validity is the paper form: every return $\mathrm{retABA}\,id\,b$ at trace position $m$ is preceded by a call $\mathrm{callABA}\,id'\,b$ at some $k < m$ whose caller $id'$ is never corrupted anywhere along the trace.
+  Agreement is that any two returns carry the same bit.
+  The proof is invariant induction along genuine executions.
+  The decision value is write-once: the unanimity rule can only rewrite it to itself, by the quorum argument $f < n - f$, exactly the point where the D3 guard is load-bearing.
+  Provenance is a label-history-aware invariant that attributes the decision value to genuine $\mathrm{callABA}$ events: its $f{+}1$ $F$-blind support, minus the at most $f$ ever-corrupted processes, leaves a never-corrupted caller by a budget pigeonhole.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-spec, thm:trace-support}
+  By Theorem~\ref{thm:trace-support} it suffices to prove the two predicates on the events of every genuine execution, which we do by induction over the ten rules with the invariants $\mathrm{SpecInv}$ and $\mathrm{ValInv}$.
+  For Agreement, $\mathrm{SpecInv}$ makes the decision value $val$ write-once: the unanimity rule can rewrite $val$ only to itself, since a $b$-quorum and a $(1-b)$-quorum would meet under $f < n - f$, and the rule-7 (D3) guard blocks the re-proposal that would otherwise flip it.
+  For Validity, $\mathrm{ValInv}$ carries provenance conjuncts tying each $bind$ and $val$ to $f{+}1$ $F$-blind recorded genuine inputs of the value.
+  The at most $f$ ever-corrupted processes, obtained as a trace-level fold of the $\mathrm{failSet}$, leave one of the $f{+}1$ supporters a never-corrupted recorded caller by a budget pigeonhole.
+  Positionality of that caller, a call at some $k < m$, is read off the same label-history fold.
+\end{proof}
 
 \begin{definition}[Sub-protocol specifications]
   \label{def:aba-subspecs}
@@ -608,43 +641,58 @@ common coin held at specification level. The development lives in the opt-in
   GBCA with linearised binding and graded returns, WCC with the
   $\epsilon$-probabilistic coin resolution. The GBCA side is an LTS
   (\lean{PLTS.ABA.GBCA.specFamily_isLTS}\leanok).
+  The GBCA binding and its $B$- and $C$-returns each carry an $f{+}1$ $F$-blind support guard (SuppOK): $f{+}1$ distinct callers-or-corrupted of the relevant bit.
+  Since at most $f$ processes are ever corrupted, one of the $f{+}1$ is a never-corrupted genuine caller (D15).
 \end{definition}
 
-\begin{theorem}[Trace-support bridge]
-  \label{thm:trace-support}
-  \lean{PLTS.exists_exec_of_traceProb_ne_zero}\lean{PLTS.is_exec_of_probOf_ne_zero}\lean{PLTS.safety_transfer}\leanok
-  A trace with positive trace probability under a Dirac-initialised
-  probabilistic execution is the trace of a genuine execution of the system,
-  with trace membership characterised by the execution's events; safety of
-  trace supports transfers along inclusion of achievable trace distributions.
-\end{theorem}
+\blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance (Transition System 2): binding under an $f{+}1$ support guard, the graded returns, and the mutually exclusive A/C grade latch.
+Binding (\texttt{bindSet}) fires under a quorum with $f{+}1$ $\mathrm{SuppOK}(v)$ support; \texttt{retB} returns on $f{+}1$ dissent leaving the grade unchanged, \texttt{retA} latches the A-side and \texttt{retC} the C-side.
+The A- and C-latches are mutually exclusive, \texttt{retA} needing grade $\in\{\bot,\mathrm A\}$ and \texttt{retC} grade $\in\{\bot,\mathrm C\}$; every $\mathrm{SuppOK}$ count is $f{+}1$ distinct callers-or-corrupted (D15) and $F$-blind.
+The \texttt{fail} broadcast is omitted.}
 
-\begin{theorem}[Safety of the ABA specification]
-  \label{thm:aba-spec-safe}
-  \lean{PLTS.ABA.spec_safe}\leanok
-  \uses{def:aba-spec, thm:trace-support}
-  Every trace in the support of every achievable trace distribution of the
-  repaired specification satisfies Validity
-  (\lean{PLTS.ABA.ValidityTrace}\leanok) and Agreement
-  (\lean{PLTS.ABA.AgreementTrace}\leanok). The proof is invariant induction
-  along genuine executions: the decision value is write-once (the unanimity
-  rule can only rewrite it to itself, by the quorum argument $f < n - f$ —
-  exactly the point where the D3 guard is load-bearing), and a
-  label-history-aware invariant attributes the decision value to
-  $\mathrm{call}$ events.
-\end{theorem}
+\blueprintfig{fig-wcc}{The WCC specification instance (Transition System 3): the $\epsilon$-probabilistic coin resolution and the return of the common bit or an adversary-chosen bit.
+The \texttt{flip} guard requires more than $f$ callers counting corrupted, $|\{id\notin F:\ called\}\cup F|>f$, and is the sole probabilistic transition besides Transition System 1.
+On $val{=}1$ and $val{=}0$ every process returns the common bit; on $val{=}\top$ each process returns an adversary-chosen bit.}
+
+\begin{definition}[The GBCA implementation instance]
+  \label{def:aba-gbca-impl}
+  \lean{PLTS.ABA.GBCA.implInst}\leanok
+  \uses{def:aba-labels, def:aba-params}
+  ABDY22's GBCA implementation as a per-round PLTS (Algorithm 2).
+  Each process runs a four-stage message exchange over an authenticated set-based network.
+  On a $\mathrm{callG}$ it multicasts $\langle\mathrm{INPUT},b\rangle$; it relays $\langle\mathrm{INPUT},b\rangle$ once $f{+}1$ receipts of it arrive (the relay gate); it multicasts $\langle\mathrm{ECHO},b\rangle$ on an $n{-}f$ INPUT-$b$ quorum, $\langle\mathrm{VOTE},v\rangle$ on an $n{-}f$ ECHO quorum, and $\langle\mathrm{BIND},v\rangle$ on an $n{-}f$ VOTE quorum, each payload a real bit or $\bot$.
+  A process returns grade $A\,b$ on an $n{-}f$ BIND-$b$ quorum, $B\,b$ on an $n{-}f$ any-BIND quorum containing $b$ with $f{+}1$ VOTE-$b$s and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ BIND-$\bot$ quorum with $|\mathrm{Valid}|>1$.
+  The network is set-based and authenticated (D5): each sender owns one idempotent message set, the adversary schedules delivery ($\mathrm{deliver}$), and a corrupted $j\in F$ injects an arbitrary message ($\mathrm{byz}$).
+  A write-once ghost $bound$ linearises the binding (D6): it is fixed the first time a currently honest process multicasts a real-bit BIND, and all three returns are gated on it; a write-only ghost $grade$ records the returned side (D7).
+  Protocol sends are gated on prior participation (D8).
+\end{definition}
+
+\blueprintfig{fig-gbca-impl}{The GBCA implementation instance (Algorithm 2): the per-process stage automaton and, boxed, the authenticated set-based network.
+On a call a process multicasts $\langle\mathrm{INPUT},b\rangle$ and relays it after $f{+}1$ receipts; an $n{-}f$ quorum at each stage produces the next multicast $\langle\mathrm{ECHO},b\rangle$, $\langle\mathrm{VOTE},v\rangle$, then $\langle\mathrm{BIND},v\rangle$.
+The returns are $A\,b$ on an $n{-}f$ BIND-$b$ quorum, $B\,b$ on an $n{-}f$ any-BIND quorum with $f{+}1$ VOTE-$b$ and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ BIND-$\bot$ quorum with $|\mathrm{Valid}|>1$; all three are gated on the ghost bound value.
+The dashed box is the D5 network: per-sender sent and received message sets, adversary $\mathrm{deliver}$, and Byzantine injection for $j\in F$, alongside the D6 $bound$ and D7 $grade$ ghosts.}
 
 \begin{theorem}[GBCA instance refinement]
   \label{thm:gbca-inst-refines}
   \lean{PLTS.ABA.GBCA.implRefines}\leanok
-  \uses{def:aba-subspecs}
-  ABDY22's GBCA implementation (INPUT/ECHO/VOTE/BIND message exchange with
-  adversary-scheduled delivery and Byzantine injection, plus the linearising
-  ghost bound value) is forward-simulated, instance by instance, by the GBCA
-  specification: an LTS-level forward simulation whose invariant carries the
-  quorum-intersection arguments ($f < n - f$) for the binding witness, the
-  honest-dissent witnesses, and A/C grade exclusivity.
+  \uses{def:aba-gbca-impl, def:aba-subspecs}
+  The GBCA implementation instance is forward-simulated, instance by instance, by the GBCA specification instance.
+  The LTS-level forward simulation carries an invariant that establishes the $f{+}1$ support counts the specification's guards demand: the first honest relayer of a bound bit has $f{+}1$ senders of the corresponding INPUT, each a genuine holder or corrupted ($input\_supp$).
+  The invariant also carries the quorum-intersection arguments ($f < n - f$) and A/C grade exclusivity.
 \end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-gbca-impl, def:aba-subspecs, def:forwardsim}
+  We exhibit an LTS forward simulation of the implementation instance by the specification instance and check it constructor by constructor.
+  The relation carries the invariant $input\_supp$: the first honest relayer of a bound bit $b$ has received $\langle\mathrm{INPUT},b\rangle$ from $f{+}1$ distinct senders, each a genuine holder of $b$ or corrupted.
+  It also carries the quorum-intersection facts ($f < n - f$) and A/C grade exclusivity.
+  Under the relation the three counts the specification's guards demand --- the $f{+}1$ $\mathrm{SuppOK}$ support of $\mathrm{bindSet}$ and of the $B$- and $C$-returns --- are read off $input\_supp$ and the quorum intersections and transported to the matching abstract step.
+  Corruption and the network steps match a spec corruption broadcast or a spec stutter.
+\end{proof}
+
+\blueprintfig{fig-gbca-sim}{The GBCA instance forward simulation ($\mathrm{instRel}$): implementation rows above, specification-instance states below, dashed verticals the relation.
+The implementation call, the network deliveries (including Byzantine injection), the $bound$-ghost event, and the graded returns align to the specification's $\mathrm{call}$, $\mathrm{bindSet}$, and graded returns, with $F$ aligned on both sides.
+Every delivery, relay, echo, and vote row maps to a specification stutter; the implementation call maps to the specification call; the $bound$-ghost event maps to $\mathrm{bindSet}$, whose $f{+}1$ support is supplied by the $input\_supp$ invariant; the graded returns map to the graded specification returns.}
 
 \begin{theorem}[Family congruence and the GBCA family refinement]
   \label{thm:gbca-family-refines}
@@ -657,6 +705,30 @@ common coin held at specification level. The development lives in the opt-in
   level.
 \end{theorem}
 
+\begin{proof}\leanok
+  \uses{thm:gbca-inst-refines, def:idle-family, lem:bridge}
+  The per-instance simulations of Theorem~\ref{thm:gbca-inst-refines} lift to the $\mathbb{N}$-indexed families under the pointwise relation.
+  Owned and silent labels move the one stepping instance and are matched instance-wise; a corruption broadcast is matched by the abstract family's own broadcast, using a corruption-compatibility lemma that the per-instance relation survives a synchronous $\mathrm{fail}$ at every instance.
+  The families are LTS, so the LTS bridge (Lemma~\ref{lem:bridge}) turns the family-level LTS forward simulation into a probabilistic one, applied once at family level.
+\end{proof}
+
+\begin{definition}[The ABA core]
+  \label{def:aba-core}
+  \lean{PLTS.ABA.core}\leanok
+  \uses{def:aba-labels}
+  The core algorithm as a PLTS (blueprint Algorithm 1).
+  Each process runs a five-phase handshake cycle $\mathrm{idle} \to \mathrm{toCallG} \to \mathrm{awaitG} \to \mathrm{toCallW} \to \mathrm{awaitW}$ and back to $\mathrm{toCallG}$ of the next round, carrying an estimate adopted from the graded GBCA outcome or, when the estimate is $\bot$, from the coin.
+  The per-round bookkeeping between the coin return and the next GBCA call is fused into the $\mathrm{retW}$ step (D10), which multicasts $\langle\mathrm{DECIDED}, b\rangle$ when the round's grade was $A\,b$.
+  A DECIDED gossip layer pools the multicasts in per-process sent and received pools; a corrupted process may pool either bit and so equivocates at this layer (D12$'$).
+  A process returns $\mathrm{retABA}\,id\,b$ once $n - f$ distinct senders of $b$ have been delivered to it and $b$ is in its own sent pool.
+  Corrupted processes additionally carry Byzantine call- and return-driver rules at each handshake (D11).
+\end{definition}
+
+\blueprintfig{fig-core-phases}{The ABA core: the per-process five-phase handshake cycle, the fused DECIDED multicast at the A-grade coin return (D10), and the DECIDED pool layer gating $\mathrm{retABA}$.
+The idle self-loop carries \texttt{inputLoop} together with the Byzantine driver rules \texttt{callG}/\texttt{retG}/\texttt{callW}/\texttt{retWByz} for $id\in F$ (any phase, no state change, D11); \texttt{retG} sets $est\leftarrow$ grade, and \texttt{retW} increments the round, adopts the coin when $est=\bot$, and multicasts $\langle\mathrm{DECIDED},b\rangle$ on an A-grade return (D10).
+The DECIDED pool layer runs per-round $\tau$-loops: \texttt{deliver} (the adversary moves a sender's pooled $\langle\mathrm{DECIDED},b\rangle$ to a receiver), \texttt{echo} ($f{+}1$ distinct receipts multicast), and \texttt{byzDecided} (D12$'$: $id\in F$ pools either bit).
+The exit \texttt{retABA}\,$id\,b$ fires once $n-f$ distinct senders of $b$ have been delivered to $id$ and $b$ is in $id$'s own sent pool.}
+
 \begin{definition}[The hybrids]
   \label{def:aba-hybrids}
   \lean{PLTS.ABA.hybridImpl}\lean{PLTS.ABA.hybridSpec}\leanok
@@ -666,6 +738,11 @@ common coin held at specification level. The development lives in the opt-in
   specification level for the GBCA slot respectively. GBCA occupies the
   refinable slot of the parallel composition.
 \end{definition}
+
+\blueprintfig{fig-hybrid}{The hybrids: the composition $\mathsf{GBCA} \parallel (\mathsf{Core} \parallel \mathsf{WCC.Spec})$ under $\mathrm{abstract}\,\mathrm{hiddenAPI}$.
+The GBCA family box is the refinable slot, carrying either the implementation family or the specification family (the substitution); the Core and WCC-specification family boxes are fixed.
+One illustrated rendezvous $\mathrm{callG}\,r\,id\,b$: the Core emits it, instance $r$ steps on it, and every other instance idles.
+The $\mathrm{abstract}\,\mathrm{hiddenAPI}$ frame turns the GBCA/WCC handshake alphabet into $\tau$; the visible API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ leaves the frame.}
 
 \begin{theorem}[Substitution]
   \label{thm:aba-substitution}
@@ -677,20 +754,53 @@ common coin held at specification level. The development lives in the opt-in
   trace-distribution inclusion, by soundness.
 \end{theorem}
 
+\begin{proof}\leanok
+  \uses{def:aba-hybrids, thm:gbca-family-refines, thm:forward-sound}
+  Apply the parallel and abstraction precongruences to the family refinement of Theorem~\ref{thm:gbca-family-refines}: parallel composition with the fixed context $\mathsf{Core} \parallel \mathsf{WCC.Spec}$ and then hiding the sub-protocol API each preserve probabilistic forward simulation.
+  The result is a probabilistic forward simulation of the implementation-side hybrid by the specification-side hybrid.
+  Soundness (Theorem~\ref{thm:forward-sound}) turns it into the trace-distribution inclusion.
+\end{proof}
+
 \begin{theorem}[The core simulation]
   \label{thm:aba-coresim}
   \lean{PLTS.ABA.coreSim}\leanok
   \uses{def:aba-hybrids, def:aba-spec}
-  The specification-side hybrid is forward-simulated by the (repaired) ABA
-  specification. The abstract twin is \emph{lazy}: it never resolves its own
-  coin (its rules 3/4 keep the coin at $\bot$, so the arbitrary-fill rule
-  stays available), banks external inputs while unbound, binds just-in-time
-  under an $f{+}1$ input-pool invariant, and sets its decision value only
-  under a permanent A-lock certificate; every hidden handshake and every
-  concrete coin flip is matched by a stutter (constant coupling). The
-  concrete invariant carries the cross-round Graded Agreement machinery
-  (downward C-lock propagation, upward bind commitment).
+  The specification-side hybrid is forward-simulated by the repaired ABA specification under the relation $Inv \wedge Abs$.
+  The abstraction $Abs$ pins the corrupted set $F$, the returns, and $coin = \bot$ — the twin never fires the coin rule — and is two-phase on the twin's $val$.
+  In phase 1, before the first return, the twin is unbound: its abstract calls equal the concrete write-once inputs and its ghost is synced.
+  In phase 2, after the first return, the board is clear and $bind = val = some\,v$ with $v$ certified by a concrete A-lock.
+  Every hidden row and every concrete coin flip is answered by a stutter under a constant coupling.
+  The only burst is $\mathrm{decide\_burst}$ at the first $\mathrm{retABA}$: within one weak step it binds, fills, decides, and returns.
+  The concrete invariant carries the cross-round Graded Agreement machinery (downward C-lock propagation, upward bind commitment).
 \end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-hybrids, def:aba-spec, def:weakstep}
+  We check the relation $Inv \wedge Abs$ row by row, one step class at a time, verifying that $Inv$ is preserved at each.
+  Every hidden row and the coin flip are answered by an $Abs$-frame stutter: the twin holds still under a constant coupling, and since $Abs$ pins $coin = \bot$ the twin never fires the coin rule, so the probabilistic coin row couples to the stutter.
+  The first $\mathrm{retABA}$ is answered by the single $\mathrm{decide\_burst}$ weak step, which within one weak transition binds from the $f{+}1$ DECIDED pools, fills the board, decides, and returns.
+  A $\mathrm{fail}$ row is answered by the corruption broadcast.
+  The concrete invariant supplies the cross-round Graded Agreement machinery --- downward $C$-lock propagation and upward bind commitment --- that certifies the value bound at the burst.
+\end{proof}
+
+\blueprintfig{fig-coresim}{The core forward simulation: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
+
+\begin{theorem}[Trace-support bridge]
+  \label{thm:trace-support}
+  \lean{PLTS.exists_exec_of_traceProb_ne_zero}\lean{PLTS.is_exec_of_probOf_ne_zero}\lean{PLTS.safety_transfer}\leanok
+  A trace with positive trace probability under a Dirac-initialised
+  probabilistic execution is the trace of a genuine execution of the system,
+  with trace membership characterised by the execution's events; safety of
+  trace supports transfers along inclusion of achievable trace distributions.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:probexec, def:traceprob, def:exec, def:achievable}
+  Fix a Dirac-initialised probabilistic execution and a trace $t$ with positive trace probability.
+  Positive trace probability forces a positive-mass path, and reading its labels off that path yields a genuine execution of the system whose trace is $t$; trace membership is then characterised by that execution's events.
+  For the transfer, suppose $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A)$ and that every trace in the support of every achievable trace distribution of $sys_A$ is safe.
+  Each achievable trace distribution of $sys_C$ is one of $sys_A$, so its support is safe as well.
+\end{proof}
 
 \begin{theorem}[Refinement and correctness of ABA]
   \label{thm:aba-main}
@@ -708,13 +818,21 @@ common coin held at specification level. The development lives in the opt-in
   pinned axiom guard.
 \end{theorem}
 
+\begin{proof}\leanok
+  \uses{thm:aba-substitution, thm:aba-coresim, thm:aba-spec-safe, thm:trace-support, thm:forward-sound}
+  Soundness (Theorem~\ref{thm:forward-sound}) applied to the substitution simulation (Theorem~\ref{thm:aba-substitution}) and to the core simulation (Theorem~\ref{thm:aba-coresim}) gives two trace-distribution inclusions.
+  Chaining them by transitivity of set inclusion yields $\operatorname{ATD}(\mathrm{hybridImpl}) \subseteq \operatorname{ATD}(\mathrm{spec})$, so every trace distribution achievable by the implementation-side hybrid is achievable by the specification.
+  By the trace-support bridge (Theorem~\ref{thm:trace-support}), safety of the specification's trace supports (Theorem~\ref{thm:aba-spec-safe}) transfers along this inclusion, so every positive-probability trace of the implementation-side hybrid satisfies Validity and Agreement.
+  The composed simulation is obtained separately, by transitivity of probabilistic forward simulation.
+\end{proof}
+
 \begin{definition}[Non-vacuity]
   \label{def:aba-examples}
   \lean{PLTS.ABA.P4}\leanok
   \uses{def:aba-hybrids}
-  Machine-checked witnesses (at $n = 4$, $f = 1$) that the hybrids execute: a
-  connected eight-step run of the specification-side hybrid through three
-  external inputs, three hidden GBCA handshakes, the quorum-gated binding
-  step and a graded return, plus a synchronised corruption broadcast and the
-  first step of the implementation-side hybrid.
+  Machine-checked witnesses (at $n = 4$, $f = 1$) that the hybrids execute.
+  A connected $21$-step positive-probability run of the specification-side hybrid reaches $\mathrm{retABA}\,0\,\mathrm{true}$: three external inputs, three GBCA handshakes, the quorum-gated binding, three A-returns, three coin calls, the single $\epsilon$-mass coin flip on the agreeing bit, three coin returns each multicasting DECIDED, three deliveries, and the return.
+  Every step but the flip is Dirac, and the flip's chosen branch has mass $\epsilon > 0$.
+  A synchronised corruption broadcast and the first step of the implementation-side hybrid are witnessed separately.
+  Membership of a decision trace in $\mathrm{achievableTraceDists}(\mathrm{hybridImpl}\ P4)$ is not established; only the step-level run is.
 \end{definition}

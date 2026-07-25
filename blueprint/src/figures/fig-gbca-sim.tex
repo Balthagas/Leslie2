@@ -1,0 +1,31 @@
+% GBCA instance forward simulation (PLTS.ABA.GBCA.implRefines, instRel).
+\begin{tikzpicture}[
+    >={Stealth[round]}, semithick, on grid,
+    conc/.style={draw, rounded corners, minimum height=0.85cm, align=center,
+      font=\footnotesize, inner sep=3pt},
+    every state/.style={draw, align=center, font=\small, inner sep=2pt}]
+  % top row: implementation run phases
+  \node[conc] (t1) at (1.6,2.4) {input\\ (INPUT)};
+  \node[conc] (t2) at (5.0,2.4) {deliveries\\ relay/echo/vote\\ (incl.\ byz)};
+  \node[conc] (t3) at (8.0,2.4) {bindGhost};
+  \node[conc] (t4) at (11.0,2.4){returns\\ $A\,/\,B\,/\,C$};
+  % bottom row: specification-instance states
+  \node[state, initial, initial text={}] (p1) at (1.6,0)
+    {unbound\\ $bound=\bot$\\ $call=input$};
+  \node[state, accepting] (p2) at (11.0,0)
+    {bound\,$v$\\ grade latch};
+  \draw[->] (p1) to[loop below, looseness=5]
+    node[below=2pt, font=\footnotesize]{stutter} (p1);
+  \draw[->] (p2) to[loop below, looseness=5]
+    node[below=2pt, font=\footnotesize]{stutter} (p2);
+  \draw[->, thick] (p1) -- (p2)
+    node[pos=0.5, below=3pt, font=\footnotesize, align=center, fill=white, inner sep=1.5pt]
+      {\texttt{bindSet}\\ ($f{+}1$ via $input\_supp$)};
+  % instRel verticals
+  \draw[dashed, ->] (t1) -- (p1) node[pos=0.55, right=1pt, font=\scriptsize]{call};
+  \draw[dashed, ->] (t2.south) -- (2.7,0.35);
+  \draw[dashed, ->] (t3.south) -- (6.4,0.12);
+  \draw[dashed, ->] (t4) -- (p2) node[pos=0.55, right=1pt, font=\scriptsize]{graded};
+  \node[font=\footnotesize] at (6.3,-1.7)
+    {dashed $=$ $\mathrm{instRel}$; deliveries/relay/echo/vote $\mapsto$ stutter};
+\end{tikzpicture}

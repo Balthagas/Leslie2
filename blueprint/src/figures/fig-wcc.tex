@@ -1,0 +1,20 @@
+% WCC specification instance (PLTS.ABA.WCC.Step). Automata style.
+\begin{tikzpicture}[
+    ->, >={Stealth[round]}, auto, semithick,
+    every state/.style={draw, minimum size=1.15cm, align=center, font=\small},
+    lbl/.style={font=\footnotesize, fill=white, inner sep=1.5pt}]
+  \node[state, initial, initial text={}] (bot) at (0,0)     {$val{=}\bot$};
+  \node[state] (b1)  at (4.3,2.2)  {$val{=}1$};
+  \node[state] (b0)  at (4.3,0)     {$val{=}0$};
+  \node[state] (top) at (4.3,-2.2) {$val{=}\top$};
+  \path
+    (bot) edge node[lbl, sloped, above, pos=0.55]{\texttt{flip}\,$[\varepsilon]$} (b1)
+    (bot) edge node[lbl, above]{\texttt{flip}\,$[\varepsilon]$} (b0)
+    (bot) edge node[lbl, sloped, below, pos=0.55]{\texttt{flip}\,$[1{-}2\varepsilon]$} (top)
+    (bot) edge[loop above, looseness=6]
+      node[lbl, above]{\texttt{call} / \texttt{callLoop}} (bot)
+    (b1)  edge[loop right, looseness=6] node[lbl, right]{\texttt{ret}\,$1$ (common)} (b1)
+    (b0)  edge[loop right, looseness=6] node[lbl, right]{\texttt{ret}\,$0$ (common)} (b0)
+    (top) edge[loop right, looseness=6]
+      node[lbl, right, align=left]{\texttt{ret}\,$b$\\ (adv.-chosen)} (top);
+\end{tikzpicture}

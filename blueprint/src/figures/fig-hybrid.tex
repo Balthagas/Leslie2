@@ -1,0 +1,35 @@
+% The hybrids (PLTS.ABA.hybridImpl / hybridSpec): wiring under abstract hiddenAPI.
+\begin{tikzpicture}[
+    >={Stealth[round]}, semithick,
+    box/.style={draw, rounded corners, align=center, font=\footnotesize,
+      minimum width=2.5cm, minimum height=1.1cm, inner sep=3pt},
+    ext/.style={draw, rounded corners, align=center, font=\footnotesize,
+      minimum width=1.9cm, minimum height=1.0cm, inner sep=3pt},
+    lbl/.style={font=\scriptsize, fill=white, inner sep=1.5pt},
+    api/.style={font=\scriptsize, inner sep=1.5pt}]
+  % outer abstraction frame
+  \draw[dashed, rounded corners] (-0.7,-2.6) rectangle (10.9,2.5);
+  \node[font=\footnotesize] at (1.9,2.15) {$\mathrm{abstract}\ \mathrm{hiddenAPI}$};
+  % boxes
+  \node[box] (core) at (2.1,-0.2) {Core\\ (fixed)};
+  \node[box, double] (gbca) at (7.0,1.1)
+    {GBCA family\\ impl\,$\Leftrightarrow$\,spec\\ (swappable)};
+  \node[box] (wcc) at (7.0,-1.5) {WCC.Spec family\\ (fixed)};
+  % environment outside the frame
+  \node[ext] (env) at (-2.9,-0.2) {environment};
+  % internal handshakes, hidden to tau
+  \draw[->] (core) to[out=35, in=180]
+    node[lbl, above]{$\mathrm{callG}\,r\,id\,b$}
+    node[lbl, below]{$\to\tau$} (gbca.west);
+  \draw[->] (gbca.west) to[out=210, in=55]
+    node[lbl, below=5pt]{retG $\to\tau$} (core);
+  \draw[->] (core) to[out=-35, in=180]
+    node[lbl, below]{callW/retW $\to\tau$} (wcc.west);
+  \node[font=\scriptsize, align=center] at (7.0,-0.15)
+    {instance $r$ steps;\\ others idle};
+  % visible API crossing the frame
+  \draw[->] (env.north) to[out=60, in=200]
+    node[api, above, pos=0.6]{$\mathrm{callABA}$} (core.west |- core.north);
+  \draw[->] (core.west) to[out=200, in=20]
+    node[api, below, pos=0.4]{$\mathrm{retABA}/\mathrm{fail}$} (env);
+\end{tikzpicture}

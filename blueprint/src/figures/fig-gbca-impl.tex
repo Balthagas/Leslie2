@@ -1,0 +1,31 @@
+% GBCA implementation instance (PLTS.ABA.GBCA.implInst). Stage automaton.
+\begin{tikzpicture}[
+    ->, >={Stealth[round]}, auto, semithick, on grid,
+    every state/.style={draw, ellipse, minimum width=1.7cm, minimum height=0.9cm,
+      inner sep=1pt, align=center, font=\small},
+    ret/.style={draw, rounded corners, minimum width=1.5cm, minimum height=0.7cm,
+      align=center, font=\footnotesize, inner sep=2pt},
+    lbl/.style={font=\scriptsize, fill=white, inner sep=1.2pt}]
+  \node[state, initial, initial text={}] (inp) at (0,0)    {INPUT\,$b$};
+  \node[state] (ech) at (3.0,0)  {ECHO\,$b$};
+  \node[state] (vot) at (6.0,0)  {VOTE\,$v$};
+  \node[state] (bnd) at (9.0,0)  {BIND\,$v$};
+  \node[ret]   (ra)  at (12.2,1.6)  {ret\,$A\,b$};
+  \node[ret]   (rb)  at (12.2,0)    {ret\,$B\,b$};
+  \node[ret]   (rc)  at (12.2,-1.6) {ret\,$C$};
+  \path
+    (inp) edge node[lbl, above]{$n{-}f$} (ech)
+    (ech) edge node[lbl, above]{$n{-}f$} (vot)
+    (vot) edge node[lbl, above]{$n{-}f$} (bnd)
+    (inp) edge[loop above, looseness=5]
+      node[lbl, above]{relay $f{+}1$} (inp)
+    (bnd) edge node[lbl, sloped, above]{$n{-}f$ BIND\,$b$} (ra)
+    (bnd) edge node[lbl, above]{$f{+}1$ VOTE\,$b$} (rb)
+    (bnd) edge node[lbl, sloped, below]{$n{-}f$ BIND\,$\bot$} (rc);
+  % D5 network / D6,D7 ghost side box, below the row
+  \node[draw, dashed, rounded corners, align=left, font=\footnotesize,
+        below=1.9cm of vot, minimum width=8.2cm, inner sep=5pt] (net)
+    {\textbf{D5 network} (per-sender sent/recv sets):\ \ adversary $\mathrm{deliver}$,\ \ byz inject $j\in F$\\
+     \textbf{ghosts}:\ \ $bound$ (D6, write-once),\ \ $grade$ (D7, write-only)};
+  \draw[dotted, ->] (net.north) -- (vot.south);
+\end{tikzpicture}
