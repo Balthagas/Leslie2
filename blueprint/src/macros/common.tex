@@ -16,3 +16,9 @@
 
 \theoremstyle{definition}
 \newtheorem{definition}[theorem]{Definition}
+
+% Protocol-dynamics commentary: expository blocks that no formal content depends on.
+% To suppress every such block throughout the document, comment out the first
+% definition and uncomment the second.
+\newcommand{\dynamics}[2]{\par\medskip\noindent\textbf{#1.}\ #2\par\medskip}
+%\newcommand{\dynamics}[2]{}
