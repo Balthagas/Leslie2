@@ -80,6 +80,12 @@ D16 the ultra-lazy twin of the core simulation.
 | `Main.lean` | 89 | The deliverables: `refines` (trace-distribution inclusion), `main` (Validity ∧ Agreement for every positive-mass trace of `hybridImpl` — GBCA at impl level, WCC assumed at spec level), `simComposed` (the single composed simulation via transitivity). `#guard_msgs` axiom firewall — the build fails if any of them ever acquires `sorryAx`. |
 | `Examples.lean` | 600 | Non-vacuity: a concrete n = 4, f = 1, ε = 1/2 happy-path run carried all the way to a `retABA` decision (21 steps) — **on `hybridSpec`**; `hybridImpl` (the system `main` is about) is witnessed to a single step, and the positive-probability remark is informal (no machine-checked `achievableTraceDists` membership on either side — see Future work). |
 
+### Layer 7 — the per-process presentation
+| file | lines | what it is |
+|---|---|---|
+| `GBCAProc.lean` | 861 | One GBCA process as its own PLTS (`ProcNode`: local record, outbox, inbox rows, `F` copy; every guard reads the node alone), the network as rendezvous labels `net(i, j, m)` over `Lab ⊕ GNet`, and **`perProcInst_atd`**: the hidden-network composition of the n automata and the monolithic `implInst` have the same achievable trace distributions — a step-for-step forward simulation in each direction along the packing map. |
+| `CoreProc.lean` | 1264 | The same for the core: `CoreNode` (control record, DECIDED pool, inbox rows, `F` copy), gossip as `net(i, j, b)` rendezvous, and **`perProcCore_atd`**. The per-(receiver, sender, bit) DECIDED pools (D12′) are what let the delivery guard split sender/receiver-locally. |
+
 ## Future work
 
 - **Achievability theorem**: one explicit scheduler for `hybridImpl P4` driving a
@@ -98,6 +104,8 @@ D16 the ultra-lazy twin of the core simulation.
 | `TraceSupport.lean` | 506 | Bridge from trace-distribution inclusion to per-trace properties (support-level safety transfer). |
 | `IdleFamily.lean` | 117 | ℕ-indexed instance families with idle self-loops — how round-`r` instances ignore other rounds' labels under full-sync `parallel`. |
 | `FamilySim.lean` | 328 | Congruence: per-instance refinement lifts to the family. |
+| `SyncProduct.lean` | 118 | `System.syncProduct`: the n-ary full-synchronisation product — a visible label moves every component, τ moves exactly one. With idle self-loops on non-owned labels this is the rendezvous idiom of the per-process presentation. |
+| `Relabel.lean` | 77 | `System.relabel`: transport of a system over `Label ⊕ Extra` back to `Label` along the left embedding, after the extra (network) alphabet has been hidden; plus `abstract_isLTS`. |
 
 ## Suggested first read
 

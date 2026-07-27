@@ -747,6 +747,10 @@ specification of $P$.
 The recursion stops at GBCA, which is carried to implementation level.
 GBCA calls no sub-protocol, so no further substitution arises there.
 WCC is left at specification level.
+The two implementation-level encodings, the GBCA instance and the ABA core, are
+monolithic automata over the whole system state; Section~\ref{sec:aba-perproc}
+shows each equal, on achievable trace distributions, to the composition of its
+per-process automata.
 
 \paragraph{Object names.}
 Transition System~1 is the ABA specification, Transition System~2 the GBCA
@@ -1950,6 +1954,158 @@ trace of positive probability in the composed implementation.
   A synchronised corruption broadcast and the first step of the implementation-side hybrid are witnessed separately.
   Membership of a decision trace in $\mathrm{achievableTraceDists}(\mathrm{hybridImpl}\ P4)$ is not established; only the step-level run is.
 \end{definition}
+
+\subsection{The per-process presentation}
+\label{sec:aba-perproc}
+
+Both implementation-level encodings of this section are monolithic.
+Each is a single automaton whose state is the whole system, so its rules may read fields of processes other than the one they move.
+The GBCA delivery rule inspects the sender's message pool and the receiver's row in one guard, and the core's DECIDED delivery does the same.
+That the guards are nevertheless local is a property of the rules and not of the state shape, and it is stated here as a theorem.
+Each monolithic system is equal, on achievable trace distributions, to the full-synchronisation composition of $n$ automata, one per process, communicating only through delivery labels that the composition hides.
+
+\begin{definition}[Extended alphabets and restriction]
+  \label{def:relabel}
+  \lean{PLTS.instSilentSum}\lean{PLTS.System.relabel}\lean{PLTS.System.relabel_isLTS}\lean{PLTS.System.abstract_isLTS}\leanok
+  A composition whose components rendezvous on labels the composite is not meant to expose is built over the extended alphabet $\mathrm{Label} \oplus \mathrm{Extra}$, with $\mathrm{Extra}$ carrying the auxiliary labels.
+  The silent label of the extended alphabet is $\mathrm{inl}\,\tau$, so every auxiliary label $\mathrm{inr}\,e$ is observable and hence hideable by $\mathrm{abstract}$.
+  Restriction along the left embedding, $\mathrm{relabel}(sys)$, keeps the state space and the initial state of $sys$ and retains exactly its $\mathrm{inl}$-labelled transitions.
+  Auxiliary transitions are discarded, so they must be abstracted to $\tau$ first if they are to survive.
+  Restriction discards transitions and not states, so it preserves the LTS property; abstraction preserves it as well, relabelling each transition and keeping its distribution.
+\end{definition}
+
+\begin{definition}[The full-synchronisation product]
+  \label{def:syncproduct}
+  \lean{PLTS.System.syncProduct}\lean{PLTS.System.syncProduct_isLTS}\leanok
+  \uses{def:idle-family}
+  Let $sys_i : \mathrm{System}\,(State_i)\,\mathrm{Label}$ for $i$ ranging over a finite index type.
+  On a visible label $l \neq \tau$ the product $\mathrm{syncProduct}(sys)$ steps every component on $l$ simultaneously, and the joint successor is the independent product of the per-component distributions.
+  On $\tau$ exactly one component steps and the others hold their state.
+  Ownership of a label is carried by the components and not by the operator, which stays a single conjunction over the family.
+  A component idles on the labels it does not own (Definition~\ref{def:idle-family}), so a label owned by exactly two components moves those two and leaves every other component in place.
+  A label no component offers is blocked, the conjunction over the family having no witness.
+  A product of LTS components is an LTS: a product of Diracs is the Dirac on the tuple of their points, and a single-coordinate update of an all-Dirac family is again a Dirac.
+\end{definition}
+
+\begin{definition}[The per-process GBCA instance]
+  \label{def:aba-gbca-perproc}
+  \lean{PLTS.ABA.GBCA.GNet}\lean{PLTS.ABA.GBCA.ProcNode}\lean{PLTS.ABA.GBCA.ProcStep}\lean{PLTS.ABA.GBCA.procInst}\lean{PLTS.ABA.GBCA.netLabels}\lean{PLTS.ABA.GBCA.perProcInst}\leanok
+  \uses{def:aba-gbca-impl, def:relabel, def:syncproduct}
+  The state of process $j$ is the node $\mathrm{ProcNode}$: the local record $proc$, the outbox $out$, the inbox rows $inbox(k)$ indexed by sender, and $j$'s own copy of the corrupted set $F$.
+  No field of the node names another process's record or pools.
+  The automaton runs over the extended alphabet $\mathrm{Lab}(n) \oplus \mathrm{GNet}(n)$, where $\mathrm{net}(i,j,m)$ is the delivery of $m$ from sender $j$ to receiver $i$.
+  Its nineteen rules split the alphabet by role.
+  On the calls and returns it owns, $\mathrm{callG}\,r\,j\,b$ and $\mathrm{retG}\,r\,j\,g$, it runs the rule of that name in Algorithm~\ref{alg:gbca-impl}, together with the input-enabledness loop; on a call or return addressed to another process it idles.
+  On $\mathrm{fail}(k)$ every automaton applies the corruption transform to its own copy of $F$, which is what keeps the copies equal.
+  On $\mathrm{net}(i,j,m)$ the sender supplies the outbox guard $m \in out$ and does not move, the receiver files $m$ under row $j$ and carries no outbox guard, a process that is both supplies the guard and files the message, and a process that is neither idles.
+  The internal rules of Algorithm~\ref{alg:gbca-impl} --- the INPUT relay, the ECHO, VOTE and BIND multicasts, and the Byzantine injection of D5 --- carry $\tau$.
+  Every guard reads the node alone.
+  The composite is
+  \[
+    \mathrm{perProcInst}(P,r) \;=\;
+      \mathrm{relabel}\Bigl(
+        \mathrm{abstract}_{\mathrm{netLabels}}\bigl(
+          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{procInst}(P,r,j)
+        \bigr)\Bigr),
+  \]
+  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{ProcNode}(n)$, where $\mathrm{netLabels}$ is the set of $\mathrm{net}(i,j,m)$.
+\end{definition}
+
+\begin{definition}[The per-process core]
+  \label{def:aba-core-perproc}
+  \lean{PLTS.ABA.DNet}\lean{PLTS.ABA.CoreNode}\lean{PLTS.ABA.CoreProcStep}\lean{PLTS.ABA.CoreProc}\lean{PLTS.ABA.gossipLabels}\lean{PLTS.ABA.perProcCore}\leanok
+  \uses{def:aba-core, def:relabel, def:syncproduct}
+  The state of core process $j$ is the node $\mathrm{CoreNode}$: the control record $proc$, $j$'s own DECIDED pool $decOut$, the rows $decIn(k)$ of DECIDED receipts addressed to $j$, and $j$'s copy of $F$.
+  Deviation D12$'$ is what admits the split: the DECIDED pools of Definition~\ref{def:aba-core} are already indexed by process, so $decOut$ is one process's field and $decIn$ one process's rows.
+  The extended alphabet is $\mathrm{Lab}(n) \oplus \mathrm{DNet}(n)$, where $\mathrm{net}(i,j,b)$ carries $j$'s $\langle\mathrm{DECIDED},b\rangle$ to $i$.
+  Its twenty-four rules split the alphabet by role.
+  Process $j$ owns $\mathrm{callABA}(j,b)$, $\mathrm{retABA}(j,b)$ and the four round-tagged handshake labels naming $j$, and runs the rule of Definition~\ref{def:aba-core} at each, including the Byzantine driver rules of D11; on the same labels naming another process it idles.
+  On $\mathrm{fail}(k)$ every automaton corrupts its own copy of $F$.
+  The DECIDED echo and the Byzantine DECIDED injection carry $\tau$.
+  On $\mathrm{net}(i,j,b)$ the sender contributes the soundness guard $b \in decOut$ and does not move, and the receiver contributes the freshness guard $b \notin decIn(j)$ and the write.
+  Every guard reads the node alone, and no guard of Definition~\ref{def:aba-core} is otherwise altered.
+  The composite is
+  \[
+    \mathrm{perProcCore}(P) \;=\;
+      \mathrm{relabel}\Bigl(
+        \mathrm{abstract}_{\mathrm{gossipLabels}}\bigl(
+          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{CoreProc}(P,j)
+        \bigr)\Bigr),
+  \]
+  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{CoreNode}(n)$.
+\end{definition}
+
+\begin{theorem}[The per-process GBCA instance is the implementation instance]
+  \label{thm:aba-gbca-perproc}
+  \lean{PLTS.ABA.GBCA.perProcRefines}\lean{PLTS.ABA.GBCA.implRefinesPerProc}\lean{PLTS.ABA.GBCA.perProcInst_atd}\leanok
+  \uses{def:aba-gbca-perproc, def:aba-gbca-impl, def:achievable}
+  For all parameters $P$ and all rounds $r$,
+  \[
+    \operatorname{ATD}(\mathrm{perProcInst}(P,r)) \;=\;
+    \operatorname{ATD}(\mathrm{implInst}(P,r)) .
+  \]
+  Each inclusion is an LTS forward simulation along the packing map $\mathrm{unpack}$, and the step matching is one-to-one in both directions.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-gbca-perproc, def:aba-gbca-impl, def:relabel, def:syncproduct, def:achievable, thm:forward-sound}
+  Define the packing map $\mathrm{unpack}(q)(j) = (proc\,j,\ sent\,j,\ recv\,j,\ F)$ and take both relations to be its graph, which holds at the initial states.
+  It makes every node's copy of the corrupted set equal to the monolithic $F$, and the $\mathrm{fail}$ broadcast preserves that equality, since every component applies the same corruption transform to its own copy.
+  The step matching is one-to-one and uses no stuttering in either direction.
+  A hidden rendezvous $\mathrm{net}(i,j,m)$ matches $\mathrm{deliver}\,i\,j\,m$, the sender component supplying the outbox guard and the receiver component the row update, every other component idle.
+  An interleaved $\tau$ of one component matches the monolithic rule of the same name.
+  A synchronised visible step matches the monolithic rule with the same guards, the counts taken over a packed node's rows being the monolithic counts.
+  Both systems are LTS, so each matching is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) applied in each direction gives the two inclusions.
+\end{proof}
+
+\blueprintfig{fig-perproc}{The per-process presentation: the family $\mathrm{procInst}(P,r,j)$ under $\mathrm{syncProduct}$, the network alphabet hidden, and the composite read back over $\mathrm{Lab}(n)$.
+The dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netLabels}$: every $\mathrm{net}(i,j,m)$ becomes $\tau$, and what leaves the frame is the visible API $\mathrm{callG}/\mathrm{retG}/\mathrm{fail}$ together with $\tau$.
+One illustrated rendezvous $\mathrm{net}(i,j,m)$: the sender $j$ supplies the guard $m \in \mathrm{out}_j$ and does not move, the receiver $i$ files $m$ under row $j$, and every other component answers with an idle self-loop, so full synchronisation moves exactly the two participants.
+On a visible label every component steps --- its owner by its own rule, the rest by an idle loop, and on $\mathrm{fail}$ every copy of the corrupted set is corrupted.
+The dashed vertical is Theorem~\ref{thm:aba-gbca-perproc}: the composite and the monolithic instance achieve the same trace distributions, the relation being the graph of $\mathrm{unpack}$.
+The core carries the same picture with $\mathrm{CoreProc}(P,j)$, $\mathrm{net}(i,j,b)$ and $\mathrm{gossipLabels}$ in place of the GBCA names.}
+
+\begin{theorem}[The per-process core is the core]
+  \label{thm:aba-core-perproc}
+  \lean{PLTS.ABA.CoreRel}\lean{PLTS.ABA.perProcCore_sim}\lean{PLTS.ABA.core_sim}\lean{PLTS.ABA.perProcCore_atd}\leanok
+  \uses{def:aba-core-perproc, def:aba-core, def:achievable}
+  For all parameters $P$,
+  \[
+    \operatorname{ATD}(\mathrm{perProcCore}(P)) \;=\; \operatorname{ATD}(\mathrm{core}(P)) .
+  \]
+  Each inclusion is an LTS forward simulation along the packing relation $\mathrm{CoreRel}$, and the step matching is one-to-one in both directions.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-core-perproc, def:aba-core, def:relabel, def:syncproduct, def:achievable, thm:forward-sound}
+  Take the packing relation $\mathrm{CoreRel}$, which holds of a tuple $q$ and a monolithic state $s$ when $(q\,k).proc = procs\,k$, $(q\,k).decOut = decidedSent\,k$, $(q\,i).decIn\,k = decidedRecv\,i\,k$ and $(q\,k).F = s.F$ for all $i$ and $k$.
+  Its last clause is the lockstep invariant on the corrupted set; the $\mathrm{fail}$ broadcast preserves it, every component answering that label with the same transform.
+  It holds at the initial states, where the records are idle and the pools empty.
+  Each rule of Definition~\ref{def:aba-core} is answered by one composite step, with no stuttering: on a visible label the owner moves and the rest idle, the DECIDED echo and the Byzantine injection are interleaved $\tau$-steps of one component, and $\mathrm{deliver}\,i\,j\,b$ is the hidden rendezvous $\mathrm{net}(i,j,b)$ with its two guards split between the sender and the receiver.
+  Conversely each composite step is inverted by label class, and each class supplies exactly one monolithic rule.
+  A label no component owns is blocked by the product, which is how the composite reproduces a monolithic guard that fails.
+  Both systems are LTS, so each matching is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) applied in each direction gives the two inclusions.
+\end{proof}
+
+\dynamics{What the presentation certifies}{%
+Calling either encoding a distributed algorithm is a claim about which state a
+rule is allowed to read.
+The monolithic encoding is the composed system with the tuple of nodes packed
+into one record and the rendezvous already resolved, and Theorems
+\ref{thm:aba-gbca-perproc} and~\ref{thm:aba-core-perproc} say that the packing
+costs no observable behaviour in either direction.
+Since every rule of the per-process automata is a function of one node, no rule
+of either implementation reads across a process boundary.
+The theorems also fix what stays centralized.
+The corruption budget is the one piece of shared state: the guard
+$k \notin F \wedge |F| < f$ is evaluated on each node's own copy of $F$, and
+the copies agree only because $\mathrm{fail}$ is a broadcast every component
+answers.
+That is the adversary's bookkeeping and not the protocol's.
+Nothing else is shared.
+The message pools, the receipt rows and the control records each belong to one
+process, and every quorum count is taken over one node's rows.
+}
 
 \begin{thebibliography}{LeslieBP}
 
