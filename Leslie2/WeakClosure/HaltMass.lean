@@ -288,7 +288,8 @@ theorem expandSched_haltMass_g_eq (ws : Scheduler sys^w)
                 left_inv := by rintro ⟨⟨e, he⟩, ⟨c, hcc, hP⟩⟩; obtain rfl : c.concat = e := hcc; rfl
                 right_inv := fun c => rfl } :
               (Σ e : {e : AlterSeq State Label // e.trans.Terminates},
-                  {c : Config sys // c.concat = e.1 ∧ c.e'.trans = Seq.nil ∧ c.t = none ∧ c.wt = none})
+                  {c : Config sys // c.concat = e.1 ∧ c.e'.trans = Seq.nil
+                  ∧ c.t = none ∧ c.wt = none})
                 ≃ {c : Config sys // (c.e'.trans = Seq.nil ∧ c.t = none ∧ c.wt = none)
                     ∧ c.concat.trans.Terminates}))
             (fun c => reachProb ws c.1 * g' (lastOf c.1.we))
