@@ -1667,7 +1667,7 @@ Rule & Label & Guard & Effect \\
  & & $b \notin \mathit{decRecv}(i,j)$ & (D12$'$) \\
 \hline
 \texttt{echo} & $\tau$
-  & $\#_i(b) \ge f{+}1$, $\mathit{decSent}_i = \emptyset$
+  & $\#_i(b) \ge f{+}1$, $b \notin \mathit{decSent}_i$
   & mcast $\mathrm{DEC}\,b$ at $i$ \\
 \hline
 \texttt{byzDecided} & $\tau$ & $i \in F$
@@ -1712,7 +1712,7 @@ filled by the coin of the same round, and a set estimate ignores that coin.
 When the round's grade was $A\,b$, the step that receives the coin also
 multicasts $\langle \mathrm{DECIDED}, b \rangle$ and advances the round.
 A process holding $\langle \mathrm{DECIDED}, b \rangle$ from $f+1$ distinct
-senders and having multicast nothing multicasts
+senders and not having multicast $\langle \mathrm{DECIDED}, b \rangle$ itself multicasts
 $\langle \mathrm{DECIDED}, b \rangle$ itself, the $f+1$ threshold guaranteeing
 one honest sender behind any echo.
 The return rule requires $\langle \mathrm{DECIDED}, b \rangle$ from $n-f$

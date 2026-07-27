@@ -454,13 +454,12 @@ inductive CoreStep (P : Params) :
   | deliver (s : CoreState P.n) (i j : Fin P.n) (b : Bool)
       (hs : b ∈ s.decidedSent j) (hr : b ∉ s.decidedRecv i j) :
       CoreStep P s .tau (PMF.pure (s.deliverDecided i j b))
-  /-- DECIDED echo: `f + 1` delivered `⟨DECIDED, b⟩` and not having multicast
-  (empty sent pool) triggers the multicast (the process keeps running its
-  round loop). The empty-pool guard is stricter than the blueprint's "not
-  having sent *it*" (that payload); on reachable states the two coincide
-  (honest pools hold at most one bit). -/
+  /-- DECIDED echo: `f + 1` delivered `⟨DECIDED, b⟩` (distinct senders) and not
+  having multicast `⟨DECIDED, b⟩` oneself trigger the multicast (the process
+  keeps running its round loop). The guard is payload-specific: a pool holding
+  the other bit does not block the echo of `b`. -/
   | echo (s : CoreState P.n) (id : Fin P.n) (b : Bool)
-      (hcnt : P.f + 1 ≤ s.decidedCount id b) (hs : s.decidedSent id = ∅) :
+      (hcnt : P.f + 1 ≤ s.decidedCount id b) (hs : b ∉ s.decidedSent id) :
       CoreStep P s .tau (PMF.pure (s.sendDecided id b))
   /-- Byzantine DECIDED injection (deviation D12′): a corrupted process may
   insert an arbitrary payload into its sent pool at any time — either or both
@@ -580,7 +579,7 @@ theorem core_isLTS (P : Params) : (core P).IsLTS := by
     CoreStep P s .tau μ ↔
       (∃ i j b, b ∈ s.decidedSent j ∧ b ∉ s.decidedRecv i j ∧
         μ = PMF.pure (s.deliverDecided i j b)) ∨
-      (∃ id b, P.f + 1 ≤ s.decidedCount id b ∧ s.decidedSent id = ∅ ∧
+      (∃ id b, P.f + 1 ≤ s.decidedCount id b ∧ b ∉ s.decidedSent id ∧
         μ = PMF.pure (s.sendDecided id b)) ∨
       (∃ id b, id ∈ s.F ∧ μ = PMF.pure (s.sendDecided id b)) := by
   constructor
