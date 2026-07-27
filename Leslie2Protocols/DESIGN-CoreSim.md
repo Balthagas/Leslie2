@@ -104,8 +104,9 @@ leading τ-closure and the visible `retABA` the middle hyper-step.
 
 Four spec-level repairs make the simulation possible; each is a permanent, `F`-blind
 provenance discipline. D13/D14 repair the abstract specs (TS 1 = `ABA.spec`,
-TS 2 = the `GBCA` layer) against the papers' Validity; D15 is the implementation-side
-harvest that re-closes `GBCASim` under D14; D12′ closes a DECIDED-equivocation gap.
+TS 2 = the `GBCA` layer) against the papers' Validity; D15 is the F-blind counting
+form of their support guards, discharged implementation-side by the `GBCASim`
+harvest; D12′ closes a DECIDED-equivocation gap.
 
 ### D13 — TS 1 Validity (ghost provenance)
 
@@ -155,14 +156,23 @@ recorded input is a genuine prior `callABA`.
 
 ### D14 — TS 2 Validity (SuppOK guards)
 
-TS 2 (the `GBCA` layer, `GBCASpec.lean`) certifies `bindSet` by a *single* honest
-witness (`∃ id ∉ F, call id = b`), and `B`/`C` dissent by a single honest dissenter —
-the same singular-witness provenance loss one level down, and `hybridSpec` built on it
-provably violates Validity (§ Why this shape). ABDY22's implementation carries the
-`f + 1` via Valid-set relay thresholds; TS 2 abstracted it to one witness. The repair is
-exactly TS 1's `SuppOK` shape: `bindSet`'s guard becomes
-`f + 1 ≤ #{id | call id = some b ∨ id ∈ F}`, and the `retB`/`retC` dissent guards the
-same for `!v`. Directly `F`-blind — the count is monotone in `F` and `call`, so it is
+The blueprint's TS 2 certifies `bindSet` by a *single* honest witness
+(`∃ id ∉ F, call id = b`), and `B`/`C` dissent by a single honest dissenter — the same
+singular-witness provenance loss one level down, and `hybridSpec` built on it provably
+violates Validity (§ Why this shape). ABDY22's implementation carries the `f + 1` via
+Valid-set relay thresholds; TS 2 abstracts it to one witness.
+
+`GBCASpec.lean` instead uses TS 1's `SuppOK` shape at every provenance guard, as a count
+`f + 1 ≤ #{id | call id = some b ∨ id ∈ F}` at the bit that guard is about:
+
+- `bindSet` counts support for the bit it binds;
+- `retB` counts support for the dissenting bit `!v`, alongside `bind = some v` for the
+  bit it hands out;
+- `retC` hands out no bit and reads no `bind` at all: it carries one such count for
+  **each** bit — which is exactly what certifies that no single bit is the right answer —
+  plus the `C`-side grade latch enforcing A/C exclusivity.
+
+Directly `F`-blind — the count is monotone in `F` and `call`, so it is
 immune to later `fail`s — and the budget pigeonhole transfers verbatim: among `f + 1`
 supporters some member is outside the final `F`, hence a never-corrupted genuine caller.
 Corrupt supporters are paid for by the `F` budget itself, with no phantom-call
@@ -170,28 +180,44 @@ bookkeeping and no spec-side fills.
 
 ### D15 — the implementation harvest (`GBCASim`)
 
-D14's superset counts must be discharged from `GBCA.Impl`. The bridge is one new `Inv`
-conjunct, `input_supp`:
+D14's superset counts must be discharged from `GBCA.Impl`. The bridge is the `Inv`
+conjunct `input_supp`:
 
 ```
 ∀ b j, j ∉ F → Msg.input b ∈ sent j →
   (proc j).input = some b ∨ f + 1 ≤ #{id | (proc id).input = some b ∨ id ∈ F}
 ```
 
-Preservation: `callABA` adds a holder; a `relay`'s `f + 1` receipt senders are each in
+Preservation: `call` adds a holder; a `relay`'s `f + 1` receipt senders are each in
 `F`, a holder, or a prior honest non-holder sender (the pre-state conjunct closes); `byz`
 senders are in `F`; `fail` grows the count and shrinks the triggers; the count is
-monotone throughout. The harvest answering all three D14 sites is `suppI_of_bind`: an
-honest `BIND b` multicast chases `BIND → VOTE → ECHO` to an honest `ECHO b` sender, whose
-`n − f ≥ f + 1` `INPUT b` receipts feed `Inv.supp_of_input_receipts`; the `retB`/`retC`
-dissent bit is covered by `bothValid`'s own `n − f` `INPUT (!v)` receipt quorum at the
-returner, so no separate dissent-relay argument is needed. `call_eq` stays exact and
-`instRel_corrupt` is untouched — the superset guards need nothing from the concrete
-relation but the honest slots it already mirrors.
+monotone throughout. The harvest splits by D14 site.
+
+- The `bindSet` count rides on the relation's `bind_cert`, which the implementation return
+  supplies from its own receipts (`echoQuorum_of_bind_quorum` for case (a),
+  `echoQuorum_of_vote_receipts` for case (b)). `bindSet_guards` gets *both* `bindSet`
+  guards out of that one `n − f` `ECHO v` certificate: refine it to an `n − f` `INPUT v`
+  receipt quorum (`inputQuorum_of_echoQuorum`), whose honest senders hold an input
+  (`input_called`, D8) — that is the quorum guard (`quorum_of_msg_quorum`) — and whose
+  count feeds `Inv.supp_of_input_receipts` for the `f + 1` SuppOK count.
+- The `retB`/`retC` counts ride on the `|Valid| > 1` evidence the returner itself holds:
+  it is an `n − f ≥ f + 1` `INPUT` receipt quorum for *each* bit, so `suppI_of_valid`
+  closes both bits at once — which is what `retC`'s two per-bit guards need, and what
+  covers `retB`'s dissent bit with no separate dissent-relay argument.
+
+`InstRel.spec_supp` carries every such count to the specification side along
+`call_eq`/`F_eq`. `call_eq` stays exact and the corruption row needs no extra work — the
+superset guards need nothing from the concrete relation but the honest slots it already
+mirrors.
+
+Since the specification binds by an internal τ-transition, an implementation return
+meeting a still-unbound specification state is answered by the two-step weak burst
+`bindSet ; retA` (resp. `bindSet ; retB`), `firstRetA_burst`/`firstRetB_burst`; `retC`
+reads no `bind`, so a run whose only returns are `C` leaves the specification unbound.
 
 ### D12′ — the DECIDED equivocation gap
 
-D12 modeled DECIDED gossip as a single per-process slot, which cannot send `DECIDED 0`
+D12 models DECIDED gossip as a single per-process slot, which cannot send `DECIDED 0`
 to X and `DECIDED 1` to Y — an under-approximation inconsistent with the GBCA layer's
 equivocating D5 sent-pool. D12′ mirrors D5 at the DECIDED layer (`Core.lean`):
 `decidedSent : Fin n → Finset Bool` and `decidedRecv : Fin n → Fin n → Finset Bool`
@@ -205,30 +231,45 @@ pools never shrink); `decided_src` becomes per pooled bit
 (`id ∉ F → b ∈ decidedSent id → ∃ r` A-lock cert for `b`) — the equivocation-robust
 form: corrupted equivocators may pad any bit's tally, but the `retABA`-row pigeonhole
 (`n − f` distinct senders of `b`, `|F| ≤ f`, `n − f > f`) recovers a never-corrupted
-sender of `b`, whose pooled `b` carries the A-lock certificate feeding `decide_burst`
-exactly as before.
+sender of `b`, whose pooled `b` carries the A-lock certificate that `decide_burst` and
+phase 2's `Abs` certificate need.
 
 ## `Inv`: the concrete invariant (`CoreSimRel.lean`)
 
 Roughly thirty conjuncts (names as in the code), grouped:
 
 - **F-lockstep**: `F_g`, `F_w` (every instance's `F` equals `c.F`), `F_card`.
-- **Round structure**: `down_closed` (bound rounds downward-closed), `quiescent`
-  (cofinitely many rounds unbound), `round_bound`, `call_round`, `w_call_round`,
-  `w_bound`/`w_called` (flips/W-calls only at bound rounds), `w_order`, `round_flip`.
+- **Round structure**, keyed throughout on
+  `Closed g r := (g r).bind ≠ none ∨ (g r).grade = some false` — "round `r` is finished",
+  which is strictly weaker than "round `r` is bound", since a `C`-return is bind-free:
+  `down_closed` (closed rounds downward-closed), `quiescent` (cofinitely many rounds open),
+  `round_bound`, `call_round`, `w_call_round`, `w_bound`/`w_called` (flips/W-calls only at
+  closed rounds), `w_order`, `round_flip`. `Closed.congr`/`Closed.of_frame` are the two
+  transport lemmas every row's frame facts feed.
 - **Input/est provenance**: `input_g0`, `input_g0_perm`, `input_called`, `phase_input`,
   `est0`, `est_ret`, `est_prev`, `est_prev_ne`, `call_prov`, `bind_succ` (a later bind's
   value has provenance in the previous round's bind/`C`-lock or dissent), `c_chain`.
 - **Locks and DECIDED**: `a_commit` (an `A`-lock at bind `b` forces every later bound
   round to bind `b`, honest ests to `b`, honest DECIDEDs to `b`), `agree_locked`,
-  `grade_needs_bind`, `grade_A_src`, `decided_src` and `recv_sound` (both in their D12′
-  per-bit, honesty-free forms — see above), `bound_quorum`.
+  `gradeA_needs_bind` (A-side only: `retA` reads the bound value, so an `A`-graded round
+  has bound — a `C`-lock reads no `bind` and constrains none), `grade_A_src`,
+  `decided_src` and `recv_sound` (both in their D12′ per-bit, honesty-free forms — see
+  above), `bound_quorum`.
 - **Support pools**: `bind_supp` (I26) — every bound round's value carries a permanent
   `f + 1` input-or-`F` pool (`InputSupp`, the concrete mirror of TS 1's V-P1), established
-  at `bindSet` from the D14 count guard (round 0 wholesale via `input_g0_perm`, `r ≥ 1`
-  through `call_prov` into the previous round's pools) — and `clock_supp` (I27), its
-  `C`-lock dissent twin, established at `retC`. Both are permanent and monotone; they are
-  what supplies `decide_burst`'s `f + 1` material through phase 1's call/ghost sync.
+  at `bindSet` — and `clock_supp` (I27), which keeps a `C`-locked round's `retC` guards
+  themselves: `f + 1` F-blind call-or-`F` support for *each* bit, in count form. Both are
+  permanent and monotone (`call` and `F` only grow). `supp_of_call_count` reads any such
+  count back as an input pool by strong induction on the round — round 0 wholesale via
+  `input_g0_perm`, `r ≥ 1` by harvesting one honest caller whose `call_prov` provenance
+  routes into the previous round's `bind_supp` or into its `clock_supp` count, a smaller
+  instance of the same statement — and that is what supplies `decide_burst`'s `f + 1`
+  material through phase 1's call/ghost sync. The both-bit shape of `clock_supp` is also
+  what keeps a `C`-lock incompatible with an `A`-lock below it
+  (`no_alock_below_both_supports`) and with an agreeing coin underneath it
+  (`no_cgrade_succ_of_supp`), and what forces a `C`-lock one round down
+  (`c_chain_of_both_supports`): honest callers of both bits cannot both take `call_prov`'s
+  bind disjunct, since a round binds at most one value.
 - **Dissent bookkeeping**: `flip_alock`, `retg_residue`, `wcalled_residue`,
   `idle_no_wcall`, each keyed on the permanent `F`-free `DissentResidue` (with its
   `transport` lemma for frame-agnostic preservation). The support pools `bind_supp`/

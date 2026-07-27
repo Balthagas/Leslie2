@@ -10,7 +10,9 @@
   \path
     (unb) edge node[lbl, above]{\texttt{bindSet}} (bnd)
     (bnd) edge node[lbl, sloped, above]{\texttt{retA}: latch A} (ga)
-    (bnd) edge node[lbl, sloped, below]{\texttt{retC}: dissent} (gc)
+    (bnd) edge node[lbl, sloped, below]{\texttt{retC}} (gc)
+    (unb) edge[bend right=32] node[lbl, sloped, below]
+      {\texttt{retC}: both bits, no binding} (gc)
     (unb) edge[loop above, looseness=6]
       node[lbl, above]{\texttt{call} / \texttt{callLoop}} (unb)
     (bnd) edge[loop above, looseness=6]

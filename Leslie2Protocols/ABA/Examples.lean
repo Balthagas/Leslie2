@@ -324,12 +324,12 @@ the coin. Hidden to `τ`. -/
 theorem step_retG₀ :
     (hybridSpec P4).step (Gb, (Cc3, W0)) Lab.tau
       (PMF.pure (Gr, (Cr, W0))) := by
-  refine Or.inl ⟨rfl, Lab.retG 0 (0 : Fin 4) (.A true) true, by simp, ?_⟩
+  refine Or.inl ⟨rfl, Lab.retG 0 (0 : Fin 4) (.A true), by simp, ?_⟩
   refine Or.inl ⟨by decide, PMF.pure Gr, PMF.pure (Cr, W0), ?_, ?_, ?_⟩
   · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
     exact GBCA.Step.retA (P := P4) (r := 0) (Gb 0) (0 : Fin 4) true rfl (Or.inl rfl) rfl
   · refine Or.inl ⟨by decide, PMF.pure Cr, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.retG (P := P4) Cc3 0 (0 : Fin 4) (.A true) true rfl rfl
+    · exact CoreStep.retG (P := P4) Cc3 0 (0 : Fin 4) (.A true) rfl rfl
     · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
     · rw [prodPMF_pure_pure]
   · rw [prodPMF_pure_pure]
@@ -357,12 +357,12 @@ theorem step_fail :
 theorem step_retG₁ :
     (hybridSpec P4).step (Gr, (Cr, W0)) Lab.tau
       (PMF.pure (Ga1, (Cq1, W0))) := by
-  refine Or.inl ⟨rfl, Lab.retG 0 (1 : Fin 4) (.A true) true, by simp, ?_⟩
+  refine Or.inl ⟨rfl, Lab.retG 0 (1 : Fin 4) (.A true), by simp, ?_⟩
   refine Or.inl ⟨by decide, PMF.pure Ga1, PMF.pure (Cq1, W0), ?_, ?_, ?_⟩
   · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
     exact GBCA.Step.retA (P := P4) (r := 0) (Gr 0) (1 : Fin 4) true rfl (Or.inr rfl) (by decide)
   · refine Or.inl ⟨by decide, PMF.pure Cq1, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.retG (P := P4) Cr 0 (1 : Fin 4) (.A true) true (by decide) (by decide)
+    · exact CoreStep.retG (P := P4) Cr 0 (1 : Fin 4) (.A true) (by decide) (by decide)
     · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
     · rw [prodPMF_pure_pure]
   · rw [prodPMF_pure_pure]
@@ -371,12 +371,12 @@ theorem step_retG₁ :
 theorem step_retG₂ :
     (hybridSpec P4).step (Ga1, (Cq1, W0)) Lab.tau
       (PMF.pure (Ga2, (Cq2, W0))) := by
-  refine Or.inl ⟨rfl, Lab.retG 0 (2 : Fin 4) (.A true) true, by simp, ?_⟩
+  refine Or.inl ⟨rfl, Lab.retG 0 (2 : Fin 4) (.A true), by simp, ?_⟩
   refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cq2, W0), ?_, ?_, ?_⟩
   · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
     exact GBCA.Step.retA (P := P4) (r := 0) (Ga1 0) (2 : Fin 4) true rfl (Or.inr rfl) (by decide)
   · refine Or.inl ⟨by decide, PMF.pure Cq2, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.retG (P := P4) Cq1 0 (2 : Fin 4) (.A true) true (by decide) (by decide)
+    · exact CoreStep.retG (P := P4) Cq1 0 (2 : Fin 4) (.A true) (by decide) (by decide)
     · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
     · rw [prodPMF_pure_pure]
   · rw [prodPMF_pure_pure]

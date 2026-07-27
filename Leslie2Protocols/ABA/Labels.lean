@@ -23,9 +23,8 @@ blueprint's sync-set composition `∥_S`: the genuine participants of a label
 handshake while everyone else no-ops in place.
 
 * `callG/retG r id …`, `callW/retW r id …` — handshakes between `ABA.Core` and
-  the round-`r` instance of the respective family. `retG` carries the graded
-  outcome *and the bound value*: the blueprint linearises GBCA's Binding
-  property by enhancing return labels with the bound value.
+  the round-`r` instance of the respective family. A `retG` label names the
+  round, the process being answered and the graded outcome it receives.
 * `fail id` — corruption; a genuine synchronisation of **all** components
   (each keeps its own copy of the corrupted set `F`, updated in lockstep).
 * `hiddenAPI` — the sub-protocol API labels, hidden (sent to `τ`) in the
@@ -59,9 +58,8 @@ inductive Lab (n : ℕ) : Type
   | retABA (id : Fin n) (b : Bool)
   /-- Process `id` calls round-`r` GBCA with input `b`. -/
   | callG (r : ℕ) (id : Fin n) (b : Bool)
-  /-- Round-`r` GBCA returns the graded outcome `out` to `id`; the label also
-  carries the instance's bound value (linearised Binding). -/
-  | retG (r : ℕ) (id : Fin n) (out : GbcaOut) (bound : Bool)
+  /-- Round-`r` GBCA returns the graded outcome `out` to process `id`. -/
+  | retG (r : ℕ) (id : Fin n) (out : GbcaOut)
   /-- Process `id` calls round-`r` WCC. -/
   | callW (r : ℕ) (id : Fin n)
   /-- Round-`r` WCC returns the coin bit `b` to `id`. -/
@@ -81,7 +79,7 @@ variable {n : ℕ}
 /-- The GBCA round a label belongs to, if any. -/
 def gbcaRound : Lab n → Option ℕ
   | callG r _ _ => some r
-  | retG r _ _ _ => some r
+  | retG r _ _ => some r
   | _ => none
 
 /-- The WCC round a label belongs to, if any. -/
@@ -117,8 +115,8 @@ def hiddenAPI (n : ℕ) : Set (Lab n) :=
     Lab.callG r id b ∈ hiddenAPI n := by
   simp [hiddenAPI, gbcaRound]
 
-@[simp] theorem retG_mem_hiddenAPI (r : ℕ) (id : Fin n) (out : GbcaOut) (bound : Bool) :
-    Lab.retG r id out bound ∈ hiddenAPI n := by
+@[simp] theorem retG_mem_hiddenAPI (r : ℕ) (id : Fin n) (out : GbcaOut) :
+    Lab.retG r id out ∈ hiddenAPI n := by
   simp [hiddenAPI, gbcaRound]
 
 @[simp] theorem callW_mem_hiddenAPI (r : ℕ) (id : Fin n) :

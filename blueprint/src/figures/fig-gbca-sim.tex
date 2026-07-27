@@ -6,26 +6,29 @@
     every state/.style={draw, align=center, font=\small, inner sep=2pt}]
   % top row: implementation run phases
   \node[conc] (t1) at (1.6,2.4) {input\\ (INPUT)};
-  \node[conc] (t2) at (5.0,2.4) {deliveries\\ relay/echo/vote\\ (incl.\ byz)};
-  \node[conc] (t3) at (8.0,2.4) {bindGhost};
-  \node[conc] (t4) at (11.0,2.4){returns\\ $A\,/\,B\,/\,C$};
+  \node[conc] (t2) at (4.8,2.4) {deliveries\\ relay/echo/vote\\ (incl.\ byz)};
+  \node[conc] (t3) at (8.2,2.4) {first return\\ $A\,b$ or $B\,b$};
+  \node[conc] (t4) at (11.6,2.4){later returns\\ $A\,/\,B\,/\,C$};
   % bottom row: specification-instance states
   \node[state, initial, initial text={}] (p1) at (1.6,0)
-    {unbound\\ $bound=\bot$\\ $call=input$};
-  \node[state, accepting] (p2) at (11.0,0)
+    {unbound\\ $bind=\bot$\\ $call=input$};
+  \node[state, accepting] (p2) at (11.6,0)
     {bound\,$v$\\ grade latch};
   \draw[->] (p1) to[loop below, looseness=5]
     node[below=2pt, font=\footnotesize]{stutter} (p1);
   \draw[->] (p2) to[loop below, looseness=5]
     node[below=2pt, font=\footnotesize]{stutter} (p2);
   \draw[->, thick] (p1) -- (p2)
-    node[pos=0.5, below=3pt, font=\footnotesize, align=center, fill=white, inner sep=1.5pt]
-      {\texttt{bindSet}\\ ($f{+}1$ via $input\_supp$)};
+    node[pos=0.5, below=4pt, font=\footnotesize, align=center, fill=white, inner sep=1.5pt]
+      {weak step \texttt{bindSet};\,\texttt{ret}\\
+       $f{+}1$ via $input\_supp$, $v$ via ECHO quorum};
   % instRel verticals
   \draw[dashed, ->] (t1) -- (p1) node[pos=0.55, right=1pt, font=\scriptsize]{call};
-  \draw[dashed, ->] (t2.south) -- (2.7,0.35);
-  \draw[dashed, ->] (t3.south) -- (6.4,0.12);
+  \draw[dashed, ->] (t2.south) -- (3.1,0.3);
+  \draw[dashed, ->] (t3.south) -- (8.2,0.12)
+    node[pos=0.45, right=1pt, font=\scriptsize]{burst};
   \draw[dashed, ->] (t4) -- (p2) node[pos=0.55, right=1pt, font=\scriptsize]{graded};
-  \node[font=\footnotesize] at (6.3,-1.7)
-    {dashed $=$ $\mathrm{instRel}$; deliveries/relay/echo/vote $\mapsto$ stutter};
+  \node[font=\footnotesize, align=center] at (6.6,-2.0)
+    {dashed $=$ $\mathrm{instRel}$; deliveries/relay/echo/vote $\mapsto$ stutter;\\
+     a run whose returns are all $C$-returns stays unbound};
 \end{tikzpicture}

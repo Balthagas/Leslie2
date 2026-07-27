@@ -49,25 +49,19 @@ behaviour are modelled by nondeterministic `τ`-transitions.
   in the receiver's delivered sets, so message duplication and point-to-point
   scheduling are absorbed into the set model. A corrupted sender may inject
   any message into its `sent` pool (`byz`).
-* **D6 (linearised Binding, ghost `bound`).** The ghost field `bound` is set
-  (once) by the internal `bindGhost` transition as soon as some currently
-  honest process has multicast `BIND b` for a *real* bit `b`; this is the
-  concrete event that the spec's `bindSet` transition abstracts. Return
-  transitions are gated on `bound = some v` with `v` matching their message
-  evidence, so every return label carries the bound value, as demanded by the
-  enhanced `retG` labels. This gating is a pure scheduling restriction: the
-  quorum intersection argument shows the `A`/`B` return evidence implies the
-  ghost trigger fired or is enabled (for `C`-returns in an all-`⊥` run with no
-  honest real-bit `BIND` the gate can block the return **permanently** — a
-  liveness-shaped restriction forced by the blueprint's linearised Binding
-  interface (its TS `retC` also requires `bind ≠ ⊥`); safety-neutral and
-  irrelevant to the refinement).
-* **D7 (ghost `grade`).** The write-only ghost field `grade` records whether
-  an `A`- or a `C`-return has fired (mirroring the spec's grade lock). No
-  concrete guard reads it.
 * **D8 (participation gating).** Protocol sends (`relay`, `echo`, `vote*`,
   `bind*`) require the process to have received its input
   (`input ≠ none`): Algorithm 2's handlers only run inside a called instance.
+
+The state is exactly the protocol's own data: the per-process local states,
+the network, and the corrupted set. The three return transitions are
+Algorithm 2's three wait-until cases and read nothing beyond the receipts
+those cases name — case (a) an `n − f` `BIND v` quorum, case (b) an `n − f`
+any-`BIND` quorum containing `BIND v` together with `f + 1` `VOTE v`s and
+`|Valid| > 1`, case (c) an `n − f` `BIND ⊥` quorum with `|Valid| > 1`. The
+`bind` and `grade` fields that the specification tracks are abstractions of
+these receipt patterns and live only on the specification side; the
+refinement (`ABA/GBCASim.lean`) supplies them from the receipts.
 -/
 
 namespace PLTS
@@ -113,8 +107,7 @@ def ProcState.initial : ProcState where
   returned := false
 
 /-- The state of one GBCA implementation instance: the local states, the
-set-based network (D5), the ghost `bound` and `grade` fields (D6, D7) and the
-corrupted set. -/
+set-based network (D5) and the corrupted set. -/
 structure ImplState (n : ℕ) : Type where
   /-- Per-process local states. -/
   proc : Fin n → ProcState
@@ -122,11 +115,6 @@ structure ImplState (n : ℕ) : Type where
   sent : Fin n → Finset Msg
   /-- `recv i j` — the messages from sender `j` delivered to receiver `i`. -/
   recv : Fin n → Fin n → Finset Msg
-  /-- The ghost bound value (D6). -/
-  bound : Option Bool
-  /-- The ghost grade lock (D7): `some true` after an `A`-return, `some false`
-  after a `C`-return. -/
-  grade : Option Bool
   /-- The corrupted set (local copy, kept in lockstep by `fail` broadcast). -/
   F : Finset (Fin n)
   deriving DecidableEq
@@ -140,8 +128,6 @@ def initial (n : ℕ) : ImplState n where
   proc := fun _ => ProcState.initial
   sent := fun _ => ∅
   recv := fun _ _ => ∅
-  bound := none
-  grade := none
   F := ∅
 
 /-- The number of distinct senders from which `i` has received `m`. -/
@@ -182,10 +168,6 @@ def setProc (s : ImplState n) (j : Fin n) (p : ProcState) : ImplState n :=
     (s.setProc j p).sent = s.sent := rfl
 @[simp] theorem setProc_recv (s : ImplState n) (j : Fin n) (p : ProcState) :
     (s.setProc j p).recv = s.recv := rfl
-@[simp] theorem setProc_bound (s : ImplState n) (j : Fin n) (p : ProcState) :
-    (s.setProc j p).bound = s.bound := rfl
-@[simp] theorem setProc_grade (s : ImplState n) (j : Fin n) (p : ProcState) :
-    (s.setProc j p).grade = s.grade := rfl
 @[simp] theorem setProc_F (s : ImplState n) (j : Fin n) (p : ProcState) :
     (s.setProc j p).F = s.F := rfl
 
@@ -205,10 +187,6 @@ def mcast (s : ImplState n) (j : Fin n) (m : Msg) : ImplState n :=
     (s.mcast j m).proc = s.proc := rfl
 @[simp] theorem mcast_recv (s : ImplState n) (j : Fin n) (m : Msg) :
     (s.mcast j m).recv = s.recv := rfl
-@[simp] theorem mcast_bound (s : ImplState n) (j : Fin n) (m : Msg) :
-    (s.mcast j m).bound = s.bound := rfl
-@[simp] theorem mcast_grade (s : ImplState n) (j : Fin n) (m : Msg) :
-    (s.mcast j m).grade = s.grade := rfl
 @[simp] theorem mcast_F (s : ImplState n) (j : Fin n) (m : Msg) :
     (s.mcast j m).F = s.F := rfl
 
@@ -236,10 +214,6 @@ def recvMsg (s : ImplState n) (i j : Fin n) (m : Msg) : ImplState n :=
     (s.recvMsg i j m).proc = s.proc := rfl
 @[simp] theorem recvMsg_sent (s : ImplState n) (i j : Fin n) (m : Msg) :
     (s.recvMsg i j m).sent = s.sent := rfl
-@[simp] theorem recvMsg_bound (s : ImplState n) (i j : Fin n) (m : Msg) :
-    (s.recvMsg i j m).bound = s.bound := rfl
-@[simp] theorem recvMsg_grade (s : ImplState n) (i j : Fin n) (m : Msg) :
-    (s.recvMsg i j m).grade = s.grade := rfl
 @[simp] theorem recvMsg_F (s : ImplState n) (i j : Fin n) (m : Msg) :
     (s.recvMsg i j m).F = s.F := rfl
 
@@ -270,40 +244,6 @@ theorem recvCount_le_recvMsg (s : ImplState n) (i j : Fin n) (m : Msg)
   rw [Finset.mem_filter] at hk ⊢
   exact ⟨hk.1, mem_recvMsg_recv.mpr (Or.inr hk.2)⟩
 
-/-- Set the ghost bound value (D6). -/
-def setBound (s : ImplState n) (b : Bool) : ImplState n :=
-  { s with bound := some b }
-
-@[simp] theorem setBound_proc (s : ImplState n) (b : Bool) :
-    (s.setBound b).proc = s.proc := rfl
-@[simp] theorem setBound_sent (s : ImplState n) (b : Bool) :
-    (s.setBound b).sent = s.sent := rfl
-@[simp] theorem setBound_recv (s : ImplState n) (b : Bool) :
-    (s.setBound b).recv = s.recv := rfl
-@[simp] theorem setBound_bound (s : ImplState n) (b : Bool) :
-    (s.setBound b).bound = some b := rfl
-@[simp] theorem setBound_grade (s : ImplState n) (b : Bool) :
-    (s.setBound b).grade = s.grade := rfl
-@[simp] theorem setBound_F (s : ImplState n) (b : Bool) :
-    (s.setBound b).F = s.F := rfl
-
-/-- Set the ghost grade lock (D7). -/
-def setGrade (s : ImplState n) (g : Option Bool) : ImplState n :=
-  { s with grade := g }
-
-@[simp] theorem setGrade_proc (s : ImplState n) (g : Option Bool) :
-    (s.setGrade g).proc = s.proc := rfl
-@[simp] theorem setGrade_sent (s : ImplState n) (g : Option Bool) :
-    (s.setGrade g).sent = s.sent := rfl
-@[simp] theorem setGrade_recv (s : ImplState n) (g : Option Bool) :
-    (s.setGrade g).recv = s.recv := rfl
-@[simp] theorem setGrade_bound (s : ImplState n) (g : Option Bool) :
-    (s.setGrade g).bound = s.bound := rfl
-@[simp] theorem setGrade_grade (s : ImplState n) (g : Option Bool) :
-    (s.setGrade g).grade = g := rfl
-@[simp] theorem setGrade_F (s : ImplState n) (g : Option Bool) :
-    (s.setGrade g).F = s.F := rfl
-
 /-- Corruption (deviation D1): total, Dirac, in lockstep with the spec's. -/
 def corrupt (P : Params) (id : Fin P.n) (s : ImplState P.n) : ImplState P.n :=
   if id ∉ s.F ∧ s.F.card < P.f then { s with F := insert id s.F } else s
@@ -317,13 +257,6 @@ def corrupt (P : Params) (id : Fin P.n) (s : ImplState P.n) : ImplState P.n :=
 @[simp] theorem corrupt_recv {P : Params} (s : ImplState P.n) (id : Fin P.n) :
     (s.corrupt P id).recv = s.recv := by
   unfold corrupt; split <;> rfl
-@[simp] theorem corrupt_bound {P : Params} (s : ImplState P.n) (id : Fin P.n) :
-    (s.corrupt P id).bound = s.bound := by
-  unfold corrupt; split <;> rfl
-@[simp] theorem corrupt_grade {P : Params} (s : ImplState P.n) (id : Fin P.n) :
-    (s.corrupt P id).grade = s.grade := by
-  unfold corrupt; split <;> rfl
-
 @[simp] theorem corrupt_recvCount {P : Params} (s : ImplState P.n) (id : Fin P.n)
     (i : Fin P.n) (m : Msg) :
     (s.corrupt P id).recvCount i m = s.recvCount i m := by
@@ -466,44 +399,30 @@ inductive ImplStep (P : Params) (r : ℕ) :
   /-- Byzantine injection: a corrupted sender multicasts anything. -/
   | byz (s : ImplState P.n) (j : Fin P.n) (m : Msg) (h : j ∈ s.F) :
       ImplStep P r s .tau (PMF.pure (s.mcast j m))
-  /-- The ghost binding event (D6): some currently honest process has
-  multicast `BIND b` for a real bit `b`; fix the bound value (once). -/
-  | bindGhost (s : ImplState P.n) (i : Fin P.n) (b : Bool)
-      (hi : i ∉ s.F) (hm : Msg.bind (some b) ∈ s.sent i)
-      (hb : s.bound = none) :
-      ImplStep P r s .tau (PMF.pure (s.setBound b))
-  /-- `A`-return (wait case (a)): an `n − f` `BIND v` quorum, gated on the
-  ghost bound value (D6); locks the ghost grade to the `A`-side (D7). -/
+  /-- `A`-return (wait case (a)): an `n − f` `BIND v` quorum. -/
   | retA (s : ImplState P.n) (id : Fin P.n) (v : Bool)
-      (hb : s.bound = some v)
       (hcnt : P.n - P.f ≤ s.recvCount id (.bind (some v)))
       (hr : (s.proc id).returned = false) :
-      ImplStep P r s (.retG r id (.A v) v)
-        (PMF.pure ((s.setProc id { s.proc id with returned := true }).setGrade
-          (some true)))
+      ImplStep P r s (.retG r id (.A v))
+        (PMF.pure (s.setProc id { s.proc id with returned := true }))
   /-- `B`-return (wait case (b)): an `n − f` any-`BIND` quorum containing
-  `BIND v`, `f + 1` `VOTE v`s and `|Valid| > 1`, gated on the ghost bound
-  value. -/
+  `BIND v`, `f + 1` `VOTE v`s and `|Valid| > 1`. -/
   | retB (s : ImplState P.n) (id : Fin P.n) (v : Bool)
-      (hb : s.bound = some v)
       (hcnt : P.n - P.f ≤ s.bindCount id)
       (honce : ∃ k, Msg.bind (some v) ∈ s.recv id k)
       (hvote : P.f + 1 ≤ s.recvCount id (.vote (some v)))
       (hval : s.bothValid P id)
       (hr : (s.proc id).returned = false) :
-      ImplStep P r s (.retG r id (.B v) v)
+      ImplStep P r s (.retG r id (.B v))
         (PMF.pure (s.setProc id { s.proc id with returned := true }))
   /-- `C`-return (wait case (c)): an `n − f` `BIND ⊥` quorum and
-  `|Valid| > 1`, gated on the ghost bound value; locks the ghost grade to the
-  `C`-side (D7). -/
-  | retC (s : ImplState P.n) (id : Fin P.n) (v : Bool)
-      (hb : s.bound = some v)
+  `|Valid| > 1`. -/
+  | retC (s : ImplState P.n) (id : Fin P.n)
       (hcnt : P.n - P.f ≤ s.recvCount id (.bind none))
       (hval : s.bothValid P id)
       (hr : (s.proc id).returned = false) :
-      ImplStep P r s (.retG r id .C v)
-        (PMF.pure ((s.setProc id { s.proc id with returned := true }).setGrade
-          (some false)))
+      ImplStep P r s (.retG r id .C)
+        (PMF.pure (s.setProc id { s.proc id with returned := true }))
   /-- Corruption (deviation D1). -/
   | fail (s : ImplState P.n) (id : Fin P.n) :
       ImplStep P r s (.fail id) (PMF.pure (s.corrupt P id))

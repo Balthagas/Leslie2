@@ -420,17 +420,16 @@ inductive CoreStep (P : Params) :
       (hF : id ∈ s.F) :
       CoreStep P s (.callG r id b) (PMF.pure s)
   /-- Honest GBCA return: record the graded outcome — `A b`/`B b` set the
-  estimate to `b`, `C` clears it to `⊥` — and head for the coin. The `bound`
-  payload is ignored by the core. -/
-  | retG (s : CoreState P.n) (r : ℕ) (id : Fin P.n) (out : GbcaOut) (bound : Bool)
+  estimate to `b`, `C` clears it to `⊥` — and head for the coin. -/
+  | retG (s : CoreState P.n) (r : ℕ) (id : Fin P.n) (out : GbcaOut)
       (hph : (s.procs id).phase = .awaitG) (hr : (s.procs id).round = r) :
-      CoreStep P s (.retG r id out bound)
+      CoreStep P s (.retG r id out)
         (PMF.pure (s.setProc id { s.procs id with
           est := out.est, lastGrade := some out, phase := .toCallW }))
   /-- Byzantine GBCA-return driver (deviation D11). -/
-  | retGByz (s : CoreState P.n) (r : ℕ) (id : Fin P.n) (out : GbcaOut) (bound : Bool)
+  | retGByz (s : CoreState P.n) (r : ℕ) (id : Fin P.n) (out : GbcaOut)
       (hF : id ∈ s.F) :
-      CoreStep P s (.retG r id out bound) (PMF.pure s)
+      CoreStep P s (.retG r id out) (PMF.pure s)
   /-- Honest WCC call. -/
   | callW (s : CoreState P.n) (r : ℕ) (id : Fin P.n)
       (hph : (s.procs id).phase = .toCallW) (hr : (s.procs id).round = r) :
@@ -529,8 +528,8 @@ theorem core_isLTS (P : Params) : (core P).IsLTS := by
     · exact .callGByz s r id b hF
 
 @[simp] theorem coreStep_retG_iff (P : Params) (s : CoreState P.n) (r : ℕ)
-    (id : Fin P.n) (out : GbcaOut) (bound : Bool) (μ : PMF (CoreState P.n)) :
-    CoreStep P s (.retG r id out bound) μ ↔
+    (id : Fin P.n) (out : GbcaOut) (μ : PMF (CoreState P.n)) :
+    CoreStep P s (.retG r id out) μ ↔
       ((s.procs id).phase = .awaitG ∧ (s.procs id).round = r ∧
         μ = PMF.pure (s.setProc id { s.procs id with
           est := out.est, lastGrade := some out, phase := .toCallW })) ∨
@@ -541,8 +540,8 @@ theorem core_isLTS (P : Params) : (core P).IsLTS := by
     case retG hph hr => exact Or.inl ⟨hph, hr, rfl⟩
     case retGByz hF => exact Or.inr ⟨hF, rfl⟩
   · rintro (⟨hph, hr, rfl⟩ | ⟨hF, rfl⟩)
-    · exact .retG s r id out bound hph hr
-    · exact .retGByz s r id out bound hF
+    · exact .retG s r id out hph hr
+    · exact .retGByz s r id out hF
 
 @[simp] theorem coreStep_callW_iff (P : Params) (s : CoreState P.n) (r : ℕ)
     (id : Fin P.n) (μ : PMF (CoreState P.n)) :

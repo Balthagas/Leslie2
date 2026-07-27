@@ -28,10 +28,11 @@ correct-process Validity. The `f + 1` `SuppOK` support counts are the
 *invariant machinery* that makes this provable, not the predicate itself.
 Safety only: no termination/liveness/unpredictability/fairness.
 
-**Deviation numbering.** D2 is intentionally unused; the set in use across the
-ABA docstrings is **D1, D3–D16**, with D12 refined to **D12′** (per-process
-DECIDED pools). D13/D14 are the Validity repairs; D15/D16 the core-simulation
-redesign.
+**Deviation numbering.** D2, D6 and D7 are intentionally unused; the set in use
+across the ABA docstrings is **D1, D3–D5, D8–D16**, with D12 refined to **D12′**
+(per-process DECIDED pools). D13/D14 are the Validity repairs, D15 the
+F-blind counting form of their support guards (`f+1` callers-or-corrupted),
+D16 the ultra-lazy twin of the core simulation.
 
 ## Reading order
 
@@ -39,26 +40,26 @@ redesign.
 | file | lines | what it is |
 |---|---|---|
 | `Params.lean` | 78 | The protocol parameters `P : Params` — `n`, `f` (with `n > 3f`), the coin distribution `coinPMF` and its ε-bounds. Everything is parametrized by `P`. |
-| `Labels.lean` | 147 | The single label alphabet `Lab n`: visible API (`callABA`/`retABA`/`fail`), hidden handshakes (`callG`/`retG`/`callW`/`retW`, round-tagged), `τ`; the `hiddenAPI` selector used by `abstract`; round projections. |
+| `Labels.lean` | 145 | The single label alphabet `Lab n`: visible API (`callABA`/`retABA`/`fail`), hidden handshakes (`callG`/`retG`/`callW`/`retW`, round-tagged), `τ`; the `hiddenAPI` selector used by `abstract`; round projections. |
 
 ### Layer 1 — the three specifications
 | file | lines | what it is |
 |---|---|---|
 | `Spec.lean` | 225 | **The top-level ABA specification** (`ABA.spec`): a small PLTS over `SpecState` (`F`, `ret`, `val`, `bind`, `coin`, `call`) with 10 rules (incl. the `callByzFill` τ-rule). Carries the **D3** Agreement repair (rule 7 guard `val = ⊥ ∨ b = val`) *and* the **D13** Validity repair: ghost `input` (rule 1 unconditional, rule 2 first-write-wins), the rule-4 `f+1`-support bind guard, the provenance-preserving rule-7 re-propose guard, and the `callByzFill` τ-rule. This is the system all safety is measured against. |
 | `WCCSpec.lean` | 114 | The Weak Common Coin **specification** (per-round instance): call quorum, then a genuine `coinPMF` flip — the only probabilistic step in the whole stack. Held at spec level by design (assumed, not implemented). |
-| `GBCASpec.lean` | 175 | The Graded Binary Consensus **specification** (per-round instance): call slots, quorum-gated binding, grades (A/B/C), returns. **D14**: `bindSet`/`retB`/`retC` require `f+1` F-blind callers (`call = b ∨ ∈ F`, the D15 `SuppOK` form) instead of a single witness; with at most `f` ever corrupted, any such set contains a never-corrupted genuine caller — the fix that makes paper-form Validity provable. |
+| `GBCASpec.lean` | 182 | The Graded Binding Crusader Agreement **specification** (per-round instance): call slots, quorum-gated binding, grades (A/B/C), returns. The `A`/`B`-returns hand out the bound value; the bind-free `C`-return hands out no bit. **D14**: every provenance guard is an `f+1` F-blind count of callers (`call = b ∨ ∈ F`, the D15 `SuppOK` form) rather than a single witness — on the bound bit at `bindSet`, on the dissenting bit at `retB`, and on **both** bits at `retC`, which is what certifies that no single bit can be handed out. With at most `f` ever corrupted, any such set contains a never-corrupted genuine caller — the fix that makes paper-form Validity provable. |
 
 ### Layer 2 — spec-level safety of ABA
 | file | lines | what it is |
 |---|---|---|
-| `SpecSafety.lean` | 930 | The trace predicates `ValidityTrace`/`AgreementTrace`, the spec invariant `SpecInv`, and `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. `ValidityTrace` is **paper-form** (D13): positional (`t.get? k`), each return's bit witnessed by a preceding `callABA` from one `NeverCorrupted` caller (the `f+1` `SuppOK` counts are the invariant machinery), with the provenance conjuncts `call_prov`/`bind_supp`/`val_supp`/`bound_prov`. Also `safety_transfer` (refinement + spec safety ⇒ implementation safety). Where the D3+D13 repairs prove their worth. |
+| `SpecSafety.lean` | 929 | The trace predicates `ValidityTrace`/`AgreementTrace`, the spec invariant `SpecInv`, and `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. `ValidityTrace` is **paper-form** (D13): positional (`t.get? k`), each return's bit witnessed by a preceding `callABA` from one `NeverCorrupted` caller (the `f+1` `SuppOK` counts are the invariant machinery), with the provenance conjuncts `call_prov`/`bind_supp`/`val_supp`/`bound_prov`. Also `safety_transfer` (refinement + spec safety ⇒ implementation safety). Where the D3+D13 repairs prove their worth. |
 
 ### Layer 3 — GBCA: implementation and refinement
 | file | lines | what it is |
 |---|---|---|
-| `GBCAImpl.lean` | 528 | The blueprint's **GBCA implementation** `alg:GBCA` (echo/vote message counting) as a per-round PLTS. This is a **4-round compression** of ABDY22's 5-round Algorithm 6 (the `echo5` round elided, decide conditions read one level down), not a transcription of it — the theorems still hold under `n > 3f`. |
-| `GBCASim.lean` | 1270 | The per-instance forward simulation `GBCA.impl ⊑ GBCA.spec` (`implRefines`) — invariant + step matching. The largest single proof outside the core simulation. |
-| `GBCAFamily.lean` | 133 | Lifts the per-instance refinement to the ℕ-indexed **family** (`familyRefines`) via the framework's family congruence. |
+| `GBCAImpl.lean` | 449 | The blueprint's **GBCA implementation** `alg:GBCA` (echo/vote message counting) as a per-round PLTS. The state is the protocol's own data — per-process local states, the D5 set-based network, `F` — and the three returns are Algorithm 2's three wait-until cases verbatim, reading nothing beyond the receipts those cases name; the specification's `bind`/`grade` are abstractions of those receipt patterns and live only on the specification side. This is a **4-round compression** of ABDY22's 5-round Algorithm 6 (the `echo5` round elided, decide conditions read one level down), not a transcription of it — the theorems still hold under `n > 3f`. |
+| `GBCASim.lean` | 1636 | The per-instance forward simulation `GBCA.impl ⊑ GBCA.spec` (`implRefines`) — invariant + step matching, **lazy-bind**: the specification's bookkeeping is carried as receipt certificates (`bind_cert`, an `n − f` `ECHO v` quorum; `gradeA_ev`/`gradeC_ev`, `n − f` `BIND v`/`BIND ⊥` quorums), and the specification's internal `bindSet` fires inside a weak step at the **first** `A`/`B`-return (`firstRetA_burst`/`firstRetB_burst`), so a run that only ever `C`-returns never binds. The largest single proof outside the core simulation. |
+| `GBCAFamily.lean` | 139 | Lifts the per-instance refinement to the ℕ-indexed **family** (`familyRefines`) via the framework's family congruence. |
 
 ### Layer 4 — the algorithm and its composition
 | file | lines | what it is |
@@ -69,14 +70,14 @@ redesign.
 ### Layer 5 — the core simulation (`hybridSpec ⊑ ABA.spec`)
 | file | lines | what it is |
 |---|---|---|
-| `CoreSimRel.lean` | 3738 | The relation and the heavy lifting: the abstract-twin constraints `Abs` (ultra-lazy two-phase twin: `coin_bot`, `phase`) plus the frame lemma, the concrete invariant `Inv` (~30 conjuncts, incl. the I26/I27 `bind_supp`/`clock_supp` support pools and the D12′ per-bit DECIDED conjuncts), `DissentResidue`, invariant preservation for every step class, quorum transfer. Read the two structure docstrings first; `../DESIGN-CoreSim.md` is the narrative version. |
+| `CoreSimRel.lean` | 3886 | The relation and the heavy lifting: the abstract-twin constraints `Abs` (ultra-lazy two-phase twin: `coin_bot`, `phase`) plus the frame lemma, the concrete invariant `Inv` (~30 conjuncts, incl. the I26/I27 `bind_supp`/`clock_supp` support pools and the D12′ per-bit DECIDED conjuncts) with its round skeleton keyed on `Closed g r := (g r).bind ≠ none ∨ (g r).grade = some false`, `DissentResidue`, invariant preservation for every step class, quorum transfer. Read the two structure docstrings first; `../DESIGN-CoreSim.md` is the narrative version. |
 | `CoreSimBurst.lean` | 184 | The abstract τ-burst kit: `fill_chain`, `byz_fill_chain`, `rebind_mixed`/`rebind_unanim`, `weakStep_of_burst_then_step` — how the twin catches up in one weak step; bursts fire only at `retABA`. |
 | `CoreSim.lean` | 690 | The simulation proof itself, one row per concrete step class (stutters + the single `decide_burst` + the coupled coin row + `retABA` burst-then-return), assembled into `coreSim`. |
 
 ### Layer 6 — results
 | file | lines | what it is |
 |---|---|---|
-| `Main.lean` | 94 | The deliverables: `refines` (trace-distribution inclusion), `main` (Validity ∧ Agreement for every positive-mass trace of `hybridImpl` — GBCA at impl level, WCC assumed at spec level), `simComposed` (the single composed simulation via transitivity). `#guard_msgs` axiom firewall — the build fails if any of them ever acquires `sorryAx`. |
+| `Main.lean` | 89 | The deliverables: `refines` (trace-distribution inclusion), `main` (Validity ∧ Agreement for every positive-mass trace of `hybridImpl` — GBCA at impl level, WCC assumed at spec level), `simComposed` (the single composed simulation via transitivity). `#guard_msgs` axiom firewall — the build fails if any of them ever acquires `sorryAx`. |
 | `Examples.lean` | 600 | Non-vacuity: a concrete n = 4, f = 1, ε = 1/2 happy-path run carried all the way to a `retABA` decision (21 steps) — **on `hybridSpec`**; `hybridImpl` (the system `main` is about) is witnessed to a single step, and the positive-probability remark is informal (no machine-checked `achievableTraceDists` membership on either side — see Future work). |
 
 ## Future work
@@ -94,7 +95,7 @@ redesign.
 ## Shared framework (`../Framework/`)
 | file | lines | what it is |
 |---|---|---|
-| `TraceSupport.lean` | 420 | Bridge from trace-distribution inclusion to per-trace properties (support-level safety transfer). |
+| `TraceSupport.lean` | 506 | Bridge from trace-distribution inclusion to per-trace properties (support-level safety transfer). |
 | `IdleFamily.lean` | 117 | ℕ-indexed instance families with idle self-loops — how round-`r` instances ignore other rounds' labels under full-sync `parallel`. |
 | `FamilySim.lean` | 328 | Congruence: per-instance refinement lifts to the family. |
 

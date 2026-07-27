@@ -11,15 +11,20 @@ import Leslie2Protocols.Framework.IdleFamily
 # The GBCA specification instance (blueprint Transition System 2)
 
 The round-`r` instance of the Graded Binding Crusader Agreement specification.
-Binding is *linearised*: an internal τ-transition fixes the bound value once a
-quorum has spoken with an honest witness, and every return label carries the
-bound value (`retG r id out bound`), so Binding becomes a per-label property.
+Binding is internal specification state: the τ-transition `bindSet` fixes the
+`bind` field once a quorum has spoken and `f + 1` F-blind supporters back the
+bit. The `A`- and `B`-returns hand out that bound value, and the bit they hand
+out is the one their graded outcome names (`A v`, `B v`); the `C`-return hands
+out no bit, so its label is the bare `C`.
 
 Grades: `A b` (decide `b`), `B b` (adopt `b`), `C` (no output; adopt the
 coin). The `grade` field (`some true` ≈ grade `1`/A-side, `some false` ≈
 grade `0`/C-side) enforces the A/C exclusivity of Graded Agreement: once an
-`A`-return happened no `C`-return can, and vice versa. `B`- and `C`-returns
-additionally require `f + 1` dissenting callers (`call id' = 1 − bind`).
+`A`-return happened no `C`-return can, and vice versa. A `B`-return
+additionally requires `f + 1` callers supporting the dissenting bit
+(`call id' = 1 − bind`); a `C`-return requires `f + 1` callers supporting
+`true` and `f + 1` supporting `false`, which is what certifies that no single
+bit can be handed out.
 
 * **D14 (repair, load-bearing).** The blueprint's TS 2 certifies `bindSet`
   by a *single* honest witness (`∃ id ∉ F, call id = b`), and `B`/`C`
@@ -32,9 +37,9 @@ additionally require `f + 1` dissenting callers (`call id' = 1 − bind`).
   `retB`-adopt everywhere, round-1 unanimity decides `1`, `fail 0`,
   `retABA 1 1` — never-corrupted processes all input `0`). ABDY22's
   implementation carries the `f + 1` via Valid-set relay thresholds; TS 2
-  abstracted it to one witness. Repair (D15): `bindSet`'s witness and
-  the `retB`/`retC` dissent guards become
-  `f + 1 ≤ #{id | call id = some b ∨ id ∈ F}` (resp. for `!v`) — exactly
+  abstracted it to one witness. Repair (D15): `bindSet`'s witness, the
+  `retB` dissent guard and each of the `retC` guards is a count
+  `f + 1 ≤ #{id | call id = some b ∨ id ∈ F}` at the relevant bit — exactly
   TS 1's `SuppOK` shape (D13), directly `F`-blind: the count is monotone
   in `F` and in `call`, so it is immune to later `fail`s. Provenance
   survives verbatim: `F` is monotone with `|F_final| ≤ f`, so among `f + 1`
@@ -115,24 +120,26 @@ inductive Step (P : Params) (r : ℕ) :
       (hw : P.f + 1 ≤ (Finset.univ.filter
         (fun id' => s.call id' = some (!v) ∨ id' ∈ s.F)).card)
       (hr : s.ret id = false) :
-      Step P r s (.retG r id (.B v) v)
+      Step P r s (.retG r id (.B v))
         (PMF.pure { s with ret := Function.update s.ret id true })
   /-- `A`-return: decide the bound value (locks the grade to the A-side). -/
   | retA (s : SpecState P.n) (id : Fin P.n) (v : Bool)
       (hb : s.bind = some v)
       (hg : s.grade = none ∨ s.grade = some true)
       (hr : s.ret id = false) :
-      Step P r s (.retG r id (.A v) v)
+      Step P r s (.retG r id (.A v))
         (PMF.pure { s with grade := some true, ret := Function.update s.ret id true })
-  /-- `C`-return: no output (locks the grade to the C-side; `f + 1`
-  dissenting supporters, D15). -/
-  | retC (s : SpecState P.n) (id : Fin P.n) (v : Bool)
-      (hb : s.bind = some v)
-      (hw : P.f + 1 ≤ (Finset.univ.filter
-        (fun id' => s.call id' = some (!v) ∨ id' ∈ s.F)).card)
+  /-- `C`-return: no output. Both bits carry `f + 1` F-blind support (D15),
+  which is what makes handing out no bit the right answer; the grade is
+  locked to the C-side. -/
+  | retC (s : SpecState P.n) (id : Fin P.n)
+      (hwT : P.f + 1 ≤ (Finset.univ.filter
+        (fun id' => s.call id' = some true ∨ id' ∈ s.F)).card)
+      (hwF : P.f + 1 ≤ (Finset.univ.filter
+        (fun id' => s.call id' = some false ∨ id' ∈ s.F)).card)
       (hg : s.grade = none ∨ s.grade = some false)
       (hr : s.ret id = false) :
-      Step P r s (.retG r id .C v)
+      Step P r s (.retG r id .C)
         (PMF.pure { s with grade := some false, ret := Function.update s.ret id true })
   /-- Corruption (deviation D1). -/
   | fail (s : SpecState P.n) (id : Fin P.n) :

@@ -377,7 +377,7 @@ theorem coreSim (P : Params) :
       rcases hybrid_step_tau P g c w μ_C hstep with
         ⟨r, μr, hstepG, rfl⟩ | ⟨μc, hstepC, rfl⟩ | ⟨r, μw', hstepW, rfl⟩ |
         ⟨r, id, b, μr, μc, hstepG, hstepC, rfl⟩ |
-        ⟨r, id, out, bound, μr, μc, hstepG, hstepC, rfl⟩ |
+        ⟨r, id, out, μr, μc, hstepG, hstepC, rfl⟩ |
         ⟨r, id, μw', μc, hstepW, hstepC, rfl⟩ | ⟨r, id, b, μw', μc, hstepW, hstepC, rfl⟩
       · -- row 3: `bindSet` (`gbcaTau`) — the ultra-lazy twin (D16) always stutters
         obtain ⟨ω, hRel, hWeak⟩ := stutter_step _ a (fun s' hs' => by
@@ -425,7 +425,7 @@ theorem coreSim (P : Params) :
             PMF.mem_support_map_iff] at hs'
           obtain ⟨⟨gr', hgr', heq⟩, h2, h3⟩ := hs'
           exact ⟨hI', by
-            rw [← heq, h3]; exact hAbs.step_retG r id out bound hstepG hstepC hgr' h2⟩)
+            rw [← heq, h3]; exact hAbs.step_retG r id out hstepG hstepC hgr' h2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
       · -- row: callW handshake
         obtain ⟨ω, hRel, hWeak⟩ := stutter_step _ a (fun s' hs' => by
@@ -636,7 +636,7 @@ theorem coreSim (P : Params) :
         rw [hbid]
         exact weakStep_strong (SpecStep.ret a id b hvalb hretfalse)
     | callG r id b => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
-    | retG r id out bound => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
+    | retG r id out => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | callW r id => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | retW r id b => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | fail id =>

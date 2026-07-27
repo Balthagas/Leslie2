@@ -95,13 +95,19 @@ theorem instRel_corrupt (P : Params) (r : ℕ) (id : Fin P.n)
       ret_eq := fun k => by
         rw [specCorrupt_ret, ImplState.corrupt_proc]
         exact hR.ret_eq k
-      bind_eq := by
-        rw [specCorrupt_bind, ImplState.corrupt_bound]
-        exact hR.bind_eq
-      grade_eq := by
-        rw [specCorrupt_grade, ImplState.corrupt_grade]
-        exact hR.grade_eq
-      F_eq := corrupt_F_lockstep hR.F_eq id }
+      F_eq := corrupt_F_lockstep hR.F_eq id
+      bind_cert := fun v hv => by
+        rw [specCorrupt_bind] at hv
+        obtain ⟨i, hi⟩ := hR.bind_cert v hv
+        exact ⟨i, by rw [ImplState.corrupt_recvCount]; exact hi⟩
+      gradeA_ev := fun hg => by
+        rw [specCorrupt_grade] at hg
+        obtain ⟨v, i, hi⟩ := hR.gradeA_ev hg
+        exact ⟨v, i, by rw [ImplState.corrupt_recvCount]; exact hi⟩
+      gradeC_ev := fun hg => by
+        rw [specCorrupt_grade] at hg
+        obtain ⟨i, hi⟩ := hR.gradeC_ev hg
+        exact ⟨i, by rw [ImplState.corrupt_recvCount]; exact hi⟩ }
 
 /-- `instRel` is compatible with the family broadcast transforms: the `hglob`
 hypothesis of `ForwardSimulation.family` for the GBCA families (only `fail`

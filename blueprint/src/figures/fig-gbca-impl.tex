@@ -22,10 +22,9 @@
     (bnd) edge node[lbl, sloped, above]{$n{-}f$ BIND\,$b$} (ra)
     (bnd) edge node[lbl, above]{$f{+}1$ VOTE\,$b$} (rb)
     (bnd) edge node[lbl, sloped, below]{$n{-}f$ BIND\,$\bot$} (rc);
-  % D5 network / D6,D7 ghost side box, below the row
+  % D5 network side box, below the row
   \node[draw, dashed, rounded corners, align=left, font=\footnotesize,
         below=1.9cm of vot, minimum width=8.2cm, inner sep=5pt] (net)
-    {\textbf{D5 network} (per-sender sent/recv sets):\ \ adversary $\mathrm{deliver}$,\ \ byz inject $j\in F$\\
-     \textbf{ghosts}:\ \ $bound$ (D6, write-once),\ \ $grade$ (D7, write-only)};
+    {\textbf{D5 network} (per-sender sent/recv sets):\ \ adversary $\mathrm{deliver}$,\ \ byz inject $j\in F$};
   \draw[dotted, ->] (net.north) -- (vot.south);
 \end{tikzpicture}
