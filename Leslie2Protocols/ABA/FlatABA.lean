@@ -1671,9 +1671,9 @@ theorem preImpl_step_of_flatPre (P : Params)
 /-! ### The two simulations
 
 The forward direction is a strong functional matching along `unflat`. The
-backward direction is its converse: `unflat` is not injective — flat states whose
-copies of the corrupted set disagree have no preimage — but it reflects steps,
-which is enough to run the same coupling backwards along its graph. -/
+backward direction is its converse: `unflat` is not surjective — flat states
+whose copies of the corrupted set disagree have no preimage — but it reflects
+steps, which is enough to run the same coupling backwards along its graph. -/
 
 /-- The flat presentation simulates the hybrid, along the graph of the packing
 map. -/

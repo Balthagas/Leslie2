@@ -2107,6 +2107,145 @@ The message pools, the receipt rows and the control records each belong to one
 process, and every quorum count is taken over one node's rows.
 }
 
+The two theorems above treat one layer at a time, and each leaves the layer boundary of Definition~\ref{def:aba-hybrids} in place.
+Two statements close the presentation.
+The first substitutes both per-process layers into the hybrid at once, so that every implemented box of the composition is a composition of one automaton per process.
+The second removes the boundary: the round loop of a process and its graded-agreement stages become a single automaton, and the hybrid becomes $n$ programs beside the coin oracle.
+Both rest on a matching the layer theorems do not need, in which the abstract state is a function of the concrete one.
+
+\begin{definition}[Functional strong matchings]
+  \label{def:strongfunctional}
+  \lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional}\lean{PLTS.ProbabilisticForwardSimulation.congr_rel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_diracRel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_converse}\lean{PLTS.prodPMF_map_swap}\lean{PLTS.System.parallel_swap_step}\leanok
+  \uses{def:forwardsim}
+  Let $f : State_C \to State_A$ carry $sys_C.init$ to $sys_A.init$ and carry every transition $s \xrightarrow{l} \mu$ of $sys_C$ to the transition $f\,s \xrightarrow{l} \mu.\mathrm{map}\,f$ of $sys_A$ on the same label.
+  Then the graph of $f$, the relation $R\,s\,\nu \iff \nu = \delta_{f\,s}$, is a probabilistic forward simulation of $sys_C$ by $sys_A$.
+  Neither system need be an LTS.
+  The pushforward $\mu.\mathrm{map}\,f$ matches $\mu$ outcome by outcome, so the coupling is the pushforward of $\mu$ along $s \mapsto (s, \delta_{f\,s})$ and the abstract side answers with its single strong step, read as a weak transition.
+  The converse statement holds for a step-reflecting map.
+  Let $f : State_A \to State_C$ carry $sys_A.init$ to $sys_C.init$, and let every transition $f\,q \xrightarrow{l} \mu$ of $sys_C$ be $\mu = \nu.\mathrm{map}\,f$ for some transition $q \xrightarrow{l} \nu$ of $sys_A$.
+  Then the converse of the graph of $f$, the relation $R\,p\,\nu \iff \exists q,\ \nu = \delta_q \wedge p = f\,q$, is a probabilistic forward simulation of $sys_C$ by $sys_A$.
+  Here $f$ need be neither injective nor surjective; states outside its image are simply unrelated.
+  Transport along a pointwise equivalence of relations restates either matching along the Dirac lift $\operatorname{diracRel}$, which is the shape the composed relations of the process algebra are built from.
+  The coordinate exchange $\mathrm{swap}(a,b) = (b,a)$ is such a matching between $sys_1 \parallel sys_2$ and $sys_2 \parallel sys_1$ in both directions, its step clause being that a product distribution pushed forward along $\mathrm{swap}$ is the product taken the other way round.
+\end{definition}
+
+\begin{theorem}[The assembled hybrid]
+  \label{thm:aba-assembly}
+  \lean{PLTS.ABA.perProcGBCAFamily}\lean{PLTS.ABA.perProcContext}\lean{PLTS.ABA.hybridPerProc}\lean{PLTS.ABA.atd_parallel_left}\lean{PLTS.ABA.hybridPerProc_atd}\lean{PLTS.ABA.hybridPerProc_safe}\leanok
+  \uses{thm:aba-gbca-perproc, thm:aba-core-perproc, def:aba-hybrids, def:achievable, def:strongfunctional}
+  Let $\mathrm{perProcGBCAFamily}(P)$ be the $\mathbb{N}$-indexed family of the instances $\mathrm{perProcInst}(P,r)$, and let
+  \[
+    \mathrm{perProcContext}(P) \;=\;
+      \mathrm{perProcCore}(P) \parallel \mathrm{WCC.specFamily}(P)
+  \]
+  be the context of Definition~\ref{def:aba-hybrids} with its core in per-process form.
+  Set
+  \[
+    \mathrm{hybridPerProc}(P) \;=\; \mathrm{abstract}_H\bigl(
+      \mathrm{perProcGBCAFamily}(P) \parallel \mathrm{perProcContext}(P)\bigr).
+  \]
+  Then $\operatorname{ATD}(\mathrm{hybridPerProc}(P)) = \operatorname{ATD}(\mathrm{hybridImpl}(P))$, and every trace of positive probability under an achievable trace distribution of $\mathrm{hybridPerProc}(P)$ satisfies Validity and Agreement.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:aba-gbca-perproc, thm:aba-core-perproc, thm:precong-parallel, thm:precong-abstract, thm:forward-sound, thm:aba-main, def:strongfunctional, def:idle-family}
+  The two per-instance GBCA matchings of Theorem~\ref{thm:aba-gbca-perproc} lift to the two families by the family congruence, whose broadcast hypothesis is that packing commutes with the corruption transform on $\mathrm{fail}(k)$, the one label the family broadcasts.
+  Both families are LTS, so each lifted matching is a probabilistic forward simulation, and so are the two core matchings of Theorem~\ref{thm:aba-core-perproc}.
+  Each of the four is transported into the composition by the precongruences for parallel composition (Theorem~\ref{thm:precong-parallel}) and for abstraction (Theorem~\ref{thm:precong-abstract}); the core occupies the right factor, so its two transports are the parallel precongruence conjugated by the coordinate exchange of Definition~\ref{def:strongfunctional}.
+  Soundness (Theorem~\ref{thm:forward-sound}) turns each transport into a trace-distribution inclusion, and the four chain by transitivity of $\subseteq$ into the two inclusions of the equality.
+  The coin oracle is never simulated: it is the fixed context of every precongruence step, which is what admits the argument although it is the one factor that is not an LTS.
+  Safety is Theorem~\ref{thm:aba-main} read along the equality.
+\end{proof}
+
+\begin{definition}[The program of one process]
+  \label{def:aba-flat}
+  \lean{PLTS.ABA.Flat.FlatNet}\lean{PLTS.ABA.Flat.FLab}\lean{PLTS.ABA.Flat.ABANode}\lean{PLTS.ABA.Flat.ABAProcStep}\lean{PLTS.ABA.Flat.ABAProc}\lean{PLTS.ABA.Flat.flatNetLabels}\lean{PLTS.ABA.Flat.flatGroup}\lean{PLTS.ABA.Flat.flatPre}\lean{PLTS.ABA.Flat.flatHybrid}\leanok
+  \uses{def:aba-core-perproc, def:aba-gbca-perproc, def:relabel, def:syncproduct, def:aba-hybrids}
+  The state of process $j$ is the node $\mathrm{ABANode}(n) = \mathrm{CoreNode}(n) \times (\mathbb{N} \to \mathrm{ProcNode}(n))$: the round-loop node of Definition~\ref{def:aba-core-perproc} together with one graded-agreement stage of Definition~\ref{def:aba-gbca-perproc} per round.
+  The automaton $\mathrm{ABAProc}(P,j)$ runs over the extended alphabet $\mathrm{Lab}(n) \oplus \mathrm{FlatNet}(n)$, where $\mathrm{FlatNet}$ carries both networks: $\mathrm{gnet}(r,i,j,m)$ is the round-$r$ stage delivery of $m$ from $j$ to $i$, and $\mathrm{dnet}(i,j,b)$ the delivery of $j$'s $\langle\mathrm{DECIDED},b\rangle$ to $i$.
+  Its forty-one rules split the alphabet by role, and every transition is Dirac.
+  On $\mathrm{callABA}(j,b)$ and $\mathrm{retABA}(j,b)$ only the round-loop half moves and no stage does.
+  The two sub-protocol handshakes of round $r$ are the labels on which the round-loop half and the round-$r$ stage of the \emph{same} process move together, so each of them is one fused rule.
+  A $\mathrm{callG}\,r\,j\,b$ fuses one of the two round-loop behaviours, honest or corrupted, with one of the two stage behaviours, the genuine call or the input-enabledness loop, which is four rules; a $\mathrm{retG}\,r\,j\,g$ fuses the two round-loop behaviours with the stage evidence that fixes the grade, which is six.
+  The $\mathrm{retG}$ rules are the only ones in which stage evidence guards a visible label.
+  On $\mathrm{callW}\,r\,j$ and $\mathrm{retW}\,r\,j\,c$ the automaton carries the round loop's half alone, the oracle's half being supplied at the outer composition.
+  On $\mathrm{fail}(k)$ the round-loop copy of the corrupted set and every stage copy are written at once.
+  Nine rules carry $\tau$: the DECIDED echo and the corrupted DECIDED injection of the round loop, and seven stage rules at an arbitrary round.
+  Each of the two networks is a two-party rendezvous split into the self, sender, receiver and bystander roles, eight rules in all.
+  Their guards differ by design: a DECIDED delivery is refused when the receiver already holds that payload from that sender, whereas a stage delivery carries no such guard, stage delivery being idempotent.
+  A Byzantine guard is read off the copy of the corrupted set belonging to the half it drives.
+  Every guard reads $j$'s node alone, and a label that $j$ does not own carries an idle self-loop, so full synchronisation lets that label's owner move.
+  The composites are
+  \[
+    \mathrm{flatGroup}(P) \;=\;
+      \mathrm{relabel}\Bigl(
+        \mathrm{abstract}_{\mathrm{flatNetLabels}}\bigl(
+          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{ABAProc}(P,j)
+        \bigr)\Bigr),
+  \]
+  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{ABANode}(n)$, and
+  \[
+    \mathrm{flatHybrid}(P) \;=\; \mathrm{abstract}_H\bigl(
+      \mathrm{flatGroup}(P) \parallel \mathrm{WCC.specFamily}(P) \bigr),
+  \]
+  whose argument is written $\mathrm{flatPre}(P)$.
+\end{definition}
+
+\begin{theorem}[ABA is $n$ programs and a coin oracle]
+  \label{thm:aba-flat}
+  \lean{PLTS.ABA.Flat.unflat}\lean{PLTS.ABA.Flat.flatSim}\lean{PLTS.ABA.Flat.flatSimConverse}\lean{PLTS.ABA.Flat.flatABA_atd}\lean{PLTS.ABA.Flat.flatABA_safe}\leanok
+  \uses{def:aba-flat, def:aba-hybrids, def:achievable}
+  For all parameters $P$,
+  \[
+    \operatorname{ATD}(\mathrm{flatHybrid}(P)) \;=\; \operatorname{ATD}(\mathrm{hybridImpl}(P)),
+  \]
+  and every trace of positive probability under an achievable trace distribution of $\mathrm{flatHybrid}(P)$ satisfies Validity and Agreement.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-flat, def:strongfunctional, thm:precong-abstract, thm:forward-sound, thm:aba-main, def:achievable}
+  Both systems of the statement are abstractions of the same shape, so it suffices to match $\mathrm{flatPre}(P)$ with $\mathrm{GBCA.implFamily}(P) \parallel (\mathrm{core}(P) \parallel \mathrm{WCC.specFamily}(P))$.
+  Define the unflattening map $\mathrm{unflat}$: it splits each array of a monolithic state along the process index, giving process $x$ the round-loop record, DECIDED pool and receipt rows of $x$ together with $x$'s row of every round's stage, and it leaves the coin oracle's coordinate untouched.
+  Every transition of either system other than the coin resolution is Dirac, and a transition and its image have the same successor, so $\mathrm{unflat}$ both commutes with steps and reflects them; the coin resolution appears on the two sides as the same pushforward of $\mathrm{coinPMF}$ and is matched by itself.
+  Definition~\ref{def:strongfunctional} therefore gives a probabilistic forward simulation along the graph of $\mathrm{unflat}$ and a second along its converse, neither system being an LTS.
+  The map is not surjective --- a flat state whose copies of the corrupted set disagree has no preimage --- which is why the backward direction is the converse of the graph and not the graph of an inverse.
+  Abstraction (Theorem~\ref{thm:precong-abstract}) transports both matchings, soundness (Theorem~\ref{thm:forward-sound}) turns each into a trace-distribution inclusion, and antisymmetry of $\subseteq$ gives the equality.
+  Safety is Theorem~\ref{thm:aba-main} read along the equality.
+\end{proof}
+
+\blueprintfig{fig-flat}{The flat presentation: the $n$ programs $\mathrm{ABAProc}(P,j)$ under $\mathrm{syncProduct}$, both networks hidden, the coin oracle beside the group.
+Each program holds one process's round loop and its stage of every round, and every guard of its forty-one rules reads that program's own node.
+The inner dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{flatNetLabels}$: every $\mathrm{gnet}(r,i,j,m)$ and every $\mathrm{dnet}(i,j,b)$ becomes $\tau$, the sender supplying its guard and the receiver performing the write while every other program idles.
+The outer dashed frame is $\mathrm{abstract}_H$, which hides the coin handshake $\mathrm{callW}/\mathrm{retW}$ between the group and the oracle; what leaves it is the API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ together with $\tau$.
+The dashed vertical is Theorem~\ref{thm:aba-flat}: the flat hybrid and $\mathrm{hybridImpl}$ achieve the same trace distributions, along the graph of $\mathrm{unflat}$ and its converse.}
+
+\dynamics{What is distributed and what is not}{%
+The flat presentation states the read-access claim in its sharpest form.
+Every implemented part of the protocol is $n$ programs.
+The round loop, the graded-agreement stage of each round, the DECIDED gossip and
+the stage network all sit inside $\mathrm{ABAProc}(P,j)$, and every guard of its
+forty-one rules is a function of $j$'s node.
+Two things stay centralized.
+The first is the corruption budget, exactly as in the layer theorems: the guard
+$k \notin F \wedge |F| < f$ is evaluated on each program's own copy of $F$, and
+the copies agree only because $\mathrm{fail}$ is a broadcast every program
+answers in lockstep.
+That is the adversary's bookkeeping and not the protocol's.
+The second is the coin oracle, and it is centralized of necessity.
+An $\varepsilon$-common coin is a correlation between processes: the assumption
+is that with probability at least $\varepsilon$ the processes of a round read the
+same bit.
+A correlation is not a property of any one process's state, so no assignment of
+the oracle's transitions to per-process rules expresses it.
+Writing the oracle as $n$ programs would mean supplying the protocol that
+produces the correlation, which is the layer this development assumes rather
+than proves.
+It is also the one factor whose transitions are not Dirac, which is why it
+survives both arguments untouched, as a fixed context in
+Theorem~\ref{thm:aba-assembly} and as a matched coordinate in
+Theorem~\ref{thm:aba-flat}.
+}
+
 \begin{thebibliography}{LeslieBP}
 
 \bibitem[ABDY22]{ABDY22}

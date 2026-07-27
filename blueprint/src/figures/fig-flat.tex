@@ -1,0 +1,49 @@
+% The flat presentation (PLTS.ABA.Flat.ABAProc, PLTS.ABA.Flat.flatHybrid):
+% n programs, both networks hidden, the coin oracle the one component that is not a process.
+\begin{tikzpicture}[
+    >={Stealth[round]}, semithick,
+    prog/.style={draw, rounded corners, align=center, font=\footnotesize,
+      minimum width=2.4cm, minimum height=1.5cm, inner sep=3pt},
+    box/.style={draw, rounded corners, align=center, font=\footnotesize,
+      minimum width=4.6cm, minimum height=0.9cm, inner sep=3pt},
+    lbl/.style={font=\scriptsize, fill=white, inner sep=1.5pt},
+    ann/.style={font=\scriptsize, align=center, inner sep=1.5pt}]
+  % the outer frame: the sub-protocol API hidden
+  \draw[dashed, rounded corners] (-1.3,-3.3) rectangle (11.0,3.5);
+  \node[font=\footnotesize] at (8.9,3.15) {$\mathrm{abstract}\,\mathrm{hiddenAPI}$};
+  % the inner frame: the two networks hidden
+  \draw[dashed, rounded corners] (-1.0,-1.62) rectangle (10.4,2.6);
+  \node[font=\footnotesize] at (7.6,2.33)
+    {$\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{flatNetLabels}$};
+  % the n programs
+  \node[prog] (p1) at (0.6,0.9)
+    {$\mathrm{ABAProc}(P,1)$\\ round loop\\ stages $r = 0,1,\dots$};
+  \node[prog] (pj) at (4.9,0.9)
+    {$\mathrm{ABAProc}(P,j)$\\ round loop\\ stages $r = 0,1,\dots$};
+  \node[prog] (pn) at (8.9,0.9)
+    {$\mathrm{ABAProc}(P,n)$\\ round loop\\ stages $r = 0,1,\dots$};
+  \node[font=\footnotesize] at (2.75,0.9) {$\cdots$};
+  \node[font=\footnotesize] at (6.9,0.9) {$\cdots$};
+  % the synchronised visible bus
+  \draw[thick] (-0.7,1.95) -- (10.1,1.95);
+  \foreach \x in {0.6,4.9,8.9} \draw[->] (\x,1.95) -- (\x,1.68);
+  \node[ann] at (1.8,2.33) {$\mathrm{Lab}(n)$: every program steps};
+  \draw[->] (10.1,1.95) -- (10.7,1.95) -- (10.7,3.85)
+    node[ann, above]{visible\\ $\mathrm{callABA}$, $\mathrm{retABA}$, $\mathrm{fail}$};
+  % the two hidden networks
+  \draw[thick] (-0.7,-0.55) -- (10.1,-0.55);
+  \foreach \x in {0.6,4.9,8.9} \draw[<->] (\x,0.12) -- (\x,-0.55);
+  \node[ann] at (4.7,-1.05)
+    {$\mathrm{gnet}(r,i,j,m)$ and $\mathrm{dnet}(i,j,b) \to \tau$: two-party rendezvous,\\
+     the sender's guard and the receiver's write, every other program idle};
+  % the coin oracle, outside the group
+  \node[box] (w) at (4.9,-2.5)
+    {$\mathrm{WCC.specFamily}(P)$: the coin oracle,\\ the one component that is not a process};
+  \draw[<->] (4.9,-1.62) -- (4.9,-2.05);
+  \node[ann, anchor=west] at (5.15,-1.84)
+    {$\mathrm{callW}\,r\,j$, $\mathrm{retW}\,r\,j\,c$};
+  % the monolithic hybrid
+  \node[box] (impl) at (4.9,-4.6) {monolithic hybrid\\ $\mathrm{hybridImpl}(P)$};
+  \draw[<->, dashed] (4.9,-3.3) --
+    node[lbl, right]{$\operatorname{ATD}$ equal, along $\mathrm{unflat}$} (impl.north);
+\end{tikzpicture}
