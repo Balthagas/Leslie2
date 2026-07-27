@@ -115,4 +115,6 @@ D16 the ultra-lazy twin of the core simulation.
 `Core`'s module docstring → `Hybrid` → `Main`. That path (≈ 600 lines of
 reading) gives the full statement-level picture; descend into Layer 3 and
 Layer 5 only when you want the proofs. For liveness context (deliberately out
-of scope here) see `../NOTES-Liveness-Roadmap.md`.
+of scope here) see `../NOTES-Liveness-Roadmap.md`; for how the encoding stands
+against the source blueprint and ABDY22 beyond the D-registry above, see
+`../NOTES-Fidelity.md`.
