@@ -869,10 +869,18 @@ Both resolve one coin, following
   At most $f$ processes are ever corrupted, so $f{+}1$ distinct supporters always include a never-corrupted one, and $3f < n$ supplies $n - 2f \ge f + 1$.
 \end{definition}
 
-\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification: the three control states \emph{unbound} ($bind = \bot$), \emph{bound} ($bind \neq \bot$, $val = \bot$) and \emph{decided} ($val$ set), with rules 1--8 as labelled transitions.
-The diagram draws each rule once; enabledness is wider: rule 2 fires in every state, rule 4 also re-binds from \emph{bound}, and rules 3, 5 and 6 remain enabled on \emph{decided}, where rule 3 rewrites $val$ to itself.
-Rule 4 (\texttt{mixed}) binds under a quorum on both bits with an $f{+}1$-support guard on the bound bit; rule 3 (\texttt{unanim}) decides, either directly from \emph{unbound} or from \emph{bound}, with $val\leftarrow\,!b$ when no honest process holds $b$.
-Rule 9 (\texttt{fail}), the total corruption rule (D1), and rule 10 (\texttt{callByzFill}), by which a corrupted $id\in F$ fills an empty call slot with no ghost record (D13), are omitted from the diagram.
+\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification, with its five control states and the coin branch.
+The states are \emph{unbound} ($bind = \bot$), \emph{bound} ($bind \neq \bot$, $coin = \bot$), \emph{coin differs} ($coin$ is the other bit or $\top$), \emph{coin agrees} ($coin$ is the bound bit), and \emph{decided} ($val \neq \bot$).
+Rule 5 (\texttt{coinFlip}) is the branch out of \emph{bound}, drawn with an undirected stem for the $\tau$-step and one edge per outcome.
+It is the only probabilistic transition of the system.
+Its outcomes carry $\varepsilon$, $\varepsilon$ and $1-2\varepsilon$, so a resolution matches the bound bit with probability $\varepsilon$.
+On a match rule 6 (\texttt{adopt}) writes the bound bit into an empty honest slot, and rule 7 (\texttt{repropose}) is disabled.
+On a mismatch rule 7 is enabled and rule 6 is disabled.
+Rule 4 (\texttt{mixed}) binds under a quorum on both bits, with an $f{+}1$-support guard on the bound bit.
+Rule 3 (\texttt{unanim}) writes $val \leftarrow\,!b$ when no honest process holds $b$.
+Enabledness is wider than the drawn edges show.
+Rule 2 fires in every state, rule 3 is also enabled on \emph{coin differs}, and rules 3 and 5 to 8 remain enabled on \emph{decided}, where rule 3 rewrites $val$ to itself.
+Rule 9 (\texttt{fail}), the total corruption rule (D1), and rule 10 (\texttt{callByzFill}), by which a corrupted $id\in F$ fills an empty call slot with no ghost record (D13), are omitted.
 The provenance guards on rules 4 and 7 exclude the unanimity-overwrite (D3) and later-corrupted-input (D13) traces.}
 
 \noindent\textbf{Transition System 1: the ABA specification.}
@@ -1008,7 +1016,7 @@ liveness statement, not proved here.
   \label{thm:aba-spec-safe}
   \lean{PLTS.ABA.spec_safe}\leanok
   \uses{def:aba-spec, thm:trace-support}
-  Every trace in the support of every achievable trace distribution of the repaired specification satisfies Validity and Agreement.\lean{PLTS.ABA.ValidityTrace}\leanok\lean{PLTS.ABA.AgreementTrace}\leanok
+  Every trace in the support of every achievable trace distribution of the repaired specification satisfies Validity and Agreement.\lean{PLTS.ABA.ValidityTrace}\leanok\lean{PLTS.ABA.AgreementTrace}\leanok{}
   Validity is the paper form: every return $\mathrm{retABA}\,id\,b$ at trace position $m$ is preceded by a call $\mathrm{callABA}\,id'\,b$ at some $k < m$ whose caller $id'$ is never corrupted anywhere along the trace.
   Agreement is that any two returns carry the same bit.
   Both predicates quantify over all returns, corrupted returners included, and are on that axis stronger than the contracts' correct-process phrasing.
@@ -1029,7 +1037,7 @@ liveness statement, not proved here.
   \uses{def:aba-labels, def:idle-family}
   Transition Systems 2 and 3 (round-indexed instances and their families):
   GBCA with linearised binding and graded returns, WCC with the
-  $\varepsilon$-probabilistic coin resolution. The GBCA side is an LTS.\lean{PLTS.ABA.GBCA.specFamily_isLTS}\leanok
+  $\varepsilon$-probabilistic coin resolution. The GBCA side is an LTS.\lean{PLTS.ABA.GBCA.specFamily_isLTS}\leanok{}
   The GBCA binding and its $B$- and $C$-returns each carry an $f{+}1$ $F$-blind support guard (SuppOK): $f{+}1$ distinct callers-or-corrupted of the relevant bit.
   Since at most $f$ processes are ever corrupted, one of the $f{+}1$ is a never-corrupted genuine caller (D15).
 \end{definition}
