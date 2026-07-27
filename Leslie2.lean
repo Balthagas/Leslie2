@@ -29,6 +29,7 @@ import Leslie2.Weak.WeakChar
 import Leslie2.Weak.WeakScheduler
 import Leslie2.Weak.WeakTransition
 import Leslie2.WeakClosure.Algorithm
+import Leslie2.WeakClosure.HaltMass
 import Leslie2.WeakClosure.ProbOf
 import Leslie2.WeakClosure.Scheduler
 import Leslie2.WeakClosure.Trace

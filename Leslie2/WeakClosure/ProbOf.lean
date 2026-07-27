@@ -94,7 +94,7 @@ private theorem reachAfter_we_init (ws : Scheduler sys^w) :
         rw [(of_ite_ne_zero hstep).1]; exact hinit₀
 
 /-- The committed abstract execution of any reachable configuration starts at `sys.init`. -/
-private theorem reachProb_we_init (ws : Scheduler sys^w) (c : Config sys)
+theorem reachProb_we_init (ws : Scheduler sys^w) (c : Config sys)
     (h : reachProb ws c ≠ 0) : c.we.init = sys.init := by
   rw [reachProb] at h
   obtain ⟨n, hn⟩ : ∃ n, reachAfter ws n c ≠ 0 := by
@@ -629,12 +629,12 @@ open Classical in
 `c₀` into the canonical entry config at `(⟨init, ofList L'⟩, E)` equals the total entry-`L'` step
 mass (over entries sharing `E`) times the outer draw `ws.next ⟨init, ofList L'⟩ (some (l, μ))`. -/
 private theorem step_entry_e_marg (ws : Scheduler sys^w) (L' : List (Label × State))
-    (l : Label) (μ : PMF State) (E : AlterSeq State Label) (c₀ : Config sys) :
-    (∑' t, step ws c₀ (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) (some (l, μ)) t))
+    (wt : Option (Label × PMF State)) (E : AlterSeq State Label) (c₀ : Config sys) :
+    (∑' t, step ws c₀ (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) wt t))
       = (∑' c' : {c' : Config sys //
             c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = E},
           step ws c₀ c'.1)
-        * ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) := by
+        * ws.next ⟨sys.init, Seq.ofList L'⟩ wt := by
   obtain ⟨we₀, e₀, wt₀, s₀, e'₀, t₀⟩ := c₀
   cases wt₀ with
   | none => simp only [step, tsum_zero, zero_mul]
@@ -644,7 +644,7 @@ private theorem step_entry_e_marg (ws : Scheduler sys^w) (L' : List (Label × St
     | some tp =>
       obtain ⟨l', μ'⟩ := tp
       rw [show (∑' t, step ws ⟨we₀, e₀, some (lw, μw), s₀, e'₀, some (l', μ')⟩
-              (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) (some (l, μ)) t)) = 0 from
+              (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) wt t)) = 0 from
           ENNReal.tsum_eq_zero.mpr (fun t => by
             simp only [step]; rw [if_neg]; rintro ⟨-, -, -, -, -, htr⟩
             exact append_cons_ne_nil _ _ _ htr.symm),
@@ -662,10 +662,10 @@ private theorem step_entry_e_marg (ws : Scheduler sys^w) (L' : List (Label × St
             Seq.nil)⟩ : AlterSeq State Label) = ⟨sys.init, Seq.ofList L'⟩ ∧
           (⟨e₀.init, e₀.trans.append e'₀.trans⟩ : AlterSeq State Label) = E
       · have hLHS : (∑' t, step ws ⟨we₀, e₀, some (lw, μw), s₀, e'₀, none⟩
-              (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) (some (l, μ)) t))
-            = ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) := by
+              (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) wt t))
+            = ws.next ⟨sys.init, Seq.ofList L'⟩ wt := by
           rw [tsum_congr (fun t => by rw [← hg.1, ← hg.2]), ← hg.1]
-          exact entryCfg_step_inner ws we₀ e₀ e'₀ lw μw s₀ (some (l, μ))
+          exact entryCfg_step_inner ws we₀ e₀ e'₀ lw μw s₀ wt
         rw [hLHS,
           show (∑' c' : {c' : Config sys //
                 c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = E},
@@ -700,7 +700,7 @@ private theorem step_entry_e_marg (ws : Scheduler sys^w) (L' : List (Label × St
             obtain ⟨he, hwe2, he', hsome, hnone⟩ := of_ite_ne_zero hcne
             exact ⟨hwe2, he, he', hsome, hnone⟩))
       · rw [show (∑' t, step ws ⟨we₀, e₀, some (lw, μw), s₀, e'₀, none⟩
-                (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) (some (l, μ)) t)) = 0 from
+                (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) wt t)) = 0 from
             ENNReal.tsum_eq_zero.mpr (fun t => by
               simp only [step, entryCfg]; rw [if_neg]; rintro ⟨he, hwe2, -, -, -⟩
               exact hg ⟨hwe2.symm, he.symm⟩),
@@ -727,16 +727,16 @@ marginalising the inner draw `t` of the start weight of the canonical entry conf
 `ws.next ⟨init, ofList L'⟩ (some (l, μ))`. Nonzero only at the start (`L' = []`, `E = ⟨init, nil⟩`),
 where it reduces to `baseCfg`/`base_sum`. -/
 private theorem base_entry_e_marg (ws : Scheduler sys^w) (L' : List (Label × State))
-    (l : Label) (μ : PMF State) (E : AlterSeq State Label) :
-    (∑' t, reachAfter ws 0 (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) (some (l, μ)) t))
+    (wt : Option (Label × PMF State)) (E : AlterSeq State Label) :
+    (∑' t, reachAfter ws 0 (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) wt t))
       = (∑' c' : {c' : Config sys //
             c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = E},
           reachAfter ws 0 c'.1)
-        * ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) := by
+        * ws.next ⟨sys.init, Seq.ofList L'⟩ wt := by
   by_cases hg : (⟨sys.init, Seq.ofList L'⟩ : AlterSeq State Label) = ⟨sys.init, Seq.nil⟩ ∧
       E = (⟨sys.init, Seq.nil⟩ : AlterSeq State Label)
-  · have hbase_eq : ∀ t, entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) (some (l, μ)) t
-        = baseCfg sys (some (l, μ)) t := by
+  · have hbase_eq : ∀ t, entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) wt t
+        = baseCfg sys wt t := by
       intro t; rw [hg.1, hg.2, lastOf_nil]; rfl
     rw [tsum_congr (fun t => by rw [hbase_eq t]), baseCfg_inner_sum,
       show (∑' c' : {c' : Config sys //
@@ -763,7 +763,7 @@ private theorem base_entry_e_marg (ws : Scheduler sys^w) (L' : List (Label × St
         obtain ⟨hwe, he, he', hsome, hnone⟩ := of_ite_ne_zero hcne
         exact ⟨hwe, he, he', hsome, hnone⟩))
   · rw [show (∑' t, reachAfter ws 0
-            (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) (some (l, μ)) t)) = 0 from
+            (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ E (lastOf E) wt t)) = 0 from
         ENNReal.tsum_eq_zero.mpr (fun t => by
           simp only [reachAfter]; rw [if_neg]; rintro ⟨hwe2, he2, -, -, -⟩
           exact hg ⟨hwe2, he2⟩),
@@ -803,11 +803,11 @@ theorem seg_entry_draw (ws : Scheduler sys^w)
     intro n
     rw [tsum_congr (fun t => by rw [hentAt t])]
     cases n with
-    | zero => exact base_entry_e_marg ws L' l μ c.e
+    | zero => exact base_entry_e_marg ws L' (some (l, μ)) c.e
     | succ m =>
       rw [tsum_congr (fun t => hRA m _), ENNReal.tsum_comm,
         tsum_congr (fun c₀ => by
-          rw [ENNReal.tsum_mul_left, step_entry_e_marg ws L' l μ c.e c₀, ← mul_assoc]),
+          rw [ENNReal.tsum_mul_left, step_entry_e_marg ws L' (some (l, μ)) c.e c₀, ← mul_assoc]),
         ENNReal.tsum_mul_right]
       congr 1
       rw [tsum_congr (fun c' : {c' : Config sys //
@@ -836,6 +836,64 @@ theorem seg_entry_draw (ws : Scheduler sys^w)
           reachProb ws c'.1) * ws.next ⟨sys.init, Seq.ofList L'⟩ (some (l, μ)) := by
         rw [tsum_congr (fun c' : {c' : Config sys //
           c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = c.e} =>
+            (hRP c'.1).symm)]
+
+open Classical in
+/-- **General entry-draw factorisation** (`seg_entry_draw` for an arbitrary outer draw `wt`, phrased
+via `entryCfg`). Marginalising the inner draw `t` of the canonical entry config at
+`(⟨init, ofList L'⟩, Ec)` with outer draw `wt` recovers the total entry-`L'` predecessor mass (over
+entries sharing the concrete prefix `Ec`) times `ws.next ⟨init, ofList L'⟩ wt`. At `wt = ⊥` this is
+the halt-draw marginal powering `MARG`. -/
+theorem reset_draw_marg (ws : Scheduler sys^w) (L' : List (Label × State))
+    (wt : Option (Label × PMF State)) (Ec : AlterSeq State Label) :
+    (∑' t, reachProb ws (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec) wt t))
+      = (∑' c' : {c' : Config sys //
+            c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec},
+          reachProb ws c'.1)
+        * ws.next ⟨sys.init, Seq.ofList L'⟩ wt := by
+  have hRP : ∀ d : Config sys, reachProb ws d = ∑' n, reachAfter ws n d := fun _ => rfl
+  have hRA : ∀ (m : ℕ) (d : Config sys),
+      reachAfter ws (m + 1) d = ∑' c₀, reachAfter ws m c₀ * step ws c₀ d := fun _ _ => rfl
+  have hlevel : ∀ n,
+      (∑' t, reachAfter ws n (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec) wt t))
+      = (∑' c' : {c' : Config sys //
+          c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec},
+        reachAfter ws n c'.1) * ws.next ⟨sys.init, Seq.ofList L'⟩ wt := by
+    intro n
+    cases n with
+    | zero => exact base_entry_e_marg ws L' wt Ec
+    | succ m =>
+      rw [tsum_congr (fun t => hRA m _), ENNReal.tsum_comm,
+        tsum_congr (fun c₀ => by
+          rw [ENNReal.tsum_mul_left, step_entry_e_marg ws L' wt Ec c₀, ← mul_assoc]),
+        ENNReal.tsum_mul_right]
+      congr 1
+      rw [tsum_congr (fun c' : {c' : Config sys //
+          c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec} =>
+            hRA m c'.1), ENNReal.tsum_comm]
+      exact tsum_congr (fun c₀ => (ENNReal.tsum_mul_left).symm)
+  calc (∑' t, reachProb ws (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec) wt t))
+      = ∑' t, ∑' n, reachAfter ws n (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec) wt t) :=
+        tsum_congr (fun t => hRP _)
+    _ = ∑' n, ∑' t, reachAfter ws n (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec) wt t) :=
+        ENNReal.tsum_comm
+    _ = ∑' n, (∑' c' : {c' : Config sys //
+            c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec},
+          reachAfter ws n c'.1) * ws.next ⟨sys.init, Seq.ofList L'⟩ wt :=
+        tsum_congr hlevel
+    _ = (∑' n, ∑' c' : {c' : Config sys //
+            c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec},
+          reachAfter ws n c'.1) * ws.next ⟨sys.init, Seq.ofList L'⟩ wt :=
+        ENNReal.tsum_mul_right
+    _ = (∑' c' : {c' : Config sys //
+            c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec},
+          ∑' n, reachAfter ws n c'.1) * ws.next ⟨sys.init, Seq.ofList L'⟩ wt := by
+        rw [ENNReal.tsum_comm]
+    _ = (∑' c' : {c' : Config sys //
+            c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec},
+          reachProb ws c'.1) * ws.next ⟨sys.init, Seq.ofList L'⟩ wt := by
+        rw [tsum_congr (fun c' : {c' : Config sys //
+          c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec} =>
             (hRP c'.1).symm)]
 
 open Classical in

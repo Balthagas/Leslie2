@@ -112,7 +112,7 @@ private theorem lastOf_of_stateAt {e : AlterSeq State Label} {n : ℕ} {s : Stat
 open Classical in
 /-- If a configuration with a pending inner draw (`c.t = some p`) is reachable, then its weak
 step is active (`c.wt = some q`): the inner-loop `t` is only ever set while a weak step runs. -/
-private theorem reachAfter_t_wt (ws : Scheduler sys^w) (n : ℕ) (c : Config sys)
+theorem reachAfter_t_wt (ws : Scheduler sys^w) (n : ℕ) (c : Config sys)
     (p : Label × PMF State) (hreach : reachAfter ws n c ≠ 0) (ht : c.t = some p) :
     ∃ q, c.wt = some q := by
   cases n with
@@ -150,6 +150,59 @@ private theorem reachAfter_t_wt (ws : Scheduler sys^w) (n : ℕ) (c : Config sys
         cases hwt : c.wt with
         | none => exfalso; rw [hwt] at h2; simp only [ht] at h2; simp at h2
         | some q => exact ⟨q, rfl⟩
+
+open Classical in
+/-- **Active weak steps of an internal-only outer scheduler are internal.** If the outer scheduler
+`ws` only ever emits `τ` (as a `WeakScheduler sys^w` does), then every reachable configuration whose
+weak step is active carries an internal label. The weak step is set only by draws from `ws` — the
+first draw (`reachAfter 0`) and each outer commit — and preserved by inner steps; at each draw the
+drawn transition lies in `ws.next _`'s support, so `hint` forces its label to `τ`. -/
+theorem reachAfter_wt_internal (ws : Scheduler sys^w)
+    (hint : ∀ (E : AlterSeq State Label) (l' : Label) (μ' : PMF State),
+      some (l', μ') ∈ (ws.next E).support → l' = Silent.τ) :
+    ∀ (n : ℕ) (c : Config sys), reachAfter ws n c ≠ 0 →
+      ∀ lw μw, c.wt = some (lw, μw) → lw = Silent.τ := by
+  intro n
+  induction n with
+  | zero =>
+    intro c hreach lw μw hwt
+    simp only [reachAfter] at hreach
+    by_cases hcond : (c.we = (⟨sys.init, Seq.nil⟩ : AlterSeq State Label) ∧
+        c.e = ⟨sys.init, Seq.nil⟩ ∧ c.e' = ⟨sys.init, Seq.nil⟩ ∧
+        (∀ p, c.wt = some p → c.s = schedOf sys sys.init p.1 p.2) ∧
+        (c.wt = none → c.s = Scheduler.halt sys))
+    · rw [if_pos hcond] at hreach
+      have hnext : ws.next ⟨sys.init, Seq.nil⟩ c.wt ≠ 0 := (mul_ne_zero_iff.mp hreach).1
+      rw [hwt] at hnext
+      exact hint _ lw μw ((PMF.mem_support_iff _ _).mpr hnext)
+    · rw [if_neg hcond] at hreach; exact absurd rfl hreach
+  | succ m ih =>
+    intro c hreach lw μw hwt
+    rw [reachAfter] at hreach
+    obtain ⟨c₀, hc₀⟩ : ∃ c₀, reachAfter ws m c₀ * step ws c₀ c ≠ 0 := by
+      by_contra hcon; push Not at hcon; exact hreach (ENNReal.tsum_eq_zero.mpr hcon)
+    rw [mul_ne_zero_iff] at hc₀
+    obtain ⟨hr₀, hstep⟩ := hc₀
+    obtain ⟨we₀, e₀, wt₀, s₀, e'₀, t₀⟩ := c₀
+    cases wt₀ with
+    | none => simp only [step] at hstep; exact absurd rfl hstep
+    | some wtp =>
+      obtain ⟨lw₀, μw₀⟩ := wtp
+      cases t₀ with
+      | some tp =>
+        obtain ⟨l', μ'⟩ := tp
+        simp only [step] at hstep
+        obtain ⟨_, _, hcwt, _, _, _⟩ := of_ite_ne_zero hstep
+        -- inner step: `c.wt = c₀.wt = some (lw₀, μw₀)`, so `lw = lw₀`; conclude by IH on `c₀`.
+        rw [hwt] at hcwt
+        obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hcwt)
+        exact ih _ hr₀ lw μw rfl
+      | none =>
+        simp only [step] at hstep
+        -- outer commit: `c.wt` is drawn from `ws.next weN`, so `hint` forces `lw = τ`.
+        have hfst := (mul_ne_zero_iff.mp (ne_zero_of_ite_ne_zero hstep)).1
+        rw [hwt] at hfst
+        exact hint _ lw μw ((PMF.mem_support_iff _ _).mpr hfst)
 
 open Classical in
 /-- **Inner-draw membership.** A reachable configuration with pending inner draw `c.t = some p`
@@ -618,6 +671,80 @@ private theorem reachDep_sum_le (ws : Scheduler sys^w) (exec : AlterSeq State La
     gcongr
     exact hbound.trans hmono
 
+open Classical in
+/-- **Genuine-halt flow bound (the linchpin).** The mass of *halted* configurations at a concrete
+trajectory `exec` (reset configs — `e' = nil` — with a halted inner loop and no active weak step)
+plus the total departure mass is at most the arrival mass. This is the `pH`-strengthening of
+`reachDep_sum_le` (which drops the halt term via `le_self_add`): here we keep `RP (pH exec)`.
+
+Equivalently `RP (pH exec) ≤ reachArr exec - ∑ₚ reachDep exec p`. Combined with
+`expandSched_haltMass_eq_flow` it bounds the genuine halt mass by `expandSched`'s halt mass —
+sandwich ingredient (i) for the crux `expandSched_haltMass_g_eq`. -/
+theorem reachProb_haltCfg_add_dep_le_reachArr (ws : Scheduler sys^w) (exec : AlterSeq State Label) :
+    (∑' c : {c : Config sys //
+        c.concat = exec ∧ c.e'.trans = Seq.nil ∧ c.t = none ∧ c.wt = none}, reachProb ws c.1)
+      + (∑' p : Label × PMF State, reachDep ws exec p.1 p.2)
+      ≤ reachArr ws exec := by
+  -- The halt-config subtype sum is `RP (pH exec)` (unfolding `wt = none ↔ ¬ ∃ q, wt = some q`).
+  have hiff : ∀ c : Config sys,
+      pH exec c ↔ (c.concat = exec ∧ c.e'.trans = Seq.nil ∧ c.t = none ∧ c.wt = none) := by
+    intro c
+    unfold pH
+    refine and_congr_right (fun _ => and_congr_right (fun _ => and_congr_right (fun _ => ?_)))
+    constructor
+    · intro h
+      cases hw : c.wt with
+      | none => rfl
+      | some q => exact absurd ⟨q, hw⟩ h
+    · rintro hwt ⟨q, hq⟩
+      rw [hwt] at hq; exact absurd hq (by simp)
+  have hpH : (∑' c : {c : Config sys //
+      c.concat = exec ∧ c.e'.trans = Seq.nil ∧ c.t = none ∧ c.wt = none}, reachProb ws c.1)
+      = RP ws (pH exec) := by
+    rw [RP_congr ws hiff, RP]
+    exact tsum_subtype_ite (P := fun c => c.concat = exec ∧ c.e'.trans = Seq.nil
+      ∧ c.t = none ∧ c.wt = none) (reachProb ws)
+  rw [hpH, reachDep_sum_eq_RP ws exec]
+  have hD : RP ws (fun c => c.concat = exec ∧ c.t ≠ none)
+      = RP ws (pAsome exec) + RP ws (pDfresh exec) := by
+    rw [RP_split ws (fun c => c.concat = exec ∧ c.t ≠ none) (fun c => c.e'.trans ≠ Seq.nil)]
+    congr 1
+    · exact RP_congr ws (fun c => by unfold pAsome; tauto)
+    · exact RP_congr ws (fun c => by unfold pDfresh; tauto)
+  by_cases hroot : exec = ⟨sys.init, Seq.nil⟩
+  · rw [reachArr, if_pos hroot, hD]
+    have hAsome0 : RP ws (pAsome exec) = 0 :=
+      RP_eq_zero ws (fun c hc => absurd (concat_root_e'_nil (hroot ▸ hc.1)) hc.2.1)
+    have hAnone0 : RP ws (pAnone exec) = 0 :=
+      RP_eq_zero ws (fun c hc => absurd (concat_root_e'_nil (hroot ▸ hc.1)) hc.2.2.2)
+    rw [hAsome0, zero_add]
+    calc RP ws (pH exec) + RP ws (pDfresh exec)
+        = RP ws (pDfresh exec) + RP ws (pH exec) := by rw [add_comm]
+      _ ≤ RP ws (pAnone exec) + RA ws (pReset exec) 0 := tele ws exec
+      _ = RA ws (pReset exec) 0 := by rw [hAnone0, zero_add]
+      _ ≤ ∑' c, reachAfter ws 0 c := by
+          simp only [RA]; refine ENNReal.tsum_le_tsum (fun c => ?_)
+          by_cases hp : pReset exec c
+          · rw [if_pos hp]
+          · rw [if_neg hp]; positivity
+      _ = 1 := reachAfter_zero_total ws
+  · rw [reachArr_eq_RP ws exec hroot, hD]
+    have hA : RP ws (fun c => c.concat = exec ∧ c.e'.trans ≠ Seq.nil)
+        = RP ws (pAsome exec) + RP ws (pAnoneFull exec) := by
+      rw [RP_split ws (fun c => c.concat = exec ∧ c.e'.trans ≠ Seq.nil) (fun c => c.t ≠ none)]
+      congr 1
+      · exact RP_congr ws (fun c => by unfold pAsome; tauto)
+      · exact RP_congr ws (fun c => by unfold pAnoneFull; tauto)
+    rw [hA]
+    have hbound : RP ws (pDfresh exec) + RP ws (pH exec) ≤ RP ws (pAnoneFull exec) :=
+      calc RP ws (pDfresh exec) + RP ws (pH exec)
+          ≤ RP ws (pAnone exec) + RA ws (pReset exec) 0 := tele ws exec
+        _ = RP ws (pAnone exec) := by rw [RA_reset_zero_of_ne_root ws exec hroot, add_zero]
+        _ ≤ RP ws (pAnoneFull exec) := RP_mono ws (fun c hc => ⟨hc.1, hc.2.2.2, hc.2.1⟩)
+    calc RP ws (pH exec) + (RP ws (pAsome exec) + RP ws (pDfresh exec))
+        = RP ws (pAsome exec) + (RP ws (pDfresh exec) + RP ws (pH exec)) := by abel
+      _ ≤ RP ws (pAsome exec) + RP ws (pAnoneFull exec) := by gcongr
+
 /-- `expandMass ws exec` is a probability distribution (normalization obligation:
 the proper-step masses sum to `≤ 1`, since departures are a subset of arrivals, so
 the remainder given to `⊥` is well-defined and the total is `1`). -/
@@ -1084,5 +1211,166 @@ theorem probOf_eq_reachArr (ws : Scheduler sys^w) (exec : AlterSeq State Label)
       exact hh
     rw [h1] at h2
     exact h2.symm
+
+/-! ### The halt-draw marginal (`MARG`)
+
+The genuine-halt-config mass at an abstract execution equals the reset mass there times the outer
+halt draw — the combinatorial identity behind `STEP2`. Built on `reset_draw_marg` (`ProbOf.lean`)
+at the outer draw `wt = ⊥`, with the inner draw `t` forced to `⊥` (`reachAfter_t_wt`). -/
+
+open Classical in
+/-- **Halt-config witness invariant.** A reachable configuration with no active weak step
+(`wt = ⊥`) carries the immediate-halt witness scheduler: `s = Scheduler.halt`. Each draw that sets
+`wt = ⊥` (the first draw or an outer commit) also pins `s = halt`; inner steps never touch `wt`. -/
+theorem reachAfter_wtNone_s (ws : Scheduler sys^w) :
+    ∀ (n : ℕ) (c : Config sys), reachAfter ws n c ≠ 0 → c.wt = none →
+      c.s = Scheduler.halt sys := by
+  intro n
+  induction n with
+  | zero =>
+    intro c hreach hwt
+    simp only [reachAfter] at hreach
+    by_cases hcond : (c.we = (⟨sys.init, Seq.nil⟩ : AlterSeq State Label) ∧
+        c.e = ⟨sys.init, Seq.nil⟩ ∧ c.e' = ⟨sys.init, Seq.nil⟩ ∧
+        (∀ p, c.wt = some p → c.s = schedOf sys sys.init p.1 p.2) ∧
+        (c.wt = none → c.s = Scheduler.halt sys))
+    · exact hcond.2.2.2.2 hwt
+    · rw [if_neg hcond] at hreach; exact absurd rfl hreach
+  | succ m ih =>
+    intro c hreach hwt
+    rw [reachAfter] at hreach
+    obtain ⟨c₀, hc₀⟩ : ∃ c₀, reachAfter ws m c₀ * step ws c₀ c ≠ 0 := by
+      by_contra hcon; push Not at hcon; exact hreach (ENNReal.tsum_eq_zero.mpr hcon)
+    rw [mul_ne_zero_iff] at hc₀
+    obtain ⟨_, hstep⟩ := hc₀
+    obtain ⟨we₀, e₀, wt₀, s₀, e'₀, t₀⟩ := c₀
+    cases wt₀ with
+    | none => simp only [step] at hstep; exact absurd rfl hstep
+    | some wtp =>
+      obtain ⟨lw, μw⟩ := wtp
+      cases t₀ with
+      | some tp =>
+        obtain ⟨l', μ'⟩ := tp
+        simp only [step] at hstep
+        obtain ⟨_, _, hcwt, _, _, _⟩ := of_ite_ne_zero hstep
+        rw [hwt] at hcwt; exact absurd hcwt (by simp)
+      | none =>
+        simp only [step] at hstep
+        obtain ⟨_, _, _, _, hnone⟩ := of_ite_ne_zero hstep
+        exact hnone hwt
+
+/-- A reachable halt config (`wt = ⊥`) carries the immediate-halt witness `s = Scheduler.halt`. -/
+theorem reachProb_wtNone_s (ws : Scheduler sys^w) (c : Config sys)
+    (h : reachProb ws c ≠ 0) (hwt : c.wt = none) : c.s = Scheduler.halt sys := by
+  rw [reachProb] at h
+  obtain ⟨n, hn⟩ : ∃ n, reachAfter ws n c ≠ 0 := by
+    by_contra hcon; push Not at hcon; exact h (ENNReal.tsum_eq_zero.mpr hcon)
+  exact reachAfter_wtNone_s ws n c hn hwt
+
+/-- A reachable configuration's committed abstract execution `we` is terminating. -/
+theorem reachProb_we_fin (ws : Scheduler sys^w) (c : Config sys)
+    (h : reachProb ws c ≠ 0) : c.we.trans.Terminates := by
+  rw [reachProb] at h
+  obtain ⟨n, hn⟩ : ∃ n, reachAfter ws n c ≠ 0 := by
+    by_contra hcon; push Not at hcon; exact h (ENNReal.tsum_eq_zero.mpr hcon)
+  exact reachAfter_we_fin ws n c hn
+
+open Classical in
+/-- A configuration with a halted weak step (`wt = ⊥`) but a pending inner draw (`t = some p`) is
+unreachable: the inner loop is only ever active while a weak step runs (`reachAfter_t_wt`). -/
+private theorem reachProb_entry_wtNone_tSome_zero (ws : Scheduler sys^w)
+    (W E : AlterSeq State Label) (y : State) (p : Label × PMF State) :
+    reachProb ws (entryCfg sys W E y none (some p)) = 0 := by
+  rw [reachProb]
+  refine ENNReal.tsum_eq_zero.mpr (fun n => ?_)
+  by_contra hne
+  obtain ⟨q, hq⟩ := reachAfter_t_wt ws n (entryCfg sys W E y none (some p)) p hne rfl
+  simp [entryCfg] at hq
+
+/-- The inner draw of a halt-entry config is `⊥`: summing `reachProb` over the inner draw `t`
+recovers the single halt config (`t = ⊥`). -/
+private theorem reachProb_halt_entry_none (ws : Scheduler sys^w)
+    (W E : AlterSeq State Label) (y : State) :
+    (∑' t, reachProb ws (entryCfg sys W E y none t)) = reachProb ws (entryCfg sys W E y none none) := by
+  refine tsum_eq_single none (fun t ht => ?_)
+  cases t with
+  | none => exact absurd rfl ht
+  | some p => exact reachProb_entry_wtNone_tSome_zero ws W E y p
+
+/-- **`MARG` (per abstract execution × concrete prefix).** The reaching probability of the halt
+config at `(⟨init, ofList L'⟩, Ec)` equals the total reset mass there times the outer halt draw
+`ws.next ⟨init, ofList L'⟩ ⊥` — the halt-draw instance of `reset_draw_marg`. -/
+theorem reachProb_haltEntry_eq (ws : Scheduler sys^w) (L' : List (Label × State))
+    (Ec : AlterSeq State Label) :
+    reachProb ws (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec) none none)
+      = (∑' c' : {c' : Config sys //
+            c'.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c'.e'.trans = Seq.nil ∧ c'.e = Ec},
+          reachProb ws c'.1)
+        * ws.next ⟨sys.init, Seq.ofList L'⟩ none := by
+  rw [← reachProb_halt_entry_none ws ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec)]
+  exact reset_draw_marg ws L' none Ec
+
+open Classical in
+/-- **`MARG` at the abstract-execution level.** The total genuine-halt-config mass at
+`⟨init, ofList L'⟩` equals the reset mass there times the outer halt draw. The halt configs are
+reindexed onto their concrete prefix `Ec = c.e` (`reachProb_wtNone_s` + `reachProb_inv` pin them to
+`entryCfg` form), `reachProb_haltEntry_eq` supplies each, `predSum_partition` rebuilds the reset
+mass. -/
+theorem haltCfgSum_we_eq (ws : Scheduler sys^w) (L' : List (Label × State)) :
+    (∑' c : {c : Config sys // c.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c.e'.trans = Seq.nil
+        ∧ c.t = none ∧ c.wt = none}, reachProb ws c.1)
+      = (∑' c : {c : Config sys // c.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c.e'.trans = Seq.nil},
+          reachProb ws c.1)
+        * ws.next ⟨sys.init, Seq.ofList L'⟩ none := by
+  have hfib : (∑' c : {c : Config sys // c.we = ⟨sys.init, Seq.ofList L'⟩ ∧ c.e'.trans = Seq.nil
+        ∧ c.t = none ∧ c.wt = none}, reachProb ws c.1)
+      = ∑' Ec : AlterSeq State Label,
+          reachProb ws (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec) none none) := by
+    refine tsum_eq_tsum_of_ne_zero_bij
+      (i := fun Ec : Function.support (fun Ec => reachProb ws
+          (entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec (lastOf Ec) none none)) =>
+        (⟨entryCfg sys ⟨sys.init, Seq.ofList L'⟩ Ec.1 (lastOf Ec.1) none none,
+          ⟨rfl, rfl, rfl, rfl⟩⟩ : {c : Config sys // c.we = ⟨sys.init, Seq.ofList L'⟩ ∧
+            c.e'.trans = Seq.nil ∧ c.t = none ∧ c.wt = none})) ?_ ?_ ?_
+    · rintro ⟨Ec1, h1⟩ ⟨Ec2, h2⟩ hEq
+      simp only [Subtype.mk.injEq] at hEq
+      exact Subtype.ext (congrArg Config.e hEq)
+    · rintro ⟨c, hwe, he', ht, hwt⟩ hne
+      have hrne : reachProb ws c ≠ 0 := hne
+      obtain ⟨-, -, hinit, -⟩ := reachProb_inv ws c hrne
+      have hs := reachProb_wtNone_s ws c hrne hwt
+      have hceq : entryCfg sys ⟨sys.init, Seq.ofList L'⟩ c.e (lastOf c.e) none none = c := by
+        obtain ⟨cwe, ce, cwt, cs, ce', ct⟩ := c
+        simp only at hwe he' ht hwt hinit hs
+        subst hwe; subst ht; subst hwt
+        simp only [entryCfg, ← hs]
+        refine congrArg (fun e' => (⟨_, ce, none, _, e', none⟩ : Config sys)) ?_
+        obtain ⟨i, tr⟩ := ce'; simp only at hinit he' ⊢; rw [hinit, he']
+      exact ⟨⟨c.e, by change reachProb ws _ ≠ 0; rw [hceq]; exact hrne⟩, Subtype.ext hceq⟩
+    · rintro ⟨Ec, hEc⟩; rfl
+  rw [hfib, tsum_congr (fun Ec => reachProb_haltEntry_eq ws L' Ec), ENNReal.tsum_mul_right]
+  congr 1
+  exact predSum_partition ws L'
+
+open Classical in
+/-- `haltCfgSum_we_eq` for an arbitrary **terminating** abstract execution `E`: convert `E` to its
+`⟨init, ofList ·⟩` form (off the root-init form both sums vanish, `reachProb_we_init`). -/
+theorem haltCfgSum_we_eq_term (ws : Scheduler sys^w) (E : AlterSeq State Label)
+    (hterm : E.trans.Terminates) :
+    (∑' c : {c : Config sys // c.we = E ∧ c.e'.trans = Seq.nil ∧ c.t = none ∧ c.wt = none},
+        reachProb ws c.1)
+      = (∑' c : {c : Config sys // c.we = E ∧ c.e'.trans = Seq.nil}, reachProb ws c.1)
+        * ws.next E none := by
+  by_cases hinit : E.init = sys.init
+  · have hE : E = ⟨sys.init, Seq.ofList (E.trans.toList hterm)⟩ := by
+      obtain ⟨ei, et⟩ := E; simp only at hinit ⊢; rw [hinit, Stream'.Seq.ofList_toList]
+    rw [hE]; exact haltCfgSum_we_eq ws (E.trans.toList hterm)
+  · rw [show (∑' c : {c : Config sys // c.we = E ∧ c.e'.trans = Seq.nil ∧ c.t = none ∧ c.wt = none},
+        reachProb ws c.1) = 0 from ENNReal.tsum_eq_zero.mpr (fun c => by
+        by_contra hne; exact hinit (c.2.1 ▸ reachProb_we_init ws c.1 hne)),
+      show (∑' c : {c : Config sys // c.we = E ∧ c.e'.trans = Seq.nil}, reachProb ws c.1) = 0 from
+        ENNReal.tsum_eq_zero.mpr (fun c => by
+        by_contra hne; exact hinit (c.2.1 ▸ reachProb_we_init ws c.1 hne)),
+      zero_mul]
 
 end PLTS

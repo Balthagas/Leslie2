@@ -6,6 +6,10 @@ Authors: Gaspard Reghem
 
 import Leslie2.Simulation.SimDefs
 import Leslie2.Weak.WeakChar
+import Leslie2.Simulation.Equivalences
+import Leslie2.Simulation.WeakTauLift
+import Leslie2.Simulation.DistCollapse
+import Leslie2.WeakClosure.HaltMass
 
 /-!
 # Weak-transition lifting for transitivity of forward simulation
@@ -15,14 +19,21 @@ packaging `weakTransition` of the internal/external weak-transition split, and t
 `weakTransition_lift` that transports a weak transition on the (concrete) `sys_B` side through a
 forward simulation to a weak transition on the (abstract) `sys_A` side.
 
-## Reduction to a single-state `weakTau` lift
+## Reduction to a simulation-free weak-closure collapse
 
-`weakTransition_lift` is fully reduced here to the single lemma
+`weakTransition_lift` is reduced here through `weakTau_lift_pure` (lift a `weakTau` out of a single
+concrete state `PMF.pure q_B`) to the single *simulation-free* lemma
 
-  `weakTau_lift_pure` — lift a `weakTau` **out of a single concrete state** `PMF.pure q_B`,
+  `weakClosure_weakTau_collapse` (`WeakClosure/HaltMass.lean`) — a run-to-halt internal weak
+  transition of the weak closure `sys^w` collapses to one of the base `sys`,
 
-which is the genuine analytic crux (the run-to-halt of an internal scheduler, matched step-by-step
-on the abstract side) and is left as the sole `sorry`. Everything else is *coupling algebra*:
+whose genuine analytic crux (a.s.-halting *convergence* of the unfolded scheduler, phrased as the
+`g`-integrated halt-mass conservation `expandSched_haltMass_g_eq`) is the last `sorry` in the
+development. `weakTau_lift_pure` itself is discharged by the strong-simulation route
+(`probabilisticForwardSimulation_iff_strong_dist_weakClosure` →
+`StrongProbabilisticSimulation.weakTau_lift` → `weakTau_dist_collapse` → the collapse above), so the
+simulation is fully handled off and only the closure-idempotence content remains. Everything else is
+*coupling algebra*:
 
 * `simulates_bind_mix` — `Simulates` is closed under mixing sources (posterior/Bayesian mixing of
   the per-source kernels), the convex-closure property the coupling form of `Simulates` was chosen
@@ -202,24 +213,41 @@ theorem weakStep_mix {S W : Type} {sys : System S Label} {l : Label}
 variable {sys_B : System State_B Label} {sys_A : System State_A Label}
   {R_AB : State_B → PMF State_A → Prop}
 
-/-- **Single-state `weakTau` lift (the crux).**
+/-! ### The weak-closure `weakTau` collapse (the convergence crux, `G1`)
+
+The single remaining analytic content is isolated as the *simulation-free* lemma
+`weakClosure_weakTau_collapse` (`weakTau sys^w μ ν → weakTau sys μ ν`) in
+`WeakClosure/HaltMass.lean`: a run-to-halt internal weak transition of the weak closure `sys^w`
+collapses to one of the base `sys`. That file reduces it (via the `expandSched` unfolding, slicing
+`expandSched_haltMass_g_eq` at `g = 1` and `g = [· = x]`, and the `{sys with init := s}`
+relabeling) to one analytic `sorry`: the a.s.-halting conservation `expandSched_haltMass_g_eq`. -/
+
+/-- **Single-state `weakTau` lift (reduced).**
 
 If the concrete state `q_B` is related to the abstract distribution `μ_A` (`R_AB q_B μ_A`), and
 `PMF.pure q_B` performs an internal weak transition to `ν_B` in `sys_B`, then `μ_A` performs an
 internal weak transition to some `ν_A` in `sys_A` that simulates `ν_B`.
 
-This is the genuine analytic core: the concrete internal scheduler runs to halt (unboundedly many
-internal steps), and the abstract side must mirror it step-by-step through `sim.step` and take the
-a.s.-halting limit. Everything else in this file is coupling algebra on top of this lemma.
-
-*Left as `sorry`.* -/
+Reduced to the *simulation-free* `weakClosure_weakTau_collapse` (`G1`) by the strong-simulation
+route: a forward simulation is a strong simulation into `𝒟(sys_A^w)`
+(`probabilisticForwardSimulation_iff_strong_dist_weakClosure`); lift the single-state `weakTau`
+through it (`StrongProbabilisticSimulation.weakTau_lift`, matching end-states by a `PMFRel`
+coupling); collapse `𝒟(sys_A^w) → sys_A^w` (`weakTau_dist_collapse`) and then `sys_A^w → sys_A`
+(`G1`). The `Simulates` conclusion is the coupling read through `simulates_of_pmfRel`. -/
 theorem weakTau_lift_pure
     (sim : ProbabilisticForwardSimulation sys_B sys_A R_AB)
     {q_B : State_B} {ν_B : PMF State_B} {μ_A : PMF State_A}
     (hR : R_AB q_B μ_A)
     (hweak : weakTau sys_B (PMF.pure q_B) ν_B) :
     ∃ ν_A, weakTau sys_A μ_A ν_A ∧ Simulates R_AB ν_B ν_A := by
-  sorry
+  -- forward simulation ⟺ strong simulation into `𝒟(sys_A^w)`
+  have sim' : StrongProbabilisticSimulation sys_B (𝒟(sys_A^w)) R_AB :=
+    (probabilisticForwardSimulation_iff_strong_dist_weakClosure sys_B sys_A R_AB).mp sim
+  -- lift the single-state `weakTau` through the strong simulation (end-states coupled by `PMFRel`)
+  obtain ⟨Ν, hwtD, hcoup⟩ := sim'.weakTau_lift hR hweak
+  -- collapse `𝒟(sys_A^w)` → `sys_A^w` (`weakTau_dist_collapse`), then `sys_A^w` → `sys_A` (`G1`)
+  refine ⟨Ν.bind id, weakClosure_weakTau_collapse (weakTau_dist_collapse hwtD), ?_⟩
+  exact simulates_of_pmfRel hcoup
 
 /-- Extract the pointwise membership from the standard `(K0)`-joint `Ω`. -/
 private theorem mem_bindMap_support {μ_B : PMF State_B} {K0 : State_B → PMF (PMF State_A)}

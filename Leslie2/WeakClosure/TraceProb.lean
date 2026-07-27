@@ -1037,4 +1037,83 @@ theorem weakClosure_traceProb_eq (sys : System State Label) :
     (weakClosure_traceProb_subset sys)
     (weakClosure_traceProb_superset sys)
 
+/-! ### Internality of the unfolded scheduler
+
+For the `weakTau`-collapse (`WeakClosure/HaltMass.lean`) the unfolded scheduler must be a genuine
+`WeakScheduler` — it must emit only `τ` when the outer `sys^w`-scheduler does. -/
+
+open Classical in
+/-- **`expandSched` of an internal-only outer scheduler emits only `τ`.** If `ws` only ever emits
+`τ` (as a `WeakScheduler sys^w` does, hypothesis `hint`), then every transition `expandSched ws`
+emits is internal.
+
+An emitted `some (l, μ)` has nonzero `expandMass`, hence nonzero `reachDep`, so there is a reachable
+departure config `c` with `c.concat = e` and `c.t = some (l, μ)`. Its active weak step is internal
+(`reachAfter_wt_internal`), so `c.s = schedOf … τ μw` **realises an internal weak step** from the
+positive-probability segment `c.e'` (`reachAfter_Inv`). Extending `c.e'` by the drawn `(l, y)`
+(`y ∈ μ.support`) keeps positive probability (`probOf_append_singleton` + a nonzero kernel term), so
+`witness_halt_cont` forces the halting continuation's trace to be empty; were `l` external the
+segment `⟨·, [(l, y)]⟩` would contribute `[l]`, a contradiction. -/
+theorem expandSched_internal_only (ws : Scheduler sys^w)
+    (hint : ∀ (E : AlterSeq State Label) (l' : Label) (μ' : PMF State),
+      some (l', μ') ∈ (ws.next E).support → l' = Silent.τ)
+    (e : AlterSeq State Label) (l : Label) (μ : PMF State)
+    (hsupp : some (l, μ) ∈ ((expandSched ws).next e).support) :
+    l = Silent.τ := by
+  classical
+  -- 1. A reachable departure config `c` with `c.concat = e`, `c.t = some (l, μ)`.
+  rw [PMF.mem_support_iff] at hsupp
+  change expandMass ws e (some (l, μ)) ≠ 0 at hsupp
+  rw [expandMass] at hsupp
+  have hdep : reachDep ws e l μ ≠ 0 := by
+    intro h0; rw [h0, ENNReal.zero_div] at hsupp; exact hsupp rfl
+  rw [reachDep] at hdep
+  obtain ⟨c, hcreach⟩ : ∃ c : {c : Config sys // c.concat = e ∧ c.t = some (l, μ)},
+      reachProb ws c.1 ≠ 0 := by
+    by_contra hcon; push Not at hcon; exact hdep (ENNReal.tsum_eq_zero.mpr hcon)
+  obtain ⟨-, hct⟩ := c.2
+  -- 2. Reachability level `n`.
+  rw [reachProb] at hcreach
+  obtain ⟨n, hn⟩ : ∃ n, reachAfter ws n c.1 ≠ 0 := by
+    by_contra hcon; push Not at hcon; exact hcreach (ENNReal.tsum_eq_zero.mpr hcon)
+  -- 3. Active weak step, forced internal by `ws`'s internality.
+  obtain ⟨⟨lw, μw⟩, hwt⟩ := reachAfter_t_wt ws n c.1 (l, μ) hn hct
+  have hlwτ : lw = Silent.τ := reachAfter_wt_internal ws hint n c.1 hn lw μw hwt
+  -- 4. The invariant: `c.s` is the realising witness of that internal step, positive on `c.e'`.
+  have hInv := reachAfter_Inv ws n c.1 hn
+  obtain ⟨hstepW, hcs, hpos⟩ := hInv.seg lw μw hwt
+  have hR : Realises c.1.s (lastOf c.1.e) lw μw := by rw [hcs]; exact schedOf_realises hstepW
+  -- 5. The drawn transition is in the witness's support.
+  have hmem0 := reachAfter_inner_pos ws n c.1 hn (lw, μw) hwt
+  rw [hct] at hmem0
+  -- 6. A target state `y ∈ μ.support`.
+  obtain ⟨y, hy⟩ : ∃ y, μ y ≠ 0 := by
+    by_contra hcon; push Not at hcon
+    have h1 := μ.tsum_coe; rw [tsum_congr hcon] at h1; simp at h1
+  -- 7. Extend the segment by `(l, y)`: still terminating and positive-probability.
+  have hsegfin : c.1.e'.trans.Terminates := hInv.e'_fin
+  have he''fin : (c.1.e'.trans.append (Seq.cons (l, y) Seq.nil)).Terminates :=
+    ⟨_, Stream'.Seq.terminatedAt_append_find hsegfin
+      (show (Seq.cons (l, y) Seq.nil).TerminatedAt 1 from rfl)⟩
+  have hpos'' : (⟨PMF.pure (lastOf c.1.e), c.1.s⟩ : ProbabilisticExecution sys).probOf
+      ⟨c.1.e'.init, c.1.e'.trans.append (Seq.cons (l, y) Seq.nil)⟩ he''fin ≠ 0 := by
+    rw [ProbabilisticExecution.probOf_append_singleton _ c.1.e'.init c.1.e'.trans hsegfin (l, y)
+      he''fin]
+    refine mul_ne_zero hpos ?_
+    unfold ProbabilisticExecution.kernel
+    intro h0
+    rw [ENNReal.tsum_eq_zero] at h0
+    exact absurd (h0 μ) (mul_ne_zero hmem0 hy)
+  -- 8. `witness_halt_cont`: the halting continuation is τ-only, forcing `l = τ`.
+  obtain ⟨W, hW⟩ := witness_halt_cont hR
+    ⟨c.1.e'.init, c.1.e'.trans.append (Seq.cons (l, y) Seq.nil)⟩ he''fin hpos''
+  rw [hlwτ, if_pos rfl] at hW
+  have htn : sys.trace (⟨c.1.e'.init, c.1.e'.trans.append (Seq.cons (l, y) Seq.nil)⟩ :
+      AlterSeq State Label) = Seq.nil := (append_eq_nil hW).1
+  rw [trace_append c.1.e'.init c.1.e'.trans (Seq.cons (l, y) Seq.nil) hsegfin] at htn
+  have hsn := (append_eq_nil htn).2
+  by_contra hlτ
+  rw [System.trace_cons_external sys c.1.e'.init l y Seq.nil hlτ, System.trace_init] at hsn
+  exact absurd hsn Stream'.Seq.cons_ne_nil
+
 end PLTS

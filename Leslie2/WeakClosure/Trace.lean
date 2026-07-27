@@ -691,7 +691,7 @@ theorem reachAfter_inner_pos (ws : Scheduler sys^w) :
 open Classical in
 /-- **Finiteness of the committed abstract execution `we`.** It starts at `nil` and
 each commit appends one transition, so it stays finite at every reachable config. -/
-private theorem reachAfter_we_fin (ws : Scheduler sys^w) :
+theorem reachAfter_we_fin (ws : Scheduler sys^w) :
     ∀ (n : ℕ) (c : Config sys), reachAfter ws n c ≠ 0 → c.we.trans.Terminates := by
   intro n
   induction n with
