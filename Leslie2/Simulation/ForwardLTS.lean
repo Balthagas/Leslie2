@@ -326,4 +326,70 @@ theorem ForwardSimulation.toProbabilistic
       · exact Or.inl ⟨hτ, weakTau_of_weakLSilent sys_2 h2 hsil⟩
       · exact Or.inr ⟨hext, weakStep_of_weakLStep sys_2 h2 hext hlab⟩
 
+/-! ### Functional strong matchings -/
+
+section StrongFunctional
+
+variable {State_C State_A : Type}
+  {sys_C : System State_C Label} {sys_A : System State_A Label}
+
+/-- Transport a probabilistic forward simulation along a pointwise `Iff` of
+relations. -/
+theorem ProbabilisticForwardSimulation.congr_rel
+    {R R' : State_C → PMF State_A → Prop} (h : ∀ s ν, R s ν ↔ R' s ν)
+    (sim : ProbabilisticForwardSimulation sys_C sys_A R) :
+    ProbabilisticForwardSimulation sys_C sys_A R' := by
+  refine ⟨?_, ?_⟩
+  · obtain ⟨μ_A, hsupp, hR⟩ := sim.init
+    exact ⟨μ_A, hsupp, (h _ _).mp hR⟩
+  · intro s_C μ_A hR' l μ_C hC
+    obtain ⟨ω, ⟨Ω, h1, h2, h3⟩, hdisj⟩ := sim.step s_C μ_A ((h _ _).mpr hR') l μ_C hC
+    exact ⟨ω, ⟨Ω, h1, h2, fun p hp => (h _ _).mp (h3 p hp)⟩, hdisj⟩
+
+/-- **A step-commuting state map is a probabilistic forward simulation.**
+If `f` carries the initial state to the initial state and every concrete
+transition `s -[l]→ μ` to the abstract transition `f s -[l]→ μ.map f` on the same
+label, then the graph of `f` is a `ProbabilisticForwardSimulation`.
+
+Unlike `ForwardSimulation.toProbabilistic`, neither system need be an LTS: the
+pushforward `μ.map f` matches the concrete distribution outcome by outcome, so
+the coupling is the pushforward of `μ` along `s ↦ (s, δ_{f s})` and the abstract
+side answers with the single strong step, read as a weak transition. -/
+theorem ProbabilisticForwardSimulation.ofStrongFunctional
+    (f : State_C → State_A) (hinit : f sys_C.init = sys_A.init)
+    (hstep : ∀ s l μ, sys_C.step s l μ → sys_A.step (f s) l (μ.map f)) :
+    ProbabilisticForwardSimulation sys_C sys_A (fun s ν => ν = PMF.pure (f s)) := by
+  refine ⟨⟨PMF.pure (f sys_C.init), ?_, rfl⟩, ?_⟩
+  · intro s_A hs_A
+    rw [PMF.mem_support_pure_iff] at hs_A
+    rw [hs_A, hinit]
+  · rintro s_C μ_A rfl l μ_C hC
+    refine ⟨μ_C.map (fun s => PMF.pure (f s)), ?_, ?_⟩
+    · refine ⟨μ_C.map (fun s => (s, PMF.pure (f s))), ?_, ?_, ?_⟩
+      · rw [PMF.map_comp]; exact PMF.map_id μ_C
+      · rw [PMF.map_comp]; rfl
+      · intro p hp
+        rw [PMF.mem_support_map_iff] at hp
+        obtain ⟨s, _, rfl⟩ := hp
+        rfl
+    · have hbind : (μ_C.map (fun s => PMF.pure (f s))).bind id = μ_C.map f := by
+        rw [PMF.bind_map, Function.id_comp]; rfl
+      rw [hbind]
+      have hA := hstep s_C l μ_C hC
+      by_cases hτ : l = Silent.τ
+      · exact Or.inl ⟨hτ, weakTau_of_step hτ hA⟩
+      · exact Or.inr ⟨hτ, weakStep_strong hA⟩
+
+/-- `ofStrongFunctional` restated along `diracRel`, the shape the composed
+relations of the process algebra (`parallelRel (diracRel ...)`) are built
+from. -/
+theorem ProbabilisticForwardSimulation.ofStrongFunctional_diracRel
+    (f : State_C → State_A) (hinit : f sys_C.init = sys_A.init)
+    (hstep : ∀ s l μ, sys_C.step s l μ → sys_A.step (f s) l (μ.map f)) :
+    ProbabilisticForwardSimulation sys_C sys_A (diracRel (fun s t => t = f s)) :=
+  (ofStrongFunctional f hinit hstep).congr_rel
+    (fun s ν => ⟨fun h => ⟨f s, h, rfl⟩, fun ⟨_, hν, ht⟩ => by rw [hν, ht]⟩)
+
+end StrongFunctional
+
 end PLTS

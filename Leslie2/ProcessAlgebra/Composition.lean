@@ -107,6 +107,12 @@ theorem prodPMF_map (f : α → α') (g : β → β') (μ₁ : PMF α) (μ₂ : 
     (prodPMF μ₁ μ₂).map (fun p => (f p.1, g p.2)) = prodPMF (μ₁.map f) (μ₂.map g) := by
   simp only [prodPMF, PMF.map_bind, PMF.pure_map, PMF.bind_map, Function.comp_def]
 
+/-- Swapping the coordinates of an independent product exchanges its factors. -/
+theorem prodPMF_map_swap (μ₁ : PMF α) (μ₂ : PMF β) :
+    (prodPMF μ₁ μ₂).map Prod.swap = prodPMF μ₂ μ₁ := by
+  simp only [prodPMF, PMF.map_bind, PMF.pure_map, Prod.swap_prod_mk]
+  exact PMF.bind_comm _ _ _
+
 theorem mem_support_prodPMF {μ₁ : PMF α} {μ₂ : PMF β} {p : α × β} :
     p ∈ (prodPMF μ₁ μ₂).support ↔ p.1 ∈ μ₁.support ∧ p.2 ∈ μ₂.support := by
   simp only [prodPMF, PMF.mem_support_bind_iff, PMF.mem_support_pure_iff]
@@ -245,6 +251,22 @@ theorem parallel_step (sys₁ : System State₁ Label) (sys₂ : System State₂
       (l = Silent.τ ∧ ∃ μ₁, sys₁.step p.1 l μ₁ ∧ μ = prodPMF μ₁ (PMF.pure p.2)) ∨
       (l = Silent.τ ∧ ∃ μ₂, sys₂.step p.2 l μ₂ ∧ μ = prodPMF (PMF.pure p.1) μ₂) :=
   Iff.rfl
+
+/-- **Binary composition is commutative up to `Prod.swap`.** Exchanging the two
+components carries every transition of `sys₁ ∥ sys₂` to the transition of
+`sys₂ ∥ sys₁` on the same label, its successor distribution pushed forward along
+`Prod.swap`: synchronisation is symmetric and the two interleaving disjuncts are
+each other's mirror image. -/
+theorem parallel_swap_step (sys₁ : System State₁ Label) (sys₂ : System State₂ Label) :
+    ∀ p l μ, (parallel sys₁ sys₂).step p l μ →
+      (parallel sys₂ sys₁).step (Prod.swap p) l (μ.map Prod.swap) := by
+  rintro ⟨a, b⟩ l μ h
+  rw [parallel_step] at h
+  rw [parallel_step]
+  rcases h with ⟨hl, μ₁, μ₂, h1, h2, rfl⟩ | ⟨hl, μ₁, h1, rfl⟩ | ⟨hl, μ₂, h2, rfl⟩
+  · exact Or.inl ⟨hl, μ₂, μ₁, h2, h1, prodPMF_map_swap _ _⟩
+  · exact Or.inr (Or.inr ⟨hl, μ₁, h1, prodPMF_map_swap _ _⟩)
+  · exact Or.inr (Or.inl ⟨hl, μ₂, h2, prodPMF_map_swap _ _⟩)
 
 end System
 
