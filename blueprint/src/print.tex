@@ -10,7 +10,7 @@
 % It is otherwise a very minimal preamble (you should probably at least
 % add cleveref and tikz-cd).
 
-\documentclass[a4paper]{report}
+\documentclass[a4paper]{article}
 
 \usepackage{geometry}
 
@@ -27,6 +27,11 @@
 \usepackage{tikz}
 \usetikzlibrary{automata,positioning,arrows.meta,quotes,shapes.geometric}
 
+% Prefer a float at the top of a text page over a page of floats alone.
+\renewcommand{\floatpagefraction}{0.85}
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\textfraction}{0.1}
+
 \input{macros/common}
 \input{macros/print}
 
@@ -35,5 +40,6 @@
 
 \begin{document}
 \maketitle
+\tableofcontents
 \input{content}
 \end{document}

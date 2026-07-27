@@ -72,8 +72,8 @@ inductive TVal : Type
   deriving DecidableEq, Repr
 
 /-- `agrees o t`: the blueprint's cross-domain equality `bind = coin` between
-`bind ∈ {0,1,⊥}` and `coin ∈ {0,1,⊥,⊤}` — `⊥ = ⊥` or `b = b`; `⊤` agrees with
-nothing. -/
+`bind ∈ {0,1,⊥}` and the five-value domain `coin ∈ {0,1,⊥,⊤,†}` — `⊥ = ⊥` or
+`b = b`; `⊤` and `dead` agree with nothing. -/
 def TVal.agrees : Option Bool → TVal → Prop
   | none, .bot => True
   | some b, .bit b' => b = b'

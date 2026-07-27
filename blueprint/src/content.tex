@@ -10,6 +10,11 @@ label $\tau$ (the type class \texttt{Silent}). A label is \emph{internal} when
 it equals $\tau$ and \emph{external} otherwise; this partition depends only on the
 label type, not on any individual system.
 
+Write $\delta_s$, or $\delta(s)$ when the argument is compound, for the Dirac
+distribution on $s$.
+Write $\mu \triangleright g$ for the pushforward of $\mu$ along $g$, and
+$s[x := v]$ for record update.
+
 \begin{definition}[Probabilistic labelled transition system]
   \label{def:system}
   \lean{PLTS.System}\leanok
@@ -176,21 +181,19 @@ coupling of the resulting distributions.
   stuttering) with $\operatorname{PMFRel} R\ \mu_C\ \mu_A$.
 \end{definition}
 
-\begin{definition}[Weak probabilistic simulation]
-  \label{def:weaksim}
-  \uses{def:weaktau, def:weakstep, def:pmfrel}
-  % Paper-level definition; not a standalone Lean declaration (see the NOTE
-  % below: the Lean development phrases weak simulation via
-  % ProbabilisticForwardSimulation directly).
-  As above, but the abstract side may stutter: a concrete step is matched from
-  $\delta_{s_A}$ by a $weakTau$ (internal $l$) or a $weakStep$ with the same label
-  (external $l$), again with $\operatorname{PMFRel} R\ \mu_C\ \mu_A$.
-\end{definition}
+% Paper-level definition; not a standalone Lean declaration (see the NOTE
+% below: the Lean development phrases weak simulation via
+% ProbabilisticForwardSimulation directly).
+A \emph{weak} probabilistic simulation is the same notion with stuttering
+allowed on the abstract side: a concrete step is matched from $\delta_{s_A}$ by
+a $weakTau$ (internal $l$) or a $weakStep$ with the same label (external $l$),
+again with $\operatorname{PMFRel} R\ \mu_C\ \mu_A$.
 
 \begin{definition}[Probabilistic forward simulation]
   \label{def:forwardsim}
   \lean{PLTS.ProbabilisticForwardSimulation}\leanok
   \uses{def:weaktau, def:weakstep, def:pmfrel}
+  Probabilistic forward simulation is due to Segala~\cite{Segala95}.
   Here $R : State_C \to \operatorname{PMF} State_A \to \mathrm{Prop}$ relates each
   concrete state to a \emph{distribution} over abstract states. The initial
   concrete state is related to some distribution supported on $sys_A.init$, and
@@ -554,10 +557,31 @@ statement for \emph{weak} simulation
 argument using only $\cdot^w$ (Theorem~\ref{thm:weakclosure-eq}), since a weak
 simulation is a strong simulation into $sys_A^w$.
 
+\subsection{Consequences and constructions}
+
+Safety properties are stated on the supports of achievable trace distributions.
+The bridge below is what carries them from a system to every system it simulates.
+
+\begin{theorem}[Trace-support bridge]
+  \label{thm:trace-support}
+  \lean{PLTS.exists_exec_of_traceProb_ne_zero}\lean{PLTS.is_exec_of_probOf_ne_zero}\lean{PLTS.safety_transfer}\leanok
+  A trace with positive trace probability under a Dirac-initialised
+  probabilistic execution is the trace of a genuine execution of the system,
+  with trace membership characterised by the execution's events; safety of
+  trace supports transfers along inclusion of achievable trace distributions.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:probexec, def:traceprob, def:exec, def:achievable}
+  Fix a Dirac-initialised probabilistic execution and a trace $t$ with positive trace probability.
+  Positive trace probability forces a positive-mass path, and reading its labels off that path yields a genuine execution of the system whose trace is $t$; trace membership is then characterised by that execution's events.
+  For the transfer, suppose $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A)$ and that every trace in the support of every achievable trace distribution of $sys_A$ is safe.
+  Each achievable trace distribution of $sys_C$ is one of $sys_A$, so its support is safe as well.
+\end{proof}
 
 \begin{definition}[The process-algebra operators]
   \label{def:process-algebra}
-  \lean{PLTS.System.interleave}\lean{PLTS.System.abstract}\leanok
+  \lean{PLTS.System.parallel}\lean{PLTS.System.interleave}\lean{PLTS.System.abstract}\leanok
   \uses{def:system}
   Three operators build compound systems over a shared label type.
 
@@ -579,6 +603,65 @@ simulation is a strong simulation into $sys_A^w$.
   becomes a $\tau$-transition, and transitions on labels outside $L$ are kept
   as they are.
 \end{definition}
+
+\begin{definition}[Extended alphabets and restriction]
+  \label{def:relabel}
+  \lean{PLTS.instSilentSum}\lean{PLTS.System.relabel}\lean{PLTS.System.relabel_isLTS}\lean{PLTS.System.abstract_isLTS}\leanok
+  A composition whose components rendezvous on labels the composite is not meant to expose is built over the extended alphabet $\mathrm{Label} \oplus \mathrm{Extra}$, with $\mathrm{Extra}$ carrying the auxiliary labels.
+  The silent label of the extended alphabet is $\mathrm{inl}\,\tau$, so every auxiliary label $\mathrm{inr}\,e$ is observable and hence hideable by $\mathrm{abstract}$.
+  Restriction along the left embedding, $\mathrm{relabel}(sys)$, keeps the state space and the initial state of $sys$ and retains exactly its $\mathrm{inl}$-labelled transitions.
+  Auxiliary transitions are discarded, so they must be abstracted to $\tau$ first if they are to survive.
+  Restriction discards transitions and not states, so it preserves the LTS property; abstraction preserves it as well, relabelling each transition and keeping its distribution.
+\end{definition}
+
+\begin{definition}[Idle padding and instance families]
+  \label{def:idle-family}
+  \lean{PLTS.System.withIdle}\lean{PLTS.System.family}\leanok
+  \uses{def:process-algebra}
+  Idle self-loops on foreign labels make the full synchronisation of
+  Definition~\ref{def:process-algebra} emulate sync-set composition.
+  The $\mathbb{N}$-indexed instance family moves one instance per owned or
+  silent label, broadcasts corruption to all instances, and idles otherwise.
+  Families of LTS instances are LTS.\lean{PLTS.System.family_isLTS}\leanok
+\end{definition}
+
+\begin{definition}[The full-synchronisation product]
+  \label{def:syncproduct}
+  \lean{PLTS.System.syncProduct}\lean{PLTS.System.syncProduct_isLTS}\leanok
+  \uses{def:idle-family}
+  Let $sys_i : \mathrm{System}\,(State_i)\,\mathrm{Label}$ for $i$ ranging over a finite index type.
+  On a visible label $l \neq \tau$ the product $\mathrm{syncProduct}(sys)$ steps every component on $l$ simultaneously, and the joint successor is the independent product of the per-component distributions.
+  On $\tau$ exactly one component steps and the others hold their state.
+  Ownership of a label is carried by the components and not by the operator, which stays a single conjunction over the family.
+  A component idles on the labels it does not own (Definition~\ref{def:idle-family}), so a label owned by exactly two components moves those two and leaves every other component in place.
+  A label no component offers is blocked, the conjunction over the family having no witness.
+  A product of LTS components is an LTS: a product of Diracs is the Dirac on the tuple of their points, and a single-coordinate update of an all-Dirac family is again a Dirac.
+\end{definition}
+
+\begin{lemma}[Functional strong matchings]
+  \label{def:strongfunctional}
+  \lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional}\lean{PLTS.ProbabilisticForwardSimulation.congr_rel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_diracRel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_converse}\lean{PLTS.prodPMF_map_swap}\lean{PLTS.System.parallel_swap_step}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  Let $f : State_C \to State_A$ carry $sys_C.init$ to $sys_A.init$ and carry every transition $s \xrightarrow{l} \mu$ of $sys_C$ to the transition $f\,s \xrightarrow{l} \mu.\mathrm{map}\,f$ of $sys_A$ on the same label.
+  Then the graph of $f$, the relation $R\,s\,\nu \iff \nu = \delta_{f\,s}$, is a probabilistic forward simulation of $sys_C$ by $sys_A$.
+  Let $g : State_A \to State_C$ carry $sys_A.init$ to $sys_C.init$, and let every transition $g\,q \xrightarrow{l} \mu$ of $sys_C$ be $\mu = \nu.\mathrm{map}\,g$ for some transition $q \xrightarrow{l} \nu$ of $sys_A$.
+  Then the converse of the graph of $g$, the relation $R\,p\,\nu \iff \exists q,\ \nu = \delta_q \wedge p = g\,q$, is a probabilistic forward simulation of $sys_C$ by $sys_A$.
+  Neither system need be an LTS, and $g$ need be neither injective nor surjective; states outside its image are simply unrelated.
+  Either matching is restated along the Dirac lift $\operatorname{diracRel}$ by transport along a pointwise equivalence of relations, which is the shape the composed relations of the process algebra are built from.
+  The coordinate exchange $\mathrm{swap}(a,b) = (b,a)$ is such a matching between $sys_1 \parallel sys_2$ and $sys_2 \parallel sys_1$ in both directions.
+\end{lemma}
+
+\begin{proof}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  Take the graph of $f$ first.
+  The initial clause is the hypothesis $f(sys_C.init) = sys_A.init$, read as $\delta_{f(sys_C.init)}$ supported on $sys_A.init$.
+  For the step clause, the pushforward $\mu.\mathrm{map}\,f$ matches $\mu$ outcome by outcome, so the coupling is the pushforward of $\mu$ along $s \mapsto (s, \delta_{f\,s})$, and the abstract side answers with its single strong step, read as a weak transition.
+  Now take the converse of the graph of $g$.
+  A related pair is $(g\,q, \delta_q)$, and the hypothesis reflects the concrete step $g\,q \xrightarrow{l} \mu$ to an abstract step $q \xrightarrow{l} \nu$ with $\mu = \nu.\mathrm{map}\,g$.
+  The coupling is the pushforward of $\nu$ along $q' \mapsto (g\,q', \delta_{q'})$, whose first marginal is $\mu$ and whose support lies in the relation.
+  Transport along a pointwise equivalence of relations restates either matching along $\operatorname{diracRel}$.
+  For $\mathrm{swap}$ the step clause is that a product distribution pushed forward along $\mathrm{swap}$ is the product taken the other way round, which is exactly the step relation of $sys_2 \parallel sys_1$.
+\end{proof}
 
 \begin{theorem}[Transitivity of probabilistic forward simulation]
   \label{thm:forward-trans}
@@ -674,7 +757,8 @@ The setting is $n$ processes, each holding an input bit, of which at most $f$
 are Byzantine, with $3f < n$, communicating by asynchronous message passing.
 The development lives in the opt-in \texttt{Leslie2Protocols} Lake library.
 
-\paragraph{The three contracts.}
+\subsection{Setting and conventions}
+
 Three protocols occur in the case study.
 Each is given as a list of properties over the calls and returns of its
 interface.
@@ -723,8 +807,8 @@ Processes start with no input and may return a bit.
     processes return $0$ (resp.\ $1$).
   \item Unpredictability: until $f+1$ processes have called WCC, all outcomes
     are still possible.
-  \item $(1-\delta)$-sure Termination: if $n-f$ correct processes take part in
-    the protocol then, with probability $1-\delta$, all correct processes will
+  \item $(1-\failmass)$-sure Termination: if $n-f$ correct processes take part in
+    the protocol then, with probability $1-\failmass$, all correct processes will
     eventually return.
 \end{itemize}
 
@@ -736,7 +820,6 @@ The weak common coin is held at specification level rather than implemented:
 its own implementation over Gather and SRSD is not modelled here, so
 $\varepsilon$-Goodness enters as an assumption.
 
-\paragraph{Architecture.}
 Every protocol $P$ with sub-protocols $Q$ is treated in two moves.
 The first move is substitution: in a fixed context, each sub-implementation is
 replaced by the corresponding specification, which is sound by precongruence.
@@ -752,6 +835,9 @@ The two implementation-level encodings, the GBCA instance and the ABA core, are
 monolithic automata over the whole system state; Section~\ref{sec:aba-perproc}
 shows each equal, on achievable trace distributions, to the composition of its
 per-process automata.
+That section then assembles both per-process layers into the hybrid
+(Theorem~\ref{thm:aba-assembly}) and removes the layer boundary, presenting ABA
+as $n$ programs beside a coin oracle (Theorem~\ref{thm:aba-flat}).
 
 \paragraph{Object names.}
 Transition System~1 is the ABA specification, Transition System~2 the GBCA
@@ -788,7 +874,7 @@ The labels D2, D6 and D7 are unused.
     callers-or-corrupted.
   \item D16: the two-phase abstract twin used by the core simulation.
   \item D17: a fourth outcome $\dagger$ of the WCC coin resolution, of mass
-    $\delta$, on which no return is enabled.
+    $\failmass$, on which no return is enabled.
     It carries the delivery failure of the $\varepsilon$-correct secret-sharing
     coin implementation that the source builds on, where the source's
     Transition System~3 resolves to $\{0,1,\top\}$ only.
@@ -809,11 +895,6 @@ the identity and the belief construction is not needed.
 The fairness markings bear only on liveness, which is out of scope.
 
 \paragraph{Notation.}
-Write $\delta(s)$ for the Dirac distribution on $s$ and $\mu \triangleright g$
-for the pushforward of $\mu$ along $g$.
-The coin failure probability is written $\delta$ as well, and the two readings
-are told apart by the presence of an argument.
-Write $s[x := v]$ for record update.
 Write $[n]$ for the identifier set and $F \subseteq [n]$ for the corrupted set.
 The quorum predicate is
 \[
@@ -830,20 +911,17 @@ Every transition rule is displayed as a guard above a labelled step into an
 explicit distribution.
 A Dirac target and a genuinely probabilistic one are therefore distinguishable
 at sight.
-Exactly two transitions in the whole development are non-Dirac: the coin rule
-of Transition System~1 and the coin rule of Transition System~3.
-Each resolves one coin, and the two distributions differ.
-The coin of Transition System~1 always delivers, while that of Transition
-System~3 carries the further outcome $\dagger$ of mass $\delta$ (D17).
-Both distributions are displayed in Definition~\ref{def:aba-params}.
+
+\subsection{Parameters and the shared alphabet}
 
 \begin{definition}[Parameters and coins]
   \label{def:aba-params}
   \lean{PLTS.ABA.Params}\lean{PLTS.ABA.Params.coinPMF}%
   \lean{PLTS.ABA.Params.wccPMF}\leanok
   The parameters: $n$ processes, at most $f$ corrupted with $3f < n$, coin
-  goodness $\varepsilon$, and coin failure probability $\delta$, subject to
-  $2\varepsilon + \delta \le 1$.
+  goodness $\varepsilon$, and coin failure probability $\failmass$, subject to
+  $2\varepsilon + \failmass \le 1$.
+  The Lean field carrying $\failmass$ is named $\delta$.
   The coin resolution of Transition System~1 follows $\mathrm{coinPMF}$ and the
   coin resolution of Transition System~3 follows $\mathrm{wccPMF}$:
   \[
@@ -853,8 +931,8 @@ Both distributions are displayed in Definition~\ref{def:aba-params}.
   \[
     \mathrm{wccPMF} \ =\ \varepsilon \cdot \delta(0) \ +\
       \varepsilon \cdot \delta(1) \ +\
-      (1 - 2\varepsilon - \delta) \cdot \delta(\top) \ +\
-      \delta \cdot \delta(\dagger).
+      (1 - 2\varepsilon - \failmass) \cdot \delta(\top) \ +\
+      \failmass \cdot \delta(\dagger).
   \]
   Each bit carries $\varepsilon$ in both.
   The adversarial outcome $\top$ takes the remaining mass of $\mathrm{coinPMF}$,
@@ -871,15 +949,7 @@ Both distributions are displayed in Definition~\ref{def:aba-params}.
   $\mathrm{fail}(id)$, and $\tau$.
 \end{definition}
 
-\begin{definition}[Idle padding and instance families]
-  \label{def:idle-family}
-  \lean{PLTS.System.withIdle}\lean{PLTS.System.family}\leanok
-  Idle self-loops on foreign labels make the full-synchronisation
-  \lean{PLTS.System.parallel} emulate sync-set composition; the
-  $\mathbb{N}$-indexed instance family moves one instance per owned or silent
-  label, broadcasts corruption to all instances, and idles otherwise. Families
-  of LTS instances are LTS.\lean{PLTS.System.family_isLTS}\leanok
-\end{definition}
+\subsection{The ABA specification and its safety}
 
 \begin{definition}[The ABA specification, repaired]
   \label{def:aba-spec}
@@ -896,19 +966,19 @@ Both distributions are displayed in Definition~\ref{def:aba-params}.
   At most $f$ processes are ever corrupted, so $f{+}1$ distinct supporters always include a never-corrupted one, and $3f < n$ supplies $n - 2f \ge f + 1$.
 \end{definition}
 
-\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification, with its five control states and the coin branch.
-The states are \emph{unbound} ($bind = \bot$), \emph{bound} ($bind \neq \bot$, $coin = \bot$), \emph{coin differs} ($coin$ is the other bit or $\top$), \emph{coin agrees} ($coin$ is the bound bit), and \emph{decided} ($val \neq \bot$).
-Rule 5 (\texttt{coinFlip}) is the branch out of \emph{bound}, drawn with an undirected stem for the $\tau$-step and one edge per outcome.
-It is the only probabilistic transition of the system.
+The specification has five control states: \emph{unbound} ($bind = \bot$), \emph{bound} ($bind \neq \bot$, $coin = \bot$), \emph{coin differs} ($coin$ is the other bit or $\top$), \emph{coin agrees} ($coin$ is the bound bit), and \emph{decided} ($val \neq \bot$).
+Rule 5 (\texttt{coinFlip}) is the branch out of \emph{bound}, and it is the only probabilistic transition of the system.
 Its outcomes carry $\varepsilon$, $\varepsilon$ and $1-2\varepsilon$, so a resolution matches the bound bit with probability $\varepsilon$.
-On a match rule 6 (\texttt{adopt}) writes the bound bit into an empty honest slot, and rule 7 (\texttt{repropose}) is disabled.
+On a match rule 6 (\texttt{adopt}) writes the bound bit into an empty honest slot and rule 7 (\texttt{repropose}) is disabled.
 On a mismatch rule 7 is enabled and rule 6 is disabled.
 Rule 4 (\texttt{mixed}) binds under a quorum on both bits, with an $f{+}1$-support guard on the bound bit.
 Rule 3 (\texttt{unanim}) writes $val \leftarrow\,!b$ when no honest process holds $b$.
-Enabledness is wider than the drawn edges show.
+Enabledness is wider than the control graph shows.
 Rule 2 fires in every state, rule 3 is also enabled on \emph{coin differs}, and rules 3 and 5 to 8 remain enabled on \emph{decided}, where rule 3 rewrites $val$ to itself.
-Rule 9 (\texttt{fail}), the total corruption rule (D1), and rule 10 (\texttt{callByzFill}), by which a corrupted $id\in F$ fills an empty call slot with no ghost record (D13), are omitted.
-The provenance guards on rules 4 and 7 exclude the unanimity-overwrite (D3) and later-corrupted-input (D13) traces.}
+The provenance guards on rules 4 and 7 exclude the unanimity-overwrite (D3) and later-corrupted-input (D13) traces.
+
+\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification: the five control states and the coin branch of rule 5, whose $\tau$-step is drawn with an undirected stem and one edge per outcome.
+Rule 9 (\texttt{fail}), the total corruption rule (D1), and rule 10 (\texttt{callByzFill}), by which a corrupted $id \in F$ fills an empty call slot with no ghost record (D13), are not drawn.}
 
 \noindent\textbf{Transition System 1: the ABA specification.}
 
@@ -1058,6 +1128,8 @@ liveness statement, not proved here.
   Positionality of that caller, a call at some $k < m$, is read off the same label-history fold.
 \end{proof}
 
+\subsection{The sub-protocol specifications}
+
 \begin{definition}[Sub-protocol specifications]
   \label{def:aba-subspecs}
   \lean{PLTS.ABA.WCC.Step}\lean{PLTS.ABA.WCC.specFamily}\lean{PLTS.ABA.GBCA.Step}\lean{PLTS.ABA.GBCA.specFamily}\leanok
@@ -1182,7 +1254,7 @@ a caller.
 \blueprintfig{fig-wcc}{The WCC specification instance (Transition System 3): the four-outcome coin resolution and the return of the common bit or an adversary-chosen bit.
 The \texttt{flip} guard requires more than $f$ callers counting corrupted, $|\{id\notin F:\ called\}\cup F|>f$, and is the sole probabilistic transition besides Transition System 1.
 On $val{=}1$ and $val{=}0$ every process returns the common bit, and on $val{=}\top$ each process returns an adversary-chosen bit.
-The branch $val{=}\dagger$ of mass $\delta$ is a sink for returns (D17): \texttt{ret} has a positive guard, so no return is enabled there.}
+The branch $val{=}\dagger$ of mass $\failmass$ is a sink for returns (D17): \texttt{ret} has a positive guard, so no return is enabled there.}
 
 \noindent\textbf{The WCC specification, round-$r$ instance.}
 
@@ -1230,8 +1302,8 @@ Guard
      s \xrightarrow{\;\tau\;}\ \
      &\varepsilon\cdot\delta\bigl(s[\,val := 0\,]\bigr)
      + \varepsilon\cdot\delta\bigl(s[\,val := 1\,]\bigr)\\
-     &{}+ (1-2\varepsilon-\delta)\cdot\delta\bigl(s[\,val := \top\,]\bigr)
-     + \delta\cdot\delta\bigl(s[\,val := \dagger\,]\bigr)
+     &{}+ (1-2\varepsilon-\failmass)\cdot\delta\bigl(s[\,val := \top\,]\bigr)
+     + \failmass\cdot\delta\bigl(s[\,val := \dagger\,]\bigr)
    \end{aligned} \]
 
 \noindent\textbf{4.} \texttt{ret}.
@@ -1258,10 +1330,10 @@ One coin resolution has four outcomes.
 With probability $\varepsilon$ the outcome is the bit $0$, and with probability
 $\varepsilon$ it is the bit $1$.
 In either case every correct process receives that bit.
-With mass $1 - 2\varepsilon - \delta$ the outcome is $\top$, the unresolved
+With mass $1 - 2\varepsilon - \failmass$ the outcome is $\top$, the unresolved
 coin: each process may then be handed either bit by the adversary,
 independently of the others.
-With probability $\delta$ the outcome is $\dagger$, on which the resolution
+With probability $\failmass$ the outcome is $\dagger$, on which the resolution
 delivers to no process at all (D17).
 The outcome $\dagger$ models a delivery failure of the implementation this
 specification stands for.
@@ -1278,16 +1350,18 @@ The $\varepsilon$-Goodness it asserts is an assumption of this development, to
 be discharged by an implementation over Gather and SRSD that is not modelled
 here.
 The assumption is inert for the results proved: safety holds for every
-admissible pair $\varepsilon, \delta$, including $\varepsilon = 0$, where the
+admissible pair $\varepsilon, \failmass$, including $\varepsilon = 0$, where the
 coin resolves to $\top$ or $\dagger$ almost surely.
-Safety is insensitive to $\delta$ for a further reason: the outcome $\dagger$
+Safety is insensitive to $\failmass$ for a further reason: the outcome $\dagger$
 removes returns rather than adding any, and every safety property of this
 development constrains the returns that do occur.
 It is a termination argument that would consume the $\varepsilon$-mass, and
-such an argument must carry the $\delta$-mass too, since a $\dagger$ resolution
+such an argument must carry the $\failmass$-mass too, since a $\dagger$ resolution
 produces no return at all.
 Termination and fairness are out of scope.
 }
+
+\subsection{The GBCA implementation and its refinement}
 
 \begin{algorithm}
     \caption{Implementation of GBCA. Algorithm 2 of the source blueprint, after
@@ -1585,6 +1659,8 @@ A later return, and every $C$-return, maps to a single graded specification retu
   The families are LTS, so the LTS bridge (Lemma~\ref{lem:bridge}) turns the family-level LTS forward simulation into a probabilistic one, applied once at family level.
 \end{proof}
 
+\subsection{The ABA core}
+
 \begin{algorithm}
     \caption{Implementation of ABA. Algorithm 1 of the source blueprint, after
       Abraham, Ben-David and Yandamuri \cite{ABDY22}}
@@ -1625,10 +1701,12 @@ A later return, and every $C$-return, maps to a single graded specification retu
   Corrupted processes additionally carry Byzantine call- and return-driver rules at each handshake (D11).
 \end{definition}
 
-\blueprintfig{fig-core-phases}{The ABA core: the per-process five-phase handshake cycle, the fused DECIDED multicast at the A-grade coin return (D10), and the DECIDED pool layer gating $\mathrm{retABA}$.
-The idle self-loop carries \texttt{inputLoop} together with the Byzantine driver rules \texttt{callGByz}/\texttt{retGByz}/\texttt{callWByz}/\texttt{retWByz} for $id\in F$ (any phase, no state change, D11); \texttt{retG} sets $est\leftarrow$ grade, and \texttt{retW} increments the round, adopts the coin when $est=\bot$, and multicasts $\langle\mathrm{DECIDED},b\rangle$ on an A-grade return (D10).
-The DECIDED pool layer runs $\tau$-loops, round-agnostic since the pools carry no round index: \texttt{deliver} (the adversary moves a sender's pooled $\langle\mathrm{DECIDED},b\rangle$ to a receiver), \texttt{echo} ($f{+}1$ distinct receipts multicast), and \texttt{byzDecided} (D12$'$: $id\in F$ pools either bit).
-The exit \texttt{retABA}\,$id\,b$ fires once $n-f$ distinct senders of $b$ have been delivered to $id$ and $b$ is in $id$'s own sent pool.}
+The idle self-loop of a process carries \texttt{inputLoop} together with the Byzantine driver rules \texttt{callGByz}, \texttt{retGByz}, \texttt{callWByz} and \texttt{retWByz}, which fire at any phase for $id \in F$ and change no state (D11).
+The step \texttt{retG} sets $est$ to the grade, and \texttt{retW} increments the round, adopts the coin when $est = \bot$, and multicasts $\langle\mathrm{DECIDED},b\rangle$ on an $A$-grade return (D10).
+The DECIDED pool layer is three $\tau$-loops, round-agnostic because the pools carry no round index: \texttt{deliver}, by which the adversary moves a sender's pooled $\langle\mathrm{DECIDED},b\rangle$ to a receiver; \texttt{echo}, the multicast on $f{+}1$ distinct receipts; and \texttt{byzDecided}, by which $id \in F$ pools either bit (D12$'$).
+The exit \texttt{retABA}\,$id\,b$ fires once $n-f$ distinct senders of $b$ have been delivered to $id$ and $b$ is in $id$'s own sent pool.
+
+\blueprintfig{fig-core-phases}{The ABA core: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pool layer gating $\mathrm{retABA}$.}
 
 The Lean encoding of Algorithm~\ref{alg:aba-core} is the system
 $\mathrm{ABA.core}$, an LTS over the same label alphabet.
@@ -1807,6 +1885,8 @@ family rules that pair out; the core alone guarantees only that each process
 returns at most once, by the flag its return rule sets.
 }
 
+\subsection{The hybrids and substitution}
+
 \begin{definition}[The hybrids]
   \label{def:aba-hybrids}
   \lean{PLTS.ABA.hybridImpl}\lean{PLTS.ABA.hybridSpec}\leanok
@@ -1911,6 +1991,8 @@ The two hybrids are thus compared on the ABA interface alone.
   Soundness (Theorem~\ref{thm:forward-sound}) turns it into the trace-distribution inclusion.
 \end{proof}
 
+\subsection{The core simulation and the main theorem}
+
 \begin{theorem}[The core simulation]
   \label{thm:aba-coresim}
   \lean{PLTS.ABA.coreSim}\leanok
@@ -1954,23 +2036,6 @@ A safety property proved of the small specification therefore holds of every
 trace of positive probability in the composed implementation.
 }
 
-\begin{theorem}[Trace-support bridge]
-  \label{thm:trace-support}
-  \lean{PLTS.exists_exec_of_traceProb_ne_zero}\lean{PLTS.is_exec_of_probOf_ne_zero}\lean{PLTS.safety_transfer}\leanok
-  A trace with positive trace probability under a Dirac-initialised
-  probabilistic execution is the trace of a genuine execution of the system,
-  with trace membership characterised by the execution's events; safety of
-  trace supports transfers along inclusion of achievable trace distributions.
-\end{theorem}
-
-\begin{proof}\leanok
-  \uses{def:probexec, def:traceprob, def:exec, def:achievable}
-  Fix a Dirac-initialised probabilistic execution and a trace $t$ with positive trace probability.
-  Positive trace probability forces a positive-mass path, and reading its labels off that path yields a genuine execution of the system whose trace is $t$; trace membership is then characterised by that execution's events.
-  For the transfer, suppose $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A)$ and that every trace in the support of every achievable trace distribution of $sys_A$ is safe.
-  Each achievable trace distribution of $sys_C$ is one of $sys_A$, so its support is safe as well.
-\end{proof}
-
 \begin{theorem}[Refinement and correctness of ABA]
   \label{thm:aba-main}
   \lean{PLTS.ABA.refines}\lean{PLTS.ABA.main}\leanok
@@ -1994,6 +2059,8 @@ trace of positive probability in the composed implementation.
   The composed simulation is obtained separately, by transitivity of probabilistic forward simulation.
 \end{proof}
 
+\subsection{Non-vacuity}
+
 \begin{definition}[Non-vacuity]
   \label{def:aba-examples}
   \lean{PLTS.ABA.P4}\leanok
@@ -2013,29 +2080,9 @@ Each is a single automaton whose state is the whole system, so its rules may rea
 The GBCA delivery rule inspects the sender's message pool and the receiver's row in one guard, and the core's DECIDED delivery does the same.
 That the guards are nevertheless local is a property of the rules and not of the state shape, and it is stated here as a theorem.
 Each monolithic system is equal, on achievable trace distributions, to the full-synchronisation composition of $n$ automata, one per process, communicating only through delivery labels that the composition hides.
+That composition is the product of Definition~\ref{def:syncproduct}, taken over the extended alphabet of Definition~\ref{def:relabel} and read back along the restriction that definition supplies.
 
-\begin{definition}[Extended alphabets and restriction]
-  \label{def:relabel}
-  \lean{PLTS.instSilentSum}\lean{PLTS.System.relabel}\lean{PLTS.System.relabel_isLTS}\lean{PLTS.System.abstract_isLTS}\leanok
-  A composition whose components rendezvous on labels the composite is not meant to expose is built over the extended alphabet $\mathrm{Label} \oplus \mathrm{Extra}$, with $\mathrm{Extra}$ carrying the auxiliary labels.
-  The silent label of the extended alphabet is $\mathrm{inl}\,\tau$, so every auxiliary label $\mathrm{inr}\,e$ is observable and hence hideable by $\mathrm{abstract}$.
-  Restriction along the left embedding, $\mathrm{relabel}(sys)$, keeps the state space and the initial state of $sys$ and retains exactly its $\mathrm{inl}$-labelled transitions.
-  Auxiliary transitions are discarded, so they must be abstracted to $\tau$ first if they are to survive.
-  Restriction discards transitions and not states, so it preserves the LTS property; abstraction preserves it as well, relabelling each transition and keeping its distribution.
-\end{definition}
-
-\begin{definition}[The full-synchronisation product]
-  \label{def:syncproduct}
-  \lean{PLTS.System.syncProduct}\lean{PLTS.System.syncProduct_isLTS}\leanok
-  \uses{def:idle-family}
-  Let $sys_i : \mathrm{System}\,(State_i)\,\mathrm{Label}$ for $i$ ranging over a finite index type.
-  On a visible label $l \neq \tau$ the product $\mathrm{syncProduct}(sys)$ steps every component on $l$ simultaneously, and the joint successor is the independent product of the per-component distributions.
-  On $\tau$ exactly one component steps and the others hold their state.
-  Ownership of a label is carried by the components and not by the operator, which stays a single conjunction over the family.
-  A component idles on the labels it does not own (Definition~\ref{def:idle-family}), so a label owned by exactly two components moves those two and leaves every other component in place.
-  A label no component offers is blocked, the conjunction over the family having no witness.
-  A product of LTS components is an LTS: a product of Diracs is the Dirac on the tuple of their points, and a single-coordinate update of an all-Dirac family is again a Dirac.
-\end{definition}
+\subsubsection{The per-layer automata and their theorems}
 
 \begin{definition}[The per-process GBCA instance]
   \label{def:aba-gbca-perproc}
@@ -2108,12 +2155,14 @@ Each monolithic system is equal, on achievable trace distributions, to the full-
   Both systems are LTS, so each matching is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) applied in each direction gives the two inclusions.
 \end{proof}
 
-\blueprintfig{fig-perproc}{The per-process presentation: the family $\mathrm{procInst}(P,r,j)$ under $\mathrm{syncProduct}$, the network alphabet hidden, and the composite read back over $\mathrm{Lab}(n)$.
-The dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netLabels}$: every $\mathrm{net}(i,j,m)$ becomes $\tau$, and what leaves the frame is the visible API $\mathrm{callG}/\mathrm{retG}/\mathrm{fail}$ together with $\tau$.
-One illustrated rendezvous $\mathrm{net}(i,j,m)$: the sender $j$ supplies the guard $m \in \mathrm{out}_j$ and does not move, the receiver $i$ files $m$ under row $j$, and every other component answers with an idle self-loop, so full synchronisation moves exactly the two participants.
-On a visible label every component steps --- its owner by its own rule, the rest by an idle loop, and on $\mathrm{fail}$ every copy of the corrupted set is corrupted.
-The dashed vertical is Theorem~\ref{thm:aba-gbca-perproc}: the composite and the monolithic instance achieve the same trace distributions, the relation being the graph of $\mathrm{unpack}$.
-The core carries the same picture with $\mathrm{CoreProc}(P,j)$, $\mathrm{net}(i,j,b)$ and $\mathrm{gossipLabels}$ in place of the GBCA names.}
+Both composites of Definitions~\ref{def:aba-gbca-perproc} and~\ref{def:aba-core-perproc} have the same shape.
+The frame is $\mathrm{relabel}$ composed with $\mathrm{abstract}_{\mathrm{netLabels}}$: it turns every $\mathrm{net}(i,j,m)$ into $\tau$, and what leaves it is the visible API $\mathrm{callG}$, $\mathrm{retG}$ and $\mathrm{fail}$ together with $\tau$.
+At a rendezvous $\mathrm{net}(i,j,m)$ the sender $j$ supplies the guard $m \in \mathrm{out}_j$ and does not move, the receiver $i$ files $m$ under row $j$, and every other component answers with an idle self-loop, so full synchronisation moves exactly the two participants.
+On a visible label every component steps, its owner by its own rule and the rest by an idle loop; on $\mathrm{fail}$ every copy of the corrupted set is corrupted.
+The core composite carries the same description with $\mathrm{CoreProc}(P,j)$, $\mathrm{net}(i,j,b)$ and $\mathrm{gossipLabels}$ in place of the GBCA names.
+
+\blueprintfig{fig-perproc}{The per-process presentation: the family $\mathrm{procInst}(P,r,j)$ under $\mathrm{syncProduct}$, the network alphabet hidden by the dashed frame $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netLabels}$, and the composite read back over $\mathrm{Lab}(n)$.
+The dashed vertical is Theorem~\ref{thm:aba-gbca-perproc}: the composite and the monolithic instance achieve the same trace distributions, the relation being the graph of $\mathrm{unpack}$.}
 
 \begin{theorem}[The per-process core is the core]
   \label{thm:aba-core-perproc}
@@ -2157,27 +2206,13 @@ The message pools, the receipt rows and the control records each belong to one
 process, and every quorum count is taken over one node's rows.
 }
 
+\subsubsection{The assembled hybrid}
+
 The two theorems above treat one layer at a time, and each leaves the layer boundary of Definition~\ref{def:aba-hybrids} in place.
 Two statements close the presentation.
 The first substitutes both per-process layers into the hybrid at once, so that every implemented box of the composition is a composition of one automaton per process.
 The second removes the boundary: the round loop of a process and its graded-agreement stages become a single automaton, and the hybrid becomes $n$ programs beside the coin oracle.
-Both rest on a matching the layer theorems do not need, in which the abstract state is a function of the concrete one.
-
-\begin{definition}[Functional strong matchings]
-  \label{def:strongfunctional}
-  \lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional}\lean{PLTS.ProbabilisticForwardSimulation.congr_rel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_diracRel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_converse}\lean{PLTS.prodPMF_map_swap}\lean{PLTS.System.parallel_swap_step}\leanok
-  \uses{def:forwardsim}
-  Let $f : State_C \to State_A$ carry $sys_C.init$ to $sys_A.init$ and carry every transition $s \xrightarrow{l} \mu$ of $sys_C$ to the transition $f\,s \xrightarrow{l} \mu.\mathrm{map}\,f$ of $sys_A$ on the same label.
-  Then the graph of $f$, the relation $R\,s\,\nu \iff \nu = \delta_{f\,s}$, is a probabilistic forward simulation of $sys_C$ by $sys_A$.
-  Neither system need be an LTS.
-  The pushforward $\mu.\mathrm{map}\,f$ matches $\mu$ outcome by outcome, so the coupling is the pushforward of $\mu$ along $s \mapsto (s, \delta_{f\,s})$ and the abstract side answers with its single strong step, read as a weak transition.
-  The converse statement holds for a step-reflecting map.
-  Let $f : State_A \to State_C$ carry $sys_A.init$ to $sys_C.init$, and let every transition $f\,q \xrightarrow{l} \mu$ of $sys_C$ be $\mu = \nu.\mathrm{map}\,f$ for some transition $q \xrightarrow{l} \nu$ of $sys_A$.
-  Then the converse of the graph of $f$, the relation $R\,p\,\nu \iff \exists q,\ \nu = \delta_q \wedge p = f\,q$, is a probabilistic forward simulation of $sys_C$ by $sys_A$.
-  Here $f$ need be neither injective nor surjective; states outside its image are simply unrelated.
-  Transport along a pointwise equivalence of relations restates either matching along the Dirac lift $\operatorname{diracRel}$, which is the shape the composed relations of the process algebra are built from.
-  The coordinate exchange $\mathrm{swap}(a,b) = (b,a)$ is such a matching between $sys_1 \parallel sys_2$ and $sys_2 \parallel sys_1$ in both directions, its step clause being that a product distribution pushed forward along $\mathrm{swap}$ is the product taken the other way round.
-\end{definition}
+Both rest on the functional matchings of Lemma~\ref{def:strongfunctional}, in which the abstract state is a function of the concrete one.
 
 \begin{theorem}[The assembled hybrid]
   \label{thm:aba-assembly}
@@ -2201,11 +2236,13 @@ Both rest on a matching the layer theorems do not need, in which the abstract st
   \uses{thm:aba-gbca-perproc, thm:aba-core-perproc, thm:precong-parallel, thm:precong-abstract, thm:forward-sound, thm:aba-main, def:strongfunctional, def:idle-family}
   The two per-instance GBCA matchings of Theorem~\ref{thm:aba-gbca-perproc} lift to the two families by the family congruence, whose broadcast hypothesis is that packing commutes with the corruption transform on $\mathrm{fail}(k)$, the one label the family broadcasts.
   Both families are LTS, so each lifted matching is a probabilistic forward simulation, and so are the two core matchings of Theorem~\ref{thm:aba-core-perproc}.
-  Each of the four is transported into the composition by the precongruences for parallel composition (Theorem~\ref{thm:precong-parallel}) and for abstraction (Theorem~\ref{thm:precong-abstract}); the core occupies the right factor, so its two transports are the parallel precongruence conjugated by the coordinate exchange of Definition~\ref{def:strongfunctional}.
+  Each of the four is transported into the composition by the precongruences for parallel composition (Theorem~\ref{thm:precong-parallel}) and for abstraction (Theorem~\ref{thm:precong-abstract}); the core occupies the right factor, so its two transports are the parallel precongruence conjugated by the coordinate exchange of Lemma~\ref{def:strongfunctional}.
   Soundness (Theorem~\ref{thm:forward-sound}) turns each transport into a trace-distribution inclusion, and the four chain by transitivity of $\subseteq$ into the two inclusions of the equality.
   The coin oracle is never simulated: it is the fixed context of every precongruence step, which is what admits the argument although it is the one factor that is not an LTS.
   Safety is Theorem~\ref{thm:aba-main} read along the equality.
 \end{proof}
+
+\subsubsection{The flat presentation}
 
 \begin{definition}[The program of one process]
   \label{def:aba-flat}
@@ -2257,7 +2294,7 @@ Both rest on a matching the layer theorems do not need, in which the abstract st
   Both systems of the statement are abstractions of the same shape, so it suffices to match $\mathrm{flatPre}(P)$ with $\mathrm{GBCA.implFamily}(P) \parallel (\mathrm{core}(P) \parallel \mathrm{WCC.specFamily}(P))$.
   Define the unflattening map $\mathrm{unflat}$: it splits each array of a monolithic state along the process index, giving process $x$ the round-loop record, DECIDED pool and receipt rows of $x$ together with $x$'s row of every round's stage, and it leaves the coin oracle's coordinate untouched.
   Every transition of either system other than the coin resolution is Dirac, and a transition and its image have the same successor, so $\mathrm{unflat}$ both commutes with steps and reflects them; the coin resolution appears on the two sides as the same pushforward of $\mathrm{coinPMF}$ and is matched by itself.
-  Definition~\ref{def:strongfunctional} therefore gives a probabilistic forward simulation along the graph of $\mathrm{unflat}$ and a second along its converse, neither system being an LTS.
+  Lemma~\ref{def:strongfunctional} therefore gives a probabilistic forward simulation along the graph of $\mathrm{unflat}$ and a second along its converse, neither system being an LTS.
   The map is not surjective --- a flat state whose copies of the corrupted set disagree has no preimage --- which is why the backward direction is the converse of the graph and not the graph of an inverse.
   Abstraction (Theorem~\ref{thm:precong-abstract}) transports both matchings, soundness (Theorem~\ref{thm:forward-sound}) turns each into a trace-distribution inclusion, and antisymmetry of $\subseteq$ gives the equality.
   Safety is Theorem~\ref{thm:aba-main} read along the equality.

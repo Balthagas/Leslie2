@@ -63,6 +63,8 @@ inductive CoinOutcome : Type
   | dead
   deriving DecidableEq, Repr
 
+-- Explicit rather than derived: a derived instance leaves `Finset.univ` in a
+-- shape the mass-one proof cannot open.
 instance : Fintype CoinOutcome where
   elems := {.bit false, .bit true, .adv, .dead}
   complete := by

@@ -17,7 +17,7 @@
 \newcommand{\mathlibok}{}
 \newcommand{\notready}{}
 % Print edition renders each TikZ figure from figures/#1 with caption #2.
-\newcommand{\blueprintfig}[2]{\begin{figure}[h]\centering\input{figures/#1}\caption{#2}\end{figure}}
+\newcommand{\blueprintfig}[2]{\begin{figure}[htbp]\centering\input{figures/#1}\caption{#2}\end{figure}}
 % Make sure that arguments of \uses and \proves are real labels, by using invisible refs:
 % latex prints a warning if the label is not defined, but nothing is shown in the pdf file.
 % It uses LaTeX3 programming, this is why we use the expl3 package.

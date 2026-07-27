@@ -11,8 +11,8 @@
   \path
     (bot) edge node[lbl, sloped, above, pos=0.55]{\texttt{flip}\,$[\varepsilon]$} (b1)
     (bot) edge node[lbl, above]{\texttt{flip}\,$[\varepsilon]$} (b0)
-    (bot) edge node[lbl, sloped, above, pos=0.5]{\texttt{flip}\,$[1{-}2\varepsilon{-}\delta]$} (top)
-    (bot) edge node[lbl, sloped, below, pos=0.62]{\texttt{flip}\,$[\delta]$} (dead)
+    (bot) edge node[lbl, sloped, above, pos=0.5]{\texttt{flip}\,$[1{-}2\varepsilon{-}\failmass]$} (top)
+    (bot) edge node[lbl, sloped, below, pos=0.62]{\texttt{flip}\,$[\failmass]$} (dead)
     (bot) edge[loop above, looseness=6]
       node[lbl, above]{\texttt{call} / \texttt{callLoop}} (bot)
     (b1)  edge[loop right, looseness=6] node[lbl, right]{\texttt{ret}\,$1$ (common)} (b1)
