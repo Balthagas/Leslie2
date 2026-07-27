@@ -20,8 +20,8 @@ Components talk only through synchronized handshake labels (`callG`/`retG`/
 state. Design rationale for the core simulation: `../DESIGN-CoreSim.md`.
 
 **Scope.** GBCA is verified to
-*implementation* level; WCC is *assumed* at specification level (the ε-coin is
-`coinPMF`). The `ValidityTrace` predicate is the **paper-form**
+*implementation* level; WCC is *assumed* at specification level (its coin is
+`wccPMF`). The `ValidityTrace` predicate is the **paper-form**
 Validity (D13): every return of `b` is preceded by a `callABA _ b` from a
 caller that is **never corrupted** anywhere in the trace — matching the papers'
 correct-process Validity. The `f + 1` `SuppOK` support counts are the
@@ -29,24 +29,25 @@ correct-process Validity. The `f + 1` `SuppOK` support counts are the
 Safety only: no termination/liveness/unpredictability/fairness.
 
 **Deviation numbering.** D2, D6 and D7 are intentionally unused; the set in use
-across the ABA docstrings is **D1, D3–D5, D8–D16**, with D12 refined to **D12′**
+across the ABA docstrings is **D1, D3–D5, D8–D17**, with D12 refined to **D12′**
 (per-process DECIDED pools). D13/D14 are the Validity repairs, D15 the
 F-blind counting form of their support guards (`f+1` callers-or-corrupted),
-D16 the ultra-lazy twin of the core simulation.
+D16 the ultra-lazy twin of the core simulation, D17 the δ-mass delivery-failure
+outcome of the WCC specification's coin.
 
 ## Reading order
 
 ### Layer 0 — vocabulary
 | file | lines | what it is |
 |---|---|---|
-| `Params.lean` | 78 | The protocol parameters `P : Params` — `n`, `f` (with `n > 3f`), the coin distribution `coinPMF` and its ε-bounds. Everything is parametrized by `P`. |
+| `Params.lean` | 148 | The protocol parameters `P : Params` — `n`, `f` (with `n > 3f`), the coin distributions `coinPMF` (spec-level ABA coin) and `wccPMF` (the WCC specification's coin, over `CoinOutcome`, carrying the δ-mass `dead` outcome), and their ε/δ-bounds. Everything is parametrized by `P`. |
 | `Labels.lean` | 145 | The single label alphabet `Lab n`: visible API (`callABA`/`retABA`/`fail`), hidden handshakes (`callG`/`retG`/`callW`/`retW`, round-tagged), `τ`; the `hiddenAPI` selector used by `abstract`; round projections. |
 
 ### Layer 1 — the three specifications
 | file | lines | what it is |
 |---|---|---|
-| `Spec.lean` | 225 | **The top-level ABA specification** (`ABA.spec`): a small PLTS over `SpecState` (`F`, `ret`, `val`, `bind`, `coin`, `call`) with 10 rules (incl. the `callByzFill` τ-rule). Carries the **D3** Agreement repair (rule 7 guard `val = ⊥ ∨ b = val`) *and* the **D13** Validity repair: ghost `input` (rule 1 unconditional, rule 2 first-write-wins), the rule-4 `f+1`-support bind guard, the provenance-preserving rule-7 re-propose guard, and the `callByzFill` τ-rule. This is the system all safety is measured against. |
-| `WCCSpec.lean` | 114 | The Weak Common Coin **specification** (per-round instance): call quorum, then a genuine `coinPMF` flip — the only probabilistic step in the whole stack. Held at spec level by design (assumed, not implemented). |
+| `Spec.lean` | 230 | **The top-level ABA specification** (`ABA.spec`): a small PLTS over `SpecState` (`F`, `ret`, `val`, `bind`, `coin`, `call`) with 10 rules (incl. the `callByzFill` τ-rule). Carries the **D3** Agreement repair (rule 7 guard `val = ⊥ ∨ b = val`) *and* the **D13** Validity repair: ghost `input` (rule 1 unconditional, rule 2 first-write-wins), the rule-4 `f+1`-support bind guard, the provenance-preserving rule-7 re-propose guard, and the `callByzFill` τ-rule. This is the system all safety is measured against. |
+| `WCCSpec.lean` | 143 | The Weak Common Coin **specification** (per-round instance): call quorum, then a genuine `wccPMF` flip — the only probabilistic step in the whole stack. **D17**: the flip carries a δ-mass `dead` outcome (delivery failure); the positive `ret` guard means a dead round hands out nothing. Held at spec level by design (assumed, not implemented). |
 | `GBCASpec.lean` | 182 | The Graded Binding Crusader Agreement **specification** (per-round instance): call slots, quorum-gated binding, grades (A/B/C), returns. The `A`/`B`-returns hand out the bound value; the bind-free `C`-return hands out no bit. **D14**: every provenance guard is an `f+1` F-blind count of callers (`call = b ∨ ∈ F`, the D15 `SuppOK` form) rather than a single witness — on the bound bit at `bindSet`, on the dissenting bit at `retB`, and on **both** bits at `retC`, which is what certifies that no single bit can be handed out. With at most `f` ever corrupted, any such set contains a never-corrupted genuine caller — the fix that makes paper-form Validity provable. |
 
 ### Layer 2 — spec-level safety of ABA
@@ -78,7 +79,7 @@ D16 the ultra-lazy twin of the core simulation.
 | file | lines | what it is |
 |---|---|---|
 | `Main.lean` | 89 | The deliverables: `refines` (trace-distribution inclusion), `main` (Validity ∧ Agreement for every positive-mass trace of `hybridImpl` — GBCA at impl level, WCC assumed at spec level), `simComposed` (the single composed simulation via transitivity). `#guard_msgs` axiom firewall — the build fails if any of them ever acquires `sorryAx`. |
-| `Examples.lean` | 600 | Non-vacuity: a concrete n = 4, f = 1, ε = 1/2 happy-path run carried all the way to a `retABA` decision (21 steps) — **on `hybridSpec`**; `hybridImpl` (the system `main` is about) is witnessed to a single step, and the positive-probability remark is informal (no machine-checked `achievableTraceDists` membership on either side — see Future work). |
+| `Examples.lean` | 598 | Non-vacuity: a concrete n = 4, f = 1, ε = 1/2 happy-path run carried all the way to a `retABA` decision (21 steps) — **on `hybridSpec`**; `hybridImpl` (the system `main` is about) is witnessed to a single step, and the positive-probability remark is informal (no machine-checked `achievableTraceDists` membership on either side — see Future work). |
 
 ### Layer 7 — the per-process presentation
 | file | lines | what it is |

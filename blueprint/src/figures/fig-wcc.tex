@@ -7,14 +7,18 @@
   \node[state] (b1)  at (4.3,2.2)  {$val{=}1$};
   \node[state] (b0)  at (4.3,0)     {$val{=}0$};
   \node[state] (top) at (4.3,-2.2) {$val{=}\top$};
+  \node[state] (dead) at (4.3,-4.6) {$val{=}\dagger$};
   \path
     (bot) edge node[lbl, sloped, above, pos=0.55]{\texttt{flip}\,$[\varepsilon]$} (b1)
     (bot) edge node[lbl, above]{\texttt{flip}\,$[\varepsilon]$} (b0)
-    (bot) edge node[lbl, sloped, below, pos=0.55]{\texttt{flip}\,$[1{-}2\varepsilon]$} (top)
+    (bot) edge node[lbl, sloped, above, pos=0.5]{\texttt{flip}\,$[1{-}2\varepsilon{-}\delta]$} (top)
+    (bot) edge node[lbl, sloped, below, pos=0.62]{\texttt{flip}\,$[\delta]$} (dead)
     (bot) edge[loop above, looseness=6]
       node[lbl, above]{\texttt{call} / \texttt{callLoop}} (bot)
     (b1)  edge[loop right, looseness=6] node[lbl, right]{\texttt{ret}\,$1$ (common)} (b1)
     (b0)  edge[loop right, looseness=6] node[lbl, right]{\texttt{ret}\,$0$ (common)} (b0)
     (top) edge[loop right, looseness=6]
       node[lbl, right, align=left]{\texttt{ret}\,$b$\\ (adv.-chosen)} (top);
+  \node[right=0.55cm of dead, font=\footnotesize, align=left]
+    {no \texttt{ret} enabled};
 \end{tikzpicture}

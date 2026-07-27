@@ -13,19 +13,46 @@ import Leslie2Protocols.Framework.IdleFamily
 The round-`r` instance of the Weak Common Coin specification. The coin
 resolution is the only probabilistic transition of the whole development
 besides `ABA.Spec`'s: once more than `f` processes (counting corrupted ones)
-have called, `val` resolves by `coinPMF` — each bit with probability `ε`
-(all correct processes receive that bit), `⊤` otherwise (the adversary
-controls per-process return values).
+have called, `val` resolves by `wccPMF` — each bit with probability `ε` (all
+correct processes receive that bit), the failure outcome with probability `δ`,
+and `⊤` with the remaining mass (the adversary controls per-process return
+values).
 
 Deviations: the `guess` label is omitted (D4 — it exists solely for the
 out-of-scope Unpredictability property), and `fail` is the determinised
-`corrupt` (D1). The instance only steps on its own round-`r` API labels,
-`fail`, and `τ`; the family combinator (`System.family`) supplies idle
-self-loops on every other label.
+`corrupt` (D1).
+
+* **D17 (δ-mass failure outcome).** The coin implementation the source builds
+  on is an `ε`-correct verifiable secret sharing scheme, whose delivery
+  guarantee holds only up to a failure probability `δ`; the specification
+  inherits that failure as an outcome of its own. `wccPMF` therefore carries a
+  fourth outcome `dead` of mass `δ`, pushed into `val := TVal.dead`. A `dead`
+  round enables no `ret`: the return rule's guard is positive
+  (`val = ⊤ ∨ val = bit b`), so a failed resolution silently delivers nothing
+  and the round's callers wait forever. This is distinct from `⊤`, where
+  delivery does happen and the adversary merely picks each process's returned
+  bit.
+
+The instance only steps on its own round-`r` API labels, `fail`, and `τ`; the
+family combinator (`System.family`) supplies idle self-loops on every other
+label.
 -/
 
 namespace PLTS
 namespace ABA
+
+/-- The `TVal` recorded by a coin resolution with the given outcome: the common
+bit, `⊤` for the adversarial outcome, and `dead` for delivery failure. -/
+def CoinOutcome.toTVal : CoinOutcome → TVal
+  | .bit b => .bit b
+  | .adv => .top
+  | .dead => .dead
+
+/-- `toTVal` is injective: the four coin outcomes land on four distinct
+`TVal`s. -/
+theorem CoinOutcome.toTVal_injective : Function.Injective CoinOutcome.toTVal := by
+  intro a b h; cases a <;> cases b <;> simp_all [CoinOutcome.toTVal]
+
 namespace WCC
 
 /-- The state of one WCC specification instance. -/
@@ -71,12 +98,14 @@ inductive Step (P : Params) (r : ℕ) :
   /-- Input-enabledness loop for `call`. -/
   | callLoop (s : SpecState P.n) (id : Fin P.n) :
       Step P r s (.callW r id) (PMF.pure s)
-  /-- Coin resolution: the only probabilistic transition. -/
+  /-- Coin resolution: the only probabilistic transition. Outcome `dead`
+  (mass `δ`, deviation D17) resolves the coin without delivering. -/
   | flip (s : SpecState P.n) (hq : s.threshold P) (hv : s.val = .bot) :
       Step P r s .tau
-        (P.coinPMF.map (fun o => { s with val := o.elim TVal.top TVal.bit }))
+        (P.wccPMF.map (fun o => { s with val := o.toTVal }))
   /-- A process receives its return: the common bit if `val = bit b`, an
-  adversary-chosen bit if `val = ⊤`. -/
+  adversary-chosen bit if `val = ⊤`. The guard is positive, so a `dead`
+  resolution (D17) enables no return at all. -/
   | ret (s : SpecState P.n) (id : Fin P.n) (b : Bool)
       (h₁ : s.val = .top ∨ s.val = .bit b) (h₂ : s.ret id = false) :
       Step P r s (.retW r id b)

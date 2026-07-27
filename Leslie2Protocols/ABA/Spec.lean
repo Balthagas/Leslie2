@@ -47,7 +47,8 @@ blueprint's Transition System 1 with four deviations:
   This keeps the `F`-copies of all composed components in lockstep.
 * The blueprint's `Initial` clause mentions an undeclared `out`; omitted.
 
-The coin domain `{0,1,⊥,⊤}` is `TVal`; `bind, val ∈ {0,1,⊥}` are
+The spec's `coin` field ranges over `{0,1,⊥,⊤}` inside `TVal`; `bind, val ∈
+{0,1,⊥}` are
 `Option Bool`. All transitions are Dirac except the coin flip, which is
 `coinPMF.map` into the state update.
 -/
@@ -55,8 +56,8 @@ The coin domain `{0,1,⊥,⊤}` is `TVal`; `bind, val ∈ {0,1,⊥}` are
 namespace PLTS
 namespace ABA
 
-/-- A `⊤`-completed value: `⊥`, `⊤`, or a bit. The domain of the spec's `coin`
-field (and of `WCC.Spec`'s `val` field). -/
+/-- A `⊤`-completed value: `⊥`, `⊤`, a bit, or a failed resolution. The domain
+of the spec's `coin` field (and of `WCC.Spec`'s `val` field). -/
 inductive TVal : Type
   /-- Unresolved (`⊥`). -/
   | bot
@@ -64,6 +65,10 @@ inductive TVal : Type
   | top
   /-- The common bit `b`. -/
   | bit (b : Bool)
+  /-- Failed resolution: the coin resolved without delivering, so no process
+  ever receives a value. Distinct from `⊥` (not yet resolved) and from `⊤`
+  (delivered, with the adversary choosing each process's bit). -/
+  | dead
   deriving DecidableEq, Repr
 
 /-- `agrees o t`: the blueprint's cross-domain equality `bind = coin` between

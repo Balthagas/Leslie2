@@ -723,8 +723,9 @@ Processes start with no input and may return a bit.
     processes return $0$ (resp.\ $1$).
   \item Unpredictability: until $f+1$ processes have called WCC, all outcomes
     are still possible.
-  \item Termination: if $n-f$ correct processes take part in the protocol then
-    all correct processes will eventually return.
+  \item $(1-\delta)$-sure Termination: if $n-f$ correct processes take part in
+    the protocol then, with probability $1-\delta$, all correct processes will
+    eventually return.
 \end{itemize}
 
 What this development establishes is Validity and Agreement for ABA,
@@ -761,7 +762,7 @@ source blueprint~\cite{LeslieBP}.
 
 \paragraph{Deviations.}
 The encodings depart from~\cite{LeslieBP} in catalogued ways.
-Each departure carries a label D1--D16 and is cited at the point where it
+Each departure carries a label D1--D17 and is cited at the point where it
 applies.
 The labels D2, D6 and D7 are unused.
 \begin{itemize}
@@ -786,6 +787,11 @@ The labels D2, D6 and D7 are unused.
   \item D15: the $F$-blind form of those support counts, namely $f+1$ distinct
     callers-or-corrupted.
   \item D16: the two-phase abstract twin used by the core simulation.
+  \item D17: a fourth outcome $\dagger$ of the WCC coin resolution, of mass
+    $\delta$, on which no return is enabled.
+    It carries the delivery failure of the $\varepsilon$-correct secret-sharing
+    coin implementation that the source builds on, where the source's
+    Transition System~3 resolves to $\{0,1,\top\}$ only.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -805,16 +811,20 @@ The fairness markings bear only on liveness, which is out of scope.
 \paragraph{Notation.}
 Write $\delta(s)$ for the Dirac distribution on $s$ and $\mu \triangleright g$
 for the pushforward of $\mu$ along $g$.
+The coin failure probability is written $\delta$ as well, and the two readings
+are told apart by the presence of an argument.
 Write $s[x := v]$ for record update.
 Write $[n]$ for the identifier set and $F \subseteq [n]$ for the corrupted set.
 The quorum predicate is
 \[
   |\{ id \in [n] \setminus F : call[id] \neq \bot \} \cup F| \ \geq\ n - f .
 \]
-Values range over $\{0,1,\bot,\top\}$, where $\bot$ is unresolved and $\top$ is
-an adversarially resolved outcome.
+Values range over $\{0,1,\bot,\top,\dagger\}$, where $\bot$ is unresolved,
+$\top$ is an adversarially resolved outcome, and $\dagger$ is a resolution that
+delivers to no process (D17).
 The cross-domain equality $agrees$ holds of $\bot$ with $\bot$ and of $b$ with
-$b$, and of $\top$ with nothing.
+$b$.
+Both $\top$ and $\dagger$ agree with nothing.
 
 Every transition rule is displayed as a guard above a labelled step into an
 explicit distribution.
@@ -822,20 +832,34 @@ A Dirac target and a genuinely probabilistic one are therefore distinguishable
 at sight.
 Exactly two transitions in the whole development are non-Dirac: the coin rule
 of Transition System~1 and the coin rule of Transition System~3.
-Both resolve one coin, following
-\[
-  \varepsilon \cdot \delta(0) \ +\ \varepsilon \cdot \delta(1) \ +\
-  (1 - 2\varepsilon) \cdot \delta(\top),
-  \qquad 2\varepsilon \leq 1 .
-\]
+Each resolves one coin, and the two distributions differ.
+The coin of Transition System~1 always delivers, while that of Transition
+System~3 carries the further outcome $\dagger$ of mass $\delta$ (D17).
+Both distributions are displayed in Definition~\ref{def:aba-params}.
 
-\begin{definition}[Parameters and coin]
+\begin{definition}[Parameters and coins]
   \label{def:aba-params}
-  \lean{PLTS.ABA.Params}\lean{PLTS.ABA.Params.coinPMF}\leanok
-  The parameters: $n$ processes, at most $f$ corrupted with $3f < n$, and coin
-  goodness $\varepsilon$ with $2\varepsilon \le 1$. One coin resolution follows
-  $\mathrm{coinPMF}$: each bit with probability $\varepsilon$, the adversarial
-  outcome $\top$ otherwise.
+  \lean{PLTS.ABA.Params}\lean{PLTS.ABA.Params.coinPMF}%
+  \lean{PLTS.ABA.Params.wccPMF}\leanok
+  The parameters: $n$ processes, at most $f$ corrupted with $3f < n$, coin
+  goodness $\varepsilon$, and coin failure probability $\delta$, subject to
+  $2\varepsilon + \delta \le 1$.
+  The coin resolution of Transition System~1 follows $\mathrm{coinPMF}$ and the
+  coin resolution of Transition System~3 follows $\mathrm{wccPMF}$:
+  \[
+    \mathrm{coinPMF} \ =\ \varepsilon \cdot \delta(0) \ +\
+      \varepsilon \cdot \delta(1) \ +\ (1 - 2\varepsilon) \cdot \delta(\top),
+  \]
+  \[
+    \mathrm{wccPMF} \ =\ \varepsilon \cdot \delta(0) \ +\
+      \varepsilon \cdot \delta(1) \ +\
+      (1 - 2\varepsilon - \delta) \cdot \delta(\top) \ +\
+      \delta \cdot \delta(\dagger).
+  \]
+  Each bit carries $\varepsilon$ in both.
+  The adversarial outcome $\top$ takes the remaining mass of $\mathrm{coinPMF}$,
+  and $\mathrm{wccPMF}$ splits that remainder between $\top$ and the failure
+  outcome $\dagger$ (D17).
 \end{definition}
 
 \begin{definition}[Shared alphabet]
@@ -895,13 +919,13 @@ The provenance guards on rules 4 and 7 exclude the unanimity-overwrite (D3) and 
   \item $ret : [n] \to \mathbb{B}$, which processes have returned.
   \item $bind : \{0,1,\bot\}$, the bound value, the write-target of the unanimity and mixed rules.
   \item $val : \{0,1,\bot\}$, the decision value; once it is a bit, every return carries it.
-  \item $coin : \{0,1,\bot,\top\}$, the current coin outcome, $\top$ the adversarial one.
+  \item $coin : \{0,1,\bot,\top\}$, the current coin outcome, $\top$ the adversarial one, never the failure outcome $\dagger$ of the shared value domain (D17).
   \item $F \subseteq [n]$, the corrupted set.
   \item $input : [n] \to \{0,1,\bot\}$, a ghost record of the genuine $\mathrm{callABA}$ events (D13).
 \end{itemize}
 \noindent Here $\mathbb{B}$ is the two-element type, written $0,1$ for protocol bits and $\mathrm{false},\mathrm{true}$ for flags.
-The equation $bind = coin$ is the cross-domain equality of $\{0,1,\bot\}$ with $\{0,1,\bot,\top\}$: either both sides are $\bot$, or both are the same bit.
-The outcome $\top$ agrees with nothing.
+The equation $bind = coin$ is the cross-domain equality of $\{0,1,\bot\}$ with $\{0,1,\bot,\top,\dagger\}$: either both sides are $\bot$, or both are the same bit.
+The outcomes $\top$ and $\dagger$ agree with nothing.
 
 \noindent\textbf{Labels.}
 $\mathrm{callABA}(id,b)$, $\mathrm{retABA}(id,b)$, $\mathrm{fail}(id)$ and $\tau$, for $id \in [n]$ and $b \in \mathbb{B}$.
@@ -1155,9 +1179,10 @@ That member is the witness which carries Validity from the bound value down to
 a caller.
 }
 
-\blueprintfig{fig-wcc}{The WCC specification instance (Transition System 3): the $\varepsilon$-probabilistic coin resolution and the return of the common bit or an adversary-chosen bit.
+\blueprintfig{fig-wcc}{The WCC specification instance (Transition System 3): the four-outcome coin resolution and the return of the common bit or an adversary-chosen bit.
 The \texttt{flip} guard requires more than $f$ callers counting corrupted, $|\{id\notin F:\ called\}\cup F|>f$, and is the sole probabilistic transition besides Transition System 1.
-On $val{=}1$ and $val{=}0$ every process returns the common bit; on $val{=}\top$ each process returns an adversary-chosen bit.}
+On $val{=}1$ and $val{=}0$ every process returns the common bit, and on $val{=}\top$ each process returns an adversary-chosen bit.
+The branch $val{=}\dagger$ of mass $\delta$ is a sink for returns (D17): \texttt{ret} has a positive guard, so no return is enabled there.}
 
 \noindent\textbf{The WCC specification, round-$r$ instance.}
 
@@ -1166,7 +1191,7 @@ On $val{=}1$ and $val{=}0$ every process returns the common bit; on $val{=}\top$
 \begin{itemize}
   \item $called : [n] \to \mathbb{B}$, which processes have called this instance.
   \item $ret : [n] \to \mathbb{B}$, which processes have received their return.
-  \item $val : \{0,1,\bot,\top\}$, the coin outcome, $\bot$ until resolved and $\top$ the adversarial one.
+  \item $val : \{0,1,\bot,\top,\dagger\}$, the coin outcome: $\bot$ until resolved, $\top$ the adversarial one, and $\dagger$ the failed one (D17).
   \item $F \subseteq [n]$, the corrupted set, a local copy kept in lockstep by the $\mathrm{fail}$ broadcast.
 \end{itemize}
 \noindent The upstream $guess$ field is not encoded (D4).
@@ -1201,10 +1226,13 @@ Guard
      &\bigl|\{id \in [n]\setminus F \mid called[id] = \mathrm{true}\} \cup F\bigr| > f,\\
      &val = \bot.
    \end{aligned} \]
-\[ s \xrightarrow{\;\tau\;}
-   \varepsilon\cdot\delta\bigl(s[\,val := 0\,]\bigr)
-   + \varepsilon\cdot\delta\bigl(s[\,val := 1\,]\bigr)
-   + (1-2\varepsilon)\cdot\delta\bigl(s[\,val := \top\,]\bigr) \]
+\[ \begin{aligned}
+     s \xrightarrow{\;\tau\;}\ \
+     &\varepsilon\cdot\delta\bigl(s[\,val := 0\,]\bigr)
+     + \varepsilon\cdot\delta\bigl(s[\,val := 1\,]\bigr)\\
+     &{}+ (1-2\varepsilon-\delta)\cdot\delta\bigl(s[\,val := \top\,]\bigr)
+     + \delta\cdot\delta\bigl(s[\,val := \dagger\,]\bigr)
+   \end{aligned} \]
 
 \noindent\textbf{4.} \texttt{ret}.
 Guard $val \in \{b, \top\}$ and $ret[id] = \mathrm{false}$.
@@ -1220,23 +1248,45 @@ No guard.
      \delta(s) & \text{otherwise.}
    \end{cases} \]
 
-\dynamics{The coin and its parameter}{%
-One coin resolution has three outcomes.
-With probability $\varepsilon$ the outcome is the bit $0$ and with probability
-$\varepsilon$ it is the bit $1$; in either case every correct process receives
-that bit.
-With the remaining mass $1 - 2\varepsilon$ the outcome is $\top$, the
-unresolved coin: each process may then be handed either bit by the adversary,
+\medskip
+\noindent The guard of rule~4 is positive, so it holds of neither $\bot$ nor $\dagger$.
+A resolution to $\dagger$ therefore enables no return, and no process ever returns from that instance (D17).
+No other rule reads $\dagger$ either: rules 1, 2 and 5 read only $called$, $ret$ and $F$, and rule 3 requires $val = \bot$.
+
+\dynamics{The coin and its parameters}{%
+One coin resolution has four outcomes.
+With probability $\varepsilon$ the outcome is the bit $0$, and with probability
+$\varepsilon$ it is the bit $1$.
+In either case every correct process receives that bit.
+With mass $1 - 2\varepsilon - \delta$ the outcome is $\top$, the unresolved
+coin: each process may then be handed either bit by the adversary,
 independently of the others.
+With probability $\delta$ the outcome is $\dagger$, on which the resolution
+delivers to no process at all (D17).
+The outcome $\dagger$ models a delivery failure of the implementation this
+specification stands for.
+That implementation reconstructs the coin from an $\varepsilon$-correct
+verifiable secret sharing, and the reconstruction can fail; on failure the coin
+delivers nothing.
+The two non-bit outcomes are distinct at the interface.
+On $\top$ the coin delivers, and the adversary only picks which bit each
+process receives.
+On $\dagger$ no delivery occurs, and the callers of that instance hold no
+return to read.
 Transition System~3 is a specification, not an implementation.
 The $\varepsilon$-Goodness it asserts is an assumption of this development, to
 be discharged by an implementation over Gather and SRSD that is not modelled
 here.
 The assumption is inert for the results proved: safety holds for every
-admissible $\varepsilon$, including $\varepsilon = 0$, where the coin resolves
-to $\top$ almost surely.
+admissible pair $\varepsilon, \delta$, including $\varepsilon = 0$, where the
+coin resolves to $\top$ or $\dagger$ almost surely.
+Safety is insensitive to $\delta$ for a further reason: the outcome $\dagger$
+removes returns rather than adding any, and every safety property of this
+development constrains the returns that do occur.
 It is a termination argument that would consume the $\varepsilon$-mass, and
-termination is out of scope.
+such an argument must carry the $\delta$-mass too, since a $\dagger$ resolution
+produces no return at all.
+Termination and fairness are out of scope.
 }
 
 \begin{algorithm}

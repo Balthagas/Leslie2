@@ -1583,7 +1583,7 @@ theorem Inv.step_wccTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreS
   case flip hq hv =>
     rw [PMF.mem_support_map_iff] at hwr'
     obtain ⟨o, -, hwr'⟩ := hwr'
-    set w' := Function.update w r { w r with val := o.elim TVal.top TVal.bit } with hw'def
+    set w' := Function.update w r { w r with val := o.toTVal } with hw'def
     rw [← hwr']
     have hFeq : ∀ r', (w' r').F = (w r').F := by
       intro r'; by_cases h : r' = r
@@ -1591,7 +1591,7 @@ theorem Inv.step_wccTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreS
       · rw [hw'def, Function.update_of_ne h]
     have hValNe : ∀ r', r' ≠ r → (w' r').val = (w r').val := by
       intro r' h; rw [hw'def, Function.update_of_ne h]
-    have hValSelf : (w' r).val = o.elim TVal.top TVal.bit := by
+    have hValSelf : (w' r).val = o.toTVal := by
       rw [hw'def, Function.update_self]
     have hCalledEq : ∀ r', (w' r').called = (w r').called := by
       intro r'; by_cases h : r' = r
@@ -1630,7 +1630,7 @@ theorem Inv.step_wccTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreS
       rw [hCalledEq] at hcalled; exact hI.w_called r' id hmem hcalled
     · intro r' id hmem hround
       by_cases h2 : r' = r
-      · subst h2; rw [hValSelf]; cases o <;> simp
+      · subst h2; rw [hValSelf]; cases o <;> simp [CoinOutcome.toTVal]
       · rw [hValNe r' h2]; exact hI.round_flip r' id hmem hround
     · intro r' v h
       have hb := hI.bind_succ r' v h
@@ -1661,7 +1661,7 @@ theorem Inv.step_wccTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreS
       -- `w_call_round`/`round_flip`.
       intro r' h
       by_cases h2 : r' = r
-      · subst h2; rw [hValSelf]; cases o <;> simp
+      · subst h2; rw [hValSelf]; cases o <;> simp [CoinOutcome.toTVal]
       · by_cases h1 : r' + 1 = r
         · have hq' : (w r).threshold P := hq
           have hFcardw : (w r).F.card ≤ P.f := by rw [hI.F_w r]; exact hI.F_card

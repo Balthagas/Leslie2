@@ -49,12 +49,13 @@ times one `ε` factor. Every guard on these closed numeric states discharges by
 namespace PLTS
 namespace ABA
 
-/-- A concrete parameter set: four processes, corruption budget one, and an
-`ε = 1/2` coin, so that each bit outcome carries positive mass (`ε = 1/2`) and
-the witnessed `flip` can take the `bit true` branch. `2 * ε ≤ 1` holds with
-equality (`2 * (1/2) = 1`); the adversarial `⊤` outcome then has mass `0`. -/
-noncomputable def P4 : Params := ⟨4, 1, by omega, 1 / 2, by
-  rw [one_div, ENNReal.mul_inv_cancel] <;> simp⟩
+/-- A concrete parameter set: four processes, corruption budget one, and a
+never-failing `ε = 1/2` coin, so that each bit outcome carries positive mass
+(`ε = 1/2`) and the witnessed `flip` can take the `bit true` branch.
+`2 * ε + δ ≤ 1` holds with equality (`2 * (1/2) + 0 = 1`); the adversarial `⊤`
+outcome and the failure outcome then both have mass `0`. -/
+noncomputable def P4 : Params := ⟨4, 1, by omega, 1 / 2, 0, by
+  rw [add_zero, one_div, ENNReal.mul_inv_cancel] <;> simp⟩
 
 /-- Collapse a product of two Dirac distributions to a single Dirac. -/
 theorem prodPMF_pure_pure {α β : Type*} (a : α) (b : β) :
@@ -432,9 +433,9 @@ theorem step_callW₂ :
 /-! ### Step 14: the coin `flip` (the run's single probabilistic step) -/
 
 /-- The WCC round-`0` family distribution produced by the coin `flip`: the
-`coinPMF` outcome resolves instance `0`'s `val`. -/
+`wccPMF` outcome resolves instance `0`'s `val`. -/
 noncomputable def flipWr : PMF (ℕ → WCC.SpecState 4) :=
-  (P4.coinPMF.map (fun o => { Wc2 0 with val := o.elim TVal.top TVal.bit })).map
+  (P4.wccPMF.map (fun o => { Wc2 0 with val := o.toTVal })).map
     (Function.update Wc2 0)
 
 /-- The full hybrid successor distribution of the coin flip: the two idle
@@ -444,7 +445,7 @@ noncomputable def flipμ :
   prodPMF (PMF.pure Ga2) (prodPMF (PMF.pure Cw2) flipWr)
 
 /-- The coin `flip` is a legal hidden (`τ`) transition of the composed system:
-GBCA and Core idle, the WCC round-`0` instance resolves `val` by `coinPMF`
+GBCA and Core idle, the WCC round-`0` instance resolves `val` by `wccPMF`
 (threshold met by the three callers). -/
 theorem step_flip :
     (hybridSpec P4).step (Ga2, (Cw2, Wc2)) Lab.tau flipμ := by
@@ -452,7 +453,7 @@ theorem step_flip :
   refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure Cw2) flipWr, ?_, rfl⟩)
   refine Or.inr (Or.inr ⟨rfl, flipWr, ?_, rfl⟩)
   refine Or.inl ⟨rfl, 0,
-    P4.coinPMF.map (fun o => { Wc2 0 with val := o.elim TVal.top TVal.bit }), ?_, rfl⟩
+    P4.wccPMF.map (fun o => { Wc2 0 with val := o.toTVal }), ?_, rfl⟩
   exact WCC.Step.flip (P := P4) (r := 0) (Wc2 0)
     (by unfold WCC.SpecState.threshold; decide) (by decide)
 
@@ -464,19 +465,16 @@ theorem step_flip_mass : flipμ (Ga2, (Cw2, Wfl)) = P4.ε := by
   have hup : Function.Injective (Function.update Wc2 0) := by
     intro a b h; have h0 := congrFun h 0; simpa using h0
   have hg : Function.Injective
-      (fun o : Option Bool => ({ Wc2 0 with val := o.elim TVal.top TVal.bit } :
-        WCC.SpecState 4)) := by
-    intro a b h
-    have h0 : a.elim TVal.top TVal.bit = b.elim TVal.top TVal.bit := congrArg (·.val) h
-    cases a <;> cases b <;> simp_all
+      (fun o : CoinOutcome => ({ Wc2 0 with val := o.toTVal } : WCC.SpecState 4)) :=
+    fun _ _ h => CoinOutcome.toTVal_injective (congrArg (·.val) h)
   unfold flipμ flipWr
   rw [prodPMF_pure_left_apply, prodPMF_pure_left_apply,
     show (Wfl : ℕ → WCC.SpecState 4)
       = Function.update Wc2 0 { Wc2 0 with val := TVal.bit true } from rfl,
     map_apply_inj hup,
     show ({ Wc2 0 with val := TVal.bit true } : WCC.SpecState 4)
-      = (fun o => { Wc2 0 with val := o.elim TVal.top TVal.bit }) (some true) from rfl,
-    map_apply_inj hg, Params.coinPMF_apply_some]
+      = (fun o => { Wc2 0 with val := o.toTVal }) (CoinOutcome.bit true) from rfl,
+    map_apply_inj hg, Params.wccPMF_apply_bit]
 
 /-! ### Steps 15–17: all three receive the coin (`retW`); each multicasts
 `⟨DECIDED, true⟩` via the fused round advance (deviation D10). -/
