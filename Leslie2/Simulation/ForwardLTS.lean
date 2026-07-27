@@ -390,6 +390,39 @@ theorem ProbabilisticForwardSimulation.ofStrongFunctional_diracRel
   (ofStrongFunctional f hinit hstep).congr_rel
     (fun s ν => ⟨fun h => ⟨f s, h, rfl⟩, fun ⟨_, hν, ht⟩ => by rw [hν, ht]⟩)
 
+/-- **A step-reflecting state map is a probabilistic forward simulation along the
+converse of its graph.** The mirror of
+`ProbabilisticForwardSimulation.ofStrongFunctional`: `f` need not be surjective,
+and no system need be an LTS; each concrete transition out of an `f`-image is
+matched strongly by the transition it reflects to, and the coupling is the
+pushforward of that transition along `a ↦ (f a, δ_a)`. -/
+theorem ProbabilisticForwardSimulation.ofStrongFunctional_converse
+    {S T Lb : Type} [Silent Lb]
+    {sys_C : System T Lb} {sys_A : System S Lb} (f : S → T)
+    (hinit : f sys_A.init = sys_C.init)
+    (hstep : ∀ q l μ, sys_C.step (f q) l μ → ∃ ν, sys_A.step q l ν ∧ μ = ν.map f) :
+    ProbabilisticForwardSimulation sys_C sys_A
+      (fun p ν => ∃ q, ν = PMF.pure q ∧ p = f q) := by
+  refine ⟨⟨PMF.pure sys_A.init, ?_, sys_A.init, rfl, hinit.symm⟩, ?_⟩
+  · intro s_A hs_A
+    rwa [PMF.mem_support_pure_iff] at hs_A
+  · rintro s_C μ_A ⟨q, rfl, rfl⟩ l μ_C hC
+    obtain ⟨ν, hA, rfl⟩ := hstep q l μ_C hC
+    refine ⟨ν.map (fun a => PMF.pure a), ⟨ν.map (fun a => (f a, PMF.pure a)), ?_, ?_, ?_⟩, ?_⟩
+    · rw [PMF.map_comp]; rfl
+    · rw [PMF.map_comp]; rfl
+    · intro p hp
+      rw [PMF.mem_support_map_iff] at hp
+      obtain ⟨a, -, rfl⟩ := hp
+      exact ⟨a, rfl, rfl⟩
+    · have hbind : (ν.map (fun a => PMF.pure a)).bind id = ν := by
+        rw [PMF.bind_map, Function.id_comp]
+        exact PMF.bind_pure ν
+      rw [hbind]
+      by_cases hτ : l = Silent.τ
+      · exact Or.inl ⟨hτ, weakTau_of_step hτ hA⟩
+      · exact Or.inr ⟨hτ, weakStep_strong hA⟩
+
 end StrongFunctional
 
 end PLTS
