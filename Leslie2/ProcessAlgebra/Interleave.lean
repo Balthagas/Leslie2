@@ -11,19 +11,21 @@ import Leslie2.Weak.Embed
 /-!
 # Simulation-congruence machinery for `interleave`
 
-Support lemmas for the precongruence `ProbabilisticForwardSimulation.interleave` (in
-`Results.lean`): the composite relation `interleaveRel`, its `PMFRel` coupling
-(`pmfRel_interleave`), and the two
-**weak-transition lift lemmas** that transport a single component's weak
-transition into the fully-asynchronous product (via the scheduler-map primitive `weakTau_embed` /
-`hyperStep_embed` per held-config point, mixed over the held beliefs with `weakTau_mix` /
-`hyperStep_mix`):
+Support for the precongruence `ProbabilisticForwardSimulation.interleaveCofin` (in `Results.lean`)
+over an *arbitrary* `[DecidableEq ι]` index, with the finite `interleave` as a corollary. The
+abstract belief is carried by a `CofinPMF` (a cofinitely-Dirac family, `ProcessAlgebra/Composition`):
 
-* `weakTau_interleave` — a `sysA i` τ-closure ⟹ an interleave τ-closure;
-* `weakStep_interleave` — a `sysA i` weak `l`-step ⟹ an interleave weak `l`-step (still interleaved,
-  never synchronised).
+* `interleaveRelCofin` — the composite coupling relation (belief = `c.toPMF`);
+* `pmfRel_interleaveCofin` — its `PMFRel` coupling lift;
+* `weakTau_interleaveCofin` / `weakStep_interleaveCofin` — the weak-transition lift lemmas,
+  transporting one component's weak transition into the fully-asynchronous product via the
+  scheduler-map primitives `weakTau_embed` / `hyperStep_embed` (per held-config point, along the
+  injective embedding `Function.update s i`), mixed over the held beliefs with `weakTau_mix` /
+  `hyperStep_mix`, and glued by the resample identities `CofinPMF.toPMF_self_bind` /
+  `toPMF_update_eq_bind`.
 
-The `piPMF`/`Function.update` algebra these build on lives in `ProcessAlgebra/Composition.lean`.
+The finite relation `interleaveRel` (belief = `piPMF μ_`) is kept only to state the finite
+corollary; over `[Fintype ι]` it equals `interleaveRelCofin` (`interleaveRelCofin_eq_interleaveRel`).
 -/
 
 open scoped BigOperators
@@ -43,135 +45,6 @@ def interleaveRel (R : ∀ i, State_C i → PMF (State_A i) → Prop) :
     (∀ i, State_C i) → PMF (∀ i, State_A i) → Prop :=
   fun s ν => ∃ μ_ : ∀ i, PMF (State_A i), (∀ i, R i (s i) (μ_ i)) ∧ ν = piPMF μ_
 
-/-- Lift a component `PMFRel (R i)` coupling to an `interleaveRel R` coupling, holding the other
-components at their beliefs `μ_ j` (which are `R j`-related to `s j` by `hR`). -/
-theorem pmfRel_interleave (i : ι) (s : ∀ j, State_C j) (μ_ : ∀ j, PMF (State_A j))
-    (hR : ∀ j, R j (s j) (μ_ j)) {μ_Ci : PMF (State_C i)} {ω_Ai : PMF (PMF (State_A i))}
-    (h : PMFRel (R i) μ_Ci ω_Ai) :
-    PMFRel (interleaveRel R) (piPMF (Function.update (fun j => PMF.pure (s j)) i μ_Ci))
-      (ω_Ai.map (fun ρ => piPMF (Function.update μ_ i ρ))) := by
-  obtain ⟨Ω_Ai, hfst, hsnd, hsupp⟩ := h
-  refine ⟨Ω_Ai.map (fun q => (Function.update s i q.1, piPMF (Function.update μ_ i q.2))),
-    ?_, ?_, ?_⟩
-  · rw [PMF.map_comp, piPMF_update_pure, ← hfst, PMF.map_comp]; rfl
-  · rw [PMF.map_comp, ← hsnd, PMF.map_comp]; rfl
-  · intro p hp
-    rw [PMF.mem_support_map_iff] at hp
-    obtain ⟨q, hq, rfl⟩ := hp
-    refine ⟨Function.update μ_ i q.2, ?_, rfl⟩
-    intro j
-    dsimp only
-    by_cases hj : j = i
-    · subst hj; rw [Function.update_self, Function.update_self]; exact hsupp q hq
-    · rw [Function.update_of_ne hj, Function.update_of_ne hj]; exact hR j
-
-/-! ### The two weak-transition lift lemmas (the crux)
-
-Both are lifted from a single component through the reusable embedding primitives
-(`weakTau_embed` / `hyperStep_embed`, in `Weak/Embed.lean`) mixed over the held-config
-distribution `piPMF μ_` (`weakTau_mix` / `hyperStep_mix`, in `Weak/WeakChar.lean`), and glued
-back together by the collapse identity `piPMF_bind_update`. Per held config `s`, the embedding is
-`ι_s := Function.update s i ·` (injective — read coordinate `i`), which sends a `sysA i`-step at
-`c` to the interleave step that moves coordinate `i` (leaving the others as the Diracs of `s`). -/
-
-/-- **The collapse identity.** Mixing over the held-config distribution `piPMF μ_` the family
-`s ↦ piPMF (update (fun j ↦ pure (s j)) i κ)` (the moved coordinate `i` re-sampled from `κ`, the
-others held at the Diracs of `s`) collapses back to the single independent product
-`piPMF (update μ_ i κ)`. Proven pointwise by marginalizing coordinate `i`. -/
-private theorem piPMF_bind_update (i : ι) {α : ι → Type} (μ_ : ∀ j, PMF (α j)) (κ : PMF (α i)) :
-    (piPMF μ_).bind (fun s => piPMF (Function.update (fun j => PMF.pure (s j)) i κ))
-      = piPMF (Function.update μ_ i κ) := by
-  classical
-  refine PMF.ext (fun f => ?_)
-  rw [PMF.bind_apply]
-  simp only [piPMF_update_pure]
-  rw [piPMF_update_apply]
-  rw [show (∑' s : ∀ j, α j, (piPMF μ_) s
-        * (PMF.map (fun c => Function.update s i c) κ) f)
-      = ∑' s : ∀ j, α j, (piPMF μ_) s
-        * (if (∀ x ∈ Finset.univ.erase i, s x = f x) then κ (f i) else 0) from
-    tsum_congr (fun s => by
-      congr 1
-      rw [PMF.map_apply]
-      by_cases hC : ∀ x ∈ Finset.univ.erase i, s x = f x
-      · rw [if_pos hC]
-        have hpos : f = Function.update s i (f i) := by
-          funext x
-          by_cases hx : x = i
-          · subst hx; rw [Function.update_self]
-          · rw [Function.update_of_ne hx]
-            exact (hC x (Finset.mem_erase.mpr ⟨hx, Finset.mem_univ x⟩)).symm
-        rw [tsum_eq_single (f i)]
-        · rw [if_pos hpos]
-        · intro c hc
-          apply if_neg
-          intro heq
-          apply hc
-          have h := congrFun heq i
-          rw [Function.update_self] at h
-          exact h.symm
-      · rw [if_neg hC]
-        push Not at hC
-        obtain ⟨x, hx, hne⟩ := hC
-        refine ENNReal.tsum_eq_zero.mpr (fun c => if_neg ?_)
-        intro heq
-        apply hne
-        have h := congrFun heq x
-        rw [Function.update_of_ne (Finset.ne_of_mem_erase hx)] at h
-        exact h.symm)]
-  rw [show (∑' s : ∀ j, α j, (piPMF μ_) s
-        * (if (∀ x ∈ Finset.univ.erase i, s x = f x) then κ (f i) else 0))
-      = κ (f i) * ∑' s : ∀ j, α j, (piPMF μ_) s
-        * (if (∀ x ∈ Finset.univ.erase i, s x = f x) then (1 : ENNReal) else 0) from by
-    rw [← ENNReal.tsum_mul_left]
-    refine tsum_congr (fun s => ?_)
-    by_cases hC : ∀ x ∈ Finset.univ.erase i, s x = f x
-    · rw [if_pos hC, if_pos hC]; ring
-    · rw [if_neg hC, if_neg hC]; ring]
-  congr 1
-  rw [show (∑' s : ∀ j, α j, (piPMF μ_) s
-        * (if (∀ x ∈ Finset.univ.erase i, s x = f x) then (1 : ENNReal) else 0))
-      = ∑' c : α i, (piPMF μ_) (Function.update f i c) from
-    tsum_eq_tsum_of_ne_zero_bij
-      (i := fun (c : Function.support (fun c : α i => (piPMF μ_) (Function.update f i c))) =>
-        Function.update f i (c : α i)) ?_ ?_ ?_]
-  · have hval : ∀ c : α i, (piPMF μ_) (Function.update f i c)
-        = μ_ i c * ∏ x ∈ Finset.univ.erase i, μ_ x (f x) := by
-      intro c
-      rw [piPMF_apply, ← Finset.mul_prod_erase Finset.univ _ (Finset.mem_univ i),
-        Function.update_self]
-      congr 1
-      exact Finset.prod_congr rfl (fun x hx => by
-        rw [Function.update_of_ne (Finset.ne_of_mem_erase hx)])
-    rw [tsum_congr hval, ENNReal.tsum_mul_right, (μ_ i).tsum_coe, one_mul]
-  · rintro ⟨c₁, _⟩ ⟨c₂, _⟩ heq
-    simp only [Subtype.mk.injEq]
-    have h := congrFun heq i
-    simp only at h
-    rw [Function.update_self, Function.update_self] at h
-    exact h
-  · intro s hs
-    simp only [Function.mem_support, ne_eq, mul_eq_zero, not_or] at hs
-    obtain ⟨hpi, hind⟩ := hs
-    have hcond : ∀ x ∈ Finset.univ.erase i, s x = f x := by
-      by_contra hc
-      exact hind (by rw [if_neg hc])
-    have hs_eq : s = Function.update f i (s i) := by
-      funext x
-      by_cases hx : x = i
-      · subst hx; rw [Function.update_self]
-      · rw [Function.update_of_ne hx]
-        exact hcond x (Finset.mem_erase.mpr ⟨hx, Finset.mem_univ x⟩)
-    refine ⟨⟨s i, ?_⟩, ?_⟩
-    · simp only [Function.mem_support, ne_eq]
-      rw [← hs_eq]; exact hpi
-    · exact hs_eq.symm
-  · rintro ⟨c, hc⟩
-    simp only
-    rw [if_pos ?_, mul_one]
-    intro x hx
-    rw [Function.update_of_ne (Finset.ne_of_mem_erase hx)]
-
 omit [Fintype ι] in
 /-- The per-config embedding `ι_s := Function.update s i ·` is injective (read coordinate `i`). -/
 private theorem update_inj (i : ι) (s : ∀ j, State_A j) :
@@ -180,78 +53,6 @@ private theorem update_inj (i : ι) (s : ∀ j, State_A j) :
   have := congrFun h i
   simp only [Function.update_self] at this
   exact this
-
-/-- A `sysA i` τ-closure lifts to an interleave τ-closure, holding all the other components at their
-beliefs `μ_ j`. Per held config `s`, `weakTau_embed` along `ι_s` transports the component closure;
-mixing over `s ~ piPMF μ_` (`weakTau_mix`) and collapsing with `piPMF_bind_update` gives the
-interleave closure. -/
-theorem weakTau_interleave (i : ι) (μ_ : ∀ j, PMF (State_A j)) {ν : PMF (State_A i)}
-    (h : weakTau (sysA i) (μ_ i) ν) :
-    weakTau (System.interleave sysA) (piPMF μ_) (piPMF (Function.update μ_ i ν)) := by
-  classical
-  rw [show piPMF μ_ = (piPMF μ_).bind
-      (fun s => piPMF (Function.update (fun j => PMF.pure (s j)) i (μ_ i))) from by
-    rw [piPMF_bind_update i μ_ (μ_ i), Function.update_eq_self]]
-  rw [show piPMF (Function.update μ_ i ν)
-      = (piPMF μ_).bind (fun s => piPMF (Function.update (fun j => PMF.pure (s j)) i ν)) from
-    (piPMF_bind_update i μ_ ν).symm]
-  refine weakTau_mix (piPMF μ_) _ _ (fun s _ => ?_)
-  have hstep_s : ∀ (c : State_A i) (κ : PMF (State_A i)),
-      (sysA i).step c Silent.τ κ →
-      (System.interleave sysA).step ((fun d => Function.update s i d) c) Silent.τ
-        (κ.map (fun d => Function.update s i d)) := by
-    intro c κ hst
-    rw [System.interleave_step]
-    refine ⟨i, κ, ?_, ?_⟩
-    · change (sysA i).step (Function.update s i c i) Silent.τ κ
-      rw [Function.update_self]; exact hst
-    · rw [piPMF_update_pure]; congr 1; funext d; rw [Function.update_idem]
-  have hembed := weakTau_embed (fun d => Function.update s i d) (update_inj i s) hstep_s h
-  rw [← piPMF_update_pure s i (μ_ i), ← piPMF_update_pure s i ν] at hembed
-  exact hembed
-
-omit [Silent Label] in
-/-- A `sysA i` hyper-step at label `l` lifts to an interleave hyper-step, holding the other
-components at their beliefs `μ_ j`. Same recipe as `weakTau_interleave` but with the structural
-`hyperStep_embed` / `hyperStep_mix` in place of the τ-closure lifts. -/
-private theorem hyperStep_interleave (i : ι) (l : Label) (μ_ : ∀ j, PMF (State_A j))
-    {m m' : PMF (State_A i)} (h : hyperStep (sysA i) m l m') :
-    hyperStep (System.interleave sysA) (piPMF (Function.update μ_ i m)) l
-      (piPMF (Function.update μ_ i m')) := by
-  classical
-  rw [← piPMF_bind_update i μ_ m, ← piPMF_bind_update i μ_ m']
-  refine hyperStep_mix (piPMF μ_) _ _ (fun s _ => ?_)
-  have hstep_s : ∀ (c : State_A i) (κ : PMF (State_A i)),
-      (sysA i).step c l κ →
-      (System.interleave sysA).step ((fun d => Function.update s i d) c) l
-        (κ.map (fun d => Function.update s i d)) := by
-    intro c κ hst
-    rw [System.interleave_step]
-    refine ⟨i, κ, ?_, ?_⟩
-    · change (sysA i).step (Function.update s i c i) l κ
-      rw [Function.update_self]; exact hst
-    · rw [piPMF_update_pure]; congr 1; funext d; rw [Function.update_idem]
-  have hembed := hyperStep_embed (fun d => Function.update s i d) (update_inj i s) hstep_s h
-  rw [← piPMF_update_pure s i m, ← piPMF_update_pure s i m'] at hembed
-  exact hembed
-
-/-- A `sysA i` weak `l`-step lifts to an interleave weak `l`-step (still interleaved: the other
-components are held), holding all the other components at their beliefs `μ_ j`. The three layers
-(τ-closure, hyper-step, τ-closure) are lifted by `weakTau_interleave` (twice) and
-`hyperStep_interleave` (once). -/
-theorem weakStep_interleave (i : ι) (l : Label) (μ_ : ∀ j, PMF (State_A j))
-    {ν : PMF (State_A i)} (h : weakStep (sysA i) (μ_ i) l ν) :
-    weakStep (System.interleave sysA) (piPMF μ_) l (piPMF (Function.update μ_ i ν)) := by
-  classical
-  obtain ⟨m, m', h1, h2, h3⟩ := h
-  refine ⟨piPMF (Function.update μ_ i m), piPMF (Function.update μ_ i m'), ?_, ?_, ?_⟩
-  · exact weakTau_interleave i μ_ h1
-  · exact hyperStep_interleave i l μ_ h2
-  · have h3' : weakTau (sysA i) ((Function.update μ_ i m') i) ν := by
-      rw [Function.update_self]; exact h3
-    have hlayer := weakTau_interleave i (Function.update μ_ i m') h3'
-    rw [Function.update_idem] at hlayer
-    exact hlayer
 
 end Interleave
 
@@ -358,5 +159,39 @@ theorem weakStep_interleaveCofin (c : CofinPMF State_A) (i : ι) (l : Label)
   exact hlayer
 
 end InterleaveCofin
+
+/-! ### The finite coupling relation is a special case
+
+Over a `[Fintype ι]` index the two coupling relations coincide, so the finite precongruence
+(`ProbabilisticForwardSimulation.interleave`, Result 4) is a corollary of the cofinite one. -/
+
+section InterleaveRelEq
+
+variable {ι : Type} [Fintype ι] [DecidableEq ι]
+  {State_C State_A : ι → Type}
+  {R : ∀ i, State_C i → PMF (State_A i) → Prop}
+
+/-- Over a finite index, the cofinite coupling relation `interleaveRelCofin R` and the finite one
+`interleaveRel R` are equal: a `CofinPMF` marginalises to `interleaveRel`'s per-coordinate beliefs
+(`CofinPMF.toPMF_eq_piPMF_coord`), and conversely any belief family is the `active = univ`
+`CofinPMF`. -/
+theorem interleaveRelCofin_eq_interleaveRel :
+    interleaveRelCofin R = interleaveRel R := by
+  funext s ν
+  refine propext ⟨?_, ?_⟩
+  · rintro ⟨c, hR, rfl⟩
+    exact ⟨c.coord, hR, c.toPMF_eq_piPMF_coord⟩
+  · rintro ⟨μ_, hR, rfl⟩
+    refine ⟨⟨fun i => (μ_ i).support_nonempty.some, Finset.univ, μ_⟩, ?_, ?_⟩
+    · intro i
+      have : (⟨fun i => (μ_ i).support_nonempty.some, Finset.univ, μ_⟩
+          : CofinPMF State_A).coord i = μ_ i := by simp [CofinPMF.coord]
+      rw [this]; exact hR i
+    · rw [CofinPMF.toPMF_eq_piPMF_coord]
+      congr 1
+      funext i
+      simp [CofinPMF.coord]
+
+end InterleaveRelEq
 
 end PLTS

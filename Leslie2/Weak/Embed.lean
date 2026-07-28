@@ -24,9 +24,9 @@ The reusable primitive behind the parallel/interleave precongruence lift lemmas.
 
 Unlike the abstraction lifts (`weakTau_mono`, same state space, scheduler reused verbatim), here the
 state space changes, so `weakTau_embed` genuinely maps the scheduler along `ι`. The binary
-`parallel` lifts use `ι = (·, s_B)`; the finite `interleave` lifts use `ι = Function.update s i ·`
-(both injective). The `μ.map ι` shapes reduce to `prodPMF`/`piPMF` via `prodPMF_pure_right` /
-`piPMF_update_pure` at the call sites.
+`parallel` lifts use `ι = (·, s_B)`; the `interleave` lifts use `ι = Function.update s i ·`
+(both injective). The `μ.map ι` shapes reduce to `prodPMF` (via `prodPMF_pure_right`) and to
+`CofinPMF.toPMF` (via `CofinPMF.toPMF_self_bind` / `toPMF_update_eq_bind`) at the call sites.
 -/
 
 open Stream'

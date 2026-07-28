@@ -24,10 +24,10 @@ are built from.
   with `[DecidableEq ι]` (finite *or* infinite — e.g. `ℕ`). On *every* label
   (silent or not) exactly one component steps and all the others hold their state; the
   joint next-state distribution is the single-coordinate pushforward
-  `μ_i.map (Function.update s i)`. There is no synchronisation at all. When `ι` is
-  finite this equals the independent product `piPMF (Function.update (Dirac) i μ_i)`
-  (lemma `interleave_step`, via `piPMF_update_pure`); the pushforward form is the
-  primitive because it needs no finite product and so is well-defined over infinite `ι`.
+  `μ_i.map (Function.update s i)`. There is no synchronisation at all. The pushforward form is
+  the primitive because it needs no finite product, so it is well-defined over infinite `ι`
+  (when `ι` is finite it agrees with the independent product `piPMF`, via
+  `CofinPMF.toPMF_eq_piPMF_coord`).
 
 The two independent products of PMFs used as joint next-state distributions — `prodPMF`
 (binary) and `piPMF` (finite family) — are built here; Mathlib has no such constructions.
@@ -141,78 +141,6 @@ theorem bindId_sync (ω : PMF (PMF α)) (μ_B : PMF β) :
 
 end ProdPMFAlgebra
 
-/-! ### `piPMF` / `Function.update` algebra -/
-
-section PiPMFAlgebra
-
-variable {ι : Type} [Fintype ι] [DecidableEq ι] {α : ι → Type}
-
-/-- The mass of `piPMF (update μ_ i ρ)` at `f` factors the moved coordinate `i` (mass `ρ (f i)`)
-out of the product of the held coordinates. -/
-theorem piPMF_update_apply (i : ι) (μ_ : ∀ j, PMF (α j)) (ρ : PMF (α i)) (f : ∀ j, α j) :
-    (piPMF (Function.update μ_ i ρ)) f = ρ (f i) * ∏ x ∈ Finset.univ.erase i, μ_ x (f x) := by
-  rw [piPMF_apply, ← Finset.mul_prod_erase Finset.univ _ (Finset.mem_univ i),
-    Function.update_self]
-  exact congrArg _ (Finset.prod_congr rfl
-    (fun x hx => by rw [Function.update_of_ne (Finset.ne_of_mem_erase hx)]))
-
-omit [DecidableEq ι] in
-theorem mem_support_piPMF {μ : ∀ i, PMF (α i)} {f : ∀ i, α i} :
-    f ∈ (piPMF μ).support ↔ ∀ i, f i ∈ (μ i).support := by
-  rw [PMF.mem_support_iff, piPMF_apply, Finset.prod_ne_zero_iff]
-  simp only [Finset.mem_univ, forall_true_left, PMF.mem_support_iff]
-
-/-- A `piPMF` with a single non-Dirac coordinate `i` is the pushforward of that coordinate into the
-product (the analog of `prodPMF_pure_right`). -/
-theorem piPMF_update_pure (s : ∀ i, α i) (i : ι) (μ : PMF (α i)) :
-    piPMF (Function.update (fun j => PMF.pure (s j)) i μ)
-      = μ.map (fun c => Function.update s i c) := by
-  ext f
-  rw [piPMF_update_apply, PMF.map_apply]
-  simp only [PMF.pure_apply]
-  by_cases hC : ∀ x ∈ Finset.univ.erase i, f x = s x
-  · have hpos : f = Function.update s i (f i) := by
-      funext x
-      by_cases hx : x = i
-      · subst hx; rw [Function.update_self]
-      · rw [Function.update_of_ne hx]
-        exact hC x (Finset.mem_erase.mpr ⟨hx, Finset.mem_univ x⟩)
-    rw [Finset.prod_eq_one (fun x hx => if_pos (hC x hx)), mul_one,
-      tsum_eq_single (f i) ?_, if_pos hpos]
-    intro c hc
-    apply if_neg
-    intro heq
-    apply hc
-    have h := congrFun heq i
-    rw [Function.update_self] at h
-    exact h.symm
-  · push Not at hC
-    obtain ⟨x, hx, hne⟩ := hC
-    rw [Finset.prod_eq_zero hx (if_neg hne), mul_zero]
-    symm
-    refine ENNReal.tsum_eq_zero.mpr (fun c => if_neg ?_)
-    intro heq
-    apply hne
-    have h := congrFun heq x
-    rw [Function.update_of_ne (Finset.ne_of_mem_erase hx)] at h
-    exact h
-
-/-- Flattening the family `ρ ↦ piPMF (update μ_ i ρ)` reached from `ω` back to a single product
-(the analog of `bindId_left`). -/
-theorem bindId_update (i : ι) (μ_ : ∀ j, PMF (α j)) (ω : PMF (PMF (α i))) :
-    (ω.map (fun ρ => piPMF (Function.update μ_ i ρ))).bind id
-      = piPMF (Function.update μ_ i (ω.bind id)) := by
-  rw [PMF.bind_map, Function.id_comp]
-  ext f
-  rw [PMF.bind_apply]
-  simp only [piPMF_update_apply]
-  rw [PMF.bind_apply]
-  simp only [id_eq]
-  rw [← ENNReal.tsum_mul_right]
-  exact tsum_congr (fun a => by ring)
-
-end PiPMFAlgebra
-
 /-! ### Cofinitely-Dirac families
 
 An independent product of PMFs over an *infinite* index is a `PMF` only when cofinitely many
@@ -318,8 +246,8 @@ theorem toPMF_apply_of_not (c : CofinPMF α) (f : ∀ i, α i)
   exact this
 
 /-- **The step-collapse identity.** Mixing a belief-of-laws `ω` into coordinate `i` and
-flattening equals re-lawing `i` by `ω.bind id`. The infinite-index analogue of `bindId_update`;
-coordinate `i` is singled out by construction, so no product reindexing is needed. -/
+flattening equals re-lawing `i` by `ω.bind id`; coordinate `i` is singled out by construction,
+so no product reindexing is needed. -/
 theorem bind_toPMF_update (c : CofinPMF α) (i : ι) (ω : PMF (PMF (α i))) :
     (ω.map (fun ρ => (c.update i ρ).toPMF)).bind id = (c.update i (ω.bind id)).toPMF := by
   rw [PMF.bind_map, Function.id_comp]
@@ -594,6 +522,27 @@ theorem toPMF_self_bind (c : CofinPMF α) (i : ι) :
   conv_lhs => rw [← toPMF_update_coord_self c i]
   rw [toPMF_update_eq_bind]
 
+/-- Over a **finite** index the cofinitely-Dirac product is just the full independent product of
+the coordinate marginals: `c.toPMF = piPMF c.coord`. This is the bridge that makes the finite
+`interleaveRel`/Result 4 a special case of the cofinite ones. -/
+theorem toPMF_eq_piPMF_coord [Fintype ι] (c : CofinPMF α) : c.toPMF = piPMF c.coord := by
+  refine PMF.ext (fun f => ?_)
+  rw [piPMF_apply]
+  by_cases hm : ∀ i, i ∉ c.active → f i = c.base i
+  · rw [c.toPMF_apply f hm,
+      ← Finset.prod_mul_prod_compl c.active (fun i => c.coord i (f i))]
+    have hcompl : ∏ i ∈ c.activeᶜ, c.coord i (f i) = 1 :=
+      Finset.prod_eq_one (fun i hi => by
+        have hi' : i ∉ c.active := Finset.mem_compl.mp hi
+        rw [coord, if_neg hi', hm i hi', PMF.pure_apply_self])
+    rw [hcompl, mul_one]
+    exact Finset.prod_congr rfl (fun i hi => by rw [coord, if_pos hi])
+  · rw [c.toPMF_apply_of_not f hm]
+    push_neg at hm
+    obtain ⟨i₀, hi₀, hne⟩ := hm
+    exact (Finset.prod_eq_zero (Finset.mem_univ i₀)
+      (by rw [coord, if_neg hi₀, PMF.pure_apply, if_neg hne])).symm
+
 end CofinPMF
 
 end CofinDirac
@@ -654,7 +603,7 @@ pushforward `μ_i.map (Function.update s i)`. No label is ever synchronised.
 
 The pushforward form is the primitive (rather than the independent product
 `piPMF (Function.update (Dirac) i μ_i)`) because it needs no finite product, so it is
-well-defined for infinite `ι`; the two agree when `ι` is finite (`interleave_step`). -/
+well-defined for infinite `ι`; the two agree when `ι` is finite (`CofinPMF.toPMF_eq_piPMF_coord`). -/
 def interleave (sys : ∀ i, System (State i) Label) :
     System (∀ i, State i) Label where
   init := fun i => (sys i).init
@@ -672,17 +621,6 @@ theorem interleave_step_map (sys : ∀ i, System (State i) Label)
       ∃ (i : ι) (μ_i : PMF (State i)), (sys i).step (s i) l μ_i ∧
         μ = μ_i.map (Function.update s i) :=
   Iff.rfl
-
-/-- The step relation of `interleave` in independent-product (`piPMF`) form. Available only
-for finite `ι`, where the single-coordinate pushforward and the finite product coincide
-(`piPMF_update_pure`). Provided for backward compatibility with the finite-family metatheory
-(`ProcessAlgebra/Interleave.lean`, `Results.lean`). -/
-theorem interleave_step [Fintype ι] (sys : ∀ i, System (State i) Label)
-    (s : ∀ i, State i) (l : Label) (μ : PMF (∀ i, State i)) :
-    (interleave sys).step s l μ ↔
-      ∃ (i : ι) (μ_i : PMF (State i)), (sys i).step (s i) l μ_i ∧
-        μ = piPMF (Function.update (fun j => PMF.pure (s j)) i μ_i) := by
-  simp only [interleave_step_map, piPMF_update_pure]
 
 end System
 

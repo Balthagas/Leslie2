@@ -175,45 +175,7 @@ theorem ProbabilisticForwardSimulation.parallel_right
 
 end Parallel
 
-/-! ## 4. Precongruence for `interleave` -/
-
-section Interleave
-
-variable {ι : Type} [Fintype ι] [DecidableEq ι]
-  {State_C State_A : ι → Type} {Label : Type} [Silent Label]
-  {sysC : ∀ i, System (State_C i) Label} {sysA : ∀ i, System (State_A i) Label}
-  {R : ∀ i, State_C i → PMF (State_A i) → Prop}
-
-/-- **Precongruence for `interleave`.** If `sysA i` simulates `sysC i` for every component `i`, then
-`interleave sysA` simulates `interleave sysC`, along `interleaveRel R`. Proven from the two lift
-lemmas. -/
-theorem ProbabilisticForwardSimulation.interleave
-    (sim : ∀ i, ProbabilisticForwardSimulation (sysC i) (sysA i) (R i)) :
-    ProbabilisticForwardSimulation (System.interleave sysC) (System.interleave sysA)
-      (interleaveRel R) := by
-  refine ⟨?_, ?_⟩
-  · -- init
-    choose μ_0 hsupp0 hR0 using fun i => (sim i).init
-    refine ⟨piPMF μ_0, ?_, μ_0, hR0, rfl⟩
-    intro f hf
-    rw [mem_support_piPMF] at hf
-    funext i
-    exact hsupp0 i (f i) (hf i)
-  · -- step
-    rintro s ν ⟨μ_, hR, rfl⟩ l μ_CB hstep
-    rw [System.interleave_step] at hstep
-    obtain ⟨i, μ_Ci, hCi, rfl⟩ := hstep
-    obtain ⟨ω_Ai, hPMFReli, hdisj⟩ := (sim i).step (s i) (μ_ i) (hR i) l μ_Ci hCi
-    refine ⟨ω_Ai.map (fun ρ => piPMF (Function.update μ_ i ρ)), ?_, ?_⟩
-    · exact pmfRel_interleave i s μ_ hR hPMFReli
-    · rw [bindId_update]
-      rcases hdisj with ⟨hτ, htau⟩ | ⟨hτ, hstepw⟩
-      · exact Or.inl ⟨hτ, weakTau_interleave i μ_ htau⟩
-      · exact Or.inr ⟨hτ, weakStep_interleave i l μ_ hstepw⟩
-
-end Interleave
-
-/-! ## 4′. Precongruence for `interleave` over an arbitrary (possibly infinite) index -/
+/-! ## 4. Precongruence for `interleave` (arbitrary, possibly infinite, index) -/
 
 section InterleaveCofin
 
@@ -293,6 +255,20 @@ theorem ProbabilisticForwardSimulation.interleaveCofin
       rcases hdisj with ⟨hτ, htau⟩ | ⟨hτ, hstepw⟩
       · exact Or.inl ⟨hτ, weakTau_interleaveCofin c i htau⟩
       · exact Or.inr ⟨hτ, weakStep_interleaveCofin c i l hstepw⟩
+
+/-- **Precongruence for `interleave`** (finite index — the original Result 4). If `sysA i`
+simulates `sysC i` for every component `i`, then `interleave sysA` simulates `interleave sysC`
+along `interleaveRel R`.
+
+A corollary of `interleaveCofin`: over a `[Fintype ι]` index the two coupling relations coincide
+(`interleaveRelCofin_eq_interleaveRel`), so this is `interleaveCofin` transported along that
+relation equality. -/
+theorem ProbabilisticForwardSimulation.interleave [Fintype ι]
+    (sim : ∀ i, ProbabilisticForwardSimulation (sysC i) (sysA i) (R i)) :
+    ProbabilisticForwardSimulation (System.interleave sysC) (System.interleave sysA)
+      (interleaveRel R) := by
+  rw [← interleaveRelCofin_eq_interleaveRel]
+  exact ProbabilisticForwardSimulation.interleaveCofin sim
 
 end InterleaveCofin
 
