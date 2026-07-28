@@ -41,10 +41,12 @@ bit any extension can ever hand out.
 
 The `C`-return's guard `1 ≤ dead.card` is ABDY22's Graded Binding clause read
 on this state: *there is a bit `b` such that no non-faulty party decides `1 − b`
-at grade `≥ 1` in any extension*. A member of `dead` is exactly such a `b` —
-the value-bearing returns refuse a dead bit, and `dead` only grows, so the
-witness is valid in every extension of the run and not merely at the moment of
-the return. A `C`-return thus commits the instance: from that point on at most
+at grade `≥ 1` in any extension*. A member of `dead` is exactly such a `1 − b`
+— the witness `b` is its complement, the surviving bit — because the
+value-bearing returns refuse a dead bit, and `dead` only grows, so the witness
+is valid in every extension of the run and not merely at the moment of the
+return. (At `dead = {0, 1}` either bit serves as the witness, both complements
+being dead.) A `C`-return thus commits the instance: from that point on at most
 one bit is alive anywhere in the future, which is what makes handing out no bit
 the right answer. `retC` additionally requires `f + 1` F-blind support for each
 bit (D15), which is what certifies that neither bit was forced.

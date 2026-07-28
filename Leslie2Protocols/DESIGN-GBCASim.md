@@ -5,8 +5,9 @@ invariant, burst lemmas, per-row simulation), against the implementation shape
 in `ABA/GBCAImpl.lean` (deviation D18: the full six-level message ladder of
 ABDY22's Algorithm 6) and the specification shape in `ABA/GBCASpec.lean`
 (deviation D19: the exclusion set `dead : Finset Bool` in place of a bound
-value). A condensed version is a candidate proof sketch for
-`blueprint/src/content.tex`.
+value). The refinement paragraphs of `blueprint/src/content.tex` — the kill
+certificate, the `VOTE` wall, and the two-step kill-then-return burst — are a
+condensation of this document.
 
 ## Systems
 
@@ -122,8 +123,8 @@ structure InstRel (P : Params) (s : ImplState P.n) (t : SpecState P.n) : Prop wh
   gradeC_ev : t.grade = some false → ∃ i,   P.n - P.f ≤ s.recvCount i (.seal none)
 ```
 
-`call_eq`/`ret_eq`/`F_eq` are the exact abstraction rows, unchanged in shape
-from every other instance relation of the development. `gradeA_ev`/`gradeC_ev`
+`call_eq`/`ret_eq`/`F_eq` are the exact abstraction rows, identical in shape
+to every other instance relation of the development. `gradeA_ev`/`gradeC_ev`
 are the A/C-exclusivity certificates, read at the `SEAL` level (the level the
 returns read): two opposing `n − f` `SEAL` quorums intersect in an honest
 process with two different `SEAL` payloads, contradicting the write-once
@@ -163,7 +164,7 @@ sole gateway to any grade-≥1 evidence for `b` — impossible forever:
   `n − f` `ECHO b` quorum; two same-level `n − f` quorums for different bits
   share an honest sender (`exists_honest_recv₂`, `(n−f)+(n−f)−n > f`) that
   multicast two `ECHO` payloads, contradicting the write-once `echo_once`.
-  This is `echoQuorum_unique`, verbatim from the standing proof.
+  This is `echoQuorum_unique`.
 * **Case B** (`VoteWall P s b`). Any later `n − f` `VOTE b` quorum `Q` has all
   its non-`F` members committed to `sentVote = some (some b)` (`recv_sub` +
   `vote_once`), so `Q` meets the wall `D` only inside `F`:
@@ -186,7 +187,7 @@ theorem DeadCert.mono {s s' : ImplState P.n} {b : Bool}
     (hF : s.F ⊆ s'.F) : DeadCert P s b → DeadCert P s' b
 ```
 
-applied per row exactly like `ImplSupp.mono` is in the standing proof. This is
+applied per row exactly like `ImplSupp.mono`. This is
 what keeps `dead_cert` a stutter-stable field: `dead` never shrinks and the
 certificates never expire.
 
@@ -247,8 +248,8 @@ s.sent m` (an honest bit-voter exists somewhere):
 
 **(iii) The `bindUnset` guards are discharged.** `bindUnset b` needs the
 quorum guard and `f + 1` F-blind caller support for `!b`. At a value-bearing
-return of `v` (killing `b = !v`, support bit `!(!v) = v`), both come from the
-standing `bindSet_guards` machinery, statement unchanged:
+return of `v` (killing `b = !v`, support bit `!(!v) = v`), both come from one
+`ECHO` certificate:
 
 ```lean
 theorem bindUnset_guards (hR : InstRel P s t) {v} (hq : EchoQuorum P s v) :
@@ -291,7 +292,7 @@ carriers:
 
 The specification kills by an internal τ-transition, so an implementation
 return that needs a not-yet-dead bit killed is answered by a two-step weak
-burst through `weakLStep_tauThen` (survives verbatim). Unlike a bound-value
+burst through `weakLStep_tauThen`. Unlike a bound-value
 design there is no "first return" phase distinction: **every** return row does
 the same decidable case split on the spec's `dead`, and the burst is enabled
 whenever the kill is missing, regardless of how many returns happened before.
@@ -382,8 +383,7 @@ then
 2. grade latch (`retA` only) — `grade_ne_false_of_seal_quorum`: the `SEAL v`
    quorum against `gradeC_ev`'s `SEAL ⊥` quorum meets in an honest
    double-sealer, contradicting `seal_once`;
-3. dissent count (`retB` only) — `spec_supp (suppI_of_valid hval (!v))`,
-   verbatim;
+3. dissent count (`retB` only) — `spec_supp (suppI_of_valid hval (!v))`;
 4. case `(!v) ∈ t.dead`: single labelled step. Case `(!v) ∉ t.dead`: burst, with
    `bindUnset_guards` fed by `echoQuorum_of_vote_receipts hvq`;
 5. restore: `dead_cert` — old bits by `DeadCert.mono` (the step only sets
@@ -402,16 +402,15 @@ new member.
 Value agreement needs no dedicated lemmas: with `dead` in place of a bound
 value, agreement between successive returns is the guard pair
 `v ∉ dead ∧ (!v) ∈ dead` itself, discharged per row by
-`not_deadCert_of_voteQuorum` (for `∉`) and the case analysis (for `∈`). The
-standing `retA_value_agrees`/`retB_value_agrees` have no successors.
+`not_deadCert_of_voteQuorum` (for `∉`) and the case analysis (for `∈`).
 
 ## Invariant inventory
 
-### Survives verbatim
+### Shared machinery
 
-Statement-for-statement unchanged, proof unchanged up to the two new τ-rows
-(`sealBit`/`sealBot`, which are frame cases identical in shape to
-`bindBit`/`bindBot`):
+The kit the proof draws on, most of it common to the instance refinements of
+the development; the `SEAL`-level τ-rows (`sealBit`/`sealBot`) are frame cases
+identical in shape to `bindBit`/`bindBot` and need nothing beyond it:
 
 * the weak-transition kit: `weakLStep_single`, `weakLSilent_single`,
   `weakLStep_tauThen`;
@@ -423,15 +422,14 @@ Statement-for-statement unchanged, proof unchanged up to the two new τ-rows
   `Inv.supp_of_input_receipts`, `suppI_of_valid`, `InstRel.spec_supp`,
   `quorum_of_msg_quorum`, `inputQuorum_of_echoQuorum`;
 * the `ECHO`-level certificate: `EchoQuorum`, `echoQuorum_unique`,
-  `echoQuorum_of_vote_receipts`, `echoQuorum_of_bind_quorum` (now a
-  convenience corollary), and `bindSet_guards` under its new name
-  `bindUnset_guards` (statement identical: quorum + SuppOK count out of one
+  `echoQuorum_of_vote_receipts`, `echoQuorum_of_bind_quorum` (a convenience
+  corollary), and `bindUnset_guards` (quorum + SuppOK count out of one
   `EchoQuorum`);
 * conformance and write-once clauses `echo_conf`, `echo_once`, `vote_input`,
-  `vote_conf`, `bind_once`, `bind_conf` (with `bind_once` now used only as a
-  conformance fact, not for grade exclusivity).
+  `vote_conf`, `bind_once`, `bind_conf` (`bind_once` serves here as a
+  conformance fact only — grade exclusivity is read at the `SEAL` level).
 
-### New `Inv` clauses
+### `Inv` clauses at the `VOTE` and `SEAL` levels
 
 ```lean
 /-- Honest `VOTE` multicasts are recorded in the write-once `sentVote`. -/
@@ -451,10 +449,10 @@ seal_input : ∀ j w, j ∉ s.F → Msg.seal w ∈ s.sent j → (s.proc j).input
 
 `vote_once` and `bindBot_conf` are forced by the kill certificates (`VoteWall`
 counting and the Case B branch of `deadCert_of_sealBot_quorum`); the seal
-clauses mirror the existing per-level pattern one level up, with
+clauses mirror the per-level pattern one level up, with
 `seal_once`/`seal_conf`/`sealBot_conf` load-bearing (grade exclusivity and the
 two harvest chains) and `seal_input` kept for pattern uniformity only.
-Preservation is by the same three schemas as every existing clause: the
+Preservation is by the same three schemas as every other clause: the
 `_once` clauses by the `sentSeal = none`/`sentVote = none` send guards, the
 `_conf` clauses by the sending rule's own receipt guard plus count
 monotonicity, everything by frame elsewhere. Count monotonicity needs the
@@ -466,10 +464,10 @@ theorem voteCount_le_recvMsg (s : ImplState n) (i j : Fin n) (m : Msg) (i' : Fin
 -- likewise bindCount_le_recvMsg, sealCount_le_recvMsg, echoCount_le_recvMsg
 ```
 
-(same one-line `Finset.card_le_card` proof; `echoCount_le_recvMsg` closes a
-pre-existing gap in the monotonicity kit that nothing needed before).
+(same one-line `Finset.card_le_card` proof; the four together cover every
+level of the ladder).
 
-### New certificate and harvest lemmas
+### Certificate and harvest lemmas
 
 Collected statements (all defined in `GBCASim.lean` unless noted):
 
@@ -556,54 +554,58 @@ quorums pin `{p1, p2, p3}` as committed-⊥-or-`F`, which is `VoteWall` at
 `n − f = 3` for **both** bits — exactly the `∃ b, DeadCert` the `retC` burst
 consumes, and exactly why no later receipt pattern can contradict the kill.
 
+## Where the shapes surface downstream
+
+The exclusion set and the kill certificate are read directly by the layers
+above this file. `CoreSimRel.lean`/`CoreSim.lean` phrase the round skeleton
+over `dead`: `IsLastBound g r` is `(g r).dead ≠ ∅ ∧ (g (r + 1)).dead = ∅`,
+`Closed g r` is `(g r).dead ≠ ∅ ∨ (g r).grade = some false`, and `a_commit`,
+`gradeA_needs_bind`, `bind_supp` and the A-lock certificates are keyed on the
+guard pair `(!b) ∈ dead ∧ b ∉ dead` — the D19 rendering of `bind = some b`,
+with `bind ≠ none` rendered as `dead ≠ ∅`. `GBCAFamily.instRel_corrupt`
+carries the `dead_cert` row through `DeadCert.mono`, whose three hypotheses it
+discharges by `corrupt_recv`, `corrupt_proc` and `corrupt_F_subset`.
+`GBCAProc.lean`'s per-process rendering mirrors `ImplStep` rule for rule,
+including the `sealBit`/`sealBot` rules and the `sentSeal` field, and relates
+the per-process and global views by the `unpack` bridges — `unpack_sealCount`
+at the seal level, alongside `unpack_recvCount` and the other per-level counts.
+
 ## Risks and open points
 
-1. **`Bool` negation syntax.** Two elaboration traps, both exercised and
-   confirmed by the compile spike. (a) `bindUnset b`'s support guard mentions
-   `some (!b)`; instantiating `b := !v` produces `some (!(!v))`, which is not
+1. **`Bool` negation syntax.** Two elaboration traps. (a) `bindUnset b`'s
+   support guard mentions `some (!b)`; instantiating `b := !v` produces
+   `some (!(!v))`, which is not
    definitionally `some v` — the burst lemmas carry one
    `simpa only [Bool.not_not]` at the `bindUnset` application. (b) `!` binds
    looser than `∈`/`∉`, so `!v ∈ s.dead` silently elaborates as the coerced
    `!(decide (v ∈ s.dead))`; every membership guard on the negated bit must be
    written `(!v) ∈ s.dead` / `(!v) ∉ t.dead`.
-2. **Downstream shape consumers (out of scope here, must be scheduled).**
-   `CoreSimRel.lean`/`CoreSim.lean` read `(g r).bind` pervasively (`Closed`,
-   `IsLastBound`, `a_commit`, `gradeA_needs_bind`, phase-2 A-lock
-   certificates, `bind_supp`); under D19 the transliteration is
-   `bind = some v ↦ (!v) ∈ dead ∧ v ∉ dead` and `bind ≠ none ↦ dead ≠ ∅`
-   (`Closed` simplifies: a C-locked round now has `dead ≠ ∅` outright).
-   `GBCAFamily.instRel_corrupt` re-proves with `dead_cert` via `DeadCert.mono`
-   (its `bind_cert` row today is a pure `recvCount` rewrite; the wall disjunct
-   additionally needs `corrupt_proc` and `corrupt_F_subset`).
-   `GBCAProc.lean`'s per-process rendering mirrors `ImplStep` rule-for-rule
-   and needs the two seal rules, the `sentSeal` field and the reshaped
-   returns, plus its `unpack` counting bridges at the seal level. Module
-   docstrings of all touched files restate the shapes.
-3. **`retB`'s `honce` receipt.** The implementation's `retB` keeps the
+2. **`retB`'s `honce` receipt.** The implementation's `retB` keeps the
    algorithm's "at least one `SEAL v` receipt" guard. The simulation never
-   reads it (the `f + 1` `BIND v` receipts carry all evidence), so it is pure
-   conformance; if elaboration friction arises it can be carried inert, but it
-   must not be dropped from the rule — the rule is the algorithm.
-4. **Canonical `C`-kill via `Classical.choose`.** The `retC` row consumes
+   reads it (the `f + 1` `BIND v` receipts carry all evidence), so it rides
+   along as pure conformance; it must not be dropped from the rule — the rule
+   is the algorithm.
+3. **Canonical `C`-kill via `Classical.choose`.** The `retC` row consumes
    `∃ b, DeadCert P s b` nonconstructively. If a later development (e.g. a
    quantitative or decidability layer) needs the choice computable, replace it
    with the explicit case split (`if EchoQuorum … true then false else …`);
    nothing in the simulation depends on which certified bit is chosen.
-5. **`dead.card ≤ 1` is deliberately not an invariant.** Sim-reachable spec
+4. **`dead.card ≤ 1` is deliberately not an invariant.** Sim-reachable spec
    states happen to satisfy it (kills fire only on demand), but the relation
    neither needs nor states it; adding it would create obligations at the
    `retC` burst for no benefit. Recorded so nobody "strengthens" the relation
    into extra work.
-6. **`VoteWall` reads process-local slots.** Unlike `EchoQuorum` it counts
+5. **`VoteWall` reads process-local slots.** Unlike `EchoQuorum` it counts
    `sentVote` slots, not receipts — still monotone in `F` (a corrupted slot
    stays in the wall via the `j ∈ F` disjunct) and in `sentVote` (write-once),
-   which is all the simulation needs; but any future per-process
-   decomposition (`GBCAProc`) must transport it through `unpack` like the
-   other `proc`-field predicates.
-7. **Vacuous-fill risk in `deadCert_of_sealBot_quorum`.** The Case B branch
+   which is all the simulation needs. Any per-process decomposition must
+   therefore transport it through `unpack` like the other `proc`-field
+   predicates, as `GBCAProc.lean` does via `unpack_proc`/`unpack_F`.
+6. **Vacuous-fill hazard in `deadCert_of_sealBot_quorum`.** The Case B branch
    needs the global classical split "some honest bit-voter exists"; its
    **no**-branch uses `bindBot_conf` on a *specific* honest `BIND` sender
-   harvested from `sealBot_conf`'s any-`BIND` count. That harvest needs
-   `exists_sender_notMem` on an any-payload count, i.e. a variant returning
-   the payload: `∃ k w, k ∉ F ∧ Msg.bind w ∈ s.recv p k`. Same proof as the
-   exact-message version; listed so it is not discovered mid-proof.
+   harvested from `sealBot_conf`'s any-`BIND` count. That harvest wants
+   `exists_sender_notMem` on an any-payload count, i.e. the payload-returning
+   variant `ImplState.exists_bind_sender_notMem`:
+   `∃ k w, k ∉ F ∧ Msg.bind w ∈ s.recv p k`, same proof as the exact-message
+   version.

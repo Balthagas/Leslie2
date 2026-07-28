@@ -34,7 +34,8 @@ and a guard reading `∉ dead` can never be re-enabled.
   graded-return labels of a positive-probability trace of `specInst P r` that
   name a bit (`outValue`, defined here: `A b` and `B b` name `b`, `C` names
   nothing) name the same bit.
-* `retC_dead_nonempty` — the **Graded Binding witness**. After a `C`-return,
+* `retC_dead_nonempty` — the **Graded Binding witness**, as the complement of
+  the bit the return kills. After a `C`-return,
   `dead` is nonempty in every later state of the execution. A member of `dead`
   is a bit no non-faulty party can be handed at grade `≥ 1` in any extension,
   which is ABDY22's Graded Binding clause; the witness is produced at the
@@ -177,9 +178,10 @@ theorem retG_value_agree {e : AlterSeq (SpecState P.n) (Lab P.n)}
   · exact retG_value_agree_le he h hst₁ hst₂ hstep₁ hstep₂ ho₁ ho₂
   · exact (retG_value_agree_le he h hst₂ hst₁ hstep₂ hstep₁ ho₂ ho₁).symm
 
-/-- **The Graded Binding witness.** A `C`-return leaves the exclusion set
-nonempty in every later state of the execution: the bit it kills is a bit no
-extension of the run can ever hand out. -/
+/-- **The Graded Binding witness**, as the complement of the bit the return
+kills. A `C`-return leaves the exclusion set nonempty in every later state of
+the execution: the bit it kills is a bit no extension of the run can ever hand
+out, so the surviving complement is the clause's witness. -/
 theorem retC_dead_nonempty {e : AlterSeq (SpecState P.n) (Lab P.n)}
     (he : is_exec e (specInst P r)) {k₁ k₂ : ℕ} (hk : k₁ ≤ k₂)
     {s₁ s₂ : SpecState P.n} {id : Fin P.n} {μ : PMF (SpecState P.n)}

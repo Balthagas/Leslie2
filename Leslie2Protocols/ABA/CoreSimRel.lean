@@ -16,11 +16,13 @@ every hidden (τ) row and the probabilistic coin row by stuttering under a
 constant coupling; the single τ-burst fires at the first `retABA` row, where
 the twin binds, fills the board, decides, and returns within one weak step.
 
-* `Abs` — the abstract-state constraints (C1 `F_eq`, C2 `ret_eq`, C3
-  `coin_bot`, C7 `phase`).
-* `Inv` — the concrete invariant (I1–I27: F-lockstep, input coherence, the
-  `Closed`-keyed round skeleton with quiescence, DECIDED coherence, A-grade
-  commitment, delivery soundness, round/phase coherence, support pools).
+* `Abs` — the abstract-state constraints (C1 `F_eq`, C2 `ret_eq`, `coin_bot`,
+  and C3/C7 `phase`).
+* `Inv` — the concrete invariant (thirty-nine fields, docstring-numbered
+  I1–I30, a few numbers covering a small group of fields: F-lockstep, input
+  coherence, the `Closed`-keyed round skeleton with quiescence, DECIDED
+  coherence, A-grade commitment, delivery soundness, round/phase coherence,
+  support pools, and the burn-proof certificate conjuncts I28–I30).
 * `coreR` — the simulation relation `Inv ∧ Abs`, wrapped in `diracRel` by
   `CoreSim.lean`.
 -/

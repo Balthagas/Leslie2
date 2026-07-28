@@ -95,16 +95,16 @@ and re-delivery is `insert` into a set, so the guard removes redundant transitio
 rather than reachable states — and the asymmetry reappears exactly in the per-process
 automata, each guard splitting across the two ends of a rendezvous: the DECIDED halves
 carry it (`CoreProcStep.netSelf`/`netRecv`, `CoreProc.lean:362`, `:371`;
-`ABAProcStep.dnetSelf`/`dnetRecv`, `FlatABA.lean:338`, `:348`), the stage halves do not
-(`GBCA.ProcStep.netSelf`/`netRecv`, `GBCAProc.lean:269`, `:277`;
-`ABAProcStep.gnetSelf`/`gnetRecv`, `FlatABA.lean:356`, `:367`).
+`ABAProcStep.dnetSelf`/`dnetRecv`, `FlatABA.lean:352`, `:362`), the stage halves do not
+(`GBCA.ProcStep.netSelf`/`netRecv`, `GBCAProc.lean:294`, `:302`;
+`ABAProcStep.gnetSelf`/`gnetRecv`, `FlatABA.lean:370`, `:381`).
 
 ## 4. Source defects the encoding does not reproduce
 
 - **TS 1 violates Agreement** without the rule-7 re-propose guard and the papers'
   Validity without the rule-4 support guard; both counterexample traces are in
   `Spec.lean`'s module docstring (D3 at lines 36–43, D13 at 15–35), the second with the
-  `decide` witness at `Spec.lean:209–212` — the support guard failing on inputs
+  `decide` witness at `Spec.lean:247–250` — the support guard failing on inputs
   `1,0,0,0` at `n = 4, f = 1`.
 - **TS 2's singular binding witness** (`∃ id ∉ F, call[id] = b`, source p. 19) loses
   provenance one level down, and `hybridSpec` over it violates Validity; the
@@ -120,11 +120,11 @@ carry it (`CoreProcStep.netSelf`/`netRecv`, `CoreProc.lean:362`, `:371`;
   with `⊥` in a grade slot ranging over `{A, B, C}`. It reads as grade `C`, and is
   realized as the `grade` latch's `A`/`C` exclusivity (`GBCASpec.lean:181`, `:195`).
 - **TS 1's `Initial` clause names an undeclared field** `out` (source p. 18), absent
-  from the same system's `State` line. It is omitted (`Spec.lean:48`).
+  from the same system's `State` line. It is omitted (`Spec.lean:58`).
 
 ## 5. Scope boundaries
 
-Beyond D4 — the WCC `guess` label and state field (`Labels.lean:33`, `WCCSpec.lean:20`),
+Beyond D4 — the WCC `guess` label and state field (`Labels.lean:33`, `WCCSpec.lean:21`),
 which exist solely for Unpredictability, inexpressible once the guess is dropped.
 
 - **Per-transition fairness markings.** Every transition system in the source carries

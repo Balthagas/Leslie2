@@ -127,8 +127,9 @@ theorem instRel_failAct (P : Params) :
 /-! ### The family refinement -/
 
 /-- **The GBCA family refinement**: the ℕ-indexed implementation family
-probabilistically forward-simulates the specification family along the Dirac
-lift of the pointwise instance relation. -/
+refines the specification family — a probabilistic forward simulation of the
+implementation by the specification along the Dirac lift of the pointwise
+instance relation. -/
 theorem familyRefines (P : Params) :
     ProbabilisticForwardSimulation (implFamily P) (specFamily P)
       (diracRel fun s t => ∀ r, instRel P r (s r) (t r)) :=

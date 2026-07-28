@@ -2,8 +2,8 @@
 
 Companion design document to the Lean proof in `ABA/CoreSimRel.lean` (relation +
 invariant), `ABA/CoreSimBurst.lean` (abstract τ-burst kit), and `ABA/CoreSim.lean`
-(the per-row simulation proof). A condensed version is a candidate proof sketch of
-`coreSim` for `blueprint/src/content.tex`. The spec-level repairs the simulation
+(the per-row simulation proof). The `coreSim` proof prose in
+`blueprint/src/content.tex` condenses this document. The spec-level repairs the simulation
 depends on are labelled D13/D14/D15 (Validity provenance) and D12′ (DECIDED
 equivocation).
 
@@ -75,14 +75,16 @@ Under D19 a GBCA round records exclusion, not a bound value: `(g r).dead : Finse
 grows one bit at a time by `bindUnset`, and a value-bearing return needs the *live pair*
 `(!v) ∈ (g r).dead ∧ v ∉ (g r).dead`. The pair is not permanent. A second `bindUnset`
 at the same round is enabled after that return — its guards are a quorum, `f + 1`
-F-blind support for the spared bit, and that bit not yet dead, none of which the return
+F-blind support for the spared bit (`hw` counts `!b`), and the killed bit not yet dead
+(`hb : b ∉ dead`), none of which the return
 disturbs — so `dead = {0, 1}` is reachable at a round that has already handed out `v`.
 Such a **burned** round still carries `grade = some true`, but its exclusion set no
 longer names `v`. Every fact about a decided value therefore has to be stated in a form
 that a burn cannot erase.
 
-- **`ACommit P g c r b`** — the permanent commitments of an `A`-locked round: every
-  later round's live pair, every honest call above `r`, every honest est past `r`, and
+- **`ACommit P g c r b`** — the permanent commitments of an `A`-locked round: the live
+  pair at every round `r' ≥ r` (round `r` itself included), every honest call above `r`,
+  every honest est past `r`, and
   every honest `Carrier` of round `r`'s outcome names `b`. `Carrier` is the outcome-holder
   predicate — a round-`(r + 1)` GBCA call of `v`, or a committed est of `v` in the window
   between `retG r` and `retG (r + 1)`. Each component is monotone-stable: the first only
@@ -94,7 +96,9 @@ that a burn cannot erase.
   after the round burns. This, not a live pair, is what `Inv.decided_src` and
   `Inv.grade_A_src` produce and what phase 2 of `Abs` holds. `ACommit.of_frame` /
   `ACert.of_frame` transport both along any step that keeps `dead`, `call`, honest
-  `round`/`est` and reflects carriers.
+  `round`/`est`, reflects carriers and only grows `F` (`hF : c.F ⊆ c'.F` — the honesty
+  side conditions are all of the form `id ∉ F`, so they must be re-derived through the
+  larger set); `ACert.of_frame` additionally requires the round's grade preserved.
 - **`Inv.dead_supp` (I28)** — every kill keeps its D15 guard: `b ∈ (g r).dead` implies
   `f + 1` F-blind call support for the spared bit `!b` at round `r`. Both `call` and `F`
   only grow, so the count is permanent, and `GBCA.exists_honest_caller` harvests it into a
@@ -110,8 +114,9 @@ that a burn cannot erase.
   `b ∈ decidedSent id`. Each new holder is compared at its own `retG` row, where the
   fresh return's live pair meets the existing holder's certificate.
 - **`AbsFrame P g g' c c'`** — the `Abs`-side transport a step row hands back: every
-  `ACert` on the pre-state has an `ACert` on the post-state, and phase 2's holder
-  universal survives given its certificate. `AbsFrame.refl` covers every row that touches
+  `ACert` on the pre-state has an `ACert` on the post-state *at some round* (`∃ r1` — the
+  bit is preserved, the round is re-existentialized, which is what lets a row relocate a
+  certificate), and phase 2's holder universal survives given its certificate. `AbsFrame.refl` covers every row that touches
   neither certificates nor holders. Each `Inv.step_*` lemma returns `Inv ∧ AbsFrame`,
   and `Abs.frame` consumes exactly that; the certificate is what pins a *fresh* holder
   in the corner where every original witness has been corrupted away.
@@ -124,7 +129,7 @@ Concrete steps are read through the step-inversion lemma for
 | concrete row | label | abstract answer |
 |---|---|---|
 | every hidden handshake (`callG`/`retG`/`callW`/`retW`), `bindUnset`, DECIDED gossip τ | τ | stutter (`Abs.frame`; only `Inv` moves) |
-| **every** `WCC_r` coin flip | τ | constant-coupled stutter `ω := wccPMF.map (fun _ => pure a)` (`Abs.w_swap`; the twin never flips) |
+| **every** `WCC_r` coin flip | τ | constant-coupled stutter via the generic `stutter_step` (`CoreSim.lean`): coupling `Ω := μ_C.map (·, pure a)`, so `ω = pure (pure a)` and `ω.bind id = pure a` (`Abs.w_swap`; the twin never flips) |
 | `callABA id b`, phase 1, genuine (idle-exit input) | `callABA id b` | rule 1 (banks the concrete input into `a.call` and the ghost) |
 | `callABA id b`, otherwise (phase 2, or a self-loop re-call) | `callABA id b` | rule 2 (first-write-wins; no `Abs`-field change) |
 | `retABA id b`, phase 1 | `retABA id b` | `decide_burst` then rule 8 (`weakStep_of_burst_then_step`) — see below |
@@ -247,14 +252,22 @@ Preservation: `call` adds a holder; a `relay`'s `f + 1` receipt senders are each
 senders are in `F`; `fail` grows the count and shrinks the triggers; the count is
 monotone throughout. The harvest splits by D14 site.
 
-- The `bindUnset` counts ride on the relation's `dead_cert`, which bounds `dead` from
-  above by a monotone *kill certificate* `DeadCert P s b` (the opposite bit owns the
-  unique `n − f` `ECHO` receipt quorum, or an `n − f` wall of processes is each corrupted
-  or committed to a non-`b` `VOTE` payload — the two ways an `n − f` `VOTE b` quorum is
-  made impossible forever). The implementation return supplies the `ECHO` certificate from
-  its own receipts (`echoQuorum_of_bind_quorum` for case (a), `echoQuorum_of_vote_receipts`
-  for case (b)). `bindUnset_guards` gets *both* `bindUnset` guards out of that one `n − f`
-  `ECHO v` certificate: refine it to an `n − f` `INPUT v`
+- **The kill certificate.** The relation's `dead_cert` bounds `dead` from above by a
+  monotone *kill certificate* `DeadCert P s b` (the opposite bit owns the unique `n − f`
+  `ECHO` receipt quorum, or an `n − f` wall of processes is each corrupted or committed to
+  a non-`b` `VOTE` payload — the two ways an `n − f` `VOTE b` quorum is made impossible
+  forever). A value-bearing return restores it from its own SEAL-level evidence: `retA`'s
+  `n − f` `SEAL v` quorum, and `retB`'s `f + 1` `BIND v` receipts as the grade-1 witness
+  (the full D18 ladder, not the source's compressed `VOTE`-level reading). Both route to
+  an `n − f` `VOTE v` receipt quorum at an honest process
+  (`bind_receipts_of_seal_quorum` then `voteQuorum_of_bind_receipts`); that quorum is
+  itself the wall, so `deadCert_of_voteQuorum` certifies `!v` dead, and
+  `not_deadCert_of_voteQuorum` refutes any certificate for `v` — the live half `v ∉ dead`
+  of the guard pair, read against `dead_cert`.
+- **The `bindUnset` guards.** These are harvested separately, from an `EchoQuorum` — at
+  both value-bearing rows via `echoQuorum_of_vote_receipts`, off the same honest process's
+  `VOTE v` receipts. `bindUnset_guards` gets *both* `bindUnset` guards out of that one
+  `n − f` `ECHO v` certificate: refine it to an `n − f` `INPUT v`
   receipt quorum (`inputQuorum_of_echoQuorum`), whose honest senders hold an input
   (`input_called`, D8) — that is the quorum guard (`quorum_of_msg_quorum`) — and whose
   count feeds `Inv.supp_of_input_receipts` for the `f + 1` SuppOK count.
@@ -310,8 +323,10 @@ fields), grouped:
   transport lemmas every row's frame facts feed.
 - **Input/est provenance**: `input_g0`, `input_g0_perm`, `input_called`, `phase_input`,
   `est0`, `est_ret`, `est_prev`, `est_prev_ne`, `call_prov`, `bind_succ` (a bit killed at
-  round `r + 1` was already dead at round `r`, or round `r` closed `C`-locked with the
-  coin pinning the adopted value), `c_chain`.
+  round `r + 1` was already dead at round `r`, or round `r` closed `C`-locked with round
+  `r`'s coin at `.bit v` *or* `.top` — a `⊤` coin lets the adopting return pick any
+  matching bit, so the coin disjunct alone does not pin `v`; only the `C`-lock does, and
+  every downstream use reads just that half), `c_chain`.
 - **Locks and DECIDED**: `a_commit` (an `A`-locked round whose surviving bit `b` is still
   alive yields `ACommit` for `b` — the live-pair form, which weakens vacuously once the
   round burns), `agree_locked` (keyed on the frontier reading

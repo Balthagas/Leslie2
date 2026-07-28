@@ -801,7 +801,7 @@ The encoding realises that reading: an $A$-return and a $C$-return of the same
 instance exclude one another.
 The bound value of the Binding clause is realised by its complement: the
 specification carries the set of bits it can no longer hand out, and the
-clause's $b$ is a bit outside that set, its $1-b$ a member of it (D19).
+clause's $1-b$ is a member of that set (D19).
 
 Weak Common Coin (WCC).
 Processes start with no input and may return a bit.
@@ -1367,7 +1367,7 @@ there certified $f+1$ $F$-blind supporters of $v$ itself.
   \uses{def:aba-subspecs, thm:trace-support}
   Any two returns of one execution of the round-$r$ GBCA specification instance that hand out a bit hand out the same bit, whatever their grades and whichever processes they answer; the bit a graded outcome hands out is the one $A\,b$ and $B\,b$ name, $C$ naming none.\lean{PLTS.ABA.GBCA.outValue}\leanok{}
   Read on traces: every trace in the support of every achievable trace distribution of the instance satisfies $\mathrm{BindingTrace}$, that any two round-$r$ graded returns of the trace which name a bit name the same one.\lean{PLTS.ABA.GBCA.BindingTrace}\leanok{}
-  A $C$-return moreover leaves $dead$ nonempty in every later state of the execution, so the bit it kills is a bit no extension of the run hands out at grade $\ge 1$ --- the Binding witness.\lean{PLTS.ABA.GBCA.retC_dead_nonempty}\leanok{}
+  A $C$-return moreover leaves $dead$ nonempty in every later state of the execution, so the bit it kills is a bit no extension of the run hands out at grade $\ge 1$, and the Binding witness is that bit's complement.\lean{PLTS.ABA.GBCA.retC_dead_nonempty}\leanok{}
 \end{theorem}
 
 \begin{proof}\leanok

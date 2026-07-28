@@ -1436,8 +1436,8 @@ private theorem corrupt_F_eq {t : SpecState P.n} {s : ImplState P.n}
     exact hF
 
 /-- **The per-instance GBCA refinement**: the round-`r` implementation
-instance forward-simulates the round-`r` specification instance along
-`instRel`. -/
+instance refines the round-`r` specification instance — a forward simulation
+of the implementation by the specification along `instRel`. -/
 theorem implRefines (P : Params) (r : ℕ) :
     ForwardSimulation (implInst P r) (specInst P r) (instRel P r) := by
   constructor
