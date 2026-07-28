@@ -21,8 +21,9 @@ complete decision — starting from its initial state:
   Core takes its `input` constructor, both instance families idle);
 * `step_callG₀/₁/₂` — three GBCA calls (`callG 0`, *hidden* to `τ`: Core emits,
   the GBCA round-`0` instance takes its owned `call`, WCC idles);
-* `step_bindSet` — the GBCA `bindSet` internal transition (a family `τ`, `n − f`
-  quorum met at `n = 4, f = 1` by the three callers, interleaved in `parallel`);
+* `step_bindUnset` — the GBCA `bindUnset` internal transition killing the bit
+  `false` (a family `τ`, `n − f` quorum met at `n = 4, f = 1` by the three
+  callers of `true`, interleaved in `parallel`);
 * `step_retG₀/₁/₂` — the three GBCA `A`-return handshakes (`retG 0`, *hidden*),
   the first locking the round grade to the `A`-side;
 * `step_callW₀/₁/₂` — the three coin-call handshakes (`callW 0`, *hidden*);
@@ -125,8 +126,9 @@ def Cc1 : CoreState 4 := cCallG 0 C3
 def Cc2 : CoreState 4 := cCallG 1 Cc1
 def Cc3 : CoreState 4 := cCallG 2 Cc2
 
-/-- GBCA-family state after `bindSet` fixes the round-`0` bound value to `true`. -/
-def Gb : ℕ → GBCA.SpecState 4 := Function.update G3 0 { G3 0 with bind := some true }
+/-- GBCA-family state after `bindUnset` kills the round-`0` bit `false`,
+sparing `true`. -/
+def Gb : ℕ → GBCA.SpecState 4 := Function.update G3 0 { G3 0 with dead := {false} }
 
 /-- GBCA-family state after process `0`'s round-`0` `A`-return. -/
 def Gr : ℕ → GBCA.SpecState 4 :=
@@ -302,19 +304,20 @@ theorem step_callG₂ :
     · rw [prodPMF_pure_pure]
   · rw [prodPMF_pure_pure]
 
-/-! ### Step 7: the GBCA `bindSet` internal transition (family `τ`, interleaved) -/
+/-! ### Step 7: the GBCA `bindUnset` internal transition (family `τ`, interleaved) -/
 
 /-- With three of four processes having called, the round-`0` GBCA quorum
-`n − f = 3` is met, so `bindSet` fixes the bound value. This is a family `τ`,
+`n − f = 3` is met, so `bindUnset` kills the bit `false` (the three callers of
+`true` supply the `f + 1` support for the surviving bit). This is a family `τ`,
 interleaved on the GBCA side while the context holds. -/
-theorem step_bindSet :
+theorem step_bindUnset :
     (hybridSpec P4).step (G3, (Cc3, W0)) Lab.tau
       (PMF.pure (Gb, (Cc3, W0))) := by
   refine Or.inr ⟨by simp, ?_⟩
   refine Or.inr (Or.inl ⟨rfl, PMF.pure Gb, ?_, ?_⟩)
   · refine Or.inl ⟨rfl, 0, _, ?_, by rw [PMF.pure_map]; rfl⟩
-    exact GBCA.Step.bindSet (P := P4) (r := 0) (G3 0) true
-      (by unfold GBCA.SpecState.quorum; decide) (by decide) rfl
+    exact GBCA.Step.bindUnset (P := P4) (r := 0) (G3 0) false
+      (by unfold GBCA.SpecState.quorum; decide) (by decide) (by decide)
   · rw [prodPMF_pure_pure]
 
 /-! ### Step 8: process `0`'s hidden GBCA `A`-return (`retG 0`, hidden to `τ`) -/
@@ -328,7 +331,8 @@ theorem step_retG₀ :
   refine Or.inl ⟨rfl, Lab.retG 0 (0 : Fin 4) (.A true), by simp, ?_⟩
   refine Or.inl ⟨by decide, PMF.pure Gr, PMF.pure (Cr, W0), ?_, ?_, ?_⟩
   · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
-    exact GBCA.Step.retA (P := P4) (r := 0) (Gb 0) (0 : Fin 4) true rfl (Or.inl rfl) rfl
+    exact GBCA.Step.retA (P := P4) (r := 0) (Gb 0) (0 : Fin 4) true (by decide) (by decide)
+      (Or.inl rfl) rfl
   · refine Or.inl ⟨by decide, PMF.pure Cr, PMF.pure W0, ?_, ?_, ?_⟩
     · exact CoreStep.retG (P := P4) Cc3 0 (0 : Fin 4) (.A true) rfl rfl
     · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
@@ -361,7 +365,8 @@ theorem step_retG₁ :
   refine Or.inl ⟨rfl, Lab.retG 0 (1 : Fin 4) (.A true), by simp, ?_⟩
   refine Or.inl ⟨by decide, PMF.pure Ga1, PMF.pure (Cq1, W0), ?_, ?_, ?_⟩
   · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
-    exact GBCA.Step.retA (P := P4) (r := 0) (Gr 0) (1 : Fin 4) true rfl (Or.inr rfl) (by decide)
+    exact GBCA.Step.retA (P := P4) (r := 0) (Gr 0) (1 : Fin 4) true (by decide) (by decide)
+      (Or.inr rfl) (by decide)
   · refine Or.inl ⟨by decide, PMF.pure Cq1, PMF.pure W0, ?_, ?_, ?_⟩
     · exact CoreStep.retG (P := P4) Cr 0 (1 : Fin 4) (.A true) (by decide) (by decide)
     · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
@@ -375,7 +380,8 @@ theorem step_retG₂ :
   refine Or.inl ⟨rfl, Lab.retG 0 (2 : Fin 4) (.A true), by simp, ?_⟩
   refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cq2, W0), ?_, ?_, ?_⟩
   · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
-    exact GBCA.Step.retA (P := P4) (r := 0) (Ga1 0) (2 : Fin 4) true rfl (Or.inr rfl) (by decide)
+    exact GBCA.Step.retA (P := P4) (r := 0) (Ga1 0) (2 : Fin 4) true (by decide) (by decide)
+      (Or.inr rfl) (by decide)
   · refine Or.inl ⟨by decide, PMF.pure Cq2, PMF.pure W0, ?_, ?_, ?_⟩
     · exact CoreStep.retG (P := P4) Cq1 0 (2 : Fin 4) (.A true) (by decide) (by decide)
     · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))

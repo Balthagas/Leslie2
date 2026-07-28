@@ -39,8 +39,9 @@ label every automaton acts on, which is what keeps the local copies of the
 corrupted set equal.
 
 The locality claim is a theorem, not a convention: `GBCA.perProcInst_atd` states
-that the composite and the monolithic instance `GBCA.implInst` (blueprint
-Algorithm 2) achieve exactly the same trace distributions. It is proved by two
+that the composite and the monolithic instance `GBCA.implInst` (ABDY22
+Algorithm 6, deviation D18) achieve exactly the same trace distributions. It is
+proved by two
 LTS forward simulations along the packing map `GBCA.unpack` — the
 composite state `p` corresponds to the monolithic state `q` iff `p = unpack q`,
 which pins each node's fields to the matching monolithic components and makes
@@ -48,7 +49,8 @@ every node's copy of the corrupted set equal to `q.F`. The step matching is
 one-to-one in both directions:
 
 * an interleaved `τ` of the composite is one process's local send (`relay`,
-  `echo`, `vote*`, `bind*`, `byz`) — the monolithic rule of the same name;
+  `echo`, `vote*`, `bind*`, `seal*`, `byz`) — the monolithic rule of the same
+  name;
 * a hidden network rendezvous is `ImplStep.deliver`, the sender's outbox guard
   supplied by the sender component and the inbox update by the receiver
   component;
@@ -133,6 +135,11 @@ def voteCount (p : ProcNode n) : ℕ :=
 def bindCount (p : ProcNode n) : ℕ :=
   (Finset.univ.filter (fun k => ∃ v, Msg.bind v ∈ p.inbox k)).card
 
+/-- The number of distinct senders from which this process has received some
+`SEAL`. -/
+def sealCount (p : ProcNode n) : ℕ :=
+  (Finset.univ.filter (fun k => ∃ v, Msg.seal v ∈ p.inbox k)).card
+
 /-- `Valid = {0, 1}` here: both bits are backed by an `n − f` `INPUT` quorum
 among this process's delivered messages. -/
 def bothValid (P : Params) (p : ProcNode P.n) : Prop :=
@@ -162,8 +169,8 @@ Every guard reads the node `p` — this process's record, outbox, inbox and copy
 of the corrupted set — and nothing else. All transitions are Dirac. -/
 inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
     ProcNode P.n → PLab P.n → PMF (ProcNode P.n) → Prop
-  /-- Algorithm 2 line 1, at this process: the call arrives, the input is
-  recorded and `⟨INPUT, b⟩` goes into the outbox. -/
+  /-- The environment call arrives at this process: the input is recorded and
+  `⟨INPUT, b⟩` goes into the outbox. -/
   | call (p : ProcNode P.n) (b : Bool) (h : p.proc.input = none) :
       ProcStep P r j p (Sum.inl (.callG r j b))
         (PMF.pure ((p.setP { p.proc with
@@ -175,27 +182,27 @@ inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
   /-- A call addressed to somebody else: this process stands still. -/
   | callIdle (p : ProcNode P.n) (id : Fin P.n) (b : Bool) (h : id ≠ j) :
       ProcStep P r j p (Sum.inl (.callG r id b)) (PMF.pure p)
-  /-- Algorithm 2 wait-case (a), at this process: an `n − f` `BIND v` quorum in
-  the inbox returns `(v, A)`. -/
+  /-- Algorithm 6 decide case (1), at this process: an `n − f` `SEAL v` quorum
+  in the inbox returns `(v, A)`. -/
   | retA (p : ProcNode P.n) (v : Bool)
-      (hcnt : P.n - P.f ≤ p.recvCount (.bind (some v)))
+      (hcnt : P.n - P.f ≤ p.recvCount (.seal (some v)))
       (hr : p.proc.returned = false) :
       ProcStep P r j p (Sum.inl (.retG r j (.A v)))
         (PMF.pure (p.setP { p.proc with returned := true }))
-  /-- Algorithm 2 wait-case (b), at this process: an `n − f` any-`BIND` quorum
-  containing `BIND v`, `f + 1` `VOTE v`s and `|Valid| > 1` return `(v, B)`. -/
+  /-- Algorithm 6 decide case (2), at this process: an `n − f` any-`SEAL` quorum
+  containing `SEAL v`, `f + 1` `BIND v`s and `|Valid| > 1` return `(v, B)`. -/
   | retB (p : ProcNode P.n) (v : Bool)
-      (hcnt : P.n - P.f ≤ p.bindCount)
-      (honce : ∃ k, Msg.bind (some v) ∈ p.inbox k)
-      (hvote : P.f + 1 ≤ p.recvCount (.vote (some v)))
+      (hcnt : P.n - P.f ≤ p.sealCount)
+      (honce : ∃ k, Msg.seal (some v) ∈ p.inbox k)
+      (hbind : P.f + 1 ≤ p.recvCount (.bind (some v)))
       (hval : p.bothValid P)
       (hr : p.proc.returned = false) :
       ProcStep P r j p (Sum.inl (.retG r j (.B v)))
         (PMF.pure (p.setP { p.proc with returned := true }))
-  /-- Algorithm 2 wait-case (c), at this process: an `n − f` `BIND ⊥` quorum
+  /-- Algorithm 6 decide case (3), at this process: an `n − f` `SEAL ⊥` quorum
   with `|Valid| > 1` returns `(⊥, C)`. -/
   | retC (p : ProcNode P.n)
-      (hcnt : P.n - P.f ≤ p.recvCount (.bind none))
+      (hcnt : P.n - P.f ≤ p.recvCount (.seal none))
       (hval : p.bothValid P)
       (hr : p.proc.returned = false) :
       ProcStep P r j p (Sum.inl (.retG r j .C))
@@ -207,7 +214,7 @@ inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
   the local copies of the corrupted set stay equal. -/
   | fail (p : ProcNode P.n) (k : Fin P.n) :
       ProcStep P r j p (Sum.inl (.fail k)) (PMF.pure (p.corrupt P k))
-  /-- Algorithm 2's `INPUT` relay, at this process: `f + 1` receipts of
+  /-- Algorithm 6's `INPUT` relay, at this process: `f + 1` receipts of
   `⟨INPUT, b⟩` in the inbox and no `⟨INPUT, b⟩` multicast yet. -/
   | relay (p : ProcNode P.n) (b : Bool)
       (hin : p.proc.input ≠ none)
@@ -216,7 +223,7 @@ inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       ProcStep P r j p (Sum.inl .tau)
         (PMF.pure ((p.setP { p.proc with
           sentInput := Function.update p.proc.sentInput b true }).send (.input b)))
-  /-- Algorithm 2's `ECHO`, at this process: an `n − f` `INPUT b` quorum in the
+  /-- Algorithm 6's `ECHO`, at this process: an `n − f` `INPUT b` quorum in the
   inbox and no `ECHO` multicast yet. -/
   | echo (p : ProcNode P.n) (b : Bool)
       (hin : p.proc.input ≠ none)
@@ -224,8 +231,8 @@ inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       (hsend : p.proc.sentEcho = none) :
       ProcStep P r j p (Sum.inl .tau)
         (PMF.pure ((p.setP { p.proc with sentEcho := some b }).send (.echo b)))
-  /-- Algorithm 2's `VOTE b` (wait-case (a) one level down), at this process: an
-  `n − f` `ECHO b` quorum in the inbox. -/
+  /-- Algorithm 6's `VOTE b` (wait case (a)), at this process: an `n − f`
+  `ECHO b` quorum in the inbox. -/
   | voteBit (p : ProcNode P.n) (b : Bool)
       (hin : p.proc.input ≠ none)
       (hcnt : P.n - P.f ≤ p.recvCount (.echo b))
@@ -233,8 +240,8 @@ inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       ProcStep P r j p (Sum.inl .tau)
         (PMF.pure ((p.setP { p.proc with sentVote := some (some b) }).send
           (.vote (some b))))
-  /-- Algorithm 2's `VOTE ⊥` (wait-case (b) one level down), at this process:
-  `n − f` `ECHO`s of any payload in the inbox and `|Valid| > 1`. -/
+  /-- Algorithm 6's `VOTE ⊥` (wait case (b)), at this process: `n − f` `ECHO`s
+  of any payload in the inbox and `|Valid| > 1`. -/
   | voteBot (p : ProcNode P.n)
       (hin : p.proc.input ≠ none)
       (hcnt : P.n - P.f ≤ p.echoCount)
@@ -242,8 +249,8 @@ inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       (hsend : p.proc.sentVote = none) :
       ProcStep P r j p (Sum.inl .tau)
         (PMF.pure ((p.setP { p.proc with sentVote := some none }).send (.vote none)))
-  /-- Algorithm 2's `BIND b`, at this process: an `n − f` `VOTE b` quorum in the
-  inbox. -/
+  /-- Algorithm 6's `BIND b` (wait case (a) one level up), at this process: an
+  `n − f` `VOTE b` quorum in the inbox. -/
   | bindBit (p : ProcNode P.n) (b : Bool)
       (hin : p.proc.input ≠ none)
       (hcnt : P.n - P.f ≤ p.recvCount (.vote (some b)))
@@ -251,8 +258,8 @@ inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       ProcStep P r j p (Sum.inl .tau)
         (PMF.pure ((p.setP { p.proc with sentBind := some (some b) }).send
           (.bind (some b))))
-  /-- Algorithm 2's `BIND ⊥`, at this process: `n − f` `VOTE`s of any payload in
-  the inbox and `|Valid| > 1`. -/
+  /-- Algorithm 6's `BIND ⊥` (wait case (b) one level up), at this process:
+  `n − f` `VOTE`s of any payload in the inbox and `|Valid| > 1`. -/
   | bindBot (p : ProcNode P.n)
       (hin : p.proc.input ≠ none)
       (hcnt : P.n - P.f ≤ p.voteCount)
@@ -260,6 +267,24 @@ inductive ProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       (hsend : p.proc.sentBind = none) :
       ProcStep P r j p (Sum.inl .tau)
         (PMF.pure ((p.setP { p.proc with sentBind := some none }).send (.bind none)))
+  /-- Algorithm 6's `SEAL b` (wait case (a) one level up again), at this
+  process: an `n − f` `BIND b` quorum in the inbox. -/
+  | sealBit (p : ProcNode P.n) (b : Bool)
+      (hin : p.proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ p.recvCount (.bind (some b)))
+      (hsend : p.proc.sentSeal = none) :
+      ProcStep P r j p (Sum.inl .tau)
+        (PMF.pure ((p.setP { p.proc with sentSeal := some (some b) }).send
+          (.seal (some b))))
+  /-- Algorithm 6's `SEAL ⊥` (wait case (b) one level up again), at this
+  process: `n − f` `BIND`s of any payload in the inbox and `|Valid| > 1`. -/
+  | sealBot (p : ProcNode P.n)
+      (hin : p.proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ p.bindCount)
+      (hval : p.bothValid P)
+      (hsend : p.proc.sentSeal = none) :
+      ProcStep P r j p (Sum.inl .tau)
+        (PMF.pure ((p.setP { p.proc with sentSeal := some none }).send (.seal none)))
   /-- Byzantine injection (deviation D5): a process that its own copy of the
   corrupted set lists may put anything into its outbox. -/
   | byz (p : ProcNode P.n) (m : Msg) (h : j ∈ p.F) :
@@ -374,6 +399,9 @@ counts at that process, by definition — the two shapes hold the same rows. -/
 @[simp] theorem unpack_bindCount (q : ImplState n) (j : Fin n) :
     (unpack q j).bindCount = q.bindCount j := rfl
 
+@[simp] theorem unpack_sealCount (q : ImplState n) (j : Fin n) :
+    (unpack q j).sealCount = q.sealCount j := rfl
+
 @[simp] theorem unpack_bothValid (P : Params) (q : ImplState P.n) (j : Fin P.n) :
     (unpack q j).bothValid P ↔ q.bothValid P j := Iff.rfl
 
@@ -397,7 +425,7 @@ theorem unpack_mcast (q : ImplState n) (j : Fin n) (m : Msg) :
   · simp [unpack, ImplState.mcast, ProcNode.send, Function.update_of_ne hk]
 
 /-- Packing a protocol send — record update plus multicast, the shape of every
-`τ`-send of Algorithm 2: only the sending node moves. -/
+`τ`-send of Algorithm 6: only the sending node moves. -/
 theorem unpack_send (q : ImplState n) (j : Fin n) (pr : ProcState) (m : Msg) :
     unpack ((q.setProc j pr).mcast j m) =
       Function.update (unpack q) j (((unpack q j).setP pr).send m) := by
@@ -450,7 +478,7 @@ private theorem sync_tau {p : ∀ _ : Fin P.n, ProcNode P.n} {k : Fin P.n} {y : 
   rw [piPMF_update_pure, PMF.pure_map]
 
 /-- **Every monolithic transition is a composite transition.** Each rule of
-Algorithm 2 is assembled from the per-process code of its participants and the
+Algorithm 6 is assembled from the per-process code of its participants and the
 idling of everybody else. -/
 theorem perProc_step_of_impl {q : ImplState P.n} {l : Lab P.n} {μ : PMF (ImplState P.n)}
     (h : ImplStep P r q l μ) :
@@ -513,6 +541,14 @@ theorem perProc_step_of_impl {q : ImplState P.n} {l : Lab P.n} {μ : PMF (ImplSt
     refine ⟨_, rfl, Or.inr ?_⟩
     rw [unpack_send]
     exact sync_tau (ProcStep.bindBot _ hin hcnt hval hsend)
+  | sealBit j b hin hcnt hsend =>
+    refine ⟨_, rfl, Or.inr ?_⟩
+    rw [unpack_send]
+    exact sync_tau (ProcStep.sealBit _ b hin hcnt hsend)
+  | sealBot j hin hcnt hval hsend =>
+    refine ⟨_, rfl, Or.inr ?_⟩
+    rw [unpack_send]
+    exact sync_tau (ProcStep.sealBot _ hin hcnt hval hsend)
   | byz j m hj =>
     refine ⟨_, rfl, Or.inr ?_⟩
     rw [unpack_mcast]
@@ -524,12 +560,12 @@ theorem perProc_step_of_impl {q : ImplState P.n} {l : Lab P.n} {μ : PMF (ImplSt
     by_cases hk : k = id
     · subst hk; rw [Function.update_self]; exact ProcStep.retA _ v hcnt hr
     · rw [Function.update_of_ne hk]; exact ProcStep.retIdle _ id _ (Ne.symm hk)
-  | retB id v hcnt honce hvote hval hr =>
+  | retB id v hcnt honce hbind hval hr =>
     refine ⟨_, rfl, Or.inr ?_⟩
     rw [unpack_setProc]
     refine sync_visible (by simp) fun k => ?_
     by_cases hk : k = id
-    · subst hk; rw [Function.update_self]; exact ProcStep.retB _ v hcnt honce hvote hval hr
+    · subst hk; rw [Function.update_self]; exact ProcStep.retB _ v hcnt honce hbind hval hr
     · rw [Function.update_of_ne hk]; exact ProcStep.retIdle _ id _ (Ne.symm hk)
   | retC id hcnt hval hr =>
     refine ⟨_, rfl, Or.inr ?_⟩
@@ -619,7 +655,7 @@ private theorem retG_self {k : Fin P.n} {r' : ℕ} {o : GbcaOut} {q : ImplState 
         (PMF.pure (q.setProc k { q.proc k with returned := true })) := by
   cases h with
   | retA v hcnt hr => exact ⟨rfl, ImplStep.retA q k v hcnt hr⟩
-  | retB v hcnt honce hvote hval hr => exact ⟨rfl, ImplStep.retB q k v hcnt honce hvote hval hr⟩
+  | retB v hcnt honce hbind hval hr => exact ⟨rfl, ImplStep.retB q k v hcnt honce hbind hval hr⟩
   | retC hcnt hval hr => exact ⟨rfl, ImplStep.retC q k hcnt hval hr⟩
   | retIdle => rename_i hne; exact absurd rfl hne
 
@@ -704,6 +740,14 @@ theorem impl_step_of_perProc {P : Params} {r : ℕ} {q : ImplState P.n} {l : Lab
         | bindBot =>
           rename_i hin hcnt hval hsend
           refine ⟨_, ?_, ImplStep.bindBot q k hin hcnt hval hsend⟩
+          rw [unpack_send]; exact interleave_target hμ
+        | sealBit =>
+          rename_i b hin hcnt hsend
+          refine ⟨_, ?_, ImplStep.sealBit q k b hin hcnt hsend⟩
+          rw [unpack_send]; exact interleave_target hμ
+        | sealBot =>
+          rename_i hin hcnt hval hsend
+          refine ⟨_, ?_, ImplStep.sealBot q k hin hcnt hval hsend⟩
           rw [unpack_send]; exact interleave_target hμ
         | byz =>
           rename_i m hj
@@ -823,7 +867,7 @@ theorem perProcRefines (P : Params) (r : ℕ) :
       exact Or.inl ⟨rfl, weakLSilent_single (sys := implInst P r) himpl⟩
     · exact Or.inr ⟨hl, weakLStep_single (sys := implInst P r) himpl hl⟩
 
-/-- **The monolithic instance refines the composition.** Each rule of Algorithm 2
+/-- **The monolithic instance refines the composition.** Each rule of Algorithm 6
 is answered by the composite step assembled in `perProc_step_of_impl`. -/
 theorem implRefinesPerProc (P : Params) (r : ℕ) :
     ForwardSimulation (implInst P r) (perProcInst P r) (fun q p => p = unpack q) where

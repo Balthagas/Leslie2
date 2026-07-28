@@ -9,6 +9,7 @@ import Leslie2Protocols.ABA.FlatABA
 import Leslie2Protocols.ABA.GBCAFamily
 import Leslie2Protocols.ABA.GBCAImpl
 import Leslie2Protocols.ABA.GBCAProc
+import Leslie2Protocols.ABA.GBCASafety
 import Leslie2Protocols.ABA.GBCASim
 import Leslie2Protocols.ABA.GBCASpec
 import Leslie2Protocols.ABA.Hybrid

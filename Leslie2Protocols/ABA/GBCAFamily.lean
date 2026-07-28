@@ -59,8 +59,8 @@ private theorem specCorrupt_ret (t : SpecState P.n) (id : Fin P.n) :
     (t.corrupt P id).ret = t.ret := by
   unfold SpecState.corrupt; split <;> rfl
 
-private theorem specCorrupt_bind (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).bind = t.bind := by
+private theorem specCorrupt_dead (t : SpecState P.n) (id : Fin P.n) :
+    (t.corrupt P id).dead = t.dead := by
   unfold SpecState.corrupt; split <;> rfl
 
 private theorem specCorrupt_grade (t : SpecState P.n) (id : Fin P.n) :
@@ -96,10 +96,13 @@ theorem instRel_corrupt (P : Params) (r : ℕ) (id : Fin P.n)
         rw [specCorrupt_ret, ImplState.corrupt_proc]
         exact hR.ret_eq k
       F_eq := corrupt_F_lockstep hR.F_eq id
-      bind_cert := fun v hv => by
-        rw [specCorrupt_bind] at hv
-        obtain ⟨i, hi⟩ := hR.bind_cert v hv
-        exact ⟨i, by rw [ImplState.corrupt_recvCount]; exact hi⟩
+      dead_cert := fun b hb => by
+        rw [specCorrupt_dead] at hb
+        exact DeadCert.mono
+          (fun i j m hm => by rw [ImplState.corrupt_recv]; exact hm)
+          (fun j w hw => by rw [ImplState.corrupt_proc]; exact hw)
+          (ImplState.corrupt_F_subset x id)
+          (hR.dead_cert b hb)
       gradeA_ev := fun hg => by
         rw [specCorrupt_grade] at hg
         obtain ⟨v, i, hi⟩ := hR.gradeA_ev hg

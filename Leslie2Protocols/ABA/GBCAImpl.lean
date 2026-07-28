@@ -7,20 +7,19 @@ Authors: Sathiya / Claude
 import Leslie2Protocols.ABA.GBCASpec
 
 /-!
-# The GBCA implementation instance (blueprint `alg:GBCA`)
+# The GBCA implementation instance (ABDY22 Algorithm 6)
 
-The round-`r` instance of the **blueprint's** Graded Binding Crusader Agreement
-protocol (`alg:GBCA`), as an LTS over the shared alphabet `ABA.Lab n`.
+The round-`r` instance of the Graded Binding Crusader Agreement protocol, as an
+LTS over the shared alphabet `ABA.Lab n`.
 
-*Attribution.* `alg:GBCA` is a **4-round compression** of
-ABDY22's 5-round Algorithm 6, not a transcription of it: ABDY22 adds an `echo4`
-*and* an `echo5` round to BCA and decides on `echo5` evidence (`⟨echo4,·,v⟩`
-from `≥ t+1`), whereas the blueprint elides the `echo5` round and reads the
-decide conditions one level down (`f + 1` `VOTE b` where ABDY22 has `t + 1`
-`echo4 v`). Graded agreement and validity still go through for the 4-round
-variant under `n > 3f` (and the machine-checked `GBCA.Impl ⊑ GBCA.Spec`
-corroborates it), so no theorem here is false; but this is the blueprint's
-algorithm, not the cited ABDY22 Algorithm 6.
+*Attribution.* The file transcribes ABDY22's Algorithm 6 — the 6-round Graded
+Binding Crusader Agreement for Byzantine faults — directly. The level mapping is
+
+```
+INPUT = echo,  ECHO = echo2,  VOTE = echo3,  BIND = echo4,  SEAL = echo5
+```
+
+and the three returns are the decide conditions of lines 23–29.
 
 Each process runs the message pattern
 
@@ -29,13 +28,39 @@ Each process runs the message pattern
   (which also puts `b` into the derived set `Valid`);
 * `VOTE v` (`v ∈ {0,1,⊥}`) — a real bit after an `n − f` `ECHO b` quorum, `⊥`
   after `n − f` `ECHO`s of any payload with `|Valid| > 1`;
-* `BIND v` — same pattern one level up, over `VOTE`s;
-* return — grade `A b` after an `n − f` `BIND b` quorum, `B b` after an
-  `n − f` any-`BIND` quorum containing `b` with `f + 1` `VOTE b`s and
-  `|Valid| > 1`, and `C` after an `n − f` `BIND ⊥` quorum with `|Valid| > 1`.
+* `BIND v` — the same pattern one level up, over `VOTE`s;
+* `SEAL v` — the same pattern one level up again, over `BIND`s;
+* return — grade `A b` after an `n − f` `SEAL b` quorum, `B b` after an
+  `n − f` any-`SEAL` quorum containing `b` with `f + 1` `BIND b`s and
+  `|Valid| > 1`, and `C` after an `n − f` `SEAL ⊥` quorum with `|Valid| > 1`.
 
 Every transition is Dirac (`implInst_isLTS`); asynchrony and Byzantine
 behaviour are modelled by nondeterministic `τ`-transitions.
+
+## Why the cited algorithm and not the blueprint's `alg:GBCA` (D18)
+
+* **D18 (the six-level ladder).** This is a deviation from the source
+  blueprint's `alg:GBCA`, which presents a **4-round compression** of
+  Algorithm 6: the `echo5` round is elided, the decide conditions read one level
+  down, and the grade-1 evidence is `f + 1` `VOTE v` where Algorithm 6 has
+  `t + 1` `echo4 v`. The compression violates the paper's Graded Binding. One
+  process held at the echo stage through a grade-0 decision can afterwards
+  direct its write-once echo at either bit, and one corruption completes
+  `f + 1` `VOTE v` for the bit of the adversary's choice — so two extensions of
+  a single `C`-return hand out two different bits. The encoding therefore
+  follows the cited algorithm rather than the blueprint's compression; the
+  upstream blueprint carries a matching red annotation.
+
+The grade-1 evidence is what the depth buys. `f + 1` `BIND v` receipts exceed
+the corruption budget, so they guarantee an honest `BIND v` sender, whose own
+wait-condition is an `n − f` `VOTE v` receipt quorum over the write-once `VOTE`
+level — and that quorum is the object the paper's binding argument counts
+(Lemmas 4.8/4.9 through E.9).
+
+*Transcription note.* The prose preceding Algorithm 6 says "upon receiving
+`echo4` messages from `2t + 1` parties" where the pseudocode's lines 19–20 say
+`n − t`; the two coincide only at `n = 3t + 1`. The encoding follows the
+pseudocode (`n − f`).
 
 ## Model and deviations (continuing the project's D1–D4)
 
@@ -50,26 +75,26 @@ behaviour are modelled by nondeterministic `τ`-transitions.
   scheduling are absorbed into the set model. A corrupted sender may inject
   any message into its `sent` pool (`byz`).
 * **D8 (participation gating).** Protocol sends (`relay`, `echo`, `vote*`,
-  `bind*`) require the process to have received its input
-  (`input ≠ none`): Algorithm 2's handlers only run inside a called instance.
+  `bind*`, `seal*`) require the process to have received its input
+  (`input ≠ none`): the algorithm's handlers only run inside a called instance.
 
 The state is exactly the protocol's own data: the per-process local states,
-the network, and the corrupted set. The three return transitions are
-Algorithm 2's three wait-until cases and read nothing beyond the receipts
-those cases name — case (a) an `n − f` `BIND v` quorum, case (b) an `n − f`
-any-`BIND` quorum containing `BIND v` together with `f + 1` `VOTE v`s and
-`|Valid| > 1`, case (c) an `n − f` `BIND ⊥` quorum with `|Valid| > 1`. The
-`bind` and `grade` fields that the specification tracks are abstractions of
-these receipt patterns and live only on the specification side; the
-refinement (`ABA/GBCASim.lean`) supplies them from the receipts.
+the network, and the corrupted set. The three return transitions are cases
+(1), (2), (3) of Algorithm 6's lines 23–29 and read nothing beyond the receipts
+those cases name — case (1) an `n − f` `SEAL v` quorum, case (2) an `n − f`
+any-`SEAL` quorum containing `SEAL v` together with `f + 1` `BIND v`s and
+`|Valid| > 1`, case (3) an `n − f` `SEAL ⊥` quorum with `|Valid| > 1`. The
+binding and grade information that the specification tracks is an abstraction
+of these receipt patterns and lives only on the specification side; the
+refinement (`ABA/GBCASim.lean`) supplies it from the receipts.
 -/
 
 namespace PLTS
 namespace ABA
 namespace GBCA
 
-/-- The protocol messages of Algorithm 2. `VOTE` and `BIND` may carry the
-non-bit payload `⊥` (`none`). -/
+/-- The six-level message ladder of Algorithm 6. `VOTE`, `BIND` and `SEAL` may
+carry the non-bit payload `⊥` (`none`). -/
 inductive Msg : Type
   /-- `⟨INPUT, b⟩`. -/
   | input (b : Bool)
@@ -79,6 +104,8 @@ inductive Msg : Type
   | vote (v : Option Bool)
   /-- `⟨BIND, v⟩` with `v ∈ {0, 1, ⊥}`. -/
   | bind (v : Option Bool)
+  /-- `⟨echo5, v⟩` with `v ∈ {0, 1, ⊥}` (Algorithm 6 lines 21–22). -/
+  | seal (v : Option Bool)
   deriving DecidableEq
 
 /-- The local state of one process in one GBCA instance. -/
@@ -93,6 +120,9 @@ structure ProcState : Type where
   sentVote : Option (Option Bool)
   /-- The `BIND` payload multicast, if any (write-once; payload may be `⊥`). -/
   sentBind : Option (Option Bool)
+  /-- The `SEAL` (`echo5`) payload multicast, if any (write-once; payload may
+  be `⊥`). -/
+  sentSeal : Option (Option Bool)
   /-- Whether this process has returned. -/
   returned : Bool
   deriving DecidableEq
@@ -104,6 +134,7 @@ def ProcState.initial : ProcState where
   sentEcho := none
   sentVote := none
   sentBind := none
+  sentSeal := none
   returned := false
 
 /-- The state of one GBCA implementation instance: the local states, the
@@ -145,6 +176,10 @@ def voteCount (s : ImplState n) (i : Fin n) : ℕ :=
 /-- The number of distinct senders from which `i` has received some `BIND`. -/
 def bindCount (s : ImplState n) (i : Fin n) : ℕ :=
   (Finset.univ.filter (fun j => ∃ v, Msg.bind v ∈ s.recv i j)).card
+
+/-- The number of distinct senders from which `i` has received some `SEAL`. -/
+def sealCount (s : ImplState n) (i : Fin n) : ℕ :=
+  (Finset.univ.filter (fun j => ∃ v, Msg.seal v ∈ s.recv i j)).card
 
 /-- `Valid = {0, 1}` at process `i`: both bits are backed by an `n − f`
 `INPUT` quorum among `i`'s delivered messages. -/
@@ -323,7 +358,7 @@ theorem exists_honest_recv₂ {P : Params} {s : ImplState P.n} (hF : s.F.card �
 end ImplState
 
 /-- The step relation of the round-`r` GBCA implementation instance
-(blueprint Algorithm 2). All transitions are Dirac. -/
+(ABDY22 Algorithm 6, the full six-level ladder). All transitions are Dirac. -/
 inductive ImplStep (P : Params) (r : ℕ) :
     ImplState P.n → Lab P.n → PMF (ImplState P.n) → Prop
   /-- The environment call arrives: record the input and multicast
@@ -396,29 +431,49 @@ inductive ImplStep (P : Params) (r : ℕ) :
       ImplStep P r s .tau
         (PMF.pure ((s.setProc j { s.proc j with sentBind := some none }).mcast
           j (.bind none)))
+  /-- `SEAL b` (wait case (a)): an `n − f` `BIND b` quorum. -/
+  | sealBit (s : ImplState P.n) (j : Fin P.n) (b : Bool)
+      (hin : (s.proc j).input ≠ none)
+      (hcnt : P.n - P.f ≤ s.recvCount j (.bind (some b)))
+      (hsend : (s.proc j).sentSeal = none) :
+      ImplStep P r s .tau
+        (PMF.pure ((s.setProc j { s.proc j with sentSeal := some (some b) }).mcast
+          j (.seal (some b))))
+  /-- `SEAL ⊥` (wait case (b)): `n − f` `BIND`s of any payload and
+  `|Valid| > 1`. -/
+  | sealBot (s : ImplState P.n) (j : Fin P.n)
+      (hin : (s.proc j).input ≠ none)
+      (hcnt : P.n - P.f ≤ s.bindCount j)
+      (hval : s.bothValid P j)
+      (hsend : (s.proc j).sentSeal = none) :
+      ImplStep P r s .tau
+        (PMF.pure ((s.setProc j { s.proc j with sentSeal := some none }).mcast
+          j (.seal none)))
   /-- Byzantine injection: a corrupted sender multicasts anything. -/
   | byz (s : ImplState P.n) (j : Fin P.n) (m : Msg) (h : j ∈ s.F) :
       ImplStep P r s .tau (PMF.pure (s.mcast j m))
-  /-- `A`-return (wait case (a)): an `n − f` `BIND v` quorum. -/
+  /-- `A`-return (decide case (1)): an `n − f` `SEAL v` quorum. -/
   | retA (s : ImplState P.n) (id : Fin P.n) (v : Bool)
-      (hcnt : P.n - P.f ≤ s.recvCount id (.bind (some v)))
+      (hcnt : P.n - P.f ≤ s.recvCount id (.seal (some v)))
       (hr : (s.proc id).returned = false) :
       ImplStep P r s (.retG r id (.A v))
         (PMF.pure (s.setProc id { s.proc id with returned := true }))
-  /-- `B`-return (wait case (b)): an `n − f` any-`BIND` quorum containing
-  `BIND v`, `f + 1` `VOTE v`s and `|Valid| > 1`. -/
+  /-- `B`-return (decide case (2)): an `n − f` any-`SEAL` quorum containing
+  `SEAL v`, `f + 1` `BIND v`s and `|Valid| > 1`. The `f + 1` `BIND v` receipts
+  put an honest `BIND v` sender — hence an `n − f` `VOTE v` receipt quorum —
+  behind every grade-1 output. -/
   | retB (s : ImplState P.n) (id : Fin P.n) (v : Bool)
-      (hcnt : P.n - P.f ≤ s.bindCount id)
-      (honce : ∃ k, Msg.bind (some v) ∈ s.recv id k)
-      (hvote : P.f + 1 ≤ s.recvCount id (.vote (some v)))
+      (hcnt : P.n - P.f ≤ s.sealCount id)
+      (honce : ∃ k, Msg.seal (some v) ∈ s.recv id k)
+      (hbind : P.f + 1 ≤ s.recvCount id (.bind (some v)))
       (hval : s.bothValid P id)
       (hr : (s.proc id).returned = false) :
       ImplStep P r s (.retG r id (.B v))
         (PMF.pure (s.setProc id { s.proc id with returned := true }))
-  /-- `C`-return (wait case (c)): an `n − f` `BIND ⊥` quorum and
+  /-- `C`-return (decide case (3)): an `n − f` `SEAL ⊥` quorum and
   `|Valid| > 1`. -/
   | retC (s : ImplState P.n) (id : Fin P.n)
-      (hcnt : P.n - P.f ≤ s.recvCount id (.bind none))
+      (hcnt : P.n - P.f ≤ s.recvCount id (.seal none))
       (hval : s.bothValid P id)
       (hr : (s.proc id).returned = false) :
       ImplStep P r s (.retG r id .C)

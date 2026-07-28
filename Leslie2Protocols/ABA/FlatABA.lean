@@ -52,7 +52,7 @@ The label classes of `Lab n` partition the table.
   *every* stage copy are written at once, matching the simultaneous broadcast
   every component of the composition answers.
 * `τ` — the local sends. Two of them belong to the coordinator (the DECIDED echo
-  and the corrupted injection), seven to a stage, at any round.
+  and the corrupted injection), nine to a stage, at any round.
 * `FlatNet` — the two networks. `dnet i j b` carries the coordinator's
   `⟨DECIDED, b⟩` from `j` to `i`; `gnet r i j m` carries the round-`r` stage
   message `m` from `j` to `i`. Both are two-party rendezvous, split into the
@@ -178,35 +178,35 @@ inductive ABAProcStep (P : Params) (j : Fin P.n) :
   | callGIdle (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ) (id : Fin P.n)
       (b : Bool) (hid : id ≠ j) :
       ABAProcStep P j (c, g) (Sum.inl (.callG r id b)) (PMF.pure (c, g))
-  /-- Return with grade `A v`: an `n − f` `BIND v` quorum in stage `r` closes the
+  /-- Return with grade `A v`: an `n − f` `SEAL v` quorum in stage `r` closes the
   stage and hands `v` to the round-loop, which adopts it and heads for the
   coin. -/
   | retG_A (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ) (v : Bool)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r)
-      (hcnt : P.n - P.f ≤ (g r).recvCount (.bind (some v)))
+      (hcnt : P.n - P.f ≤ (g r).recvCount (.seal (some v)))
       (hret : (g r).proc.returned = false) :
       ABAProcStep P j (c, g) (Sum.inl (.retG r j (.A v)))
         (PMF.pure (c.setProc { c.proc with
             est := (GbcaOut.A v).est, lastGrade := some (.A v), phase := .toCallW },
           Function.update g r ((g r).setP { (g r).proc with returned := true })))
-  /-- Return with grade `B v`: an `n − f` any-`BIND` quorum containing `BIND v`,
-  `f + 1` `VOTE v`s and both bits valid. -/
+  /-- Return with grade `B v`: an `n − f` any-`SEAL` quorum containing `SEAL v`,
+  `f + 1` `BIND v`s and both bits valid. -/
   | retG_B (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ) (v : Bool)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r)
-      (hcnt : P.n - P.f ≤ (g r).bindCount)
-      (honce : ∃ k, GBCA.Msg.bind (some v) ∈ (g r).inbox k)
-      (hvote : P.f + 1 ≤ (g r).recvCount (.vote (some v)))
+      (hcnt : P.n - P.f ≤ (g r).sealCount)
+      (honce : ∃ k, GBCA.Msg.seal (some v) ∈ (g r).inbox k)
+      (hbind : P.f + 1 ≤ (g r).recvCount (.bind (some v)))
       (hval : (g r).bothValid P)
       (hret : (g r).proc.returned = false) :
       ABAProcStep P j (c, g) (Sum.inl (.retG r j (.B v)))
         (PMF.pure (c.setProc { c.proc with
             est := (GbcaOut.B v).est, lastGrade := some (.B v), phase := .toCallW },
           Function.update g r ((g r).setP { (g r).proc with returned := true })))
-  /-- Return with grade `C`: an `n − f` `BIND ⊥` quorum with both bits valid
+  /-- Return with grade `C`: an `n − f` `SEAL ⊥` quorum with both bits valid
   clears the estimate, so the round-loop will adopt the coin. -/
   | retG_C (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r)
-      (hcnt : P.n - P.f ≤ (g r).recvCount (.bind none))
+      (hcnt : P.n - P.f ≤ (g r).recvCount (.seal none))
       (hval : (g r).bothValid P)
       (hret : (g r).proc.returned = false) :
       ABAProcStep P j (c, g) (Sum.inl (.retG r j .C))
@@ -217,16 +217,16 @@ inductive ABAProcStep (P : Params) (j : Fin P.n) :
   evidence and the round-loop records nothing. -/
   | retGByz_A (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ) (v : Bool)
       (hF : j ∈ c.F)
-      (hcnt : P.n - P.f ≤ (g r).recvCount (.bind (some v)))
+      (hcnt : P.n - P.f ≤ (g r).recvCount (.seal (some v)))
       (hret : (g r).proc.returned = false) :
       ABAProcStep P j (c, g) (Sum.inl (.retG r j (.A v)))
         (PMF.pure (c, Function.update g r ((g r).setP { (g r).proc with returned := true })))
   /-- Grade-`B` return to a corrupted round-loop. -/
   | retGByz_B (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ) (v : Bool)
       (hF : j ∈ c.F)
-      (hcnt : P.n - P.f ≤ (g r).bindCount)
-      (honce : ∃ k, GBCA.Msg.bind (some v) ∈ (g r).inbox k)
-      (hvote : P.f + 1 ≤ (g r).recvCount (.vote (some v)))
+      (hcnt : P.n - P.f ≤ (g r).sealCount)
+      (honce : ∃ k, GBCA.Msg.seal (some v) ∈ (g r).inbox k)
+      (hbind : P.f + 1 ≤ (g r).recvCount (.bind (some v)))
       (hval : (g r).bothValid P)
       (hret : (g r).proc.returned = false) :
       ABAProcStep P j (c, g) (Sum.inl (.retG r j (.B v)))
@@ -234,7 +234,7 @@ inductive ABAProcStep (P : Params) (j : Fin P.n) :
   /-- Grade-`C` return to a corrupted round-loop. -/
   | retGByz_C (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ)
       (hF : j ∈ c.F)
-      (hcnt : P.n - P.f ≤ (g r).recvCount (.bind none))
+      (hcnt : P.n - P.f ≤ (g r).recvCount (.seal none))
       (hval : (g r).bothValid P)
       (hret : (g r).proc.returned = false) :
       ABAProcStep P j (c, g) (Sum.inl (.retG r j .C))
@@ -327,6 +327,20 @@ inductive ABAProcStep (P : Params) (j : Fin P.n) :
       ABAProcStep P j (c, g) (Sum.inl .tau)
         (PMF.pure (c, Function.update g r
           (((g r).setP { (g r).proc with sentBind := some none }).send (.bind none))))
+  /-- Stage `r`'s `SEAL b`. -/
+  | stageSealBit (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ) (b : Bool)
+      (hin : (g r).proc.input ≠ none) (hcnt : P.n - P.f ≤ (g r).recvCount (.bind (some b)))
+      (hsend : (g r).proc.sentSeal = none) :
+      ABAProcStep P j (c, g) (Sum.inl .tau)
+        (PMF.pure (c, Function.update g r
+          (((g r).setP { (g r).proc with sentSeal := some (some b) }).send (.seal (some b)))))
+  /-- Stage `r`'s `SEAL ⊥`. -/
+  | stageSealBot (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ)
+      (hin : (g r).proc.input ≠ none) (hcnt : P.n - P.f ≤ (g r).bindCount)
+      (hval : (g r).bothValid P) (hsend : (g r).proc.sentSeal = none) :
+      ABAProcStep P j (c, g) (Sum.inl .tau)
+        (PMF.pure (c, Function.update g r
+          (((g r).setP { (g r).proc with sentSeal := some none }).send (.seal none))))
   /-- Byzantine injection into stage `r`'s outbox. The guard is stage `r`'s own
   copy of the corrupted set. -/
   | stageByz (c : CoreNode P.n) (g : ℕ → GBCA.ProcNode P.n) (r : ℕ) (m : GBCA.Msg)
@@ -897,7 +911,7 @@ theorem flatGroup_visible_of_group (P : Params) {g g' : ℕ → GBCA.ImplState P
           exact ABAProcStep.retGByz_A _ _ r v hF hcnt hret
         · rw [Function.update_of_ne hm]; exact ABAProcStep.retGIdle _ _ r id _ (Ne.symm hm)
     | retB =>
-      rename_i v hcnt honce hvote hval hret
+      rename_i v hcnt honce hbind hval hret
       rw [PMF.pure_map] at heq
       rw [pure_inj heq]
       rcases hC with ⟨hph, hrd, hc⟩ | ⟨hF, hc⟩
@@ -906,13 +920,13 @@ theorem flatGroup_visible_of_group (P : Params) {g g' : ℕ → GBCA.ImplState P
         refine flatGroup_visible_step P _ _ hl _ fun m => ?_
         by_cases hm : m = id
         · subst hm; rw [Function.update_self]
-          exact ABAProcStep.retG_B _ _ r v hph hrd hcnt honce hvote hval hret
+          exact ABAProcStep.retG_B _ _ r v hph hrd hcnt honce hbind hval hret
         · rw [Function.update_of_ne hm]; exact ABAProcStep.retGIdle _ _ r id _ (Ne.symm hm)
       · rw [pure_inj hc, pack_stage_update c (GBCA.unpack_setProc (g r) id _)]
         refine flatGroup_visible_step P _ _ hl _ fun m => ?_
         by_cases hm : m = id
         · subst hm; rw [Function.update_self]
-          exact ABAProcStep.retGByz_B _ _ r v hF hcnt honce hvote hval hret
+          exact ABAProcStep.retGByz_B _ _ r v hF hcnt honce hbind hval hret
         · rw [Function.update_of_ne hm]; exact ABAProcStep.retGIdle _ _ r id _ (Ne.symm hm)
     | retC =>
       rename_i hcnt hval hret
@@ -1054,6 +1068,18 @@ theorem flatGroup_tau_of_impl (P : Params) {g g' : ℕ → GBCA.ImplState P.n}
     obtain rfl := pure_inj heq
     rw [pack_stage_update c (GBCA.unpack_send (g r) x _ _)]
     exact flatGroup_tau_step P _ x _ (ABAProcStep.stageBindBot _ _ r hin hcnt hval hsend)
+  | sealBit =>
+    rename_i x b hin hcnt hsend
+    rw [PMF.pure_map] at heq
+    obtain rfl := pure_inj heq
+    rw [pack_stage_update c (GBCA.unpack_send (g r) x _ _)]
+    exact flatGroup_tau_step P _ x _ (ABAProcStep.stageSealBit _ _ r b hin hcnt hsend)
+  | sealBot =>
+    rename_i x hin hcnt hval hsend
+    rw [PMF.pure_map] at heq
+    obtain rfl := pure_inj heq
+    rw [pack_stage_update c (GBCA.unpack_send (g r) x _ _)]
+    exact flatGroup_tau_step P _ x _ (ABAProcStep.stageSealBot _ _ r hin hcnt hval hsend)
   | byz =>
     rename_i x msg hF
     rw [PMF.pure_map] at heq
@@ -1183,7 +1209,7 @@ theorem flat_callG_foreign {r : ℕ} {id : Fin P.n} {b : Bool} (hid : id ≠ j)
 
 theorem flat_retG_A_own {r : ℕ} {v : Bool}
     (h : ABAProcStep P j q (Sum.inl (.retG r j (.A v))) μ) :
-    P.n - P.f ≤ (q.2 r).recvCount (.bind (some v)) ∧ (q.2 r).proc.returned = false ∧
+    P.n - P.f ≤ (q.2 r).recvCount (.seal (some v)) ∧ (q.2 r).proc.returned = false ∧
     ((q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧
         μ = PMF.pure (q.1.setProc { q.1.proc with
             est := (GbcaOut.A v).est, lastGrade := some (.A v), phase := .toCallW },
@@ -1199,8 +1225,8 @@ theorem flat_retG_A_own {r : ℕ} {v : Bool}
 
 theorem flat_retG_B_own {r : ℕ} {v : Bool}
     (h : ABAProcStep P j q (Sum.inl (.retG r j (.B v))) μ) :
-    P.n - P.f ≤ (q.2 r).bindCount ∧ (∃ k, GBCA.Msg.bind (some v) ∈ (q.2 r).inbox k) ∧
-    P.f + 1 ≤ (q.2 r).recvCount (.vote (some v)) ∧ (q.2 r).bothValid P ∧
+    P.n - P.f ≤ (q.2 r).sealCount ∧ (∃ k, GBCA.Msg.seal (some v) ∈ (q.2 r).inbox k) ∧
+    P.f + 1 ≤ (q.2 r).recvCount (.bind (some v)) ∧ (q.2 r).bothValid P ∧
     (q.2 r).proc.returned = false ∧
     ((q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧
         μ = PMF.pure (q.1.setProc { q.1.proc with
@@ -1220,7 +1246,7 @@ theorem flat_retG_B_own {r : ℕ} {v : Bool}
 
 theorem flat_retG_C_own {r : ℕ}
     (h : ABAProcStep P j q (Sum.inl (.retG r j .C)) μ) :
-    P.n - P.f ≤ (q.2 r).recvCount (.bind none) ∧ (q.2 r).bothValid P ∧
+    P.n - P.f ≤ (q.2 r).recvCount (.seal none) ∧ (q.2 r).bothValid P ∧
     (q.2 r).proc.returned = false ∧
     ((q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧
         μ = PMF.pure (q.1.setProc { q.1.proc with
@@ -1316,6 +1342,13 @@ theorem flat_tau_inv (h : ABAProcStep P j q (Sum.inl .tau) μ) :
   case stageBindBot =>
     refine Or.inr (Or.inr ⟨_, _, ?_, rfl⟩)
     exact GBCA.ProcStep.bindBot _ (by assumption) (by assumption) (by assumption)
+      (by assumption)
+  case stageSealBit =>
+    refine Or.inr (Or.inr ⟨_, _, ?_, rfl⟩)
+    exact GBCA.ProcStep.sealBit _ _ (by assumption) (by assumption) (by assumption)
+  case stageSealBot =>
+    refine Or.inr (Or.inr ⟨_, _, ?_, rfl⟩)
+    exact GBCA.ProcStep.sealBot _ (by assumption) (by assumption) (by assumption)
       (by assumption)
   case stageByz =>
     refine Or.inr (Or.inr ⟨_, _, ?_, rfl⟩)
@@ -1467,12 +1500,12 @@ theorem group_of_flatGroup_visible (P : Params) {g : ℕ → GBCA.ImplState P.n}
         · subst hm; rw [Function.update_self]; exact hd
         · rw [Function.update_of_ne hm]; exact flat_retG_foreign (Ne.symm hm) (hall m)
     | B v =>
-      obtain ⟨hcnt, honce, hvote, hval, hret, hd⟩ := flat_retG_B_own (hall id)
+      obtain ⟨hcnt, honce, hbind, hval, hret, hd⟩ := flat_retG_B_own (hall id)
       rcases hd with ⟨hph, hrd, hd⟩ | ⟨hF, hd⟩
       · refine ⟨_, c.setProc id { c.procs id with
             est := (GbcaOut.B v).est, lastGrade := some (.B v), phase := .toCallW }, ?_,
           implFamily_owned_step rfl
-            (GBCA.ImplStep.retB (g r) id v hcnt honce hvote hval hret),
+            (GBCA.ImplStep.retB (g r) id v hcnt honce hbind hval hret),
           (coreStep_retG_iff P c r id (.B v) _).mpr (Or.inl ⟨hph, hrd, rfl⟩)⟩
         rw [pack_both_update (GBCA.unpack_setProc (g r) id _) (cpack_setProc c id _)]
         refine sync_target hμ fun m => ?_
@@ -1481,7 +1514,7 @@ theorem group_of_flatGroup_visible (P : Params) {g : ℕ → GBCA.ImplState P.n}
         · rw [Function.update_of_ne hm]; exact flat_retG_foreign (Ne.symm hm) (hall m)
       · refine ⟨_, c, ?_,
           implFamily_owned_step rfl
-            (GBCA.ImplStep.retB (g r) id v hcnt honce hvote hval hret),
+            (GBCA.ImplStep.retB (g r) id v hcnt honce hbind hval hret),
           (coreStep_retG_iff P c r id (.B v) _).mpr (Or.inr ⟨hF, rfl⟩)⟩
         rw [pack_stage_update c (GBCA.unpack_setProc (g r) id _)]
         refine sync_target hμ fun m => ?_

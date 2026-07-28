@@ -29,7 +29,7 @@ outcome `μ_C` relates to the *same* abstract state `a` (via `coreR`), the abstr
 answer with the trivial `weakTau_refl` stutter: the coupling `Ω := μ_C.map (fun s' => (s', pure
 a))` has first marginal `μ_C` and second marginal the constant `pure (pure a)` (`PMF.map_const`),
 so `ω := pure (pure a)` and `ω.bind id = pure a` (`PMF.pure_bind`). Reused by every hidden
-handshake / internal row and by the unanimous `bindSet` / stale coin-flip cases. -/
+handshake / internal row and by the unanimous `bindUnset` / stale coin-flip cases. -/
 private theorem stutter_step {P : Params} (μ_C : PMF (HState P)) (a : SpecState P.n)
     (hA : ∀ s' ∈ μ_C.support, coreR P s' a) :
     ∃ ω : PMF (PMF (SpecState P.n)),
@@ -379,7 +379,7 @@ theorem coreSim (P : Params) :
         ⟨r, id, b, μr, μc, hstepG, hstepC, rfl⟩ |
         ⟨r, id, out, μr, μc, hstepG, hstepC, rfl⟩ |
         ⟨r, id, μw', μc, hstepW, hstepC, rfl⟩ | ⟨r, id, b, μw', μc, hstepW, hstepC, rfl⟩
-      · -- row 3: `bindSet` (`gbcaTau`) — the ultra-lazy twin (D16) always stutters
+      · -- row 3: `bindUnset` (`gbcaTau`) — the ultra-lazy twin (D16) always stutters
         obtain ⟨ω, hRel, hWeak⟩ := stutter_step _ a (fun s' hs' => by
           obtain ⟨g', c', w'⟩ := s'
           have hI' := hI.step hstep hs'
@@ -389,7 +389,7 @@ theorem coreSim (P : Params) :
           obtain ⟨gr', hgr', heq⟩ := hh1
           have hc : c' = c := congrArg Prod.fst hh2
           have hw : w' = w := congrArg Prod.snd hh2
-          exact ⟨hI', by rw [← heq, hc, hw]; exact hAbs.step_gbcaTau r hstepG hgr'⟩)
+          exact ⟨hI', by rw [← heq, hc, hw]; exact hAbs.step_gbcaTau hI r hstepG hgr'⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
       · -- rows 2/8: core τ (DECIDED delivery/echo/byz)
         obtain ⟨ω, hRel, hWeak⟩ := stutter_step _ a (fun s' hs' => by
@@ -397,7 +397,7 @@ theorem coreSim (P : Params) :
           have hI' := hI.step hstep hs'
           simp only [mem_support_prodPMF, PMF.mem_support_pure_iff] at hs'
           obtain ⟨h1, h2, h3⟩ := hs'
-          exact ⟨hI', by rw [h1, h3]; exact hAbs.step_coreTau hstepC h2⟩)
+          exact ⟨hI', by rw [h1, h3]; exact hAbs.step_coreTau hI hstepC h2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
       · -- row 6: WCC flip — always a constant-coupled stutter (`coin_bot`: `Abs` never
         -- reads `w`, so every outcome of the coin lands on the same abstract twin `a`)
@@ -415,7 +415,7 @@ theorem coreSim (P : Params) :
           simp only [mem_support_prodPMF, PMF.mem_support_pure_iff,
             PMF.mem_support_map_iff] at hs'
           obtain ⟨⟨gr', hgr', heq⟩, h2, h3⟩ := hs'
-          exact ⟨hI', by rw [← heq, h3]; exact hAbs.step_callG r id b hstepG hstepC hgr' h2⟩)
+          exact ⟨hI', by rw [← heq, h3]; exact hAbs.step_callG hI r id b hstepG hstepC hgr' h2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
       · -- row: retG handshake
         obtain ⟨ω, hRel, hWeak⟩ := stutter_step _ a (fun s' hs' => by
@@ -425,7 +425,7 @@ theorem coreSim (P : Params) :
             PMF.mem_support_map_iff] at hs'
           obtain ⟨⟨gr', hgr', heq⟩, h2, h3⟩ := hs'
           exact ⟨hI', by
-            rw [← heq, h3]; exact hAbs.step_retG r id out hstepG hstepC hgr' h2⟩)
+            rw [← heq, h3]; exact hAbs.step_retG hI r id out hstepG hstepC hgr' h2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
       · -- row: callW handshake
         obtain ⟨ω, hRel, hWeak⟩ := stutter_step _ a (fun s' hs' => by
@@ -434,7 +434,7 @@ theorem coreSim (P : Params) :
           simp only [mem_support_prodPMF, PMF.mem_support_pure_iff,
             PMF.mem_support_map_iff] at hs'
           obtain ⟨h1, h2, ⟨wr', hwr', heq⟩⟩ := hs'
-          exact ⟨hI', by rw [h1, ← heq]; exact hAbs.step_callW r id hstepW hstepC hwr' h2⟩)
+          exact ⟨hI', by rw [h1, ← heq]; exact hAbs.step_callW hI r id hstepW hstepC hwr' h2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
       · -- row: retW handshake
         obtain ⟨ω, hRel, hWeak⟩ := stutter_step _ a (fun s' hs' => by
@@ -443,7 +443,7 @@ theorem coreSim (P : Params) :
           simp only [mem_support_prodPMF, PMF.mem_support_pure_iff,
             PMF.mem_support_map_iff] at hs'
           obtain ⟨h1, h2, ⟨wr', hwr', heq⟩⟩ := hs'
-          exact ⟨hI', by rw [h1, ← heq]; exact hAbs.step_retW r id b hstepW hstepC hwr' h2⟩)
+          exact ⟨hI', by rw [h1, ← heq]; exact hAbs.step_retW hI r id b hstepW hstepC hwr' h2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
     | callABA id b =>
       rw [hybrid_step_callABA] at hstep
@@ -455,14 +455,16 @@ theorem coreSim (P : Params) :
         set c' := c.setProc id { c.procs id with
           input := some b, est := some b, round := 0, phase := .toCallG } with hc'def
         have hc'mem : c' ∈ (PMF.pure c').support := by rw [PMF.mem_support_pure_iff]
-        have hIA' : Inv P g c' w := Inv.step_callABA hI id b hstepC hc'mem
+        have hIAF := Inv.step_callABA hI id b hstepC hc'mem
+        have hIA' : Inv P g c' w := hIAF.1
         have hCF : c'.F = c.F := CoreState.setProc_F _ _ _
         have hSelf : c'.procs id = { c.procs id with
             input := some b, est := some b, round := 0, phase := .toCallG } := by
           rw [hc'def]; exact CoreState.setProc_procs_self _ _ _
         have hNe : ∀ id', id' ≠ id → c'.procs id' = c.procs id' := by
           intro id' h; rw [hc'def]; exact CoreState.setProc_procs_ne _ _ _ h
-        rcases hAbs.phase with ⟨hb, hv, hcall, hghost⟩ | ⟨v, hb2, hv2, hcall2, r0, hg0, hgb0⟩
+        rcases hAbs.phase with ⟨hb, hv, hcall, hghost⟩ |
+          ⟨v, hb2, hv2, hcall2, ⟨r0, hcv0⟩, hpin⟩
         · -- phase 1: rule 1
           have hcallnone : a.call id = none := by rw [hcall id, hin]
           set a' : SpecState P.n := { a with
@@ -500,7 +502,7 @@ theorem coreSim (P : Params) :
               else a.input } with ha'def
           have hAbs' : Abs P g c' w a' := by
             refine ⟨by rw [hCF]; exact hAbs.F_eq, fun id' => ?_, hAbs.coin_bot,
-              Or.inr ⟨v, hb2, hv2, hcall2, r0, hg0, hgb0⟩⟩
+              Or.inr ⟨v, hb2, hv2, hcall2, hIAF.2.1 r0 v hcv0, hIAF.2.2 v ⟨r0, hcv0⟩ hpin⟩⟩
             show a.ret id' = (c'.procs id').returned
             by_cases h : id' = id
             · rw [h, hSelf]; exact hAbs.ret_eq id
@@ -542,10 +544,9 @@ theorem coreSim (P : Params) :
       obtain ⟨hcnt, hs, hret, rfl⟩ := hstepC
       set c' := c.setProc id { c.procs id with returned := true } with hc'def
       have hc'mem : c' ∈ (PMF.pure c').support := by rw [PMF.mem_support_pure_iff]
-      have hIA' : Inv P g c' w := by
-        have := Inv.step_retABA hI id b (by
-          rw [coreStep_retABA_iff]; exact ⟨hcnt, hs, hret, rfl⟩) hc'mem
-        exact this
+      have hIAF := Inv.step_retABA hI id b (by
+        rw [coreStep_retABA_iff]; exact ⟨hcnt, hs, hret, rfl⟩) hc'mem
+      have hIA' : Inv P g c' w := hIAF.1
       -- Honest DECIDED-sender pigeonhole: `n − f` distinct senders of `b` delivered to `id`,
       -- only `f` corrupted — equivocating byzantine senders may count toward the tally, but
       -- at least one counted sender is never-corrupted (D12′).
@@ -562,17 +563,22 @@ theorem coreSim (P : Params) :
         omega
       obtain ⟨j, hjF, hjrecv⟩ := hex
       have hjsent : b ∈ c.decidedSent j := hI.recv_sound id j b hjrecv
-      obtain ⟨rA, hrA_grade, hrA_bind⟩ := hI.decided_src j b hjF hjsent
+      obtain ⟨rA, hrA_cert⟩ := hI.decided_src j b hjF hjsent
+      -- the twin-level holder pin for `b`: every honest `A`-decision holder agrees with the
+      -- harvested sender's pooled bit (I30)
+      have hpinb : ∀ j0 b0', j0 ∉ c.F → AHolder P c j0 b0' → b0' = b :=
+        fun j0 b0' hj0 hh0 => hI.alock_agree j0 j b0' b hj0 hjF hh0 (Or.inr hjsent)
       have hretfalse : a.ret id = false := by rw [hAbs.ret_eq id]; exact hret
       have hCF : c'.F = c.F := CoreState.setProc_F _ _ _
-      rcases hAbs.phase with ⟨hb, hv, hcall, hghost⟩ | ⟨v, hb2, hv2, hcall2, r0, hg0, hgb0⟩
+      rcases hAbs.phase with ⟨hb, hv, hcall, hghost⟩ |
+        ⟨v, hb2, hv2, hcall2, ⟨r0, hcv0⟩, hpin⟩
       · -- phase 1: the decide burst (D16), then rule 8
         have hq : a.quorum P := abstract_quorum_of_call (aF := a.F) (aCall := a.call) hI
           hAbs.F_eq (fun id0 _ hin0 => by rw [hcall id0]; exact hin0) (r := rA)
-          (by rw [hrA_bind]; simp)
+          (fun hemp => absurd (hemp ▸ hrA_cert.2.1) (Finset.notMem_empty _))
         have hmat : P.f + 1 ≤ (Finset.univ.filter
             (fun id0 => (a.call id0 = some b ∧ a.input id0 = some b) ∨ id0 ∈ a.F)).card := by
-          refine le_trans (hI.bind_supp rA b hrA_bind) (Finset.card_le_card ?_)
+          refine le_trans (hI.bind_supp rA b hrA_cert.2.1) (Finset.card_le_card ?_)
           intro x hx
           simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hx ⊢
           rcases hx with hin0 | hF0
@@ -584,7 +590,8 @@ theorem coreSim (P : Params) :
         have hretid : a1.ret id = false := by rw [hret1]; exact hretfalse
         set a'' : SpecState P.n := { a1 with ret := Function.update a1.ret id true } with ha''def
         have hAbs'' : Abs P g c' w a'' := by
-          refine ⟨?_, ?_, ?_, Or.inr ⟨b, ?_, ?_, ?_, rA, hrA_grade, hrA_bind⟩⟩
+          refine ⟨?_, ?_, ?_, Or.inr ⟨b, ?_, ?_, ?_, hIAF.2.1 rA b hrA_cert,
+            hIAF.2.2 b ⟨rA, hrA_cert⟩ hpinb⟩⟩
           · show a1.F = c'.F
             rw [hF1, hAbs.F_eq, hCF]
           · intro id'
@@ -607,21 +614,15 @@ theorem coreSim (P : Params) :
         refine ⟨ω, hRel, Or.inr ⟨by simp, ?_⟩⟩
         rw [hbid]
         exact weakStep_of_burst_then_step hburst (SpecStep.ret a1 id b hval1 hretid)
-      · -- phase 2: `b` agrees with the certified value via `commit_up`; rule 8 directly
-        have hD3 : v = b := by
-          rcases le_total r0 rA with hle | hle
-          · obtain ⟨hbcase, -⟩ := hI.commit_up r0 v (by rw [hg0]; simp) hgb0 rA hle
-            rcases hbcase with hn | hs0
-            · rw [hn] at hrA_bind; simp at hrA_bind
-            · rw [hrA_bind] at hs0; exact (Option.some_inj.mp hs0).symm
-          · obtain ⟨hbcase, -⟩ := hI.commit_up rA b (by rw [hrA_grade]; simp) hrA_bind r0 hle
-            rcases hbcase with hn | hs0
-            · rw [hn] at hgb0; simp at hgb0
-            · rw [hgb0] at hs0; exact Option.some_inj.mp hs0
+      · -- phase 2: `b` agrees with the certified value through the twin's holder pin
+        -- (I30 pins the harvested sender's pooled `b` against every honest holder, and the
+        -- twin's pin names `v`; rule 8 fires directly)
+        have hD3 : v = b := (hpin j b hjF (Or.inr hjsent)).symm
         have hvalb : a.val = some b := by rw [hv2, hD3]
         set a'' : SpecState P.n := { a with ret := Function.update a.ret id true } with ha''def
         have hAbs'' : Abs P g c' w a'' := by
-          refine ⟨?_, ?_, hAbs.coin_bot, Or.inr ⟨v, hb2, hv2, hcall2, r0, hg0, hgb0⟩⟩
+          refine ⟨?_, ?_, hAbs.coin_bot, Or.inr ⟨v, hb2, hv2, hcall2, hIAF.2.1 r0 v hcv0,
+            hIAF.2.2 v ⟨r0, hcv0⟩ hpin⟩⟩
           · show a.F = c'.F
             rw [hAbs.F_eq, hCF]
           · intro id'
@@ -657,7 +658,8 @@ theorem coreSim (P : Params) :
         · intro id'
           rw [SpecState.corrupt_ret, CoreState.corrupt_procs]; exact hAbs.ret_eq id'
         · rw [SpecState.corrupt_coin]; exact hAbs.coin_bot
-        · rcases hAbs.phase with ⟨hb, hv, hcall, hghost⟩ | ⟨v, hb, hv, hcall, r0, hg0, hgb0⟩
+        · rcases hAbs.phase with ⟨hb, hv, hcall, hghost⟩ |
+            ⟨v, hb, hv, hcall, ⟨r0, hcv0⟩, hpin⟩
           · refine Or.inl ⟨?_, ?_, ?_, ?_⟩
             · rw [SpecState.corrupt_bind]; exact hb
             · rw [SpecState.corrupt_val]; exact hv
@@ -666,14 +668,13 @@ theorem coreSim (P : Params) :
             · intro id' b' h
               rw [CoreState.corrupt_procs] at h
               rw [SpecState.corrupt_input]; exact hghost id' b' h
-          · refine Or.inr ⟨v, ?_, ?_, ?_, r0, ?_, ?_⟩
+          · refine Or.inr ⟨v, ?_, ?_, ?_, (hI.step_fail id).2.1 r0 v hcv0,
+              (hI.step_fail id).2.2 v ⟨r0, hcv0⟩ hpin⟩
             · rw [SpecState.corrupt_bind]; exact hb
             · rw [SpecState.corrupt_val]; exact hv
             · intro id'; rw [SpecState.corrupt_call]; exact hcall id'
-            · rw [GBCA.corrupt_grade]; exact hg0
-            · rw [GBCA.corrupt_bind]; exact hgb0
       have hIA' : Inv P (fun r => (g r).corrupt P id) (c.corrupt P id)
-          (fun r => (w r).corrupt P id) := hI.step_fail id
+          (fun r => (w r).corrupt P id) := (hI.step_fail id).1
       refine ⟨PMF.pure (PMF.pure (a.corrupt P id)), ⟨PMF.pure
         ((fun r => (g r).corrupt P id, (c.corrupt P id, fun r => (w r).corrupt P id)),
           PMF.pure (a.corrupt P id)), ?_, ?_, ?_⟩, Or.inr ⟨by simp, ?_⟩⟩
