@@ -213,6 +213,89 @@ theorem ProbabilisticForwardSimulation.interleave
 
 end Interleave
 
+/-! ## 4′. Precongruence for `interleave` over an arbitrary (possibly infinite) index -/
+
+section InterleaveCofin
+
+variable {ι : Type} [DecidableEq ι]
+  {State_C State_A : ι → Type} {Label : Type} [Silent Label]
+  {sysC : ∀ i, System (State_C i) Label} {sysA : ∀ i, System (State_A i) Label}
+  {R : ∀ i, State_C i → PMF (State_A i) → Prop}
+
+/-- **Precongruence for `interleave`, cofinite form.** The generalisation of Result 4 to an
+*arbitrary* `[DecidableEq ι]` index — finite *or* infinite (e.g. `ℕ`). The abstract belief is
+carried by a `CofinPMF` (a cofinitely-Dirac family), whose product `toPMF` is a genuine `PMF`
+even for infinite `ι`.
+
+**No hypothesis on the components is required** — in particular *no* bound on how many are
+non-LTS: every `sim i` may be genuinely probabilistic. The cofiniteness is not eliminated but
+*carried structurally* by the coupling relation `interleaveRelCofin` (its witness is a `CofinPMF`,
+whose `active` set is finite by construction), and it is discharged automatically: the simulation
+`init` field forces every component's initial belief onto the single state `(sysA i).init` (hence
+Dirac, empty `active`), and — since `ProbabilisticForwardSimulation` is a *one-step* invariant and
+`interleave` moves exactly one coordinate per step — each step grows `active` by at most one. So
+every reachable coupling has finite `active`, and the infinite-product obstruction (`∏` of
+infinitely many non-Dirac factors is not a `PMF`) never arises: no finite run produces a belief
+with infinitely many non-Dirac coordinates.
+
+This makes `interleaveRelCofin` **strictly looser** than the "cofinitely many components are LTS"
+condition one might expect to need: that condition would bound the non-Dirac support inside a
+*fixed* finite set uniformly across all states, and it *implies* `interleaveRelCofin`; but
+`interleaveRelCofin` only asks for *per-state* finiteness (with `active` growing without a uniform
+bound along a run), so it holds even when infinitely many components are non-LTS and does **not**
+imply that condition. The cofiniteness also does not surface downstream: the observable
+consequence `(interleaveCofin sim).achievableTraceDists_subset` is `R`-agnostic, hence an
+unconditional trace-distribution inclusion `interleave sysC ⊆ interleave sysA`.
+
+Proven from the bundled lift lemmas exactly as Result 4 is proven from the finite ones. -/
+theorem ProbabilisticForwardSimulation.interleaveCofin
+    (sim : ∀ i, ProbabilisticForwardSimulation (sysC i) (sysA i) (R i)) :
+    ProbabilisticForwardSimulation (System.interleave sysC) (System.interleave sysA)
+      (interleaveRelCofin R) := by
+  refine ⟨?_, ?_⟩
+  · -- init: the per-component init beliefs are Dirac at `(sysA i).init`, so take `active = ∅`.
+    choose μ_0 hsupp0 hR0 using fun i => (sim i).init
+    have hdir : ∀ i, μ_0 i = PMF.pure ((sysA i).init) := by
+      intro i
+      have hinit_mem : (sysA i).init ∈ (μ_0 i).support := by
+        obtain ⟨x, hx⟩ := (μ_0 i).support_nonempty
+        rwa [hsupp0 i x hx] at hx
+      have hsupp_eq : (μ_0 i).support = {(sysA i).init} :=
+        Set.eq_singleton_iff_unique_mem.mpr ⟨hinit_mem, fun b hb => hsupp0 i b hb⟩
+      refine PMF.ext (fun a => ?_)
+      rw [PMF.pure_apply]
+      by_cases ha : a = (sysA i).init
+      · subst ha
+        rw [if_pos rfl]
+        exact (PMF.apply_eq_one_iff _ _).mpr hsupp_eq
+      · rw [if_neg ha]
+        have hns : a ∉ (μ_0 i).support := by rw [hsupp_eq]; exact ha
+        exact not_not.mp ((PMF.mem_support_iff _ _).not.mp hns)
+    refine ⟨(CofinPMF.dirac (fun i => (sysA i).init)).toPMF, ?_, ?_⟩
+    · rw [CofinPMF.toPMF_dirac]
+      intro f hf
+      rw [PMF.mem_support_pure_iff] at hf
+      exact hf
+    · refine ⟨CofinPMF.dirac (fun i => (sysA i).init), fun i => ?_, rfl⟩
+      have hcoord : (CofinPMF.dirac (fun i => (sysA i).init)).coord i
+          = PMF.pure ((sysA i).init) := by
+        simp [CofinPMF.dirac, CofinPMF.coord]
+      rw [hcoord, ← hdir i]
+      exact hR0 i
+  · -- step: re-law the single moved coordinate; identical shape to Result 4.
+    rintro s ν ⟨c, hR, rfl⟩ l μ_CB hstep
+    rw [System.interleave_step_map] at hstep
+    obtain ⟨i, μ_Ci, hCi, rfl⟩ := hstep
+    obtain ⟨ω_Ai, hPMFReli, hdisj⟩ := (sim i).step (s i) (c.coord i) (hR i) l μ_Ci hCi
+    refine ⟨ω_Ai.map (fun ρ => (c.update i ρ).toPMF), ?_, ?_⟩
+    · exact pmfRel_interleaveCofin i s c hR hPMFReli
+    · rw [CofinPMF.bind_toPMF_update]
+      rcases hdisj with ⟨hτ, htau⟩ | ⟨hτ, hstepw⟩
+      · exact Or.inl ⟨hτ, weakTau_interleaveCofin c i htau⟩
+      · exact Or.inr ⟨hτ, weakStep_interleaveCofin c i l hstepw⟩
+
+end InterleaveCofin
+
 /-! ## 5. Precongruence for abstraction -/
 
 section Abstract
