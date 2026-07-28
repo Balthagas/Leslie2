@@ -1,22 +1,36 @@
 % GBCA specification instance (PLTS.ABA.GBCA.Step). Automata style.
+% Nodes are the five reachable (bind, grade) pairs; (bot, A) is unreachable
+% because retA requires bind = some v. call/callLoop are enabled in every
+% state and drawn once, on the initial state.
 \begin{tikzpicture}[
-    ->, >={Stealth[round]}, auto, semithick,
+    ->, >={Stealth[round]}, auto, semithick, on grid,
     every state/.style={draw, minimum size=1.3cm, align=center, font=\small},
-    lbl/.style={font=\footnotesize, fill=white, inner sep=1.5pt}]
-  \node[state, initial, initial text={}] (unb) at (0,0)    {unbound};
-  \node[state] (bnd) at (3.8,0)   {bound\,$v$\\ grade\,$\bot$};
-  \node[state] (ga)  at (8.4,2.2) {grade\\A-side};
-  \node[state] (gc)  at (8.4,-2.2){grade\\C-side};
+    lbl/.style={font=\footnotesize, align=center, fill=white, inner sep=1.5pt}]
+
+  \node[state]                           (bc) at (0,3.1)   {$(\bot,\mathrm C)$};
+  \node[state]                           (vc) at (4.4,3.1) {$(v,\mathrm C)$};
+  \node[state, initial, initial text={}] (bb) at (0,0)     {$(\bot,\bot)$};
+  \node[state]                           (vb) at (4.4,0)   {$(v,\bot)$};
+  \node[state]                           (va) at (8.8,0)   {$(v,\mathrm A)$};
+
+  % self-loops
   \path
-    (unb) edge node[lbl, above]{\texttt{bindSet}} (bnd)
-    (bnd) edge node[lbl, sloped, above]{\texttt{retA}: latch A} (ga)
-    (bnd) edge node[lbl, sloped, below]{\texttt{retC}} (gc)
-    (unb) edge[bend right=32] node[lbl, sloped, below]
-      {\texttt{retC}: both bits, no binding} (gc)
-    (unb) edge[loop above, looseness=6]
-      node[lbl, above]{\texttt{call} / \texttt{callLoop}} (unb)
-    (bnd) edge[loop above, looseness=6]
-      node[lbl, above]{\texttt{retB}} (bnd)
-    (ga)  edge[loop right, looseness=6] node[lbl, right]{\texttt{retA}} (ga)
-    (gc)  edge[loop right, looseness=6] node[lbl, right]{\texttt{retC}} (gc);
+    (bb) edge[loop below, looseness=5]
+      node[lbl, below]{1 \texttt{call}\\2 \texttt{callLoop}} (bb)
+    (vb) edge[loop below, looseness=5]
+      node[lbl, below]{4 \texttt{retB}} (vb)
+    (va) edge[loop right, looseness=5]
+      node[lbl, right]{4 \texttt{retB}\\5 \texttt{retA}} (va)
+    (bc) edge[loop above, looseness=5]
+      node[lbl, above]{6 \texttt{retC}} (bc)
+    (vc) edge[loop above, looseness=5]
+      node[lbl, above]{4 \texttt{retB}\\6 \texttt{retC}} (vc);
+
+  % binding, the C-latch and the A-latch
+  \path
+    (bb) edge node[lbl, above]{3 \texttt{bindSet}} (vb)
+    (bc) edge node[lbl, below]{3 \texttt{bindSet}} (vc)
+    (vb) edge node[lbl, above]{5 \texttt{retA}} (va)
+    (bb) edge node[lbl, left]{6 \texttt{retC}} (bc)
+    (vb) edge node[lbl, right]{6 \texttt{retC}} (vc);
 \end{tikzpicture}

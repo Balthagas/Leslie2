@@ -1170,11 +1170,21 @@ slot to be empty.
   Since at most $f$ processes are ever corrupted, one of the $f{+}1$ is a never-corrupted genuine caller (D15).
 \end{definition}
 
-\blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance (Transition System 2): binding under an $f{+}1$ support guard, the graded returns, and the mutually exclusive A/C grade latch.
-Binding (\texttt{bindSet}) fires under a quorum with $f{+}1$ $\mathrm{SuppOK}(v)$ support; \texttt{retA} hands out the bound bit and latches the A-side, and \texttt{retB} hands it out under $f{+}1$ dissent support, leaving the grade unchanged.
-\texttt{retC} reads no bound value: it carries $f{+}1$ support for each of the two bits, hands out no bit, and latches the C-side from the unbound and from the bound state alike.
-The A- and C-latches are mutually exclusive, \texttt{retA} needing grade $\in\{\bot,\mathrm A\}$ and \texttt{retC} grade $\in\{\bot,\mathrm C\}$; every $\mathrm{SuppOK}$ count is $f{+}1$ distinct callers-or-corrupted (D15) and $F$-blind.
-The \texttt{fail} broadcast is omitted.}
+\blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance (Transition System 2): the five reachable $(bind, grade)$ pairs, binding under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
+The nodes are exactly those five pairs.
+The pair $(\bot, \mathrm A)$ is unreachable, since \texttt{retA} requires $bind \neq \bot$.
+The abstraction does not track $ret$, so a repeat return is a self-loop.
+Binding (\texttt{bindSet}) fires under a quorum with $f{+}1$ $\mathrm{SuppOK}(v)$ support.
+Its only bind-related guard is $bind = \bot$, so it remains enabled after a C-latch.
+\texttt{retA} hands out the bound bit and latches the A-side.
+\texttt{retB} hands out the bound bit under $f{+}1$ dissent support.
+It writes neither component, so it is always a self-loop.
+\texttt{retC} carries $f{+}1$ support for each of the two bits and hands out no bit.
+It reads no bound value, so it latches the C-side from the unbound and from the bound state alike.
+The A- and C-latches are mutually exclusive, \texttt{retA} needing $grade \in \{\bot,\mathrm A\}$ and \texttt{retC} needing $grade \in \{\bot,\mathrm C\}$.
+Every $\mathrm{SuppOK}$ count is $f{+}1$ distinct callers-or-corrupted (D15) and $F$-blind.
+The \texttt{fail} broadcast is omitted.
+\texttt{call} and \texttt{callLoop} are enabled in every state and are drawn once, on the initial state.}
 
 \noindent\textbf{The GBCA specification, round-$r$ instance.}
 
