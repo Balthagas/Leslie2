@@ -14,7 +14,7 @@ the departure.
 
 **The D-registry is elsewhere.** The catalogued deviations — D1, D3–D5, D8–D16, D12
 refined to D12′ — are cited at the point of use in the ABA module docstrings, summarised
-in `ABA/README.md`, and listed in the blueprint chapter (`blueprint/src/content.tex:762`).
+in `ABA/README.md`, and listed in the blueprint chapter (the Deviations paragraph of `blueprint/src/content.tex`).
 
 ## 1. The inherited algorithmic gap
 

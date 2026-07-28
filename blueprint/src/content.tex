@@ -772,9 +772,9 @@ Processes start with a bit in $\{0,1\}$ and may return a bit.
     $b$ as input.
   \item Agreement: if two correct processes return, then their outputs are
     equal.
-  \item Almost-sure Termination: if $n-f$ correct processes take part in the
-    protocol then, with probability $1$, all correct processes will eventually
-    return.
+  \item $\varepsilon$-sure Termination: if $n-f$ correct processes take part in
+    the protocol then, with probability $1-\varepsilon$, all correct processes
+    will eventually return.
 \end{itemize}
 
 Graded Binding Crusader Agreement (GBCA).
