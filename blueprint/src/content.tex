@@ -799,6 +799,9 @@ component, where the return domain admits only $A$, $B$ and $C$.
 It is read here as the grade $C$, the sole grade paired with the value $\bot$.
 The encoding realises that reading: an $A$-return and a $C$-return of the same
 instance exclude one another.
+The bound value of the Binding clause is realised by its complement: the
+specification carries the set of bits it can no longer hand out, and the
+clause's $b$ is a bit outside that set, its $1-b$ a member of it (D19).
 
 Weak Common Coin (WCC).
 Processes start with no input and may return a bit.
@@ -842,13 +845,21 @@ as $n$ programs beside a coin oracle (Theorem~\ref{thm:aba-flat}).
 \paragraph{Object names.}
 Transition System~1 is the ABA specification, Transition System~2 the GBCA
 specification, and Transition System~3 the WCC specification.
-Algorithm~1 is the ABA core algorithm and Algorithm~2 the GBCA implementation.
 These names are used throughout this section and follow the numbering of the
-source blueprint~\cite{LeslieBP}.
+source blueprint~\cite{LeslieBP}, whose pseudocode is numbered there as well:
+Algorithm~1 is the ABA core algorithm and Algorithm~2 the GBCA implementation.
+Of those two only the ABA core is reproduced here.
+The GBCA implementation this chapter displays and encodes is ABDY22's
+Algorithm~6, of which the source blueprint's Algorithm~2 is a compression that
+violates Binding (D18).
+A cross-reference of the form ``Algorithm~\ref{alg:aba-core}'' always points to
+a displayed float of this document, whose numbering runs independently of the
+source's; the source's own numbers appear only in the phrase ``the source
+blueprint's Algorithm~$k$''.
 
 \paragraph{Deviations.}
 The encodings depart from~\cite{LeslieBP} in catalogued ways.
-Each departure carries a label D1--D17 and is cited at the point where it
+Each departure carries a label D1--D19 and is cited at the point where it
 applies.
 The labels D2, D6 and D7 are unused.
 \begin{itemize}
@@ -882,6 +893,32 @@ The labels D2, D6 and D7 are unused.
     A $\dagger$ round of Transition System~3 enables no return.
     A $\dagger$ round of Transition System~1 is frozen: no process adopts the
     bound value and none re-proposes.
+  \item D18: the GBCA implementation transcribes ABDY22's Algorithm~6 in full
+    --- six rounds, the message levels INPUT, ECHO, VOTE, BIND and SEAL, and
+    the decide conditions of that algorithm --- in place of the source
+    blueprint's Algorithm~2, which is a four-round compression of it.
+    The compression elides the SEAL level, reads the three decide conditions
+    one message level down, and takes $f{+}1$ $\mathrm{VOTE}\,v$ receipts as
+    the grade-$1$ witness where Algorithm~6 takes $f{+}1$ $\mathrm{BIND}\,v$
+    receipts.
+    That compression violates Binding.
+    One process held at the echo stage through a $C$-return may afterwards
+    direct its write-once echo at either bit, and a single corruption completes
+    the $f{+}1$ $\mathrm{VOTE}\,v$ count for the bit the adversary picks, so two
+    extensions of one $C$-return hand out two different bits and no
+    binding-faithful specification simulates the compression.
+    The source blueprint carries a matching red annotation at those decide
+    conditions.
+  \item D19: the GBCA specification state carries an exclusion set
+    $dead \subseteq \{0,1\}$, the bits the instance can no longer hand out, in
+    place of the source's bound value $bind \in \{0,1,\bot\}$.
+    The bound value embeds, $bind = \bot$ as $dead = \emptyset$ and $bind = b$
+    as $dead = \{1-b\}$, and the embedding is not onto: the point
+    $dead = \{0,1\}$, where no bit is available at all, denotes no bound value.
+    Binding is thereby negative and monotone --- the internal transition only
+    ever adds a bit --- which makes Graded Agreement and Binding structural
+    rather than invariants of the specification
+    (Theorem~\ref{thm:gbca-spec-binding}).
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -1166,21 +1203,20 @@ slot to be empty.
   Transition Systems 2 and 3 (round-indexed instances and their families):
   GBCA with internal binding and graded returns, WCC with the
   $\varepsilon$-probabilistic coin resolution. The GBCA side is an LTS.\lean{PLTS.ABA.GBCA.specFamily_isLTS}\leanok{}
-  The GBCA binding, the dissenting bit at its $B$-return and each of the two bits at its $C$-return carry an $f{+}1$ $F$-blind support guard (SuppOK): $f{+}1$ distinct callers-or-corrupted of the bit in question.
+  GBCA binds by exclusion: the state carries the set $dead \subseteq \{0,1\}$ of bits the instance can no longer hand out, in place of the source's bound value (D19).
+  The GBCA kill, the dissenting bit at its $B$-return and each of the two bits at its $C$-return carry an $f{+}1$ $F$-blind support guard (SuppOK): $f{+}1$ distinct callers-or-corrupted of the bit in question.
   Since at most $f$ processes are ever corrupted, one of the $f{+}1$ is a never-corrupted genuine caller (D15).
 \end{definition}
 
-\blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance (Transition System 2): the five reachable $(bind, grade)$ pairs, binding under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
-The nodes are exactly those five pairs.
-The pair $(\bot, \mathrm A)$ is unreachable, since \texttt{retA} requires $bind \neq \bot$.
+\blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance (Transition System 2): the reachable $(dead, grade)$ pairs, the exclusion set growing one bit at a time under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
+The drawn abstraction is the pair $(dead, grade)$, and $b$ is a free bit, so the seven nodes are the quotient of the ten reachable states by the exchange of $0$ and $1$: each $\{b\}$ node stands for the two states $(\{0\},\cdot)$ and $(\{1\},\cdot)$, and the three $\{0,1\}$ nodes and the initial node stand for themselves.
+The pairs $(\emptyset,\mathrm A)$ and $(\emptyset,\mathrm C)$ are unreachable, since every graded return requires $dead \neq \emptyset$.
 The abstraction does not track $ret$, so a repeat return is a self-loop.
-Binding (\texttt{bindSet}) fires under a quorum with $f{+}1$ $\mathrm{SuppOK}(v)$ support.
-Its only bind-related guard is $bind = \bot$, so it remains enabled after a C-latch.
-\texttt{retA} hands out the bound bit and latches the A-side.
-\texttt{retB} hands out the bound bit under $f{+}1$ dissent support.
-It writes neither component, so it is always a self-loop.
-\texttt{retC} carries $f{+}1$ support for each of the two bits and hands out no bit.
-It reads no bound value, so it latches the C-side from the unbound and from the bound state alike.
+Binding (\texttt{bindUnset}) fires under a quorum with $f{+}1$ $\mathrm{SuppOK}$ support for the surviving bit and kills the other, and its only $dead$-related guard is that the bit it kills is still alive, so a second kill follows any latch.
+\texttt{retA} hands out the surviving bit and latches the A-side; it loops on $(\{b\},\mathrm A)$.
+\texttt{retB} hands out the surviving bit under $f{+}1$ dissent support; it writes neither component and carries no grade guard, so it is a self-loop on the singleton states of every grade.
+\texttt{retC} carries $f{+}1$ support for each of the two bits, hands out no bit, and needs only $dead \neq \emptyset$, so it latches the C-side from $(\{b\},\bot)$ and $(\{0,1\},\bot)$ alike and loops on both C-states.
+The state $(\{0,1\},\mathrm A)$ is entered only as an A-latch followed by a second kill, and is a sink for the value-bearing returns: they require a singleton $dead$, and \texttt{retC} is blocked by the A-latch.
 The A- and C-latches are mutually exclusive, \texttt{retA} needing $grade \in \{\bot,\mathrm A\}$ and \texttt{retC} needing $grade \in \{\bot,\mathrm C\}$.
 Every $\mathrm{SuppOK}$ count is $f{+}1$ distinct callers-or-corrupted (D15) and $F$-blind.
 The \texttt{fail} broadcast is omitted.
@@ -1193,12 +1229,14 @@ The \texttt{fail} broadcast is omitted.
 \begin{itemize}
   \item $call : [n] \to \{0,1,\bot\}$, the pending input of each process, $\bot$ when unset.
   \item $ret : [n] \to \mathbb{B}$, which processes have received their return.
-  \item $bind : \{0,1,\bot\}$, the bound value, fixed by the internal binding transition.
+  \item $dead \subseteq \{0,1\}$, the exclusion set: the bits the instance can no longer hand out, written only by the internal binding transition (D19).
   \item $grade : \{0,1,\bot\}$, the grade lock, $1$ after an $A$-return and $0$ after a $C$-return.
   \item $F \subseteq [n]$, the corrupted set, a local copy kept in lockstep by the $\mathrm{fail}$ broadcast.
 \end{itemize}
-\noindent Binding is internal specification state.
-The internal transition \texttt{bindSet} fixes the bound value; the $A$- and $B$-returns hand out the bit their graded outcome names, and the $C$-return hands out no bit.
+\noindent Binding is internal specification state, and it is negative information (D19).
+The set $dead$ starts empty; the internal transition \texttt{bindUnset} kills one bit at a time and requires that bit to be alive, and no rule ever revives one, so $dead$ grows along every execution and each bit is written at most once.
+The $A$- and $B$-returns hand out a bit that is alive while the other bit is dead; the $C$-return hands out no bit and requires only that some bit be dead.
+The source blueprint's bound value embeds, $bind = \bot$ as $dead = \emptyset$ and $bind = b$ as $dead = \{1-b\}$, and the state $dead = \{0,1\}$ is the point the embedding adds: no bit is chosen there, and none is available either.
 
 \noindent\textbf{Labels.}
 $\mathrm{callG}(r,id,b)$, $\mathrm{retG}(r,id,out)$ with $out \in \{A\,b,\ B\,b,\ C\}$, $\mathrm{fail}(id)$ and $\tau$, for $id \in [n]$ and $b \in \mathbb{B}$.
@@ -1208,7 +1246,7 @@ The instance steps on these labels only; the family combinator supplies idle sel
 $\mathrm{callG}(r,id,b)$, by the unconditional loop rule~2, and $\mathrm{fail}(id)$, whose rule~7 is total (D1).
 
 \noindent\textbf{Initial.}
-$call = \bot^{[n]}$, $ret = \mathrm{false}^{[n]}$, $bind = \bot$, $grade = \bot$ and $F = \emptyset$.
+$call = \bot^{[n]}$, $ret = \mathrm{false}^{[n]}$, $dead = \emptyset$, $grade = \bot$ and $F = \emptyset$.
 
 \medskip
 \noindent In each rule $id \in [n]$ and $b, v \in \mathbb{B}$ are parameters, and $s$ is the source state.
@@ -1222,33 +1260,35 @@ Guard $call[id] = \bot$.
 No guard.
 \[ s \xrightarrow{\;\mathrm{callG}(r,id,b)\;} \delta(s) \]
 
-\noindent\textbf{3.} \texttt{bindSet} (D14, D15).
+\noindent\textbf{3.} \texttt{bindUnset} (D14, D15, D19).
 Guard
 \[ \begin{aligned}
      &\bigl|\{id \in [n]\setminus F \mid call[id] \neq \bot\} \cup F\bigr| \ge n - f,\\
-     &\bigl|\{id \in [n] \mid call[id] = b \vee id \in F\}\bigr| \ge f + 1,\\
-     &bind = \bot.
+     &\bigl|\{id \in [n] \mid call[id] = 1-b \vee id \in F\}\bigr| \ge f + 1,\\
+     &b \notin dead.
    \end{aligned} \]
-\[ s \xrightarrow{\;\tau\;} \delta\bigl(s[\,bind := b\,]\bigr) \]
+\[ s \xrightarrow{\;\tau\;} \delta\bigl(s[\,dead := dead \cup \{b\}\,]\bigr) \]
+\noindent The support count is at the bit the rule \emph{spares}: killing $b$ is certified by $f{+}1$ callers-or-corrupted of $1-b$.
 
-\noindent\textbf{4.} \texttt{retB} (D14, D15).
+\noindent\textbf{4.} \texttt{retB} (D14, D15, D19).
 Guard
 \[ \begin{aligned}
-     &bind = v,\\
+     &v \notin dead,\quad 1-v \in dead,\\
      &\bigl|\{id' \in [n] \mid call[id'] = 1-v \vee id' \in F\}\bigr| \ge f + 1,\\
      &ret[id] = \mathrm{false}.
    \end{aligned} \]
 \[ s \xrightarrow{\;\mathrm{retG}(r,id,B\,v)\;}
    \delta\bigl(s[\,ret[id] := \mathrm{true}\,]\bigr) \]
 
-\noindent\textbf{5.} \texttt{retA}.
-Guard $bind = v$, $grade \in \{\bot, 1\}$ and $ret[id] = \mathrm{false}$.
+\noindent\textbf{5.} \texttt{retA} (D19).
+Guard $v \notin dead$, $1-v \in dead$, $grade \in \{\bot, 1\}$ and $ret[id] = \mathrm{false}$.
 \[ s \xrightarrow{\;\mathrm{retG}(r,id,A\,v)\;}
    \delta\bigl(s[\,grade := 1,\ ret[id] := \mathrm{true}\,]\bigr) \]
 
-\noindent\textbf{6.} \texttt{retC} (D14, D15).
+\noindent\textbf{6.} \texttt{retC} (D14, D15, D19).
 Guard
 \[ \begin{aligned}
+     &|dead| \ge 1,\\
      &\bigl|\{id' \in [n] \mid call[id'] = 1 \vee id' \in F\}\bigr| \ge f + 1,\\
      &\bigl|\{id' \in [n] \mid call[id'] = 0 \vee id' \in F\}\bigr| \ge f + 1,\\
      &grade \in \{\bot, 0\},\quad ret[id] = \mathrm{false}.
@@ -1268,27 +1308,78 @@ No guard.
 \medskip
 \noindent Every transition of the instance is Dirac, so the instance is an LTS.
 
+\dynamics{Binding as negative information}{%
+An instance binds by removing an option rather than by choosing one.
+The only writer of $dead$ is \texttt{bindUnset}, which inserts, and it requires
+the bit it kills to be alive, so $dead$ grows along every execution and each
+bit is killed at most once.
+Corruption does not touch the field.
+Every property below is a consequence of that monotonicity together with the
+membership guards on the returns, with no auxiliary invariant.
+Both value-bearing returns carry the same guard pair, $v \notin dead$ and
+$1-v \in dead$: the bit handed out is alive and the other bit is already dead.
+That pair is Graded Agreement.
+A return of $v$ pins $1-v$ into $dead$; monotonicity carries that membership to
+every later state of the run; a later return of $w$ needs $w \notin dead$, so
+$w \neq 1-v$, so $w = v$.
+Two returns of one execution therefore name the same bit whatever their grades,
+and once any value-bearing return has fired a single bit is the only one any
+extension can ever hand out.
+The $C$-return's guard $|dead| \ge 1$ is the Binding clause read on this state:
+a member of $dead$ is a bit that no correct process is handed at grade $\ge 1$
+in any extension, because the value-bearing returns refuse a dead bit and
+$dead$ only grows.
+A $C$-return therefore commits the instance --- from that point at most one bit
+is alive anywhere in the future --- which is what makes handing out no bit the
+right answer, and it is why every return, $C$-returns included, requires a kill
+to have happened.
+Since $dead$ is a set it can reach $\{0,1\}$, by two kills, one per bit, each
+certified by the surviving bit's support at the moment it fires.
+In that state no value-bearing return is enabled at either bit and only
+$C$-returns remain: the run in which the instance hands out nothing at all.
+A bound value cannot express that point, its $\bot$ meaning \emph{undecided},
+which enables both bits rather than neither (D19).
+}
+
 \dynamics{What the grades promise}{%
 The grade records how much of the round its holder is committed to.
-An $A$-return commits to the bound value and is the grade that licenses a
+An $A$-return commits to the surviving bit and is the grade that licenses a
 decision.
-A $B$-return carries the bound value as the next estimate but records that
+A $B$-return carries the surviving bit as the next estimate but records that
 dissent was seen.
 A $C$-return carries no value, and its holder falls back on the coin.
 The $A$- and $C$-latches are mutually exclusive: once an $A$-return has
 occurred no $C$-return is enabled at that instance, and once a $C$-return has
 occurred no $A$-return is.
-The binding, the dissenting bit at a $B$-return and each of the two bits at a
+The kill, the dissenting bit at a $B$-return and each of the two bits at a
 $C$-return are gated on $f+1$ distinct supporters, counted $F$-blind, so the
 count is monotone in $F$ and immune to later corruptions.
-Only the $A$- and $B$-returns read the bound value.
-A $C$-return reads none, so an instance in which every return is a $C$-return
-need never bind.
 At most $f$ processes are ever corrupted, so any such set of $f+1$ contains a
 member outside the final corrupted set, hence a never-corrupted genuine caller.
-That member is the witness which carries Validity from the bound value down to
-a caller.
+That member is the witness which carries Validity down to a caller: a bit $v$
+handed out at grade $\ge 1$ requires $1-v \in dead$, and the kill that put it
+there certified $f+1$ $F$-blind supporters of $v$ itself.
 }
+
+\begin{theorem}[Binding and graded agreement of the GBCA specification]
+  \label{thm:gbca-spec-binding}
+  \lean{PLTS.ABA.GBCA.retG_value_agree}\lean{PLTS.ABA.GBCA.specInst_binding}\leanok
+  \uses{def:aba-subspecs, thm:trace-support}
+  Any two returns of one execution of the round-$r$ GBCA specification instance that hand out a bit hand out the same bit, whatever their grades and whichever processes they answer; the bit a graded outcome hands out is the one $A\,b$ and $B\,b$ name, $C$ naming none.\lean{PLTS.ABA.GBCA.outValue}\leanok{}
+  Read on traces: every trace in the support of every achievable trace distribution of the instance satisfies $\mathrm{BindingTrace}$, that any two round-$r$ graded returns of the trace which name a bit name the same one.\lean{PLTS.ABA.GBCA.BindingTrace}\leanok{}
+  A $C$-return moreover leaves $dead$ nonempty in every later state of the execution, so the bit it kills is a bit no extension of the run hands out at grade $\ge 1$ --- the Binding witness.\lean{PLTS.ABA.GBCA.retC_dead_nonempty}\leanok{}
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-subspecs, thm:trace-support}
+  The exclusion set never shrinks: its single writer inserts, and corruption leaves it alone, so the inclusion holds rule by rule and lifts to whole executions.\lean{PLTS.ABA.GBCA.Step.dead_mono}\leanok{}
+  Inverting the two value-bearing return rows yields the guard pair $v \notin dead$, $1-v \in dead$ at the state each fires from.\lean{PLTS.ABA.GBCA.retG_value_guards}\leanok{}
+  Take two such returns at positions $k_1 \le k_2$ handing out $v_1$ and $v_2$.
+  Monotonicity carries $1-v_1 \in dead$ from the first state to the second, the second return demands $v_2 \notin dead$, so $v_2 \neq 1-v_1$, and on a two-element domain $v_2 = v_1$; the opposite order is symmetric.
+  The trace form follows by Theorem~\ref{thm:trace-support}, which turns a positive-probability trace into a genuine execution whose graded-return labels are steps of the kind just treated.
+  The $C$-return clause is the same monotonicity applied to the witness its own guard $|dead| \ge 1$ produces.
+  No invariant, no quorum arithmetic and no reachability hypothesis beyond membership in one execution enters (D19).
+\end{proof}
 
 \blueprintfig{fig-wcc}{The WCC specification instance (Transition System 3): the four-outcome coin resolution and the return of the common bit or an adversary-chosen bit.
 The \texttt{flip} guard requires more than $f$ callers counting corrupted, $|\{id\notin F:\ called\}\cup F|>f$, and is the sole probabilistic transition besides Transition System 1.
@@ -1403,11 +1494,14 @@ Termination and fairness are out of scope.
 \subsection{The GBCA implementation and its refinement}
 
 \begin{algorithm}
-    \caption{Implementation of GBCA. Algorithm 2 of the source blueprint, after
-      Abraham, Ben-David and Yandamuri \cite{ABDY22}. This is a four-round
-      form: the original carries a fifth round of echoes, and the return
-      conditions here read one message level down. The theorems below concern
-      the four-round algorithm as stated}
+    \caption{Implementation of GBCA. Algorithm 6 of Abraham, Ben-David and
+      Yandamuri \cite{ABDY22}, transcribed in full: six rounds, the message
+      levels INPUT, ECHO, VOTE, BIND, SEAL, and that algorithm's three decide
+      conditions (D18). The source blueprint's own GBCA pseudocode is a
+      four-round compression of this one --- the SEAL level elided, the decide
+      conditions read one level down, and $f{+}1$ VOTE-$b$ receipts in place of
+      $f{+}1$ BIND-$b$ receipts as the grade-1 witness --- and that compression
+      violates Binding, so the encoding follows the cited algorithm instead}
     \label{alg:gbca-impl}
     \begin{algorithmic}
         \State \textbf{Input:} $b \in \{0,1\}$
@@ -1439,12 +1533,19 @@ Termination and fairness are out of scope.
         \State\quad (a) receiving $\langle\mathrm{BIND}, b\rangle$ from at least
           $n - f$ processes \textbf{or}
         \State\quad (b) receiving $\langle\mathrm{BIND}, \cdot\rangle$ from at least
+          $n - f$ processes and $|\mathit{Valid}| > 1$
+        \State\quad \textbf{if} (a) \textbf{then} send $\langle\mathrm{SEAL}, b\rangle$
+          to all \textbf{else} send $\langle\mathrm{SEAL}, \bot\rangle$ to all
+        \State \textbf{wait until}
+        \State\quad (a) receiving $\langle\mathrm{SEAL}, b\rangle$ from at least
+          $n - f$ processes \textbf{or}
+        \State\quad (b) receiving $\langle\mathrm{SEAL}, \cdot\rangle$ from at least
           $n - f$ processes and
-        \State\quad there exists $b \in \{0,1\}$ such that $\langle\mathrm{BIND}, b\rangle$
+        \State\quad there exists $b \in \{0,1\}$ such that $\langle\mathrm{SEAL}, b\rangle$
           has been received once and
-        \State\quad $\langle\mathrm{VOTE}, b\rangle$ has been received from $f + 1$
+        \State\quad $\langle\mathrm{BIND}, b\rangle$ has been received from $f + 1$
           processes and $|\mathit{Valid}| > 1$ \textbf{or}
-        \State\quad (c) receiving $\langle\mathrm{BIND}, \bot\rangle$ from at least
+        \State\quad (c) receiving $\langle\mathrm{SEAL}, \bot\rangle$ from at least
           $n - f$ processes and $|\mathit{Valid}| > 1$
         \State\quad \textbf{if} (a) \textbf{then} \textbf{return} $(b, A)$
           \textbf{elif} (b) \textbf{then} \textbf{return} $(b, B)$
@@ -1456,20 +1557,19 @@ Termination and fairness are out of scope.
   \label{def:aba-gbca-impl}
   \lean{PLTS.ABA.GBCA.implInst}\leanok
   \uses{def:aba-labels, def:aba-params}
-  The GBCA implementation of the source blueprint, after~\cite{ABDY22}, as a
-  per-round PLTS (Algorithm~\ref{alg:gbca-impl}); see the caption of that
-  algorithm for how the four-round form relates to the original.
-  Each process runs a four-stage message exchange over an authenticated set-based network.
-  On a $\mathrm{callG}$ it multicasts $\langle\mathrm{INPUT},b\rangle$; it relays $\langle\mathrm{INPUT},b\rangle$ once $f{+}1$ receipts of it arrive (the relay gate); it multicasts $\langle\mathrm{ECHO},b\rangle$ on an $n{-}f$ INPUT-$b$ quorum, $\langle\mathrm{VOTE},v\rangle$ on an $n{-}f$ ECHO quorum, and $\langle\mathrm{BIND},v\rangle$ on an $n{-}f$ VOTE quorum, each payload a real bit or $\bot$.
-  A process returns grade $A\,b$ on an $n{-}f$ BIND-$b$ quorum, $B\,b$ on an $n{-}f$ any-BIND quorum containing $b$ with $f{+}1$ VOTE-$b$s and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ BIND-$\bot$ quorum with $|\mathrm{Valid}|>1$.
+  ABDY22's Algorithm~6 as a per-round PLTS (Algorithm~\ref{alg:gbca-impl}, deviation D18); see the caption of that algorithm for how it relates to the source blueprint's compressed four-round form.
+  Each process runs a five-stage message exchange over an authenticated set-based network, the levels INPUT, ECHO, VOTE, BIND, SEAL being the paper's $\mathrm{echo}$ through $\mathrm{echo5}$.
+  On a $\mathrm{callG}$ it multicasts $\langle\mathrm{INPUT},b\rangle$; it relays $\langle\mathrm{INPUT},b\rangle$ once $f{+}1$ receipts of it arrive (the relay gate); it multicasts $\langle\mathrm{ECHO},b\rangle$ on an $n{-}f$ INPUT-$b$ quorum, $\langle\mathrm{VOTE},v\rangle$ on an $n{-}f$ ECHO quorum, $\langle\mathrm{BIND},v\rangle$ on an $n{-}f$ VOTE quorum, and $\langle\mathrm{SEAL},v\rangle$ on an $n{-}f$ BIND quorum, each payload above INPUT and ECHO a real bit or $\bot$.
+  A process returns grade $A\,b$ on an $n{-}f$ SEAL-$b$ quorum, $B\,b$ on an $n{-}f$ any-SEAL quorum containing $b$ with $f{+}1$ BIND-$b$s and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ SEAL-$\bot$ quorum with $|\mathrm{Valid}|>1$.
   The network is set-based and authenticated (D5): each sender owns one idempotent message set, the adversary schedules delivery ($\mathrm{deliver}$), and a corrupted $j\in F$ injects an arbitrary message ($\mathrm{byz}$).
   Protocol sends are gated on prior participation (D8).
   The state is the protocol's own data, and the three returns read nothing beyond the receipts Algorithm~\ref{alg:gbca-impl}'s three wait-until cases name.
+  The prose preceding Algorithm~6 in~\cite{ABDY22} says ``upon receiving $\mathrm{echo4}$ messages from $2t+1$ parties'' where its own pseudocode says $n - t$; the two coincide only at $n = 3t+1$, and the encoding follows the pseudocode, $n - f$.
 \end{definition}
 
-\blueprintfig{fig-gbca-impl}{The GBCA implementation instance (Algorithm 2): the per-process stage automaton and, boxed, the authenticated set-based network.
-On a call a process multicasts $\langle\mathrm{INPUT},b\rangle$ and relays it after $f{+}1$ receipts; an $n{-}f$ quorum at each stage produces the next multicast $\langle\mathrm{ECHO},b\rangle$, $\langle\mathrm{VOTE},v\rangle$, then $\langle\mathrm{BIND},v\rangle$.
-The returns are $A\,b$ on an $n{-}f$ BIND-$b$ quorum, $B\,b$ on an $n{-}f$ any-BIND quorum with $f{+}1$ VOTE-$b$ and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ BIND-$\bot$ quorum with $|\mathrm{Valid}|>1$: the three wait-until cases of Algorithm~\ref{alg:gbca-impl}, each reading the receipts its own case names.
+\blueprintfig{fig-gbca-impl}{The GBCA implementation instance (Algorithm~\ref{alg:gbca-impl}, D18): the per-process stage automaton and, boxed, the authenticated set-based network.
+On a call a process multicasts $\langle\mathrm{INPUT},b\rangle$ and relays it after $f{+}1$ receipts; an $n{-}f$ quorum at each stage produces the next multicast $\langle\mathrm{ECHO},b\rangle$, $\langle\mathrm{VOTE},v\rangle$, $\langle\mathrm{BIND},v\rangle$, then $\langle\mathrm{SEAL},v\rangle$.
+The returns are $A\,b$ on an $n{-}f$ SEAL-$b$ quorum, $B\,b$ on an $n{-}f$ any-SEAL quorum with $f{+}1$ BIND-$b$ and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ SEAL-$\bot$ quorum with $|\mathrm{Valid}|>1$: the three wait-until cases of Algorithm~\ref{alg:gbca-impl}, each reading the receipts its own case names.
 The dashed box is the D5 network: per-sender sent and received message sets, adversary $\mathrm{deliver}$, and Byzantine injection for $j\in F$.}
 
 The Lean encoding of Algorithm~\ref{alg:gbca-impl} is the round-$r$ instance
@@ -1479,14 +1579,14 @@ Fix the parameters $n$ and $f$ with $3f < n$.
 Write $[n]$ for the process identifiers and $F \subseteq [n]$ for the corrupted
 set.
 The message type is
-\[
-  \mathrm{Msg} \;=\;
-  \{\,\langle\mathrm{INPUT}, b\rangle,\ \langle\mathrm{ECHO}, b\rangle
-    \;:\; b \in \{0,1\}\,\}
-  \;\cup\;
-  \{\,\langle\mathrm{VOTE}, v\rangle,\ \langle\mathrm{BIND}, v\rangle
-    \;:\; v \in \{0,1,\bot\}\,\}.
-\]
+\[ \begin{aligned}
+     \mathrm{Msg} \;=\;
+     &\{\,\langle\mathrm{INPUT}, b\rangle,\ \langle\mathrm{ECHO}, b\rangle
+       \;:\; b \in \{0,1\}\,\}\\
+     &{}\cup\;
+     \{\,\langle\mathrm{VOTE}, v\rangle,\ \langle\mathrm{BIND}, v\rangle,\
+       \langle\mathrm{SEAL}, v\rangle \;:\; v \in \{0,1,\bot\}\,\}.
+   \end{aligned} \]
 Every rule of the instance is Dirac.
 A rule is therefore determined by its guard and its state update, and the table
 below carries no distribution column.
@@ -1502,6 +1602,8 @@ The local state of one process is the record $\mathrm{ProcState}$ with fields
   \item $\mathit{sentVote}$ --- the $\mathrm{VOTE}$ payload multicast; unset if
     none, and the recorded payload may itself be $\bot$.
   \item $\mathit{sentBind}$ --- the $\mathrm{BIND}$ payload multicast, on the
+    same convention.
+  \item $\mathit{sentSeal}$ --- the $\mathrm{SEAL}$ payload multicast, on the
     same convention.
   \item $\mathit{returned}$ --- whether this process has returned from the
     instance.
@@ -1527,16 +1629,20 @@ Set
   \mathit{Val}_i \;=\;
     \{\, b \in \{0,1\} \;:\; \#_i(\langle\mathrm{INPUT}, b\rangle) \ge n - f \,\},
 \]
-and write $\#_i(\mathrm{EC})$, $\#_i(\mathrm{VT})$, $\#_i(\mathrm{BD})$ for the
-payload-blind counts, that is, the number of distinct senders from which $i$
-holds some $\mathrm{ECHO}$, some $\mathrm{VOTE}$, some $\mathrm{BIND}$.
+and write $\#_i(\mathrm{EC})$, $\#_i(\mathrm{VT})$, $\#_i(\mathrm{BD})$,
+$\#_i(\mathrm{SL})$ for the payload-blind counts, that is, the number of
+distinct senders from which $i$ holds some $\mathrm{ECHO}$, some
+$\mathrm{VOTE}$, some $\mathrm{BIND}$, some $\mathrm{SEAL}$.
 The set $\mathit{Val}_i$ is Algorithm~\ref{alg:gbca-impl}'s variable
 $\mathit{Valid}$, read off the delivered messages instead of being stored, so
 the condition $|\mathit{Valid}| > 1$ becomes $\mathit{Val}_i = \{0,1\}$.
-In the table $\mathrm{IN}\,b$, $\mathrm{EC}\,b$, $\mathrm{VT}\,v$ and
-$\mathrm{BD}\,v$ abbreviate the four message forms, ``mcast'' abbreviates the
-insertion of a message into the sender's $\mathit{sent}$ pool, and a dash marks
-an unguarded rule.
+In the table $\mathrm{IN}\,b$, $\mathrm{EC}\,b$, $\mathrm{VT}\,v$,
+$\mathrm{BD}\,v$ and $\mathrm{SL}\,v$ abbreviate the five message forms,
+``mcast'' abbreviates the insertion of a message into the sender's
+$\mathit{sent}$ pool, and a dash marks an unguarded rule.
+The two $\mathrm{SEAL}$ rows and the SEAL-reading guards of the three return
+rows are what D18 restores over the source blueprint's compressed four-round form, and carry
+no separate marker in the table.
 
 \begin{center}
 \footnotesize
@@ -1588,22 +1694,33 @@ Rule & Label & Guard & Effect \\
  & & $\#_j(\mathrm{VT}) \ge n{-}f$, $\mathit{Val}_j = \{0,1\}$
   & mcast $\mathrm{BD}\,\bot$ (D8) \\
 \hline
+\texttt{sealBit} & $\tau$
+  & $\mathit{input}_j$ set, $\mathit{sentSeal}_j$ unset,
+  & $\mathit{sentSeal}_j \gets b$; \\
+ & & $\#_j(\mathrm{BD}\,b) \ge n{-}f$ & mcast $\mathrm{SL}\,b$ (D8) \\
+\hline
+\texttt{sealBot} & $\tau$
+  & $\mathit{input}_j$ set, $\mathit{sentSeal}_j$ unset,
+  & $\mathit{sentSeal}_j \gets \bot$; \\
+ & & $\#_j(\mathrm{BD}) \ge n{-}f$, $\mathit{Val}_j = \{0,1\}$
+  & mcast $\mathrm{SL}\,\bot$ (D8) \\
+\hline
 \texttt{byz} & $\tau$ & $j \in F$ & mcast $m$ at $j$ (D5) \\
 \hline
 \texttt{retA} & $\mathrm{retG}(r,i,A\,v)$
-  & $\#_i(\mathrm{BD}\,v) \ge n{-}f$,
+  & $\#_i(\mathrm{SL}\,v) \ge n{-}f$,
   & mark $i$ returned \\
  & & $\mathit{returned}_i$ false & \\
 \hline
 \texttt{retB} & $\mathrm{retG}(r,i,B\,v)$
-  & $\#_i(\mathrm{BD}) \ge n{-}f$, $\mathit{Val}_i = \{0,1\}$,
+  & $\#_i(\mathrm{SL}) \ge n{-}f$, $\mathit{Val}_i = \{0,1\}$,
   & mark $i$ returned \\
- & & $\#_i(\mathrm{VT}\,v) \ge f{+}1$, & \\
- & & $\mathrm{BD}\,v \in \mathit{recv}(i,k)$ for some $k$, & \\
+ & & $\#_i(\mathrm{BD}\,v) \ge f{+}1$, & \\
+ & & $\mathrm{SL}\,v \in \mathit{recv}(i,k)$ for some $k$, & \\
  & & $\mathit{returned}_i$ false & \\
 \hline
 \texttt{retC} & $\mathrm{retG}(r,i,C)$
-  & $\#_i(\mathrm{BD}\,\bot) \ge n{-}f$, $\mathit{Val}_i = \{0,1\}$,
+  & $\#_i(\mathrm{SL}\,\bot) \ge n{-}f$, $\mathit{Val}_i = \{0,1\}$,
   & mark $i$ returned \\
  & & $\mathit{returned}_i$ false & \\
 \hline
@@ -1614,20 +1731,26 @@ Rule & Label & Guard & Effect \\
 \end{tabular}
 \end{center}
 
-The three \textbf{wait until} blocks of Algorithm~\ref{alg:gbca-impl} are the
+The four \textbf{wait until} blocks of Algorithm~\ref{alg:gbca-impl} are the
 guards of \texttt{voteBit}/\allowbreak\texttt{voteBot},
-\texttt{bindBit}/\allowbreak\texttt{bindBot} and
+\texttt{bindBit}/\allowbreak\texttt{bindBot},
+\texttt{sealBit}/\allowbreak\texttt{sealBot} and
 \texttt{retA}/\allowbreak\texttt{retB}/\allowbreak\texttt{retC}; the write-once fields
-$\mathit{sentEcho}$, $\mathit{sentVote}$, $\mathit{sentBind}$ carry the
-``not sent yet'' side conditions.
+$\mathit{sentEcho}$, $\mathit{sentVote}$, $\mathit{sentBind}$,
+$\mathit{sentSeal}$ carry the ``not sent yet'' side conditions.
 The three return rules are the three wait-until cases of the last block
-verbatim: case (a) is an $n{-}f$ $\mathrm{BIND}\,v$ quorum, case (b) an $n{-}f$
-any-$\mathrm{BIND}$ quorum containing $\mathrm{BIND}\,v$ together with $f{+}1$
-$\mathrm{VOTE}\,v$ receipts and $|\mathit{Valid}| > 1$, and case (c) an $n{-}f$
-$\mathrm{BIND}\,\bot$ quorum with $|\mathit{Valid}| > 1$.
+verbatim: case (a) is an $n{-}f$ $\mathrm{SEAL}\,v$ quorum, case (b) an $n{-}f$
+any-$\mathrm{SEAL}$ quorum containing $\mathrm{SEAL}\,v$ together with $f{+}1$
+$\mathrm{BIND}\,v$ receipts and $|\mathit{Valid}| > 1$, and case (c) an $n{-}f$
+$\mathrm{SEAL}\,\bot$ quorum with $|\mathit{Valid}| > 1$.
 Each reads the receipts its own case names and nothing else, and case (c)
 returns no bit.
-The $bind$ and $grade$ fields of Transition System~2 are abstractions of these
+The depth is what the grade-$1$ evidence buys (D18): $f{+}1$ $\mathrm{BIND}\,v$
+receipts exceed the corruption budget, so they put an honest $\mathrm{BIND}\,v$
+sender behind every grade-$1$ output, and that sender's own wait condition is an
+$n{-}f$ $\mathrm{VOTE}\,v$ quorum over the write-once $\mathrm{VOTE}$ level ---
+the object the binding argument of~\cite{ABDY22} counts.
+The $dead$ and $grade$ fields of Transition System~2 are abstractions of these
 receipt patterns and belong to the specification alone; the refinement below
 supplies them from the receipts.
 
@@ -1636,37 +1759,42 @@ supplies them from the receipts.
   \lean{PLTS.ABA.GBCA.implRefines}\leanok
   \uses{def:aba-gbca-impl, def:aba-subspecs}
   The GBCA implementation instance is forward-simulated, instance by instance, by the GBCA specification instance.
-  The relation reads the specification's $call$, $ret$ and $F$ off the implementation state and certifies its $bind$ and $grade$ by receipt quorums.
-  Binding is deferred to the first return: an $A$- or $B$-return met by an unbound specification state is answered by the two-step weak burst $\mathrm{bindSet};\mathrm{ret}$, and a run whose returns are all $C$-returns never binds.
+  The relation reads the specification's $call$, $ret$ and $F$ off the implementation state and certifies its $dead$ and $grade$ by receipt patterns: a \emph{kill certificate} for every member of $dead$, and an $n{-}f$ SEAL quorum for each side of the grade latch.
+  Kills are fired on demand: a return met by a specification state whose $dead$ lacks the bit that return needs excluded is answered by the two-step weak burst $\mathrm{bindUnset};\mathrm{ret}$, and every return row --- $C$-returns included --- does the same case split on $dead$, however many returns preceded it.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{def:aba-gbca-impl, def:aba-subspecs, def:forwardsim}
   We exhibit an LTS forward simulation of the implementation instance by the specification instance and check it constructor by constructor.
   The implementation state is the protocol's own data, so the specification's $call$, $ret$ and $F$ are read off it directly.
-  Its $bind$ and $grade$ are not stored by the protocol, and the relation carries receipt evidence for them instead.
-  A specification state bound to $v$ is certified by an $n{-}f$ $\mathrm{ECHO}\,v$ receipt quorum at some process.
-  An $A$-side grade lock is certified by an $n{-}f$ $\mathrm{BIND}\,v$ receipt quorum for some bit $v$, a $C$-side lock by an $n{-}f$ $\mathrm{BIND}\,\bot$ quorum.
-  All three certificates are $F$-blind and monotone in the delivered sets, so they survive every implementation step and every $\mathrm{fail}$.
+  Its $dead$ and $grade$ are not stored by the protocol, and the relation carries receipt evidence for them instead.
+  A member $b$ of $dead$ is certified by a \emph{kill certificate}: either an $n{-}f$ $\mathrm{ECHO}\,(1-b)$ receipt quorum at some process, or an $n{-}f$ wall of processes each corrupted or committed by its write-once $\mathit{sentVote}$ to a payload other than $b$.
+  An $A$-side grade lock is certified by an $n{-}f$ $\mathrm{SEAL}\,v$ receipt quorum for some bit $v$, a $C$-side lock by an $n{-}f$ $\mathrm{SEAL}\,\bot$ quorum.
+  All of these are $F$-blind and monotone in the delivered sets, in the write-once send slots and in $F$, so they survive every implementation step and every $\mathrm{fail}$; the relation bounds $dead$ from above only, never from below.
 
-  Consider an $A$- or $B$-return met by a specification state with $bind = \bot$.
+  Either kill certificate makes an $n{-}f$ $\mathrm{VOTE}\,b$ receipt quorum --- the sole gateway to grade-$\ge 1$ evidence for $b$ --- impossible forever.
+  For the first: any $\mathrm{VOTE}\,b$ quorum has an honest sender, whose own wait condition is an $n{-}f$ $\mathrm{ECHO}\,b$ quorum, and that quorum meets the certificate's $n{-}f$ $\mathrm{ECHO}\,(1-b)$ quorum in $(n-f)+(n-f)-n = n - 2f > f \ge |F|$ senders, hence in an honest one holding two $\mathrm{ECHO}$ payloads against the write-once $\mathit{sentEcho}$ field.
+  For the second: a later $n{-}f$ $\mathrm{VOTE}\,b$ quorum has all its honest members committed to $b$, so it meets the wall only inside $F$, giving $2(n-f) \le n + f$, that is $n \le 3f$.
+
+  Consider a return of $v$ met by a specification state with $1-v \notin dead$.
   Its own guard yields the certificate.
-  Case (a)'s $n{-}f$ $\mathrm{BIND}\,v$ quorum has more than $|F|$ senders, hence an honest one, whose $\mathrm{BIND}\,v$ is backed by an $n{-}f$ $\mathrm{VOTE}\,v$ quorum; case (b)'s $f{+}1$ $\mathrm{VOTE}\,v$ receipts likewise have an honest sender, whose $\mathrm{VOTE}\,v$ is backed by an $n{-}f$ $\mathrm{ECHO}\,v$ quorum.
-  That certificate supplies both guards of $\mathrm{bindSet}$.
-  Refine it once more to an $n{-}f$ $\mathrm{INPUT}\,v$ receipt quorum: its honest senders each hold an input (D8), which is the quorum guard, and $n - f \ge f + 1$ makes the same count the $f{+}1$ $\mathrm{SuppOK}(v)$ count (D15).
-  The return is then answered by the weak transition $\mathrm{bindSet};\mathrm{retA}$, resp.\ $\mathrm{bindSet};\mathrm{retB}$, whose leading $\tau$-step is absorbed by the $\tau$-closure of the weak step.
-  Every later return meets a bound specification state and is answered by a single specification return.
+  Case (a)'s $n{-}f$ $\mathrm{SEAL}\,v$ quorum has an honest sender, whose $\mathrm{SEAL}\,v$ is backed by an $n{-}f$ $\mathrm{BIND}\,v$ quorum; case (b)'s $f{+}1$ $\mathrm{BIND}\,v$ receipts exceed $|F|$ directly.
+  Either way an honest $\mathrm{BIND}\,v$ sender appears, and its wait condition is an $n{-}f$ $\mathrm{VOTE}\,v$ receipt quorum.
+  That quorum both certifies $1-v$ dead --- its members are each corrupted or committed to $v$, so it is itself the wall --- and refutes any certificate for $v$, which is the specification guard $v \notin dead$.
+  Refining it to an $n{-}f$ $\mathrm{ECHO}\,v$ and then $\mathrm{INPUT}\,v$ receipt quorum supplies both guards of $\mathrm{bindUnset}\,(1-v)$: its honest senders each hold an input (D8), which is the quorum guard, and $n - f \ge f + 1$ makes the same count the $f{+}1$ $\mathrm{SuppOK}(v)$ count at the spared bit (D15).
+  The return is then answered by the weak transition $\mathrm{bindUnset};\mathrm{retA}$, resp.\ $\mathrm{bindUnset};\mathrm{retB}$, whose leading $\tau$-step is absorbed by the $\tau$-closure of the weak step.
+  A return met by a state that already has $1-v \in dead$ is answered by a single specification return.
 
-  Value agreement is the crux.
-  At most one bit carries an $n{-}f$ $\mathrm{ECHO}$ receipt quorum.
-  Take quorums for $v$ and for $v'$: they have $(n-f) + (n-f) - n = n - 2f > f \ge |F|$ senders in common, hence a common honest sender, and an honest sender's $\mathrm{ECHO}$ payload is the one held in its write-once $\mathit{sentEcho}$ field, so $v = v'$.
-  The bit a return hands out therefore equals the bit already bound, which is what the $bind = v$ guards of $\mathrm{retA}$ and $\mathrm{retB}$ demand.
-  A/C exclusivity is the same intersection argument one layer up, on the write-once $\mathit{sentBind}$ field: an $n{-}f$ $\mathrm{BIND}\,v$ quorum and an $n{-}f$ $\mathrm{BIND}\,\bot$ quorum would meet in an honest process holding two $\mathrm{BIND}$ payloads, which is a contradiction.
+  Graded agreement needs no argument of its own here: it is the specification's guard pair, discharged per row by the refutation above for $v \notin dead$ and by the case split for $1-v \in dead$.
+  A/C exclusivity is the quorum-intersection argument at the $\mathrm{SEAL}$ level, on the write-once $\mathit{sentSeal}$ field: an $n{-}f$ $\mathrm{SEAL}\,v$ quorum and an $n{-}f$ $\mathrm{SEAL}\,\bot$ quorum would meet in an honest process holding two $\mathrm{SEAL}$ payloads.
   This discharges the grade guard of $\mathrm{retA}$ against the $C$-side certificate and that of $\mathrm{retC}$ against the $A$-side certificate.
 
-  A $C$-return needs no binding.
-  Its specification guards are the two $f{+}1$ supports and the $C$-side grade lock, so it is answered by the single step $\mathrm{retC}$ from a bound and from an unbound state alike.
-  Both supports come from its own $|\mathit{Valid}| > 1$ evidence: the $n{-}f$ $\mathrm{INPUT}$ receipt quorum for each bit sits at the returner itself, and $n - f \ge f + 1$.
+  A $C$-return names no bit, so its evidence certifies \emph{some} bit instead.
+  Its $n{-}f$ $\mathrm{SEAL}\,\bot$ quorum has an honest sender, backed by $n{-}f$ any-$\mathrm{BIND}$ receipts, hence an honest $\mathrm{BIND}$ sender $k$.
+  Split on whether any honest process ever voted a bit: if some honest $\mathrm{VOTE}\,b'$ exists, its $n{-}f$ $\mathrm{ECHO}\,b'$ quorum certifies $1-b'$; if none does, $k$ cannot have sent a bit $\mathrm{BIND}$, so it sent $\mathrm{BIND}\,\bot$ off $n{-}f$ any-$\mathrm{VOTE}$ receipts whose honest senders are all committed to $\bot$ --- a wall for both bits at once.
+  The kill is fired on that certified bit when $dead$ is still empty, and the specification's $|dead| \ge 1$ guard holds afterwards because insertion is nonempty; when $dead$ is already nonempty a single $\mathrm{retC}$ answers.
+  Which certified bit is picked never matters: a certified bit carries no return evidence in any extension, so no later row is obstructed by the choice.
+  The two $f{+}1$ supports come from the returner's own $|\mathit{Valid}| > 1$ evidence: the $n{-}f$ $\mathrm{INPUT}$ receipt quorum for each bit sits at the returner itself, and $n - f \ge f + 1$; the same evidence supplies the quorum guard of the kill.
   The $B$-return's dissent guard is the same harvest at the opposite bit.
   Each harvest passes through the invariant clause $input\_supp$: an honest multicast of $\langle\mathrm{INPUT},b\rangle$ is by a genuine holder of $b$, or already certifies $f{+}1$ distinct processes each a genuine holder of $b$ or corrupted.
   The clause is inductive because the first honest relayer's $f{+}1$ $\mathrm{INPUT}\,b$ receipt senders are each corrupted or genuine holders, and the count is monotone under every step.
@@ -1676,9 +1804,9 @@ supplies them from the receipts.
 
 \blueprintfig{fig-gbca-sim}{The GBCA instance forward simulation ($\mathrm{instRel}$): implementation rows above, specification-instance states below, dashed verticals the relation.
 The implementation call, the network deliveries (including Byzantine injection), and the graded returns align to the specification's $\mathrm{call}$, its stutter, and its graded returns, with $F$ aligned on both sides.
-Every delivery, relay, echo, and vote row maps to a specification stutter, and the implementation call maps to the specification call.
-The first $A$- or $B$-return is the one burst: it maps to the weak step $\mathrm{bindSet};\mathrm{ret}$, whose $f{+}1$ support is supplied by the $input\_supp$ invariant and whose bound bit is pinned by the ECHO-quorum certificate.
-A later return, and every $C$-return, maps to a single graded specification return.}
+Every delivery, relay, echo, vote, bind and seal row maps to a specification stutter, and the implementation call maps to the specification call.
+A return whose bit the specification has not yet excluded is a burst: it maps to the weak step $\mathrm{bindUnset};\mathrm{ret}$, whose $f{+}1$ support is supplied by the $input\_supp$ invariant and whose killed bit is pinned by the return's own kill certificate.
+Every return row does the same case split on $dead$, $C$-returns included, however many returns preceded it; a return whose kill has already happened maps to a single graded specification return.}
 
 \begin{theorem}[Family congruence and the GBCA family refinement]
   \label{thm:gbca-family-refines}
@@ -2130,11 +2258,11 @@ That composition is the product of Definition~\ref{def:syncproduct}, taken over 
   The state of process $j$ is the node $\mathrm{ProcNode}$: the local record $proc$, the outbox $out$, the inbox rows $inbox(k)$ indexed by sender, and $j$'s own copy of the corrupted set $F$.
   No field of the node names another process's record or pools.
   The automaton runs over the extended alphabet $\mathrm{Lab}(n) \oplus \mathrm{GNet}(n)$, where $\mathrm{net}(i,j,m)$ is the delivery of $m$ from sender $j$ to receiver $i$.
-  Its nineteen rules split the alphabet by role.
+  Its twenty-one rules split the alphabet by role.
   On the calls and returns it owns, $\mathrm{callG}\,r\,j\,b$ and $\mathrm{retG}\,r\,j\,g$, it runs the rule of that name in Algorithm~\ref{alg:gbca-impl}, together with the input-enabledness loop; on a call or return addressed to another process it idles.
   On $\mathrm{fail}(k)$ every automaton applies the corruption transform to its own copy of $F$, which is what keeps the copies equal.
   On $\mathrm{net}(i,j,m)$ the sender supplies the outbox guard $m \in out$ and does not move, the receiver files $m$ under row $j$ and carries no outbox guard, a process that is both supplies the guard and files the message, and a process that is neither idles.
-  The internal rules of Algorithm~\ref{alg:gbca-impl} --- the INPUT relay, the ECHO, VOTE and BIND multicasts, and the Byzantine injection of D5 --- carry $\tau$.
+  The internal rules of Algorithm~\ref{alg:gbca-impl} --- the INPUT relay, the ECHO, VOTE, BIND and SEAL multicasts, and the Byzantine injection of D5 --- carry $\tau$.
   Every guard reads the node alone.
   The composite is
   \[
@@ -2289,14 +2417,14 @@ Both rest on the functional matchings of Lemma~\ref{def:strongfunctional}, in wh
   \uses{def:aba-core-perproc, def:aba-gbca-perproc, def:relabel, def:syncproduct, def:aba-hybrids}
   The state of process $j$ is the node $\mathrm{ABANode}(n) = \mathrm{CoreNode}(n) \times (\mathbb{N} \to \mathrm{ProcNode}(n))$: the round-loop node of Definition~\ref{def:aba-core-perproc} together with one graded-agreement stage of Definition~\ref{def:aba-gbca-perproc} per round.
   The automaton $\mathrm{ABAProc}(P,j)$ runs over the extended alphabet $\mathrm{Lab}(n) \oplus \mathrm{FlatNet}(n)$, where $\mathrm{FlatNet}$ carries both networks: $\mathrm{gnet}(r,i,j,m)$ is the round-$r$ stage delivery of $m$ from $j$ to $i$, and $\mathrm{dnet}(i,j,b)$ the delivery of $j$'s $\langle\mathrm{DECIDED},b\rangle$ to $i$.
-  Its forty-one rules split the alphabet by role, and every transition is Dirac.
+  Its forty-three rules split the alphabet by role, and every transition is Dirac.
   On $\mathrm{callABA}(j,b)$ and $\mathrm{retABA}(j,b)$ only the round-loop half moves and no stage does.
   The two sub-protocol handshakes of round $r$ are the labels on which the round-loop half and the round-$r$ stage of the \emph{same} process move together, so each of them is one fused rule.
   A $\mathrm{callG}\,r\,j\,b$ fuses one of the two round-loop behaviours, honest or corrupted, with one of the two stage behaviours, the genuine call or the input-enabledness loop, which is four rules; a $\mathrm{retG}\,r\,j\,g$ fuses the two round-loop behaviours with the stage evidence that fixes the grade, which is six.
-  The $\mathrm{retG}$ rules are the only ones in which stage evidence guards a visible label.
+  The $\mathrm{retG}$ rules are the only ones in which stage evidence guards a visible label, and the evidence each of the six reads is the SEAL level of the round-$r$ stage node: an $n-f$ $\mathrm{SEAL}\,v$ receipt quorum for grade $A$, an $n-f$ any-$\mathrm{SEAL}$ count carrying a $\mathrm{SEAL}\,v$ witness together with $f+1$ $\mathrm{BIND}\,v$ receipts and $|Valid| > 1$ for grade $B$, and an $n-f$ $\mathrm{SEAL}\,\bot$ quorum with $|Valid| > 1$ for grade $C$.
   On $\mathrm{callW}\,r\,j$ and $\mathrm{retW}\,r\,j\,c$ the automaton carries the round loop's half alone, the oracle's half being supplied at the outer composition.
   On $\mathrm{fail}(k)$ the round-loop copy of the corrupted set and every stage copy are written at once.
-  Nine rules carry $\tau$: the DECIDED echo and the corrupted DECIDED injection of the round loop, and seven stage rules at an arbitrary round.
+  Eleven rules carry $\tau$: the DECIDED echo and the corrupted DECIDED injection of the round loop, and nine stage rules at an arbitrary round.
   Each of the two networks is a two-party rendezvous split into the self, sender, receiver and bystander roles, eight rules in all.
   Their guards differ by design: a DECIDED delivery is refused when the receiver already holds that payload from that sender, whereas a stage delivery carries no such guard, stage delivery being idempotent.
   A Byzantine guard is read off the copy of the corrupted set belonging to the half it drives.
@@ -2340,7 +2468,7 @@ Both rest on the functional matchings of Lemma~\ref{def:strongfunctional}, in wh
 \end{proof}
 
 \blueprintfig{fig-flat}{The flat presentation: the $n$ programs $\mathrm{ABAProc}(P,j)$ under $\mathrm{syncProduct}$, both networks hidden, the coin oracle beside the group.
-Each program holds one process's round loop and its stage of every round, and every guard of its forty-one rules reads that program's own node.
+Each program holds one process's round loop and its stage of every round, and every guard of its forty-three rules reads that program's own node.
 The inner dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{flatNetLabels}$: every $\mathrm{gnet}(r,i,j,m)$ and every $\mathrm{dnet}(i,j,b)$ becomes $\tau$, the sender supplying its guard and the receiver performing the write while every other program idles.
 The outer dashed frame is $\mathrm{abstract}_H$, which hides the coin handshake $\mathrm{callW}/\mathrm{retW}$ between the group and the oracle; what leaves it is the API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ together with $\tau$.
 The dashed vertical is Theorem~\ref{thm:aba-flat}: the flat hybrid and $\mathrm{hybridImpl}$ achieve the same trace distributions, along the graph of $\mathrm{unflat}$ and its converse.}
@@ -2350,7 +2478,7 @@ The flat presentation states the read-access claim in its sharpest form.
 Every implemented part of the protocol is $n$ programs.
 The round loop, the graded-agreement stage of each round, the DECIDED gossip and
 the stage network all sit inside $\mathrm{ABAProc}(P,j)$, and every guard of its
-forty-one rules is a function of $j$'s node.
+forty-three rules is a function of $j$'s node.
 Two things stay centralized.
 The first is the corruption budget, exactly as in the layer theorems: the guard
 $k \notin F \wedge |F| < f$ is evaluated on each program's own copy of $F$, and

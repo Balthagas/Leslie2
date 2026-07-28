@@ -42,6 +42,20 @@ supermartingales in Caesar):
   fair, consistent, and non-terminating — it merely has measure zero). Hence no purely
   qualitative fairness assumption yields per-run termination for ABA.
 
+**What binding contributes.** Every fair-termination argument for this protocol family
+turns on a precondition the coin cannot see: the round's value is fixed before the coin
+resolves, so a resolution matching it decides. That precondition is structural here rather
+than an assumption a liveness proof would have to carry. At the specification, GBCA's
+exclusion set `dead` only grows — its single writer inserts and corruption does not touch
+it — and both value-bearing returns demand `v ∉ dead ∧ !v ∈ dead`, so any two graded
+returns of one round hand out the same bit and a `C`-return pins a bit that no extension
+of the run hands out at grade ≥ 1: `retG_value_agree`, `specInst_binding`,
+`retC_dead_nonempty` (`ABA/GBCASafety.lean`), each from monotonicity alone, no invariant.
+At the implementation the encoding is ABDY22's Algorithm 6 in full (D18), whose Binding
+the paper proves. The precondition is therefore available on both sides of the refinement,
+and a liveness effort inherits it rather than re-deriving it; what it must supply is the
+probabilistic part, the race between the coin's `ε` mass and the `δ_f` failure mass.
+
 In this repo's terms: the statement lives naturally at the trace-distribution level —
 "every fair-achievable trace distribution of `ABA.spec` gives mass at least
 `1 − g(ε, δ_f)` to traces where every honest process fires `retABA`" — and such mass

@@ -1,4 +1,6 @@
-% GBCA implementation instance (PLTS.ABA.GBCA.implInst). Stage automaton.
+% GBCA implementation instance (PLTS.ABA.GBCA.implInst). Stage automaton,
+% ABDY22 Algorithm 6 in full (D18): five message levels, the returns reading
+% SEAL quorums with f+1 BIND v as the grade-1 witness.
 \begin{tikzpicture}[
     ->, >={Stealth[round]}, auto, semithick, on grid,
     every state/.style={draw, ellipse, minimum width=1.7cm, minimum height=0.9cm,
@@ -10,21 +12,26 @@
   \node[state] (ech) at (3.0,0)  {ECHO\,$b$};
   \node[state] (vot) at (6.0,0)  {VOTE\,$v$};
   \node[state] (bnd) at (9.0,0)  {BIND\,$v$};
-  \node[ret]   (ra)  at (12.2,1.6)  {ret\,$A\,b$};
-  \node[ret]   (rb)  at (12.2,0)    {ret\,$B\,b$};
-  \node[ret]   (rc)  at (12.2,-1.6) {ret\,$C$};
+  \node[state] (sea) at (9.0,-2.2) {SEAL\,$v$};
+  \node[ret]   (ra)  at (11.7,-0.6)
+    {ret\,$A\,b$\\[1pt]{\scriptsize $n{-}f$ SEAL\,$b$}};
+  \node[ret]   (rb)  at (11.7,-2.2)
+    {ret\,$B\,b$\\[1pt]{\scriptsize $f{+}1$ BIND\,$b$}};
+  \node[ret]   (rc)  at (11.7,-3.8)
+    {ret\,$C$\\[1pt]{\scriptsize $n{-}f$ SEAL\,$\bot$}};
   \path
     (inp) edge node[lbl, above]{$n{-}f$} (ech)
     (ech) edge node[lbl, above]{$n{-}f$} (vot)
     (vot) edge node[lbl, above]{$n{-}f$} (bnd)
+    (bnd) edge node[lbl, right]{$n{-}f$} (sea)
     (inp) edge[loop above, looseness=5]
       node[lbl, above]{relay $f{+}1$} (inp)
-    (bnd) edge node[lbl, sloped, above]{$n{-}f$ BIND\,$b$} (ra)
-    (bnd) edge node[lbl, above]{$f{+}1$ VOTE\,$b$} (rb)
-    (bnd) edge node[lbl, sloped, below]{$n{-}f$ BIND\,$\bot$} (rc);
-  % D5 network side box, below the row
+    (sea) edge (ra)
+    (sea) edge (rb)
+    (sea) edge (rc);
+  % D5 network side box, below the message row
   \node[draw, dashed, rounded corners, align=left, font=\footnotesize,
-        below=1.9cm of vot, minimum width=8.2cm, inner sep=5pt] (net)
+        minimum width=8.2cm, inner sep=5pt] (net) at (3.4,-3.4)
     {\textbf{D5 network} (per-sender sent/recv sets):\ \ adversary $\mathrm{deliver}$,\ \ byz inject $j\in F$};
   \draw[dotted, ->] (net.north) -- (vot.south);
 \end{tikzpicture}

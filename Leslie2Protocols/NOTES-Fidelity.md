@@ -1,8 +1,9 @@
 # Fidelity — the encoding against its sources
 
 A registry of the places where the ABA encoding and the artifacts it answers to do not
-coincide, restricted to divergences carrying no D-number, for a reader holding the
-sources open beside the Lean.
+coincide, restricted to divergences carrying no D-number — together with §1, the one
+place where the two sources disagree with each other and the encoding must pick a side —
+for a reader holding the sources open beside the Lean.
 
 **Two sources, in a chain.** The *source blueprint* — "Verifying ABA with Leslie",
 `Papers/Leslie_blueprint.pdf` — supplies the transition systems (TS 1 = ABA, TS 2 =
@@ -10,55 +11,73 @@ GBCA, TS 3 = WCC, pp. 18–19) and the pseudocode (Algorithm 1 = the ABA core, p
 Algorithm 2 = GBCA, p. 15). It in turn adapts *ABDY22* (Abraham, Ben-David and
 Yandamuri, PODC 2022), whose Algorithm 6 is the GBCA of record. The encoding follows the
 source blueprint; where the source blueprint departs from ABDY22 the encoding inherits
-the departure.
+the departure, with the single exception of §1.
 
-**The D-registry is elsewhere.** The catalogued deviations — D1, D3–D5, D8–D16, D12
+**The D-registry is elsewhere.** The catalogued deviations — D1, D3–D5, D8–D19, D12
 refined to D12′ — are cited at the point of use in the ABA module docstrings, summarised
 in `ABA/README.md`, and listed in the blueprint chapter (the Deviations paragraph of `blueprint/src/content.tex`).
 
-## 1. The inherited algorithmic gap
+## 1. Where the encoding follows ABDY22 against the source blueprint
 
-The one substantive item. The verified GBCA implementation (`GBCA.ImplStep`) is the
-source blueprint's **four-round** form of ABDY22's five-round Algorithm 6: the fifth
-echo round is elided and the decide conditions read one message level down —
-`ImplStep.retB`'s `hvote : f + 1 ≤ recvCount id (VOTE v)` (`GBCAImpl.lean:413`) sits
-where ABDY22 reads `t + 1` fourth-round echoes at the fifth. Graded agreement and
-validity go through for the four-round form under `n > 3f`, and `implRefines`
-(`GBCASim.lean:1306`) machine-checks it against TS 2, so no theorem here is false; the
-gap is one of attribution, the source blueprint presenting Algorithm 2 as ABDY22's.
-Annotation lives in `GBCAImpl.lean`'s module docstring (lines 15–23), in the
-blueprint chapter's caption for Algorithm 2 (`blueprint/src/content.tex:1243`), and in
-the source blueprint's own TeX (`Leslie/blueprint/src/sections/Algorithm.tex:35`, a red
-note on Algorithm 2); the source's PDF caption reads "Implementation of GBCA from
-[ABDY22]" with no such note.
+The one substantive item, and the one place the encoding parts from the source blueprint
+rather than inheriting its parting from ABDY22.
 
-Closing the gap is an available option, not a plan: re-encode the stage automaton per
-Algorithm 6 — a fifth message kind, a fifth send rule, return guards one level up — and
-re-prove `implRefines`. The lazy-bind *shape* survives, being indifferent to how many
-stages precede a return: the specification's `bind`/`grade` carried as receipt
-certificates (`bind_cert`, `gradeA_ev`, `gradeC_ev`, `GBCASim.lean:1100–1108`) with
-`bindSet` fired inside the weak step at the first `A`/`B`-return
-(`firstRetA_burst`/`firstRetB_burst`, `GBCASim.lean:1237`, `:1256`). The per-stage
-skeleton does not: `Inv`'s rows come one pair per message kind (`echo_conf`/`echo_once`,
-`vote_conf`/`vote_input`, `bind_once`/`bind_conf`, `GBCASim.lean:218–236`), and the
-harvest lemmas walking them down to `INPUT` receipts (`echoQuorum_of_vote_receipts`
-through `bindSet_guards`, `GBCASim.lean:1040`–`:1182`) name the stage they refine at
-each hop. Both would be re-indexed rather than reused.
+The verified GBCA implementation (`GBCA.ImplStep`) transcribes **ABDY22's Algorithm 6 in
+full** — six rounds, the message levels INPUT, ECHO, VOTE, BIND, SEAL (the paper's `echo`
+through `echo5`), and that algorithm's three decide conditions, `retA` an `n − f`
+`SEAL v` receipt quorum, `retB` an `n − f` any-`SEAL` quorum containing `SEAL v` with
+`f + 1` `BIND v` receipts and `|Valid| > 1`, `retC` an `n − f` `SEAL ⊥` quorum with
+`|Valid| > 1`. That is deviation **D18**, and what it departs from is the source
+blueprint's Algorithm 2, a **four-round compression** of Algorithm 6: the `echo5` level
+elided, the decide conditions read one message level down, and `f + 1` `VOTE v` receipts
+as the grade-1 witness where Algorithm 6 reads `f + 1` `BIND v`.
+
+The compression is not merely shallower; it violates the paper's Graded Binding. One
+process held at the echo stage through a grade-0 decision can afterwards direct its
+write-once echo at either bit, and one corruption completes the `f + 1` `VOTE v` count
+for the bit of the adversary's choice, so two extensions of a single `C`-return hand out
+two different bits and no binding-faithful specification simulates the compression. The
+concrete violation at `n = 4, f = 1` is written out in `DESIGN-GBCASim.md`. At the D18
+evidence level the same attack dies: `f + 1 > |F|` `BIND v` receipts put an honest
+`BIND v` sender behind every grade-≥1 output, hence an `n − f` `VOTE v` receipt quorum
+over the write-once `VOTE` level — and that quorum is the object the paper's binding
+argument counts (Lemmas 4.8/4.9 through E.9).
+
+Annotation lives in `GBCAImpl.lean`'s module docstring, in the blueprint chapter's caption
+for the algorithm and its D18 registry entry, and in the source blueprint's own TeX
+(`Leslie/blueprint/src/sections/Algorithm.tex`, a red note at Algorithm 2's decide
+conditions); the source's PDF caption reads "Implementation of GBCA from [ABDY22]" with no
+such note.
+
+On the specification side the matching item is **D19**. TS 2's bound value
+`bind ∈ {0,1,⊥}` is replaced by the exclusion set `dead : Finset Bool`, the bits the
+instance can no longer hand out (`GBCASpec.lean`). The bound value embeds — `bind = ⊥` as
+`dead = ∅`, `bind = b` as `dead = {!b}` — and the embedding is not onto: `dead = {0,1}`,
+where no bit is available at all, denotes no bound value. `dead` is monotone and
+write-once per bit, so Graded Agreement is the return guard pair `v ∉ dead ∧ !v ∈ dead`
+and Binding is the `C`-return guard `1 ≤ dead.card`, both proved from monotonicity alone
+in `GBCASafety.lean` (`retG_value_agree`, `specInst_binding`, `retC_dead_nonempty`) with
+no auxiliary invariant.
+
+A transcription question of ABDY22's own: the prose preceding Algorithm 6 says "upon
+receiving `echo4` messages from `2t + 1` parties" where the pseudocode's lines 19–20 say
+`n − t`. The two coincide only at `n = 3t + 1`; the encoding follows the pseudocode
+(`n − f`).
 
 ## 2. Interpretation-level readings
 
-**"Received once."** Algorithm 2's wait case (b) requires that "⟨BIND, b⟩ has been
+**"Received once."** The wait case (b) of Algorithm 6 requires that "⟨echo5, b⟩ has been
 received once". `ImplStep.retB` reads this as *from at least one sender*: `honce : ∃ k,
-Msg.bind (some v) ∈ s.recv id k` (`GBCAImpl.lean:412`), not as a cardinality constraint
-of exactly one receipt. The hypothesis is a genuine part of the rule, reproduced
-verbatim per-process (`GBCAProc.lean:189`, `FlatABA.lean:197`, `:228`), but no proof
-consumes it: the refinement's `retB` rows bind it and leave it unused
-(`GBCASim.lean:912`, `:1521`), discharging the `B`-return's specification-side guards
-from `hvote` and `hval` instead. Either reading supports the same theorems.
+Msg.seal (some v) ∈ s.recv id k` (`GBCAImpl.lean:467`), not as a cardinality constraint
+of exactly one receipt. The hypothesis is a genuine part of the rule, carried through the
+per-process and flat renderings, which mirror `ImplStep` rule for rule, but no proof
+consumes it: the refinement's `retB` rows bind it and leave it unused, discharging the
+`B`-return's specification-side guards from the `f + 1` `BIND v` receipts and `hval`
+instead. Either reading supports the same theorems.
 
 **Terminating `return` as state.** The pseudocode's `return` ends the process; the
-encoding renders that as a fire-once flag — `ProcState.returned` (`GBCAImpl.lean:97`),
-guarded at all three GBCA returns (`GBCAImpl.lean:405`, `:415`, `:423`), and
+encoding renders that as a fire-once flag — `ProcState.returned` (`GBCAImpl.lean:127`),
+guarded at all three GBCA returns (`GBCAImpl.lean:458`, `:470`, `:478`), and
 `ProcCore.returned` (`Core.lean:135`), guarded at `CoreStep.ret` (`Core.lean:474`). The
 guard has no surface counterpart in Algorithm 1 or Algorithm 2, which name no such
 variable; the control-flow fact it expresses does. (At specification level it is no
@@ -71,7 +90,7 @@ encoding's set-based authenticated model is D5 and the DECIDED pools are D12′;
 belongs here is the asymmetry *between* the two networks. `CoreStep.deliver` carries a
 freshness guard `hr : b ∉ s.decidedRecv i j` (`Core.lean:454`); `ImplStep.deliver`
 carries no counterpart, its only hypothesis being soundness `h : m ∈ s.sent j`
-(`GBCAImpl.lean:343`). Both are sound for the same reason — receipt sets are `Finset`s
+(`GBCAImpl.lean:378`). Both are sound for the same reason — receipt sets are `Finset`s
 and re-delivery is `insert` into a set, so the guard removes redundant transitions
 rather than reachable states — and the asymmetry reappears exactly in the per-process
 automata, each guard splitting across the two ends of a rendezvous: the DECIDED halves
@@ -89,15 +108,17 @@ carry it (`CoreProcStep.netSelf`/`netRecv`, `CoreProc.lean:362`, `:371`;
   `1,0,0,0` at `n = 4, f = 1`.
 - **TS 2's singular binding witness** (`∃ id ∉ F, call[id] = b`, source p. 19) loses
   provenance one level down, and `hybridSpec` over it violates Validity; the
-  deterministic trace is in `GBCASpec.lean`'s docstring (lines 29–49). Both TS 1
-  defects and this one are annotated in the source blueprint's TeX
+  deterministic trace is in `GBCASpec.lean`'s docstring (the D14 entry, lines 65–75).
+  Both TS 1 defects and this one are annotated in the source blueprint's TeX
   (`Leslie/blueprint/src/sections/Specification.tex`, red notes at the affected
   rules). D14 and D15
   replace every such witness with an `F`-blind count.
+- **Algorithm 2 violates Binding**, being a four-round compression of ABDY22's
+  Algorithm 6; the encoding follows Algorithm 6 instead (D18) — §1.
 - **The Graded Agreement clause is ill-typed** as stated: "if two correct processes
   return `(b, X)` and `(b′, X′)` then `b = 0 ⟹ b′ ≠ 1` and `X = A ⟹ X′ ≠ ⊥`" (p. 6),
   with `⊥` in a grade slot ranging over `{A, B, C}`. It reads as grade `C`, and is
-  realized as the `grade` latch's `A`/`C` exclusivity (`GBCASpec.lean:128`, `:140`).
+  realized as the `grade` latch's `A`/`C` exclusivity (`GBCASpec.lean:181`, `:195`).
 - **TS 1's `Initial` clause names an undeclared field** `out` (source p. 18), absent
   from the same system's `State` line. It is omitted (`Spec.lean:48`).
 

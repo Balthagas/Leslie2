@@ -46,8 +46,10 @@ keyed on `a.val`, and moves only at the visible `retABA` that opens phase 2.
     (`∀ id, a.call id = (c.procs id).input`), and the ghost is synced on every committed
     input (`∀ id b, (c.procs id).input = some b → a.input id = some b`).
   - **Phase 2** (post-first-return): `∃ v, a.bind = some v ∧ a.val = some v`, the board
-    is clear (`∀ id, a.call id = none`), and `v` is permanently certified by a concrete
-    `A`-lock (`∃ r, (g r).grade = some true ∧ (g r).bind = some v`).
+    is clear (`∀ id, a.call id = none`), `v` is permanently certified by a concrete
+    `A`-lock (`∃ r, ACert P g c r v` — § Certificates), and every honest holder of an
+    `A`-decision names `v` (`∀ j b', j ∉ c.F → AHolder P c j b' → b' = v`, the `F`-free
+    universal that survives corruption of the original witnesses).
 
 Phase 1 banks each genuine `callABA` with rule 1, whose unconditional ghost overwrite
 keeps `a.input` in step with the concrete inputs; the twin stays fully unbound and
@@ -59,13 +61,60 @@ good, so every later row is a stutter or a direct rule-8 return.
 ### The frame lemma
 
 `Abs` reads only three projections of the concrete state: `F`, the per-process
-`input`/`returned` fields, and the `g`-side `A`-lock certificate. `Abs.frame` packages
-exactly this — `Abs` transfers along any frame preserving `F`, `input`, `returned`, and
-(weakly, up to the certificate existential) the `A`-locks — and `Abs.w_swap` is the
+`input`/`returned` fields, and phase 2's certificate-and-holder pair. `Abs.frame` packages
+exactly this — `Abs` transfers along any frame preserving `F`, `input`, `returned` and
+carrying an `AbsFrame` (§ Certificates) for the last — and `Abs.w_swap` is the
 `w`-only corollary, since the twin never reads the coin state. Together they replace the
 per-row stutter arguments: every hidden row preserves the three projections, so its
 `Abs`-match is one `Abs.frame`/`Abs.w_swap` invocation rather than a bespoke
 re-derivation (the six Stage-C stutter lemmas of `CoreSimRel.lean` are all instances).
+
+### Certificates: burned rounds and what survives them
+
+Under D19 a GBCA round records exclusion, not a bound value: `(g r).dead : Finset Bool`
+grows one bit at a time by `bindUnset`, and a value-bearing return needs the *live pair*
+`(!v) ∈ (g r).dead ∧ v ∉ (g r).dead`. The pair is not permanent. A second `bindUnset`
+at the same round is enabled after that return — its guards are a quorum, `f + 1`
+F-blind support for the spared bit, and that bit not yet dead, none of which the return
+disturbs — so `dead = {0, 1}` is reachable at a round that has already handed out `v`.
+Such a **burned** round still carries `grade = some true`, but its exclusion set no
+longer names `v`. Every fact about a decided value therefore has to be stated in a form
+that a burn cannot erase.
+
+- **`ACommit P g c r b`** — the permanent commitments of an `A`-locked round: every
+  later round's live pair, every honest call above `r`, every honest est past `r`, and
+  every honest `Carrier` of round `r`'s outcome names `b`. `Carrier` is the outcome-holder
+  predicate — a round-`(r + 1)` GBCA call of `v`, or a committed est of `v` in the window
+  between `retG r` and `retG (r + 1)`. Each component is monotone-stable: the first only
+  loses instances as `dead` grows, the rest read write-once `call` and honest `procs`
+  fields.
+- **`ACert P g c r b`** := `(g r).grade = some true ∧ (!b) ∈ (g r).dead ∧ ACommit P g c r b`
+  — an `A`-locked round whose surviving bit at lock time was `b`, plus those commitments.
+  `(!b) ∈ dead` is permanent (`dead` only grows), so a certificate names `b` forever even
+  after the round burns. This, not a live pair, is what `Inv.decided_src` and
+  `Inv.grade_A_src` produce and what phase 2 of `Abs` holds. `ACommit.of_frame` /
+  `ACert.of_frame` transport both along any step that keeps `dead`, `call`, honest
+  `round`/`est` and reflects carriers.
+- **`Inv.dead_supp` (I28)** — every kill keeps its D15 guard: `b ∈ (g r).dead` implies
+  `f + 1` F-blind call support for the spared bit `!b` at round `r`. Both `call` and `F`
+  only grow, so the count is permanent, and `GBCA.exists_honest_caller` harvests it into a
+  never-corrupted caller of `!b`. That harvest is what recovers the value of a burned
+  round from its residue.
+- **`Inv.carrier_agree` (I29)** — any two honest carriers of round `r`'s outcome agree,
+  unless the round is `C`-locked. This is the state residue of the order argument "two
+  opposite value-bearing returns cannot both fire at one round": the first kills the
+  rival bit, and the second's liveness guard then fails. The exclusion set forgets that
+  argument once the round burns; the conjunct remembers it.
+- **`Inv.alock_agree` (I30)** — any two honest `AHolder`s agree globally, across rounds,
+  where `AHolder P c id b` is a live `A`-grade `lastGrade = some (.A b)` or a pooled
+  `b ∈ decidedSent id`. Each new holder is compared at its own `retG` row, where the
+  fresh return's live pair meets the existing holder's certificate.
+- **`AbsFrame P g g' c c'`** — the `Abs`-side transport a step row hands back: every
+  `ACert` on the pre-state has an `ACert` on the post-state, and phase 2's holder
+  universal survives given its certificate. `AbsFrame.refl` covers every row that touches
+  neither certificates nor holders. Each `Inv.step_*` lemma returns `Inv ∧ AbsFrame`,
+  and `Abs.frame` consumes exactly that; the certificate is what pins a *fresh* holder
+  in the corner where every original witness has been corrupted away.
 
 ## Row dispositions
 
@@ -74,18 +123,19 @@ Concrete steps are read through the step-inversion lemma for
 
 | concrete row | label | abstract answer |
 |---|---|---|
-| every hidden handshake (`callG`/`retG`/`callW`/`retW`), `bindSet`, DECIDED gossip τ | τ | stutter (`Abs.frame`; only `Inv` moves) |
+| every hidden handshake (`callG`/`retG`/`callW`/`retW`), `bindUnset`, DECIDED gossip τ | τ | stutter (`Abs.frame`; only `Inv` moves) |
 | **every** `WCC_r` coin flip | τ | constant-coupled stutter `ω := wccPMF.map (fun _ => pure a)` (`Abs.w_swap`; the twin never flips) |
 | `callABA id b`, phase 1, genuine (idle-exit input) | `callABA id b` | rule 1 (banks the concrete input into `a.call` and the ghost) |
 | `callABA id b`, otherwise (phase 2, or a self-loop re-call) | `callABA id b` | rule 2 (first-write-wins; no `Abs`-field change) |
 | `retABA id b`, phase 1 | `retABA id b` | `decide_burst` then rule 8 (`weakStep_of_burst_then_step`) — see below |
-| `retABA id b`, phase 2 | `retABA id b` | rule 8 directly (`commit_up` pins `b = v`) |
+| `retABA id b`, phase 2 | `retABA id b` | rule 8 directly (phase 2's holder universal, applied to the harvested honest DECIDED sender, pins `b = v`) |
 | `fail id` | `fail id` | rule 9 (same corrupt guard via `F_eq`; robust in both phases) |
 
 The single burst is `decide_burst` (`CoreSim.lean`), fired at the phase-1 `retABA`. From
 an unbound, undecided twin with `coin = ⊥`, a quorum on the standing calls, and `f + 1`
 call-and-ghost-or-`F` material for the returned bit `b` (supplied by the concrete pool
-`Inv.bind_supp` at the `A`-locked round, transferred through phase 1's call/ghost sync),
+`Inv.bind_supp`, read at the round of the harvested `ACert` off its permanent residue
+`(!b) ∈ dead`, and transferred through phase 1's call/ghost sync),
 it reaches `bind = val = some b` with the board clear:
 
 - (i) if no honest call dissents from `b`, one rule-3 step decides outright;
@@ -156,21 +206,25 @@ recorded input is a genuine prior `callABA`.
 
 ### D14 — TS 2 Validity (SuppOK guards)
 
-The blueprint's TS 2 certifies `bindSet` by a *single* honest witness
+The blueprint's TS 2 certifies its binding step by a *single* honest witness
 (`∃ id ∉ F, call id = b`), and `B`/`C` dissent by a single honest dissenter — the same
 singular-witness provenance loss one level down, and `hybridSpec` built on it provably
 violates Validity (§ Why this shape). ABDY22's implementation carries the `f + 1` via
 Valid-set relay thresholds; TS 2 abstracts it to one witness.
 
 `GBCASpec.lean` instead uses TS 1's `SuppOK` shape at every provenance guard, as a count
-`f + 1 ≤ #{id | call id = some b ∨ id ∈ F}` at the bit that guard is about:
+`f + 1 ≤ #{id | call id = some b ∨ id ∈ F}` at the bit that guard is about. Binding here
+is negative (D19): the state carries `dead : Finset Bool`, the bits the instance can no
+longer hand out, and the internal τ-transition `bindUnset b` kills one bit at a time,
+write-once per bit and `dead` monotone.
 
-- `bindSet` counts support for the bit it binds;
-- `retB` counts support for the dissenting bit `!v`, alongside `bind = some v` for the
-  bit it hands out;
-- `retC` hands out no bit and reads no `bind` at all: it carries one such count for
-  **each** bit — which is exactly what certifies that no single bit is the right answer —
-  plus the `C`-side grade latch enforcing A/C exclusivity.
+- `bindUnset b` counts support for the bit it spares, `!b`, alongside a quorum on the
+  calls and `b ∉ dead`;
+- `retB v` counts support for the dissenting bit `!v`, alongside the live pair
+  `v ∉ dead ∧ (!v) ∈ dead` for the bit it hands out — the same pair `retA v` reads;
+- `retC` hands out no bit and reads no live pair at all, only `1 ≤ dead.card`: it carries
+  one such count for **each** bit — which is exactly what certifies that no single bit is
+  the right answer — plus the `C`-side grade latch enforcing A/C exclusivity.
 
 Directly `F`-blind — the count is monotone in `F` and `call`, so it is
 immune to later `fail`s — and the budget pigeonhole transfers verbatim: among `f + 1`
@@ -193,10 +247,14 @@ Preservation: `call` adds a holder; a `relay`'s `f + 1` receipt senders are each
 senders are in `F`; `fail` grows the count and shrinks the triggers; the count is
 monotone throughout. The harvest splits by D14 site.
 
-- The `bindSet` count rides on the relation's `bind_cert`, which the implementation return
-  supplies from its own receipts (`echoQuorum_of_bind_quorum` for case (a),
-  `echoQuorum_of_vote_receipts` for case (b)). `bindSet_guards` gets *both* `bindSet`
-  guards out of that one `n − f` `ECHO v` certificate: refine it to an `n − f` `INPUT v`
+- The `bindUnset` counts ride on the relation's `dead_cert`, which bounds `dead` from
+  above by a monotone *kill certificate* `DeadCert P s b` (the opposite bit owns the
+  unique `n − f` `ECHO` receipt quorum, or an `n − f` wall of processes is each corrupted
+  or committed to a non-`b` `VOTE` payload — the two ways an `n − f` `VOTE b` quorum is
+  made impossible forever). The implementation return supplies the `ECHO` certificate from
+  its own receipts (`echoQuorum_of_bind_quorum` for case (a), `echoQuorum_of_vote_receipts`
+  for case (b)). `bindUnset_guards` gets *both* `bindUnset` guards out of that one `n − f`
+  `ECHO v` certificate: refine it to an `n − f` `INPUT v`
   receipt quorum (`inputQuorum_of_echoQuorum`), whose honest senders hold an input
   (`input_called`, D8) — that is the quorum guard (`quorum_of_msg_quorum`) — and whose
   count feeds `Inv.supp_of_input_receipts` for the `f + 1` SuppOK count.
@@ -210,10 +268,12 @@ monotone throughout. The harvest splits by D14 site.
 superset guards need nothing from the concrete relation but the honest slots it already
 mirrors.
 
-Since the specification binds by an internal τ-transition, an implementation return
-meeting a still-unbound specification state is answered by the two-step weak burst
-`bindSet ; retA` (resp. `bindSet ; retB`), `firstRetA_burst`/`firstRetB_burst`; `retC`
-reads no `bind`, so a run whose only returns are `C` leaves the specification unbound.
+Since the specification kills by an internal τ-transition, an implementation return
+meeting a specification state whose needed bit is not yet dead is answered by the
+two-step weak burst `bindUnset (!v) ; retA v` (resp. `; retB v`),
+`killThenRetA_burst`/`killThenRetB_burst`. `retC` reads no live pair, but it does need
+`1 ≤ dead.card`, so it too takes the burst (`killThenRetC_burst`) from an all-alive
+state; every return row runs the same decidable case split on `dead`.
 
 ### D12′ — the DECIDED equivocation gap
 
@@ -236,28 +296,36 @@ phase 2's `Abs` certificate need.
 
 ## `Inv`: the concrete invariant (`CoreSimRel.lean`)
 
-Roughly thirty conjuncts (names as in the code), grouped:
+Thirty-nine fields, docstring-numbered I1–I30 (a few numbers cover a small group of
+fields), grouped:
 
 - **F-lockstep**: `F_g`, `F_w` (every instance's `F` equals `c.F`), `F_card`.
 - **Round structure**, keyed throughout on
-  `Closed g r := (g r).bind ≠ none ∨ (g r).grade = some false` — "round `r` is finished",
-  which is strictly weaker than "round `r` is bound", since a `C`-return is bind-free:
+  `Closed g r := (g r).dead ≠ ∅ ∨ (g r).grade = some false` — "round `r` is finished",
+  which is strictly weaker than "round `r` has killed a bit", since a `C`-return kills
+  nothing itself:
   `down_closed` (closed rounds downward-closed), `quiescent` (cofinitely many rounds open),
   `round_bound`, `call_round`, `w_call_round`, `w_bound`/`w_called` (flips/W-calls only at
   closed rounds), `w_order`, `round_flip`. `Closed.congr`/`Closed.of_frame` are the two
   transport lemmas every row's frame facts feed.
 - **Input/est provenance**: `input_g0`, `input_g0_perm`, `input_called`, `phase_input`,
-  `est0`, `est_ret`, `est_prev`, `est_prev_ne`, `call_prov`, `bind_succ` (a later bind's
-  value has provenance in the previous round's bind/`C`-lock or dissent), `c_chain`.
-- **Locks and DECIDED**: `a_commit` (an `A`-lock at bind `b` forces every later bound
-  round to bind `b`, honest ests to `b`, honest DECIDEDs to `b`), `agree_locked`,
-  `gradeA_needs_bind` (A-side only: `retA` reads the bound value, so an `A`-graded round
-  has bound — a `C`-lock reads no `bind` and constrains none), `grade_A_src`,
-  `decided_src` and `recv_sound` (both in their D12′ per-bit, honesty-free forms — see
-  above), `bound_quorum`.
-- **Support pools**: `bind_supp` (I26) — every bound round's value carries a permanent
-  `f + 1` input-or-`F` pool (`InputSupp`, the concrete mirror of TS 1's V-P1), established
-  at `bindSet` — and `clock_supp` (I27), which keeps a `C`-locked round's `retC` guards
+  `est0`, `est_ret`, `est_prev`, `est_prev_ne`, `call_prov`, `bind_succ` (a bit killed at
+  round `r + 1` was already dead at round `r`, or round `r` closed `C`-locked with the
+  coin pinning the adopted value), `c_chain`.
+- **Locks and DECIDED**: `a_commit` (an `A`-locked round whose surviving bit `b` is still
+  alive yields `ACommit` for `b` — the live-pair form, which weakens vacuously once the
+  round burns), `agree_locked` (keyed on the frontier reading
+  `IsLastBound g r := (g r).dead ≠ ∅ ∧ (g (r + 1)).dead = ∅`), `gradeA_needs_bind`
+  (A-side only: `retA` reads the live pair, so an `A`-graded round has a non-empty
+  exclusion set — a `C`-return reads no pair and constrains none), `grade_A_src` and
+  `decided_src` (both producing an `ACert`, the burn-proof form), `recv_sound` (D12′
+  per-bit and honesty-free — see above), `bound_quorum`.
+- **Certificates**: `dead_supp` (I28), `carrier_agree` (I29), `alock_agree` (I30) — the
+  three conjuncts that survive a burned round; see § Certificates.
+- **Support pools**: `bind_supp` (I26) — a round whose exclusion set names `!v` carries a
+  permanent `f + 1` input-or-`F` pool for `v` (`InputSupp`, the concrete mirror of TS 1's
+  V-P1), established
+  at `bindUnset` — and `clock_supp` (I27), which keeps a `C`-locked round's `retC` guards
   themselves: `f + 1` F-blind call-or-`F` support for *each* bit, in count form. Both are
   permanent and monotone (`call` and `F` only grow). `supp_of_call_count` reads any such
   count back as an input pool by strong induction on the round — round 0 wholesale via
@@ -268,8 +336,9 @@ Roughly thirty conjuncts (names as in the code), grouped:
   what keeps a `C`-lock incompatible with an `A`-lock below it
   (`no_alock_below_both_supports`) and with an agreeing coin underneath it
   (`no_cgrade_succ_of_supp`), and what forces a `C`-lock one round down
-  (`c_chain_of_both_supports`): honest callers of both bits cannot both take `call_prov`'s
-  bind disjunct, since a round binds at most one value.
+  (`c_chain_of_both_supports`): `exists_honest_caller` turns the two counts into honest
+  round-`(r + 1)` callers of opposite bits, which are opposite-valued carriers of round
+  `r`'s outcome, and `carrier_agree` admits those only at a `C`-locked round.
 - **Dissent bookkeeping**: `flip_alock`, `retg_residue`, `wcalled_residue`,
   `idle_no_wcall`, each keyed on the permanent `F`-free `DissentResidue` (with its
   `transport` lemma for frame-agnostic preservation). The support pools `bind_supp`/
@@ -305,9 +374,10 @@ recording them is what pins the design.
 
 1. **Eager functional abstraction fails.** If the abstract state is a total function of
    the concrete (`a = absMap (g,c,w)`) with `a.bind`/`a.val` tied to the concrete
-   `bindSet` row, abstract rule 3 is forced the moment a round binds unanimously — but a
+   `bindUnset` row, abstract rule 3 is forced the moment a round kills the dissenting bit
+   under unanimous calls — but a
    late joiner can then submit a dissenting `callABA`, enable a `C`-grade at that round,
-   steer the next round to bind the opposite value, `A`-lock it, and DECIDE against the
+   steer the next round to spare the opposite value, `A`-lock it, and DECIDE against the
    already-committed abstract `val`. Hence laziness: the twin commits as late as possible.
 2. **Flip-anchored abstraction fails.** Anchoring `a.bind` to the concrete flip frontier
    is broken twice over: the honest witness backing the frontier round's rebind can be
@@ -326,7 +396,8 @@ recording them is what pins the design.
    re-proposed and bound while every never-corrupted process input `0`. This forces the
    D13 `f + 1` `F`-blind support discipline.
 5. **The singular witness loses provenance (TS 2).** Deterministically at `n = 4, f = 1`,
-   inputs `1,0,0,0`: TS 2's `bindSet 1` fires off the sole `1`-holder, `retB`-adopt
+   inputs `1,0,0,0`: TS 2's single-witness kill of `0` fires off the sole `1`-holder,
+   leaving `1` as round 0's surviving bit; `retB`-adopt
    propagates `est := 1`, round-1 unanimity decides `1`, `fail 0`, `retABA 1 1` — yet
    every never-corrupted process input `0`. A single certifying witness is exactly the
    D13 loss one level down; hence the D14 SuppOK guards.
