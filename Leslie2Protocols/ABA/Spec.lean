@@ -10,7 +10,7 @@ import Leslie2Protocols.ABA.Labels
 # The ABA specification (blueprint Transition System 1, repaired)
 
 The PLTS encoding of Asynchronous Byzantine Agreement, transcribed from the
-blueprint's Transition System 1 with four deviations:
+blueprint's Transition System 1 with five deviations:
 
 * **D13 (repair, load-bearing).** The blueprint's TS 1 fails the papers'
   Validity: rule 7's free re-propose while
@@ -41,16 +41,26 @@ blueprint's Transition System 1 with four deviations:
   protocol excludes this via grades. We guard re-proposal with
   `val = ⊥ ∨ b = val` (once the decision value is fixed, honest re-inputs
   equal it) — see the annotation in the blueprint source.
+* **D17 (δ-mass failure outcome).** The coin the specification abstracts is a
+  weak common coin whose delivery guarantee holds only up to a failure
+  probability `δ`, so rule 5 resolves by the same `wccPMF` as the WCC
+  specification: each bit with probability `ε`, `⊤` with the remaining mass
+  `1 − 2ε − δ`, and `dead` — the coin resolved without delivering — with
+  probability `δ`. A `dead` round is *frozen*: no process receives a value, so
+  rule 6 is disabled (`TVal.agrees` fails on `dead`) and rule 7 is disabled by
+  its `hd` guard, so a process that never receives the coin neither adopts nor
+  re-proposes and the round yields no honest input. This is distinct from `⊤`,
+  where delivery does happen and the adversary merely picks each process's bit.
 * **D1 (determinised `fail`).** Corruption is the total function
   `corrupt id` (adds `id` to `F` when `id ∉ F ∧ |F| < f`, else identity),
   merging the blueprint's guarded transition and its input-enabledness loop.
   This keeps the `F`-copies of all composed components in lockstep.
 * The blueprint's `Initial` clause mentions an undeclared `out`; omitted.
 
-The spec's `coin` field ranges over `{0,1,⊥,⊤}` inside `TVal`; `bind, val ∈
+The spec's `coin` field ranges over `{0,1,⊥,⊤,†}` inside `TVal`; `bind, val ∈
 {0,1,⊥}` are
 `Option Bool`. All transitions are Dirac except the coin flip, which is
-`coinPMF.map` into the state update.
+`wccPMF.map` into the state update.
 -/
 
 namespace PLTS
@@ -70,6 +80,20 @@ inductive TVal : Type
   (delivered, with the adversary choosing each process's bit). -/
   | dead
   deriving DecidableEq, Repr
+
+/-- The `TVal` recorded by a coin resolution with the given outcome: the common
+bit, `⊤` for the adversarial outcome, and `dead` for delivery failure. Shared by
+the two coin resolutions of the development (`ABA.SpecStep.coinFlip` and
+`WCC.Step.flip`). -/
+def CoinOutcome.toTVal : CoinOutcome → TVal
+  | .bit b => .bit b
+  | .adv => .top
+  | .dead => .dead
+
+/-- `toTVal` is injective: the four coin outcomes land on four distinct
+`TVal`s. -/
+theorem CoinOutcome.toTVal_injective : Function.Injective CoinOutcome.toTVal := by
+  intro a b h; cases a <;> cases b <;> simp_all [CoinOutcome.toTVal]
 
 /-- `agrees o t`: the blueprint's cross-domain equality `bind = coin` between
 `bind ∈ {0,1,⊥}` and the five-value domain `coin ∈ {0,1,⊥,⊤,†}` — `⊥ = ⊥` or
@@ -167,24 +191,33 @@ inductive SpecStep (P : Params) :
       (hs : P.f + 1 ≤ (Finset.univ.filter (fun id => s.call id = some b)).card) :
       SpecStep P s .tau
         (PMF.pure { s with call := fun _ => none, bind := some b, coin := .bot })
-  /-- Rule 5 (coin flip): the round is reset and bound; resolve the coin. The
-  only non-Dirac transition. -/
+  /-- Rule 5 (coin flip, **with the D17 failure outcome**): the round is reset
+  and bound; resolve the coin by `wccPMF`, the distribution the WCC
+  specification resolves by. Four outcomes: each bit `b` with probability `ε`
+  (`coin := bit b`, every correct process receives `b`), the adversarial
+  outcome with the remaining mass `1 − 2ε − δ` (`coin := ⊤`, delivery happens
+  and the adversary picks each process's bit), and delivery failure with
+  probability `δ` (`coin := dead`). The only non-Dirac transition. -/
   | coinFlip (s : SpecState P.n)
       (hcall : ∀ id, s.call id = none) (hbind : s.bind ≠ none) :
       SpecStep P s .tau
-        (P.coinPMF.map (fun o => { s with coin := o.elim TVal.top TVal.bit }))
+        (P.wccPMF.map (fun o => { s with coin := o.toTVal }))
   /-- Rule 6 (adopt): when `bind = coin`, a process adopts the bound value as
   its next-round input. -/
   | adopt (s : SpecState P.n) (id : Fin P.n)
       (h₁ : s.call id = none) (h₂ : TVal.agrees s.bind s.coin) :
       SpecStep P s .tau
         (PMF.pure { s with call := Function.update s.call id s.bind })
-  /-- Rule 7 (re-propose, **with the D3 + D13 repair guards**): when
-  `bind ≠ coin`, a process re-proposes a bit `b` — while `val = ⊥`, only a
+  /-- Rule 7 (re-propose, **with the D3 + D13 repair guards and the D17 freeze**):
+  when `bind ≠ coin`, a process re-proposes a bit `b` — while `val = ⊥`, only a
   recorded own input or the bound value (D13: provenance); once the decision
-  value is fixed, `b = val` (D3). -/
+  value is fixed, `b = val` (D3). The `hd` conjunct is the D17 freeze: on
+  `coin = dead` the resolution never delivered, so a process learns nothing this
+  round and may neither adopt (`TVal.agrees` already fails on `dead`) nor
+  re-propose. A `dead` round therefore yields no honest round input at all. -/
   | repropose (s : SpecState P.n) (id : Fin P.n) (b : Bool)
       (h₁ : s.call id = none) (h₂ : ¬ TVal.agrees s.bind s.coin)
+      (hd : s.coin ≠ .dead)
       (h₃ : (s.val = none ∧ (s.input id = some b ∨ s.bind = some b)) ∨
         s.val = some b) :
       SpecStep P s .tau

@@ -41,18 +41,6 @@ label.
 namespace PLTS
 namespace ABA
 
-/-- The `TVal` recorded by a coin resolution with the given outcome: the common
-bit, `⊤` for the adversarial outcome, and `dead` for delivery failure. -/
-def CoinOutcome.toTVal : CoinOutcome → TVal
-  | .bit b => .bit b
-  | .adv => .top
-  | .dead => .dead
-
-/-- `toTVal` is injective: the four coin outcomes land on four distinct
-`TVal`s. -/
-theorem CoinOutcome.toTVal_injective : Function.Injective CoinOutcome.toTVal := by
-  intro a b h; cases a <;> cases b <;> simp_all [CoinOutcome.toTVal]
-
 namespace WCC
 
 /-- The state of one WCC specification instance. -/

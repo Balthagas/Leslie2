@@ -79,7 +79,7 @@ along the packing map `ABA.Flat.unflat`, which reads a `preImpl` state as one
 flat node per process. Every transition of either system other than the coin
 flip is Dirac and the two shapes have the same Dirac successor, so the two
 directions are a strong functional matching and its converse; the coin flip
-appears on both sides as the same pushforward of `Params.coinPMF` and is
+appears on both sides as the same pushforward of `Params.wccPMF` and is
 matched by itself. Abstraction of the sub-protocol API and soundness of
 probabilistic forward simulation then give the two inclusions.
 -/
@@ -1593,7 +1593,7 @@ theorem group_of_flatGroup_tau (P : Params) {g : ℕ → GBCA.ImplState P.n}
 
 The coin box occupies the same slot in both systems and is never unfolded: on a
 visible label it is carried through the synchronisation untouched, and its own
-resolution appears on both sides as the same pushforward of `Params.coinPMF`. -/
+resolution appears on both sides as the same pushforward of `Params.wccPMF`. -/
 
 private theorem prodPMF_pure_pure {α β : Type} (a : α) (b : β) :
     prodPMF (PMF.pure a) (PMF.pure b) = PMF.pure (a, b) := by

@@ -549,7 +549,7 @@ theorem SpecInv.step {s : SpecState P.n} {l : Lab P.n} {μ : PMF (SpecState P.n)
         exact Or.inr (Or.inl (Option.some.inj h_call).symm)
       · rw [Function.update_of_ne h_eq] at h_call
         exact hI.bound_prov v hv id' b' h_call
-  | repropose id b h₁ h₂ h₃ =>
+  | repropose id b h₁ h₂ hd h₃ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     refine ⟨hI.F_le, hI.bind_val, ?_, ?_, hI.bind_supp, hI.val_supp, ?_⟩
     · intro id' h_hon hv
@@ -673,7 +673,7 @@ theorem SpecInv.val_stable {s : SpecState P.n} {l : Lab P.n}
     exact hv
   | adopt id h₁ h₂ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
-  | repropose id b' h₁ h₂ h₃ =>
+  | repropose id b' h₁ h₂ hd h₃ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
   | callByzFill id b' hF h =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
@@ -769,7 +769,7 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
     change s.F = failSetL P (pre ++ [Lab.tau])
     rw [failSetL_append]
     exact hI.F_eq
-  | repropose id b h₁ h₂ h₃ =>
+  | repropose id b h₁ h₂ hd h₃ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
     change s.F = failSetL P (pre ++ [Lab.tau])

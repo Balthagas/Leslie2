@@ -113,7 +113,7 @@ private theorem val_force' {P : Params} {a : SpecState P.n} {b : Bool}
       a'.ret = a.ret ∧ a'.F = a.F ∧ a'.coin = .bot := by
   set a1 : SpecState P.n := { a with call := fun _ => some b } with ha1def
   have hfill : weakTau (spec P) (PMF.pure a) (PMF.pure a1) := by
-    refine fill_chain hbind (t := fun _ => some b) ?_ ?_ hcall
+    refine fill_chain hbind (t := fun _ => some b) ?_ ?_ hcall (by simp [hcoin])
     · intro id b' hb'
       have hbeq : b = b' := Option.some_inj.mp hb'
       rw [← hbeq]
@@ -276,7 +276,7 @@ private theorem decide_burst {P : Params} {a : SpecState P.n} {b : Bool}
       have ht₂eval : ∀ id, t₂ id =
           if a.input id = some b ∨ id ∈ a.F then some b else some v' := fun _ => rfl
       have hfill2 : weakTau (spec P) (PMF.pure a2) (PMF.pure { a2 with call := t₂ }) := by
-        refine fill_chain (vb := v') rfl (t := t₂) ?_ ?_ (fun _ => rfl)
+        refine fill_chain (vb := v') rfl (t := t₂) ?_ ?_ (fun _ => rfl) (by simp [ha2])
         · intro id b' hb'
           rw [ht₂eval id] at hb'
           by_cases h : a.input id = some b ∨ id ∈ a.F

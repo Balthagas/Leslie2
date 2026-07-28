@@ -33,21 +33,23 @@ across the ABA docstrings is **D1, D3–D5, D8–D17**, with D12 refined to **D1
 (per-process DECIDED pools). D13/D14 are the Validity repairs, D15 the
 F-blind counting form of their support guards (`f+1` callers-or-corrupted),
 D16 the ultra-lazy twin of the core simulation, D17 the δ-mass delivery-failure
-outcome of the WCC specification's coin.
+outcome carried by *both* coin resolutions — the WCC specification's flip and
+the ABA specification's rule 5, which resolve by the same `wccPMF`; a dead ABA
+round is frozen (neither adopt nor re-propose is enabled).
 
 ## Reading order
 
 ### Layer 0 — vocabulary
 | file | lines | what it is |
 |---|---|---|
-| `Params.lean` | 148 | The protocol parameters `P : Params` — `n`, `f` (with `n > 3f`), the coin distributions `coinPMF` (spec-level ABA coin) and `wccPMF` (the WCC specification's coin, over `CoinOutcome`, carrying the δ-mass `dead` outcome), and their ε/δ-bounds. Everything is parametrized by `P`. |
+| `Params.lean` | 127 | The protocol parameters `P : Params` — `n`, `f` (with `n > 3f`), the coin distribution `wccPMF` (over `CoinOutcome`: ε on each bit, δ on the `dead` delivery-failure outcome, the rest on `⊤`), and its ε/δ-bounds. `wccPMF` is *the* coin of the development: both the ABA specification's rule 5 and the WCC specification's flip resolve by it. Everything is parametrized by `P`. |
 | `Labels.lean` | 145 | The single label alphabet `Lab n`: visible API (`callABA`/`retABA`/`fail`), hidden handshakes (`callG`/`retG`/`callW`/`retW`, round-tagged), `τ`; the `hiddenAPI` selector used by `abstract`; round projections. |
 
 ### Layer 1 — the three specifications
 | file | lines | what it is |
 |---|---|---|
-| `Spec.lean` | 230 | **The top-level ABA specification** (`ABA.spec`): a small PLTS over `SpecState` (`F`, `ret`, `val`, `bind`, `coin`, `call`) with 10 rules (incl. the `callByzFill` τ-rule). Carries the **D3** Agreement repair (rule 7 guard `val = ⊥ ∨ b = val`) *and* the **D13** Validity repair: ghost `input` (rule 1 unconditional, rule 2 first-write-wins), the rule-4 `f+1`-support bind guard, the provenance-preserving rule-7 re-propose guard, and the `callByzFill` τ-rule. This is the system all safety is measured against. |
-| `WCCSpec.lean` | 143 | The Weak Common Coin **specification** (per-round instance): call quorum, then a genuine `wccPMF` flip — the only probabilistic step in the whole stack. **D17**: the flip carries a δ-mass `dead` outcome (delivery failure); the positive `ret` guard means a dead round hands out nothing. Held at spec level by design (assumed, not implemented). |
+| `Spec.lean` | 263 | **The top-level ABA specification** (`ABA.spec`): a small PLTS over `SpecState` (`F`, `ret`, `val`, `bind`, `coin`, `call`) with 10 rules (incl. the `callByzFill` τ-rule). Carries the **D3** Agreement repair (rule 7 guard `val = ⊥ ∨ b = val`) *and* the **D13** Validity repair: ghost `input` (rule 1 unconditional, rule 2 first-write-wins), the rule-4 `f+1`-support bind guard, the provenance-preserving rule-7 re-propose guard, and the `callByzFill` τ-rule. **D17**: rule 5 resolves by `wccPMF`, so `coin` may come out `dead`; such a round is *frozen* — rule 6 is disabled (`TVal.agrees` fails on `dead`) and rule 7 by its `hd` guard, so a process that never receives the coin neither adopts nor re-proposes. Also home to `CoinOutcome.toTVal`, the outcome-to-`TVal` map shared with `WCCSpec.lean`. This is the system all safety is measured against. |
+| `WCCSpec.lean` | 131 | The Weak Common Coin **specification** (per-round instance): call quorum, then a genuine `wccPMF` flip — the same distribution the ABA specification's rule 5 uses. **D17**: the flip carries a δ-mass `dead` outcome (delivery failure); the positive `ret` guard means a dead round hands out nothing. Held at spec level by design (assumed, not implemented). |
 | `GBCASpec.lean` | 182 | The Graded Binding Crusader Agreement **specification** (per-round instance): call slots, quorum-gated binding, grades (A/B/C), returns. The `A`/`B`-returns hand out the bound value; the bind-free `C`-return hands out no bit. **D14**: every provenance guard is an `f+1` F-blind count of callers (`call = b ∨ ∈ F`, the D15 `SuppOK` form) rather than a single witness — on the bound bit at `bindSet`, on the dissenting bit at `retB`, and on **both** bits at `retC`, which is what certifies that no single bit can be handed out. With at most `f` ever corrupted, any such set contains a never-corrupted genuine caller — the fix that makes paper-form Validity provable. |
 
 ### Layer 2 — spec-level safety of ABA
@@ -72,7 +74,7 @@ outcome of the WCC specification's coin.
 | file | lines | what it is |
 |---|---|---|
 | `CoreSimRel.lean` | 3886 | The relation and the heavy lifting: the abstract-twin constraints `Abs` (ultra-lazy two-phase twin: `coin_bot`, `phase`) plus the frame lemma, the concrete invariant `Inv` (~30 conjuncts, incl. the I26/I27 `bind_supp`/`clock_supp` support pools and the D12′ per-bit DECIDED conjuncts) with its round skeleton keyed on `Closed g r := (g r).bind ≠ none ∨ (g r).grade = some false`, `DissentResidue`, invariant preservation for every step class, quorum transfer. Read the two structure docstrings first; `../DESIGN-CoreSim.md` is the narrative version. |
-| `CoreSimBurst.lean` | 184 | The abstract τ-burst kit: `fill_chain`, `byz_fill_chain`, `rebind_mixed`/`rebind_unanim`, `weakStep_of_burst_then_step` — how the twin catches up in one weak step; bursts fire only at `retABA`. |
+| `CoreSimBurst.lean` | 187 | The abstract τ-burst kit: `fill_chain`, `byz_fill_chain`, `rebind_mixed`/`rebind_unanim`, `weakStep_of_burst_then_step` — how the twin catches up in one weak step; bursts fire only at `retABA`. `fill_chain` carries the D17 side condition `coin ≠ dead`, discharged at every call site from the twin's `coin = ⊥`. |
 | `CoreSim.lean` | 690 | The simulation proof itself, one row per concrete step class (stutters + the single `decide_burst` + the coupled coin row + `retABA` burst-then-return), assembled into `coreSim`. |
 
 ### Layer 6 — results
@@ -87,7 +89,7 @@ outcome of the WCC specification's coin.
 | `GBCAProc.lean` | 861 | One GBCA process as its own PLTS (`ProcNode`: local record, outbox, inbox rows, `F` copy; every guard reads the node alone), the network as rendezvous labels `net(i, j, m)` over `Lab ⊕ GNet`, and **`perProcInst_atd`**: the hidden-network composition of the n automata and the monolithic `implInst` have the same achievable trace distributions — a step-for-step forward simulation in each direction along the packing map. |
 | `CoreProc.lean` | 1264 | The same for the core: `CoreNode` (control record, DECIDED pool, inbox rows, `F` copy), gossip as `net(i, j, b)` rendezvous, and **`perProcCore_atd`**. The per-(receiver, sender, bit) DECIDED pools (D12′) are what let the delivery guard split sender/receiver-locally. |
 | `Assembly.lean` | 236 | Both per-process layers substituted into the hybrid at once: `perProcGBCAFamily` (the ℕ-indexed family of per-process GBCA instances) beside `perProcCore`, with the coin oracle the one box left at spec level, and **`hybridPerProc_atd`**: that composition and `hybridImpl` achieve the same trace distributions. Assembled from the two layer equivalences by the `parallel`/`abstract` precongruences alone, chained by transitivity of `⊆`; `atd_parallel_left` is the mirror precongruence (context on the left), obtained by conjugating Result 3 with the coordinate exchange. `hybridPerProc_safe` reads `main` along the equality. |
-| `FlatABA.lean` | 1727 | The layer boundary removed: `ABAProc P j` is **the program of process j** — one `ABANode` (round-loop record plus one graded-agreement stage per round) and 41 rules, with each `callG`/`retG` handshake fused into a single atomic rule of the two halves of the *same* process, both networks (`gnet` round-tagged, `dnet`) carried by the auxiliary alphabet `FlatNet` that the composition hides, and every guard reading `j`'s own node. **`flatABA_atd`**: `n` such programs beside the coin oracle achieve exactly the trace distributions of `hybridImpl` — a strong functional matching along the unflattening map `unflat` and its converse, the coin flip appearing on both sides as the same pushforward of `coinPMF`. `flatABA_safe` reads `main` along the equality. |
+| `FlatABA.lean` | 1727 | The layer boundary removed: `ABAProc P j` is **the program of process j** — one `ABANode` (round-loop record plus one graded-agreement stage per round) and 41 rules, with each `callG`/`retG` handshake fused into a single atomic rule of the two halves of the *same* process, both networks (`gnet` round-tagged, `dnet`) carried by the auxiliary alphabet `FlatNet` that the composition hides, and every guard reading `j`'s own node. **`flatABA_atd`**: `n` such programs beside the coin oracle achieve exactly the trace distributions of `hybridImpl` — a strong functional matching along the unflattening map `unflat` and its converse, the coin flip appearing on both sides as the same pushforward of `wccPMF`. `flatABA_safe` reads `main` along the equality. |
 
 ## Future work
 

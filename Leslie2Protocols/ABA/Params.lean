@@ -14,18 +14,16 @@ The protocol parameters shared by every system in the ABA case study:
 * `ABA.Params` — the number of processes `n`, the corruption budget `f` (with
   `3 * f < n`), the coin goodness `ε` and the coin failure probability `δ`
   (with `2 * ε + δ ≤ 1`).
-* `ABA.Params.coinPMF` — the outcome distribution used by `ABA.Spec`'s coin
-  transition: `some b` with probability `ε` for each bit `b` (all correct
-  processes get `b`), and `none` (the adversary-controlled outcome `⊤`) with
-  the remaining probability `1 - 2 * ε`. Delivery always happens.
-* `ABA.Params.wccPMF` — the outcome distribution used by `WCC.Spec`'s coin
-  resolution, over `ABA.CoinOutcome`: `bit b` with probability `ε` for each
-  bit `b`, `adv` (the adversary-controlled outcome `⊤`) with probability
-  `1 - (2 * ε + δ)`, and `dead` — the coin fails and never delivers — with
-  probability `δ`.
+* `ABA.Params.wccPMF` — *the* coin distribution of the development, over
+  `ABA.CoinOutcome`: `bit b` with probability `ε` for each bit `b` (all
+  correct processes get `b`), `adv` (the adversary-controlled outcome `⊤`,
+  where delivery happens but the adversary picks each process's bit) with
+  probability `1 - (2 * ε + δ)`, and `dead` — the coin fails and never
+  delivers — with probability `δ`.
 
-Both transitions are a `PMF.map` of their distribution into the respective
-state update.
+Both coin resolutions of the case study resolve by `wccPMF`: `ABA.Spec`'s coin
+transition (rule 5) and `WCC.Spec`'s. Each is a `PMF.map` of `wccPMF` into its
+own state update, so the two agree outcome-for-outcome.
 -/
 
 namespace PLTS
@@ -78,27 +76,6 @@ namespace Params
 
 /-- The two good outcomes alone fit inside a probability: `2ε ≤ 1`. -/
 theorem hε (P : Params) : 2 * P.ε ≤ 1 := le_trans le_self_add P.hδ
-
-/-- Total mass of the three coin outcomes is one: `(1 - 2ε) + (ε + ε) = 1`. -/
-private theorem coin_mass (P : Params) :
-    (∑ o : Option Bool, o.elim (1 - 2 * P.ε) (fun _ => P.ε)) = 1 := by
-  rw [Fintype.sum_option]
-  simp only [Option.elim_none, Option.elim_some]
-  rw [Fintype.sum_bool, ← two_mul]
-  rw [tsub_add_cancel_of_le P.hε]
-
-/-- The outcome distribution of one coin resolution: each bit with probability
-`ε`, and the adversarial outcome `none` (`⊤` in the blueprint) otherwise. -/
-noncomputable def coinPMF (P : Params) : PMF (Option Bool) :=
-  PMF.ofFintype (fun o => o.elim (1 - 2 * P.ε) (fun _ => P.ε)) P.coin_mass
-
-@[simp] theorem coinPMF_apply_some (P : Params) (b : Bool) :
-    P.coinPMF (some b) = P.ε := by
-  simp [coinPMF]
-
-@[simp] theorem coinPMF_apply_none (P : Params) :
-    P.coinPMF none = 1 - 2 * P.ε := by
-  simp [coinPMF]
 
 /-- The mass function of `wccPMF`: `ε` on each bit, `1 - (2ε + δ)` on the
 adversarial outcome, `δ` on delivery failure. -/

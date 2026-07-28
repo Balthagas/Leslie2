@@ -26,7 +26,7 @@ the core simulation (`CoreSim.lean`), and spec safety (`SpecSafety.lean`):
 
 **Scope of the headline.** `hybridImpl` refines GBCA to
 *implementation* level but keeps **WCC at specification level** (the ε-coin is
-`Params.coinPMF`, not a Gather/SRSD implementation), so the honest reading is
+`Params.wccPMF`, not a Gather/SRSD implementation), so the honest reading is
 *GBCA verified to implementation level; WCC assumed at specification level*.
 And `ValidityTrace` (`SpecSafety.lean`) is the D13 predicate: a decided bit
 must carry the paper-form provenance clause — witnessed by a *never-corrupted*

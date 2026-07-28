@@ -1,7 +1,7 @@
 % ABA specification, Transition System 1 rule graph (PLTS.ABA.SpecStep).
-% Five control states keyed on (bind, coin, val). Rule 5 is drawn as a
-% probabilistic branch: the undirected stem carries the tau-step, and the three
-% outcome edges carry the coinPMF masses.
+% Six control states keyed on (bind, coin, val). Rule 5 is drawn as a
+% probabilistic branch: the undirected stem carries the tau-step, and the four
+% outcome edges carry the wccPMF masses.
 \begin{tikzpicture}[
     ->, >={Stealth[round]}, auto, semithick, on grid,
     every state/.style={draw, minimum size=1.15cm, align=center, font=\small},
@@ -14,6 +14,7 @@
   \node[branch]                          (br)  at (6.8,0)    {};
   \node[state]                           (dif) at (9.8,2.1)  {coin differs\\$coin{=}1{-}bind$\\or $coin{=}\top$};
   \node[state]                           (agr) at (9.8,-2.1) {coin agrees\\$coin{=}bind$};
+  \node[state]                           (dea) at (9.8,-5.6) {coin dead\\$coin{=}\dagger$\\round frozen};
   \node[state, accepting]                (dec) at (4.4,-4.7) {decided\\$val$ set};
 
   % self-loops
@@ -35,8 +36,9 @@
   \draw[-] (bnd) -- node[lbl, above]{5 \texttt{coinFlip}, $\tau$} (br);
   \path
     (br) edge[bend left=10]  node[plbl, left]{$\varepsilon$} (dif)
-    (br) edge[bend right=22] node[plbl, right]{$1{-}2\varepsilon$} (dif)
-    (br) edge[bend left=10]  node[plbl, right]{$\varepsilon$} (agr);
+    (br) edge[bend right=22] node[plbl, right]{$1{-}2\varepsilon{-}\delta_{\mathrm f}$} (dif)
+    (br) edge[bend left=10]  node[plbl, right]{$\varepsilon$} (agr)
+    (br) edge[bend right=18] node[plbl, left]{$\delta_{\mathrm f}$} (dea);
 
   % re-binding and the decisions
   \path

@@ -32,7 +32,9 @@ variable {P : Params}
 /-! ### B1: filling an empty `call` row -/
 
 /-- Filling every `some`-entry of a D3-legal target `t` from an all-`none` `call` row, one
-`adopt`/`repropose` step per process (induction on the remaining-ids list).
+`adopt`/`repropose` step per process (induction on the remaining-ids list). `hdead` is rule 7's
+D17 side condition, and it is needed: on a `dead` coin rule 6 is dead too (`TVal.agrees` fails
+on `dead`), so the round is frozen and no honest slot can be filled at all.
 -/
 theorem fill_chain {a : SpecState P.n} {vb : Bool} (hbind : a.bind = some vb)
     {t : Fin P.n → Option Bool}
@@ -40,7 +42,7 @@ theorem fill_chain {a : SpecState P.n} {vb : Bool} (hbind : a.bind = some vb)
       ((a.val = none ∧ (a.input id = some b ∨ a.bind = some b)) ∨ a.val = some b) ∨
         id ∈ a.F)
     (havail : TVal.agrees a.bind a.coin → ∀ id b, t id = some b → b = vb)
-    (hempty : ∀ id, a.call id = none) :
+    (hempty : ∀ id, a.call id = none) (hdead : a.coin ≠ .dead) :
     weakTau (spec P) (PMF.pure a) (PMF.pure { a with call := t }) := by
   suffices h : ∀ l : List (Fin P.n), l.Nodup → ∀ cur : Fin P.n → Option Bool,
       (∀ id, id ∈ l → cur id = none) → (∀ id, id ∉ l → cur id = t id) →
@@ -92,7 +94,8 @@ theorem fill_chain {a : SpecState P.n} {vb : Bool} (hbind : a.bind = some vb)
             have hupdate : Function.update cur id a.bind = Function.update cur id (some b) := by
               rw [hbind, ← hbeq]
             rwa [hupdate] at hstep
-          · exact SpecStep.repropose (P := P) { a with call := cur } id b hcurid hagree hlic
+          · exact SpecStep.repropose (P := P) { a with call := cur } id b hcurid hagree
+              hdead hlic
         · exact SpecStep.callByzFill (P := P) { a with call := cur } id b hidF hcurid
       exact hcont _ rfl
 

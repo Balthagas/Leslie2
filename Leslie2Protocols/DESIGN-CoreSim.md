@@ -75,7 +75,7 @@ Concrete steps are read through the step-inversion lemma for
 | concrete row | label | abstract answer |
 |---|---|---|
 | every hidden handshake (`callG`/`retG`/`callW`/`retW`), `bindSet`, DECIDED gossip τ | τ | stutter (`Abs.frame`; only `Inv` moves) |
-| **every** `WCC_r` coin flip | τ | constant-coupled stutter `ω := coinPMF.map (fun _ => pure a)` (`Abs.w_swap`; the twin never flips) |
+| **every** `WCC_r` coin flip | τ | constant-coupled stutter `ω := wccPMF.map (fun _ => pure a)` (`Abs.w_swap`; the twin never flips) |
 | `callABA id b`, phase 1, genuine (idle-exit input) | `callABA id b` | rule 1 (banks the concrete input into `a.call` and the ghost) |
 | `callABA id b`, otherwise (phase 2, or a self-loop re-call) | `callABA id b` | rule 2 (first-write-wins; no `Abs`-field change) |
 | `retABA id b`, phase 1 | `retABA id b` | `decide_burst` then rule 8 (`weakStep_of_burst_then_step`) — see below |

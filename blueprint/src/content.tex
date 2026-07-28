@@ -873,11 +873,15 @@ The labels D2, D6 and D7 are unused.
   \item D15: the $F$-blind form of those support counts, namely $f+1$ distinct
     callers-or-corrupted.
   \item D16: the two-phase abstract twin used by the core simulation.
-  \item D17: a fourth outcome $\dagger$ of the WCC coin resolution, of mass
-    $\failmass$, on which no return is enabled.
+  \item D17: a fourth outcome $\dagger$, of mass $\failmass$, on the single
+    distribution both coin resolutions follow, rule~5 of Transition System~1 and
+    rule~3 of Transition System~3.
     It carries the delivery failure of the $\varepsilon$-correct secret-sharing
-    coin implementation that the source builds on, where the source's
-    Transition System~3 resolves to $\{0,1,\top\}$ only.
+    coin implementation that the source builds on, where both of the source's
+    resolutions range over $\{0,1,\top\}$ only.
+    A $\dagger$ round of Transition System~3 enables no return.
+    A $\dagger$ round of Transition System~1 is frozen: no process adopts the
+    bound value and none re-proposes.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -911,33 +915,31 @@ Every transition rule is displayed as a guard above a labelled step into an
 explicit distribution.
 A Dirac target and a genuinely probabilistic one are therefore distinguishable
 at sight.
+Exactly two transitions in the whole development are non-Dirac: the coin rule
+of Transition System~1 and the coin rule of Transition System~3.
+Each resolves one coin, and both follow the same distribution, displayed in
+Definition~\ref{def:aba-params}.
 
 \subsection{Parameters and the shared alphabet}
 
-\begin{definition}[Parameters and coins]
+\begin{definition}[Parameters and the coin]
   \label{def:aba-params}
-  \lean{PLTS.ABA.Params}\lean{PLTS.ABA.Params.coinPMF}%
-  \lean{PLTS.ABA.Params.wccPMF}\leanok
+  \lean{PLTS.ABA.Params}\lean{PLTS.ABA.Params.wccPMF}\leanok
   The parameters: $n$ processes, at most $f$ corrupted with $3f < n$, coin
   goodness $\varepsilon$, and coin failure probability $\failmass$, subject to
   $2\varepsilon + \failmass \le 1$.
   The Lean field carrying $\failmass$ is named $\delta$.
-  The coin resolution of Transition System~1 follows $\mathrm{coinPMF}$ and the
-  coin resolution of Transition System~3 follows $\mathrm{wccPMF}$:
-  \[
-    \mathrm{coinPMF} \ =\ \varepsilon \cdot \delta(0) \ +\
-      \varepsilon \cdot \delta(1) \ +\ (1 - 2\varepsilon) \cdot \delta(\top),
-  \]
+  One distribution resolves both coins of the case study, that of rule~5 of
+  Transition System~1 and that of rule~3 of Transition System~3:
   \[
     \mathrm{wccPMF} \ =\ \varepsilon \cdot \delta(0) \ +\
       \varepsilon \cdot \delta(1) \ +\
       (1 - 2\varepsilon - \failmass) \cdot \delta(\top) \ +\
       \failmass \cdot \delta(\dagger).
   \]
-  Each bit carries $\varepsilon$ in both.
-  The adversarial outcome $\top$ takes the remaining mass of $\mathrm{coinPMF}$,
-  and $\mathrm{wccPMF}$ splits that remainder between $\top$ and the failure
-  outcome $\dagger$ (D17).
+  The constraint $2\varepsilon + \failmass \le 1$ is what keeps the mass on
+  $\top$ non-negative, so that the four outcomes carry total mass one.
+  The outcome $\dagger$ is the resolution that delivers to no process (D17).
 \end{definition}
 
 \begin{definition}[Shared alphabet]
@@ -966,18 +968,22 @@ at sight.
   At most $f$ processes are ever corrupted, so $f{+}1$ distinct supporters always include a never-corrupted one, and $3f < n$ supplies $n - 2f \ge f + 1$.
 \end{definition}
 
-The specification has five control states: \emph{unbound} ($bind = \bot$), \emph{bound} ($bind \neq \bot$, $coin = \bot$), \emph{coin differs} ($coin$ is the other bit or $\top$), \emph{coin agrees} ($coin$ is the bound bit), and \emph{decided} ($val \neq \bot$).
+The specification has six control states: \emph{unbound} ($bind = \bot$), \emph{bound} ($bind \neq \bot$, $coin = \bot$), \emph{coin differs} ($coin$ is the other bit or $\top$), \emph{coin agrees} ($coin$ is the bound bit), \emph{coin dead} ($coin = \dagger$), and \emph{decided} ($val \neq \bot$).
 Rule 5 (\texttt{coinFlip}) is the branch out of \emph{bound}, and it is the only probabilistic transition of the system.
-Its outcomes carry $\varepsilon$, $\varepsilon$ and $1-2\varepsilon$, so a resolution matches the bound bit with probability $\varepsilon$.
+Its outcomes carry $\varepsilon$, $\varepsilon$, $1-2\varepsilon-\failmass$ and $\failmass$, so a resolution matches the bound bit with probability $\varepsilon$ and fails to deliver with probability $\failmass$ (D17).
 On a match rule 6 (\texttt{adopt}) writes the bound bit into an empty honest slot and rule 7 (\texttt{repropose}) is disabled.
 On a mismatch rule 7 is enabled and rule 6 is disabled.
+On $coin = \dagger$ both are disabled, rule 6 because $\dagger$ agrees with nothing and rule 7 by its $coin \neq \dagger$ conjunct.
 Rule 4 (\texttt{mixed}) binds under a quorum on both bits, with an $f{+}1$-support guard on the bound bit.
 Rule 3 (\texttt{unanim}) writes $val \leftarrow\,!b$ when no honest process holds $b$.
 Enabledness is wider than the control graph shows.
 Rule 2 fires in every state, rule 3 is also enabled on \emph{coin differs}, and rules 3 and 5 to 8 remain enabled on \emph{decided}, where rule 3 rewrites $val$ to itself.
+Rule 5 is enabled again on \emph{coin dead}, where the round is still reset and bound, and a second resolution is the only transition that leaves that state.
 The provenance guards on rules 4 and 7 exclude the unanimity-overwrite (D3) and later-corrupted-input (D13) traces.
 
-\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification: the five control states and the coin branch of rule 5, whose $\tau$-step is drawn with an undirected stem and one edge per outcome.
+\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification: the six control states and the coin branch of rule 5, whose $\tau$-step is drawn with an undirected stem and one edge per outcome.
+The branch $coin{=}\dagger$ of mass $\failmass$ (D17) freezes the round: rule 6 is disabled because $\dagger$ agrees with nothing, rule 7 by its $coin \neq \dagger$ conjunct, and no quorum is reachable from there.
+The one transition that leaves that state, a second firing of rule 5, is not drawn.
 Rule 9 (\texttt{fail}), the total corruption rule (D1), and rule 10 (\texttt{callByzFill}), by which a corrupted $id \in F$ fills an empty call slot with no ghost record (D13), are not drawn.}
 
 \noindent\textbf{Transition System 1: the ABA specification.}
@@ -989,7 +995,7 @@ Rule 9 (\texttt{fail}), the total corruption rule (D1), and rule 10 (\texttt{cal
   \item $ret : [n] \to \mathbb{B}$, which processes have returned.
   \item $bind : \{0,1,\bot\}$, the bound value, the write-target of the unanimity and mixed rules.
   \item $val : \{0,1,\bot\}$, the decision value; once it is a bit, every return carries it.
-  \item $coin : \{0,1,\bot,\top\}$, the current coin outcome, $\top$ the adversarial one, never the failure outcome $\dagger$ of the shared value domain (D17).
+  \item $coin : \{0,1,\bot,\top,\dagger\}$, the current coin outcome: $\bot$ until resolved, $\top$ the adversarial one, and $\dagger$ the failed one (D17).
   \item $F \subseteq [n]$, the corrupted set.
   \item $input : [n] \to \{0,1,\bot\}$, a ghost record of the genuine $\mathrm{callABA}$ events (D13).
 \end{itemize}
@@ -1043,25 +1049,30 @@ Guard
 \[ s \xrightarrow{\;\tau\;}
    \delta\bigl(s[\,call := \bot^{[n]},\ bind := b,\ coin := \bot\,]\bigr) \]
 
-\noindent\textbf{5.} \texttt{coinFlip}.
+\noindent\textbf{5.} \texttt{coinFlip} (D17).
 Guard $call = \bot^{[n]}$ and $bind \neq \bot$.
-\[ s \xrightarrow{\;\tau\;}
-   \varepsilon\cdot\delta\bigl(s[\,coin := 0\,]\bigr)
-   + \varepsilon\cdot\delta\bigl(s[\,coin := 1\,]\bigr)
-   + (1-2\varepsilon)\cdot\delta\bigl(s[\,coin := \top\,]\bigr) \]
+\[ \begin{aligned}
+     s \xrightarrow{\;\tau\;}\ \
+     &\varepsilon\cdot\delta\bigl(s[\,coin := 0\,]\bigr)
+     + \varepsilon\cdot\delta\bigl(s[\,coin := 1\,]\bigr)\\
+     &{}+ (1-2\varepsilon-\failmass)\cdot\delta\bigl(s[\,coin := \top\,]\bigr)
+     + \failmass\cdot\delta\bigl(s[\,coin := \dagger\,]\bigr)
+   \end{aligned} \]
 
 \noindent\textbf{6.} \texttt{adopt}.
 Guard $call[id] = \bot$ and $bind = coin$.
 \[ s \xrightarrow{\;\tau\;} \delta\bigl(s[\,call[id] := bind\,]\bigr) \]
 
-\noindent\textbf{7.} \texttt{repropose} (D3, D13).
+\noindent\textbf{7.} \texttt{repropose} (D3, D13, D17).
 Guard
 \[ \begin{aligned}
-     &call[id] = \bot,\quad bind \neq coin,\\
+     &call[id] = \bot,\quad bind \neq coin,\quad coin \neq \dagger,\\
      &\bigl(val = \bot \wedge (input[id] = b \vee bind = b)\bigr) \vee val = b.
    \end{aligned} \]
 \[ s \xrightarrow{\;\tau\;} \delta\bigl(s[\,call[id] := b\,]\bigr) \]
+The conjunct $coin \neq \dagger$ is the freeze of D17: a resolution that delivers to no process leaves a process nothing to re-propose from.
 
+\medskip
 \noindent\textbf{8.} \texttt{ret}.
 Guard $val = b$ and $ret[id] = \mathrm{false}$.
 \[ s \xrightarrow{\;\mathrm{retABA}(id,b)\;}
@@ -1107,6 +1118,24 @@ scheduler may decline it forever.
 No safety argument therefore uses $\varepsilon$, and the claim that the
 protocol decides with probability $1$ under fair scheduling is a separate
 liveness statement, not proved here.
+
+With probability $\failmass$ the coin resolves to $\dagger$ instead, and the
+round freezes.
+The round is reset when the coin resolves, so every call slot is empty at that
+point.
+Adoption is disabled, since $\dagger$ agrees with nothing, and re-proposal is
+disabled by its $coin \neq \dagger$ conjunct, so no honest slot is filled
+afterwards either.
+The Byzantine fill rule does not compensate: the quorum count
+$|\{id \in [n]\setminus F : call[id] \neq \bot\} \cup F|$ counts a corrupted
+process through $F$ whether its slot is filled or not.
+That count therefore stays at $|F| \le f$, and $3f < n$ gives $f < n - f$, so
+while the coin reads $\dagger$ neither the unanimity rule nor the mixed bind is
+enabled, and the round produces no bind and no decision.
+The freeze lifts only by a second resolution of the coin, rule~5 asking just
+that the round be reset and bound, which a $\dagger$ outcome leaves true.
+A single Byzantine fill closes that exit too, since rule~5 requires every call
+slot to be empty.
 }
 
 \begin{theorem}[Safety of the ABA specification]
@@ -2293,7 +2322,7 @@ Both rest on the functional matchings of Lemma~\ref{def:strongfunctional}, in wh
   \uses{def:aba-flat, def:strongfunctional, thm:precong-abstract, thm:forward-sound, thm:aba-main, def:achievable}
   Both systems of the statement are abstractions of the same shape, so it suffices to match $\mathrm{flatPre}(P)$ with $\mathrm{GBCA.implFamily}(P) \parallel (\mathrm{core}(P) \parallel \mathrm{WCC.specFamily}(P))$.
   Define the unflattening map $\mathrm{unflat}$: it splits each array of a monolithic state along the process index, giving process $x$ the round-loop record, DECIDED pool and receipt rows of $x$ together with $x$'s row of every round's stage, and it leaves the coin oracle's coordinate untouched.
-  Every transition of either system other than the coin resolution is Dirac, and a transition and its image have the same successor, so $\mathrm{unflat}$ both commutes with steps and reflects them; the coin resolution appears on the two sides as the same pushforward of $\mathrm{coinPMF}$ and is matched by itself.
+  Every transition of either system other than the coin resolution is Dirac, and a transition and its image have the same successor, so $\mathrm{unflat}$ both commutes with steps and reflects them; the coin resolution appears on the two sides as the same pushforward of $\mathrm{wccPMF}$ and is matched by itself.
   Lemma~\ref{def:strongfunctional} therefore gives a probabilistic forward simulation along the graph of $\mathrm{unflat}$ and a second along its converse, neither system being an LTS.
   The map is not surjective --- a flat state whose copies of the corrupted set disagree has no preimage --- which is why the backward direction is the converse of the graph and not the graph of an inverse.
   Abstraction (Theorem~\ref{thm:precong-abstract}) transports both matchings, soundness (Theorem~\ref{thm:forward-sound}) turns each into a trace-distribution inclusion, and antisymmetry of $\subseteq$ gives the equality.
