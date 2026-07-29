@@ -49,23 +49,10 @@ noncomputable def implFamily (P : Params) :
 theorem implFamily_isLTS (P : Params) : (implFamily P).IsLTS :=
   System.family_isLTS (implInst_isLTS P) _ _ _
 
-/-! ### Broadcast compatibility of the simulation relation -/
+/-! ### Broadcast compatibility of the simulation relation
 
-private theorem specCorrupt_call (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).call = t.call := by
-  unfold SpecState.corrupt; split <;> rfl
-
-private theorem specCorrupt_ret (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).ret = t.ret := by
-  unfold SpecState.corrupt; split <;> rfl
-
-private theorem specCorrupt_dead (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).dead = t.dead := by
-  unfold SpecState.corrupt; split <;> rfl
-
-private theorem specCorrupt_grade (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).grade = t.grade := by
-  unfold SpecState.corrupt; split <;> rfl
+The spec-side corruption projections (`corrupt_call`/`corrupt_ret`/`corrupt_dead`/
+`corrupt_grade`) come from `GBCASpec.lean`. -/
 
 /-- The two `corrupt` functions stay in lockstep on aligned corrupted sets. -/
 private theorem corrupt_F_lockstep {t : SpecState P.n} {s : ImplState P.n}
@@ -90,25 +77,25 @@ theorem instRel_corrupt (P : Params) (r : ℕ) (id : Fin P.n)
     { inv := hR.inv.step (ImplStep.fail (r := r) x id)
         (by rw [PMF.mem_support_pure_iff])
       call_eq := fun k => by
-        rw [specCorrupt_call, ImplState.corrupt_proc]
+        rw [corrupt_call, ImplState.corrupt_proc]
         exact hR.call_eq k
       ret_eq := fun k => by
-        rw [specCorrupt_ret, ImplState.corrupt_proc]
+        rw [corrupt_ret, ImplState.corrupt_proc]
         exact hR.ret_eq k
       F_eq := corrupt_F_lockstep hR.F_eq id
       dead_cert := fun b hb => by
-        rw [specCorrupt_dead] at hb
+        rw [corrupt_dead] at hb
         exact DeadCert.mono
           (fun i j m hm => by rw [ImplState.corrupt_recv]; exact hm)
           (fun j w hw => by rw [ImplState.corrupt_proc]; exact hw)
           (ImplState.corrupt_F_subset x id)
           (hR.dead_cert b hb)
       gradeA_ev := fun hg => by
-        rw [specCorrupt_grade] at hg
+        rw [corrupt_grade] at hg
         obtain ⟨v, i, hi⟩ := hR.gradeA_ev hg
         exact ⟨v, i, by rw [ImplState.corrupt_recvCount]; exact hi⟩
       gradeC_ev := fun hg => by
-        rw [specCorrupt_grade] at hg
+        rw [corrupt_grade] at hg
         obtain ⟨i, hi⟩ := hR.gradeC_ev hg
         exact ⟨i, by rw [ImplState.corrupt_recvCount]; exact hi⟩ }
 

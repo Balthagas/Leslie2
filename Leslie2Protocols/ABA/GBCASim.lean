@@ -208,7 +208,10 @@ end WeakHelpers
 
 /-! ### Counting kit: any-payload monotonicity and harvest variants -/
 
-/-- Deliveries only grow the any-payload `ECHO` count. -/
+/-- Deliveries only grow the any-payload `ECHO` count. One of the four
+`*Count_le_recvMsg` lemmas — `echo`, `vote`, `bind`, `seal` — kept as a
+symmetric per-level kit: the statement is the same at every level, and the
+kit is complete whether or not each level's instance is currently invoked. -/
 theorem ImplState.echoCount_le_recvMsg {n : ℕ} (s : ImplState n) (i j : Fin n)
     (m : Msg) (i' : Fin n) : s.echoCount i' ≤ (s.recvMsg i j m).echoCount i' := by
   refine Finset.card_le_card fun k hk => ?_
@@ -232,7 +235,10 @@ theorem ImplState.bindCount_le_recvMsg {n : ℕ} (s : ImplState n) (i j : Fin n)
   obtain ⟨v, hv⟩ := hk.2
   exact ⟨hk.1, v, ImplState.mem_recvMsg_recv.mpr (Or.inr hv)⟩
 
-/-- Deliveries only grow the any-payload `SEAL` count. -/
+/-- Deliveries only grow the any-payload `SEAL` count. One of the four
+`*Count_le_recvMsg` lemmas — `echo`, `vote`, `bind`, `seal` — kept as a
+symmetric per-level kit: the statement is the same at every level, and the
+kit is complete whether or not each level's instance is currently invoked. -/
 theorem ImplState.sealCount_le_recvMsg {n : ℕ} (s : ImplState n) (i j : Fin n)
     (m : Msg) (i' : Fin n) : s.sealCount i' ≤ (s.recvMsg i j m).sealCount i' := by
   refine Finset.card_le_card fun k hk => ?_
@@ -968,18 +974,6 @@ theorem echoQuorum_of_vote_receipts {s : ImplState P.n} (hI : Inv P s)
   obtain ⟨k, hkF, hkr⟩ := ImplState.exists_sender_notMem s.F h'
   exact ⟨k, hI.vote_conf k v hkF (hI.recv_sub i k _ hkr)⟩
 
-/-- Convenience corollary: an `n − f` `BIND v` receipt quorum refines to the
-certificate through an honest binder's `bind_conf` quorum. -/
-theorem echoQuorum_of_bind_quorum {s : ImplState P.n} (hI : Inv P s)
-    {i : Fin P.n} {v : Bool} (h : P.n - P.f ≤ s.recvCount i (.bind (some v))) :
-    EchoQuorum P s v := by
-  have hFc := hI.F_card
-  have hfn := P.f_lt_n_sub_f
-  have h' : s.F.card < s.recvCount i (Msg.bind (some v)) := by omega
-  obtain ⟨j, hjF, hjr⟩ := ImplState.exists_sender_notMem s.F h'
-  have h2 := hI.bind_conf j v hjF (hI.recv_sub i j _ hjr)
-  exact echoQuorum_of_vote_receipts hI (i := j) (by omega)
-
 /-- The certificate refines to an `n − f` `INPUT v` receipt quorum. -/
 theorem inputQuorum_of_echoQuorum {s : ImplState P.n} (hI : Inv P s)
     {v : Bool} (h : EchoQuorum P s v) :
@@ -1412,25 +1406,9 @@ theorem killThenRetC_burst {r : ℕ} {t : SpecState P.n} {id : Fin P.n} {b : Boo
 
 /-! ### The refinement -/
 
-private theorem spec_corrupt_call (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).call = t.call := by
-  unfold SpecState.corrupt; split <;> rfl
-
-private theorem spec_corrupt_ret (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).ret = t.ret := by
-  unfold SpecState.corrupt; split <;> rfl
-
-private theorem spec_corrupt_dead (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).dead = t.dead := by
-  unfold SpecState.corrupt; split <;> rfl
-
-private theorem spec_corrupt_grade (t : SpecState P.n) (id : Fin P.n) :
-    (t.corrupt P id).grade = t.grade := by
-  unfold SpecState.corrupt; split <;> rfl
-
 /-- The two `corrupt` functions stay in lockstep on aligned corrupted sets
 (a strong per-coordinate `fail` match, as required by the family lift). -/
-private theorem corrupt_F_eq {t : SpecState P.n} {s : ImplState P.n}
+private theorem implSpec_corrupt_F_eq {t : SpecState P.n} {s : ImplState P.n}
     (hF : t.F = s.F) (id : Fin P.n) :
     (t.corrupt P id).F = (s.corrupt P id).F := by
   unfold SpecState.corrupt ImplState.corrupt
@@ -1870,15 +1848,15 @@ theorem implRefines (P : Params) (r : ℕ) :
     subst hq1'
     refine ⟨q2.corrupt P id,
       Or.inr ⟨by simp, weakLStep_single (Step.fail q2 id) (by simp)⟩,
-      hI', ?_, ?_, corrupt_F_eq hRR.F_eq id, ?_, ?_, ?_⟩
+      hI', ?_, ?_, implSpec_corrupt_F_eq hRR.F_eq id, ?_, ?_, ?_⟩
     · intro k
-      rw [spec_corrupt_call, ImplState.corrupt_proc]
+      rw [corrupt_call, ImplState.corrupt_proc]
       exact hRR.call_eq k
     · intro k
-      rw [spec_corrupt_ret, ImplState.corrupt_proc]
+      rw [corrupt_ret, ImplState.corrupt_proc]
       exact hRR.ret_eq k
     · intro b hb
-      rw [spec_corrupt_dead] at hb
+      rw [corrupt_dead] at hb
       refine DeadCert.mono (s := q1) (fun i' j' m' hm' => ?_) (fun k w hk => ?_)
         (ImplState.corrupt_F_subset q1 id) (hRR.dead_cert b hb)
       · rw [ImplState.corrupt_recv]
@@ -1886,11 +1864,11 @@ theorem implRefines (P : Params) (r : ℕ) :
       · rw [ImplState.corrupt_proc]
         exact hk
     · intro hg
-      rw [spec_corrupt_grade] at hg
+      rw [corrupt_grade] at hg
       obtain ⟨v0, i0, hi0⟩ := hRR.gradeA_ev hg
       exact ⟨v0, i0, by rw [ImplState.corrupt_recvCount]; exact hi0⟩
     · intro hg
-      rw [spec_corrupt_grade] at hg
+      rw [corrupt_grade] at hg
       obtain ⟨i0, hi0⟩ := hRR.gradeC_ev hg
       exact ⟨i0, by rw [ImplState.corrupt_recvCount]; exact hi0⟩
 

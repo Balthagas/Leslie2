@@ -152,6 +152,29 @@ def corrupt (P : Params) (id : Fin P.n) (s : SpecState P.n) : SpecState P.n :=
 
 end SpecState
 
+/-! ### Corruption frame lemmas
+
+`SpecState.corrupt` writes `F` and nothing else, so every other projection
+passes through it untouched. These four `@[simp]` lemmas are the canonical
+statements of that fact; the refinement, safety and hybrid files all read them
+from here rather than reproving them locally. -/
+
+@[simp] theorem corrupt_call (P : Params) (s : SpecState P.n) (id : Fin P.n) :
+    (s.corrupt P id).call = s.call := by
+  unfold SpecState.corrupt; split <;> rfl
+
+@[simp] theorem corrupt_ret (P : Params) (s : SpecState P.n) (id : Fin P.n) :
+    (s.corrupt P id).ret = s.ret := by
+  unfold SpecState.corrupt; split <;> rfl
+
+@[simp] theorem corrupt_dead (P : Params) (s : SpecState P.n) (id : Fin P.n) :
+    (s.corrupt P id).dead = s.dead := by
+  unfold SpecState.corrupt; split <;> rfl
+
+@[simp] theorem corrupt_grade (P : Params) (s : SpecState P.n) (id : Fin P.n) :
+    (s.corrupt P id).grade = s.grade := by
+  unfold SpecState.corrupt; split <;> rfl
+
 /-- The step relation of the round-`r` GBCA specification instance
 (blueprint Transition System 2, deviation D19). -/
 inductive Step (P : Params) (r : ℕ) :

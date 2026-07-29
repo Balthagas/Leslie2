@@ -590,17 +590,6 @@ theorem Inv.no_alock_below_both_supports {P : Params} {g : ℕ → GBCA.SpecStat
   have eF := h2 r idF false hlt ((hI.F_g r) ▸ hidFF) hcallF
   rw [← eT] at eF; simp at eF
 
-/-- **An `A`-lock excludes a `C`-lock above it** — the `Inv`-level reading of
-`no_alock_below_both_supports`, through the `retC` guards a `C`-locked round retains
-(`clock_supp`). -/
-theorem Inv.no_alock_below_cgrade {P : Params} {g : ℕ → GBCA.SpecState P.n}
-    {c : CoreState P.n} {w : ℕ → WCC.SpecState P.n} (hI : Inv P g c w) {r : ℕ}
-    (hgf : (g r).grade = some false) (r₀ : ℕ) (b₀ : Bool) (hlt : r₀ < r)
-    (hg₀ : (g r₀).grade = some true)
-    (hb₀ : (!b₀) ∈ (g r₀).dead ∧ b₀ ∉ (g r₀).dead) : False :=
-  hI.no_alock_below_both_supports r (hI.clock_supp r true hgf) (hI.clock_supp r false hgf)
-    r₀ b₀ hlt hg₀ hb₀
-
 /-- **An agreeing coin blocks the next round's `C`-lock.** Once round `r`'s coin has resolved
 to `.bit v` and `!v` is not round `r`'s surviving bit, `call_prov` pins every honest
 round-`(r + 1)` caller to `v`: both provenance disjuncts name `v`. So `f + 1` F-blind support
@@ -997,10 +986,6 @@ theorem hybrid_step_tau (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreS
 
 /-! ### Stage B: preservation of `Inv` -/
 
-/-- GBCA corruption changes only `F`. -/
-theorem GBCA.corrupt_grade {P : Params} (id : Fin P.n) (s : GBCA.SpecState P.n) :
-    (s.corrupt P id).grade = s.grade := by unfold GBCA.SpecState.corrupt; split <;> rfl
-
 /-- WCC corruption changes only `F`. -/
 theorem WCC.corrupt_val {P : Params} (id : Fin P.n) (s : WCC.SpecState P.n) :
     (s.corrupt P id).val = s.val := by unfold WCC.SpecState.corrupt; split <;> rfl
@@ -1334,9 +1319,9 @@ theorem Inv.step_fail {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
   set g' := fun r => (g r).corrupt P id with hg'def
   set c' := c.corrupt P id with hc'def
   set w' := fun r => (w r).corrupt P id with hw'def
-  have hcall : ∀ r, (g' r).call = (g r).call := fun r => GBCA.corrupt_call (g r) id
+  have hcall : ∀ r, (g' r).call = (g r).call := fun r => GBCA.corrupt_call P (g r) id
   have hbind : ∀ r, (g' r).dead = (g r).dead := fun r => GBCA.corrupt_dead P (g r) id
-  have hgrade : ∀ r, (g' r).grade = (g r).grade := fun r => GBCA.corrupt_grade id (g r)
+  have hgrade : ∀ r, (g' r).grade = (g r).grade := fun r => GBCA.corrupt_grade P (g r) id
   have hval : ∀ r, (w' r).val = (w r).val := fun r => WCC.corrupt_val id (w r)
   have hcalled : ∀ r, (w' r).called = (w r).called := fun r => WCC.corrupt_called id (w r)
   have hprocs : c'.procs = c.procs := CoreState.corrupt_procs c id

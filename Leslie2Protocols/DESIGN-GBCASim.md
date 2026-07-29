@@ -449,9 +449,8 @@ identical in shape to `bindBit`/`bindBot` and need nothing beyond it:
   `Inv.supp_of_input_receipts`, `suppI_of_valid`, `InstRel.spec_supp`,
   `quorum_of_msg_quorum`, `inputQuorum_of_echoQuorum`;
 * the `ECHO`-level certificate: `EchoQuorum`, `echoQuorum_unique`,
-  `echoQuorum_of_vote_receipts`, `echoQuorum_of_bind_quorum` (a convenience
-  corollary), and `bindUnset_guards` (quorum + SuppOK count out of one
-  `EchoQuorum`);
+  `echoQuorum_of_vote_receipts`, and `bindUnset_guards` (quorum + SuppOK count
+  out of one `EchoQuorum`);
 * conformance and write-once clauses `echo_conf`, `echo_once`, `vote_input`,
   `vote_conf`, `bind_once`, `bind_conf` (`bind_once` serves here as a
   conformance fact only — grade exclusivity is read at the `SEAL` level).

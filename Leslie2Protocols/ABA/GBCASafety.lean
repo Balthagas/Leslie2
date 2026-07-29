@@ -84,10 +84,6 @@ variable {P : Params} {r : ℕ}
 
 /-! ### Monotonicity of the exclusion set -/
 
-@[simp] theorem corrupt_dead (P : Params) (s : SpecState P.n) (id : Fin P.n) :
-    (s.corrupt P id).dead = s.dead := by
-  unfold SpecState.corrupt; split <;> rfl
-
 /-- **The exclusion set never shrinks.** -/
 theorem Step.dead_mono {s s' : SpecState P.n} {l : Lab P.n}
     {μ : PMF (SpecState P.n)} (hstep : Step P r s l μ) (hs' : s' ∈ μ.support) :
@@ -300,10 +296,6 @@ def ValidityTrace (P : Params) (r : ℕ) (v : Bool) (t : Seq (Lab P.n)) : Prop :
   ∀ (id : Fin P.n) (o : GbcaOut), Lab.retG r id o ∈ t → outValue o = some v
 
 /-! ### The bookkeeping invariant -/
-
-@[simp] theorem corrupt_call (s : SpecState P.n) (id : Fin P.n) :
-    (s.corrupt P id).call = s.call := by
-  unfold SpecState.corrupt; split <;> rfl
 
 /-- `corrupt` acts on `F` exactly as the bare-set fold step `corruptF`. -/
 theorem corrupt_F (s : SpecState P.n) (id : Fin P.n) :

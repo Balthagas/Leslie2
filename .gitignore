@@ -27,3 +27,6 @@ home_page/.jekyll-cache/
 home_page/.sass-cache/*.xdv
 *.xdv
 blueprint/src/*.toc
+
+# Claude Code local state
+.claude/

@@ -24,7 +24,7 @@ DECIDED-send in `retW`/`stepRound`, per-process DECIDED pools — see § D12′ 
 Concrete state: `(g, (c, w))` with `g : ℕ → GBCA.SpecState`, `c : ABA.CoreState`,
 `w : ℕ → WCC.SpecState`. Abstract state: `a : ABA.SpecState`.
 
-## The relation: the ultra-lazy two-phase twin
+## The relation: the ultra-lazy two-phase twin (deviation D16)
 
 `coreRel := diracRel R₀` with `R₀ (g,(c,w)) a := Inv (g,c,w) ∧ Abs (g,c,w) a` — all
 randomness couples outcome-to-outcome, so the abstract side stays Dirac.
