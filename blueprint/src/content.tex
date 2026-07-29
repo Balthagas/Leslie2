@@ -1007,6 +1007,27 @@ Definition~\ref{def:aba-params}.
   $\mathrm{fail}(id)$, and $\tau$.
 \end{definition}
 
+\subsection{Process-local vocabulary}
+
+Both implementation layers are built over the same process-local data, fixed here
+once and read by every presentation of those layers below.
+
+\begin{definition}[Stage messages and the stage record]
+  \label{def:aba-gbca-vocab}
+  \lean{PLTS.ABA.GBCA.Msg}\lean{PLTS.ABA.GBCA.ProcState}\leanok
+  The messages of one graded-agreement stage form a five-level ladder $\mathrm{Msg}$: $\langle\mathrm{INPUT},b\rangle$ and $\langle\mathrm{ECHO},b\rangle$ carry a bit, and $\langle\mathrm{VOTE},v\rangle$, $\langle\mathrm{BIND},v\rangle$ and $\langle\mathrm{SEAL},v\rangle$ carry a bit or $\bot$, the level $\mathrm{SEAL}$ being $\mathrm{echo5}$ of~\cite{ABDY22}.
+  The stage state of one process is the record $\mathrm{ProcState}$: the call payload $input$, unset before the call; the flags $sentInput : \{0,1\} \to \{\text{true},\text{false}\}$ recording which $\mathrm{INPUT}$ payloads that process has multicast; the write-once payloads $sentEcho$, $sentVote$, $sentBind$ and $sentSeal$, each unset until its own multicast and the last three admitting $\bot$; and the flag $returned$.
+  No field of the record names another process.
+\end{definition}
+
+\begin{definition}[The round-loop control record]
+  \label{def:aba-core-vocab}
+  \lean{PLTS.ABA.ProcCore}\leanok
+  The control state of one process in the round loop is the record $\mathrm{ProcCore}$: the external input bit $input$, unset before the call; the estimate $est$, whose unset value is the algorithm's $\bot$ awaiting the coin; the round counter $round \in \mathbb{N}$, counted from $0$ (D9); the handshake phase $phase$, one of $\mathrm{idle}$, $\mathrm{toCallG}$, $\mathrm{awaitG}$, $\mathrm{toCallW}$ and $\mathrm{awaitW}$; the graded outcome $lastGrade$ of the current round's stage, unset before that return and cleared by the round advance; and the flag $returned$.
+  The round loop's one message is $\langle\mathrm{DECIDED},b\rangle$, a bare bit, so a pool of such messages is a set of bits.
+  No field of the record names another process.
+\end{definition}
+
 \subsection{The system as deployed}
 \label{sec:aba-perproc}
 
@@ -1015,15 +1036,21 @@ Each program is one process: its round loop, its graded-agreement stage at every
 round, and its share of the two message networks.
 The coin oracle is the weak common coin, which this development holds at
 specification level (Transition System~3).
-Two implementation layers make up the programs, and each layer is given twice:
-first as a rule inventory over the whole system state, the form in which a guard
-is read against the pseudocode it transcribes, and then as one automaton per
-process.
-The two forms are equal on achievable trace distributions, so they name one
-system, and the choice between them fixes only which state a rule is written to
-read.
+Two implementation layers make up the programs, and this section gives each of
+them in the form it runs in: the pseudocode of one process, and then the
+automaton of one process, every guard of which reads that process's own node.
+Each layer carries a second presentation as well, a rule inventory over the whole
+system state, in which a guard is read against the line of pseudocode it
+transcribes.
+The two subsections after this one carry those inventories, each followed by the
+equality on achievable trace distributions that identifies it with the
+per-process form given here.
+The two forms therefore name one system, and the choice between them fixes only
+which state a rule is written to read.
 
-\subsection{The graded-agreement stage}
+Algorithm~\ref{alg:gbca-impl} is the graded-agreement stage of one process and
+Algorithm~\ref{alg:aba-core} the round loop that calls it, with one stage
+instance and one coin instance per round.
 
 \begin{algorithm}
     \caption{Implementation of GBCA. Algorithm 6 of Abraham, Ben-David and
@@ -1085,11 +1112,127 @@ read.
     \end{algorithmic}
 \end{algorithm}
 
+\begin{algorithm}
+    \caption{Implementation of ABA. Algorithm 1 of the source blueprint, after
+      Abraham, Ben-David and Yandamuri \cite{ABDY22}}
+    \label{alg:aba-core}
+    \begin{algorithmic}
+        \State \textbf{Input:} $b \in \{0,1\}$
+        \State \textbf{Sub-protocols:} countably many instances of GBCA and WCC
+        \medskip
+        \State $r \gets 1$
+        \State \textbf{loop}
+        \State\quad $(b, g) \gets \mathrm{GBCA}_r(b)$
+          \Comment{$b \in \{0,1,\bot\}$, $g \in \{A,B,C\}$}
+        \State\quad $c \gets \mathrm{WCC}_r()$
+        \State\quad \textbf{if} $b = \bot$:
+        \State\quad\quad $b \gets c$
+        \State\quad \textbf{elif} $g = A$:
+        \State\quad\quad send $\langle\mathrm{DECIDED}, b\rangle$ to all
+        \State\quad $r \gets r + 1$
+        \medskip
+        \State \textbf{upon} receiving $\langle\mathrm{DECIDED}, b\rangle$ from
+          $f + 1$ processes and having not sent it:
+        \State\quad send $\langle\mathrm{DECIDED}, b\rangle$ to all
+        \State \textbf{upon} receiving $\langle\mathrm{DECIDED}, b\rangle$ from
+          $n - f$ processes and having sent it:
+        \State\quad \textbf{return} $b$
+    \end{algorithmic}
+\end{algorithm}
+
+\blueprintfig{fig-perproc}{The per-process presentation: the family $\mathrm{procInst}(P,r,j)$ under $\mathrm{syncProduct}$, the network alphabet hidden by the dashed frame $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netLabels}$, and the composite read back over $\mathrm{Lab}(n)$.
+The dashed vertical is Theorem~\ref{thm:aba-gbca-perproc}: the composite and the monolithic instance achieve the same trace distributions, the relation being the graph of $\mathrm{unpack}$.}
+
+Each layer is encoded as the full-synchronisation composition of $n$ automata,
+one per process, communicating only through delivery labels that the composition
+hides.
+That composition is the product of Definition~\ref{def:syncproduct}, taken over
+the extended alphabet of Definition~\ref{def:relabel} and read back along the
+restriction that definition supplies.
+The node of one automaton holds that process's record, its outbox and its inbox
+rows and nothing further, so locality sits in the state shape and not in the
+guards alone.
+
+\begin{definition}[The per-process GBCA instance]
+  \label{def:aba-gbca-perproc}
+  \lean{PLTS.ABA.GBCA.GNet}\lean{PLTS.ABA.GBCA.ProcNode}\lean{PLTS.ABA.GBCA.ProcStep}\lean{PLTS.ABA.GBCA.procInst}\lean{PLTS.ABA.GBCA.netLabels}\lean{PLTS.ABA.GBCA.perProcInst}\leanok
+  \uses{def:aba-gbca-vocab, def:relabel, def:syncproduct}
+  The state of process $j$ is the node $\mathrm{ProcNode}$: the stage record $proc$ of Definition~\ref{def:aba-gbca-vocab}, the outbox $out$, the inbox rows $inbox(k)$ indexed by sender, and $j$'s own copy of the corrupted set $F$.
+  No field of the node names another process's record or pools.
+  The automaton runs over the extended alphabet $\mathrm{Lab}(n) \oplus \mathrm{GNet}(n)$, where $\mathrm{net}(i,j,m)$ is the delivery of $m$ from sender $j$ to receiver $i$.
+  Its twenty-one rules split the alphabet by role.
+  On the calls and returns it owns, $\mathrm{callG}\,r\,j\,b$ and $\mathrm{retG}\,r\,j\,g$, it runs the rule of that name in Algorithm~\ref{alg:gbca-impl}, together with the input-enabledness loop; on a call or return addressed to another process it idles.
+  On $\mathrm{fail}(k)$ every automaton applies the corruption transform to its own copy of $F$, which is what keeps the copies equal.
+  On $\mathrm{net}(i,j,m)$ the sender supplies the outbox guard $m \in out$ and does not move, the receiver files $m$ under row $j$ and carries no outbox guard, a process that is both supplies the guard and files the message, and a process that is neither idles.
+  The internal rules of Algorithm~\ref{alg:gbca-impl} --- the INPUT relay, the ECHO, VOTE, BIND and SEAL multicasts, and the Byzantine injection of D5 --- carry $\tau$.
+  Every guard reads the node alone.
+  The composite is
+  \[
+    \mathrm{perProcInst}(P,r) \;=\;
+      \mathrm{relabel}\Bigl(
+        \mathrm{abstract}_{\mathrm{netLabels}}\bigl(
+          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{procInst}(P,r,j)
+        \bigr)\Bigr),
+  \]
+  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{ProcNode}(n)$, where $\mathrm{netLabels}$ is the set of $\mathrm{net}(i,j,m)$.
+\end{definition}
+
+\begin{definition}[The per-process core]
+  \label{def:aba-core-perproc}
+  \lean{PLTS.ABA.DNet}\lean{PLTS.ABA.CoreNode}\lean{PLTS.ABA.CoreProcStep}\lean{PLTS.ABA.CoreProc}\lean{PLTS.ABA.gossipLabels}\lean{PLTS.ABA.perProcCore}\leanok
+  \uses{def:aba-core-vocab, def:relabel, def:syncproduct}
+  The state of core process $j$ is the node $\mathrm{CoreNode}$: the control record $proc$ of Definition~\ref{def:aba-core-vocab}, $j$'s own DECIDED pool $decOut$, the rows $decIn(k)$ of DECIDED receipts addressed to $j$, and $j$'s copy of $F$.
+  Each process owns its DECIDED pool and its receipt rows, so that layer is per process by construction (D12$'$), and a corrupted process may pool both bits and have them delivered selectively.
+  The extended alphabet is $\mathrm{Lab}(n) \oplus \mathrm{DNet}(n)$, where $\mathrm{net}(i,j,b)$ carries $j$'s $\langle\mathrm{DECIDED},b\rangle$ to $i$.
+  Its twenty-four rules split the alphabet by role.
+  Process $j$ owns $\mathrm{callABA}(j,b)$, $\mathrm{retABA}(j,b)$ and the four round-tagged handshake labels naming $j$, and runs the rule of Algorithm~\ref{alg:aba-core} at each; on the same labels naming another process it idles.
+  Two rule families have no line of that pseudocode behind them.
+  The first is input-enabledness: $\mathrm{callABA}(j,b)$ carries, beside the rule that records the input, a self-loop fixing the node, so a call is never refused for want of a rule.
+  The second is the Byzantine drivers: for $j \in F$ each of the four handshake labels naming $j$ carries a further rule guarded by membership of $F$ alone, changing no state, which is what lets the adversary drive a corrupted process's calls and returns out of phase (D11).
+  On $\mathrm{fail}(k)$ every automaton corrupts its own copy of $F$.
+  The DECIDED echo and the Byzantine DECIDED injection carry $\tau$.
+  On $\mathrm{net}(i,j,b)$ the sender contributes the soundness guard $b \in decOut$ and does not move, and the receiver contributes the freshness guard $b \notin decIn(j)$ and the write.
+  Every guard reads the node alone, and the split fixes where a guard is read and nothing else.
+  The composite is
+  \[
+    \mathrm{perProcCore}(P) \;=\;
+      \mathrm{relabel}\Bigl(
+        \mathrm{abstract}_{\mathrm{gossipLabels}}\bigl(
+          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{CoreProc}(P,j)
+        \bigr)\Bigr),
+  \]
+  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{CoreNode}(n)$.
+\end{definition}
+
+Both composites of Definitions~\ref{def:aba-gbca-perproc} and~\ref{def:aba-core-perproc} have the same shape.
+The frame is $\mathrm{relabel}$ composed with $\mathrm{abstract}_{\mathrm{netLabels}}$: it turns every $\mathrm{net}(i,j,m)$ into $\tau$, and what leaves it is the visible API $\mathrm{callG}$, $\mathrm{retG}$ and $\mathrm{fail}$ together with $\tau$.
+At a rendezvous $\mathrm{net}(i,j,m)$ the sender $j$ supplies the guard $m \in \mathrm{out}_j$ and does not move, the receiver $i$ files $m$ under row $j$, and every other component answers with an idle self-loop, so full synchronisation moves exactly the two participants.
+On a visible label every component steps, its owner by its own rule and the rest by an idle loop; on $\mathrm{fail}$ every copy of the corrupted set is corrupted.
+The core composite carries the same description with $\mathrm{CoreProc}(P,j)$, $\mathrm{net}(i,j,b)$ and $\mathrm{gossipLabels}$ in place of the GBCA names.
+
+\dynamics{What the presentation certifies}{%
+Calling either encoding a distributed algorithm is a claim about which state a
+rule is allowed to read.
+Since every rule of the per-process automata is a function of one node, no rule
+of either implementation reads across a process boundary.
+The presentation also fixes what stays centralized.
+The corruption budget is the one piece of shared state: the guard
+$k \notin F \wedge |F| < f$ is evaluated on each node's own copy of $F$, and
+the copies agree only because $\mathrm{fail}$ is a broadcast every component
+answers.
+That is the adversary's bookkeeping and not the protocol's.
+Nothing else is shared.
+The message pools, the receipt rows and the control records each belong to one
+process, and every quorum count is taken over one node's rows.
+}
+
+\subsection{The graded-agreement stage}
+
 \begin{definition}[The GBCA implementation instance]
   \label{def:aba-gbca-impl}
   \lean{PLTS.ABA.GBCA.implInst}\leanok
-  \uses{def:aba-labels, def:aba-params}
-  ABDY22's Algorithm~6 as a per-round PLTS (Algorithm~\ref{alg:gbca-impl}, deviation D18); see the caption of that algorithm for how it relates to the source blueprint's compressed four-round form.
+  \uses{def:aba-labels, def:aba-params, def:aba-gbca-vocab}
+  The graded-agreement layer regrouped as one per-round PLTS over the whole system state, the analysis form of Algorithm~\ref{alg:gbca-impl}, which is ABDY22's Algorithm~6 (deviation D18); see the caption of that algorithm for how it relates to the source blueprint's compressed four-round form.
   Each process runs a five-stage message exchange over an authenticated set-based network, the levels INPUT, ECHO, VOTE, BIND, SEAL being the paper's $\mathrm{echo}$ through $\mathrm{echo5}$.
   On a $\mathrm{callG}$ it multicasts $\langle\mathrm{INPUT},b\rangle$; it relays $\langle\mathrm{INPUT},b\rangle$ once $f{+}1$ receipts of it arrive (the relay gate); it multicasts $\langle\mathrm{ECHO},b\rangle$ on an $n{-}f$ INPUT-$b$ quorum, $\langle\mathrm{VOTE},v\rangle$ on an $n{-}f$ ECHO quorum, $\langle\mathrm{BIND},v\rangle$ on an $n{-}f$ VOTE quorum, and $\langle\mathrm{SEAL},v\rangle$ on an $n{-}f$ BIND quorum, each payload above INPUT and ECHO a real bit or $\bot$.
   A process returns grade $A\,b$ on an $n{-}f$ SEAL-$b$ quorum, $B\,b$ on an $n{-}f$ any-SEAL quorum containing $b$ with $f{+}1$ BIND-$b$s and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ SEAL-$\bot$ quorum with $|\mathrm{Valid}|>1$.
@@ -1286,41 +1429,43 @@ The $dead$ and $grade$ fields of Transition System~2 are abstractions of these
 receipt patterns and belong to the specification alone;
 Theorem~\ref{thm:gbca-inst-refines} supplies them from the receipts.
 
-\subsection{The round loop}
+The inventory above is monolithic.
+It is a single automaton whose state is the whole system, so its rules may read
+fields of processes other than the one they move: \texttt{deliver} inspects the
+sender's message pool and the receiver's row in one guard.
+That the guards are nevertheless local is a property of the rules and not of the
+state shape, and the equality below is where that is stated.
 
-\begin{algorithm}
-    \caption{Implementation of ABA. Algorithm 1 of the source blueprint, after
-      Abraham, Ben-David and Yandamuri \cite{ABDY22}}
-    \label{alg:aba-core}
-    \begin{algorithmic}
-        \State \textbf{Input:} $b \in \{0,1\}$
-        \State \textbf{Sub-protocols:} countably many instances of GBCA and WCC
-        \medskip
-        \State $r \gets 1$
-        \State \textbf{loop}
-        \State\quad $(b, g) \gets \mathrm{GBCA}_r(b)$
-          \Comment{$b \in \{0,1,\bot\}$, $g \in \{A,B,C\}$}
-        \State\quad $c \gets \mathrm{WCC}_r()$
-        \State\quad \textbf{if} $b = \bot$:
-        \State\quad\quad $b \gets c$
-        \State\quad \textbf{elif} $g = A$:
-        \State\quad\quad send $\langle\mathrm{DECIDED}, b\rangle$ to all
-        \State\quad $r \gets r + 1$
-        \medskip
-        \State \textbf{upon} receiving $\langle\mathrm{DECIDED}, b\rangle$ from
-          $f + 1$ processes and having not sent it:
-        \State\quad send $\langle\mathrm{DECIDED}, b\rangle$ to all
-        \State \textbf{upon} receiving $\langle\mathrm{DECIDED}, b\rangle$ from
-          $n - f$ processes and having sent it:
-        \State\quad \textbf{return} $b$
-    \end{algorithmic}
-\end{algorithm}
+\begin{theorem}[The per-process GBCA instance is the implementation instance]
+  \label{thm:aba-gbca-perproc}
+  \lean{PLTS.ABA.GBCA.perProcRefines}\lean{PLTS.ABA.GBCA.implRefinesPerProc}\lean{PLTS.ABA.GBCA.perProcInst_atd}\leanok
+  \uses{def:aba-gbca-perproc, def:aba-gbca-impl, def:achievable}
+  For all parameters $P$ and all rounds $r$,
+  \[
+    \operatorname{ATD}(\mathrm{perProcInst}(P,r)) \;=\;
+    \operatorname{ATD}(\mathrm{implInst}(P,r)) .
+  \]
+  Each inclusion is an LTS forward simulation along the packing map $\mathrm{unpack}$, and the step matching is one-to-one in both directions.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-gbca-perproc, def:aba-gbca-impl, def:relabel, def:syncproduct, def:achievable, thm:forward-sound}
+  Define the packing map $\mathrm{unpack}(q)(j) = (proc\,j,\ sent\,j,\ recv\,j,\ F)$ and take both relations to be its graph, which holds at the initial states.
+  It makes every node's copy of the corrupted set equal to the monolithic $F$, and the $\mathrm{fail}$ broadcast preserves that equality, since every component applies the same corruption transform to its own copy.
+  The step matching is one-to-one and uses no stuttering in either direction.
+  A hidden rendezvous $\mathrm{net}(i,j,m)$ matches $\mathrm{deliver}\,i\,j\,m$, the sender component supplying the outbox guard and the receiver component the row update, every other component idle.
+  An interleaved $\tau$ of one component matches the monolithic rule of the same name.
+  A synchronised visible step matches the monolithic rule with the same guards, the counts taken over a packed node's rows being the monolithic counts.
+  Both systems are LTS, so each matching is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) applied in each direction gives the two inclusions.
+\end{proof}
+
+\subsection{The round loop}
 
 \begin{definition}[The ABA core]
   \label{def:aba-core}
   \lean{PLTS.ABA.core}\leanok
-  \uses{def:aba-labels}
-  The core algorithm as a PLTS (Algorithm~\ref{alg:aba-core}).
+  \uses{def:aba-labels, def:aba-core-vocab}
+  The round loop regrouped as one PLTS over the whole system state, the analysis form of Algorithm~\ref{alg:aba-core}.
   Each process runs a five-phase handshake cycle $\mathrm{idle} \to \mathrm{toCallG} \to \mathrm{awaitG} \to \mathrm{toCallW} \to \mathrm{awaitW}$ and back to $\mathrm{toCallG}$ of the next round, carrying an estimate adopted from the graded GBCA outcome or, when the estimate is $\bot$, from the coin.
   The per-round bookkeeping between the coin return and the next GBCA call is fused into the $\mathrm{retW}$ step (D10), which multicasts $\langle\mathrm{DECIDED}, b\rangle$ when the round's grade was $A\,b$.
   A DECIDED gossip layer pools the multicasts in per-process sent and received pools; a corrupted process may pool either bit and so equivocates at this layer (D12$'$).
@@ -1512,94 +1657,11 @@ family rules that pair out; the core alone guarantees only that each process
 returns at most once, by the flag its return rule sets.
 }
 
-\subsection{One automaton per process}
-
-Both rule inventories above are monolithic.
-Each is a single automaton whose state is the whole system, so its rules may read fields of processes other than the one they move.
-The GBCA delivery rule inspects the sender's message pool and the receiver's row in one guard, and the core's DECIDED delivery does the same.
-That the guards are nevertheless local is a property of the rules and not of the state shape, and it is stated here as a theorem.
-Each monolithic system is equal, on achievable trace distributions, to the full-synchronisation composition of $n$ automata, one per process, communicating only through delivery labels that the composition hides.
-That composition is the product of Definition~\ref{def:syncproduct}, taken over the extended alphabet of Definition~\ref{def:relabel} and read back along the restriction that definition supplies.
-
-\begin{definition}[The per-process GBCA instance]
-  \label{def:aba-gbca-perproc}
-  \lean{PLTS.ABA.GBCA.GNet}\lean{PLTS.ABA.GBCA.ProcNode}\lean{PLTS.ABA.GBCA.ProcStep}\lean{PLTS.ABA.GBCA.procInst}\lean{PLTS.ABA.GBCA.netLabels}\lean{PLTS.ABA.GBCA.perProcInst}\leanok
-  \uses{def:aba-gbca-impl, def:relabel, def:syncproduct}
-  The state of process $j$ is the node $\mathrm{ProcNode}$: the local record $proc$, the outbox $out$, the inbox rows $inbox(k)$ indexed by sender, and $j$'s own copy of the corrupted set $F$.
-  No field of the node names another process's record or pools.
-  The automaton runs over the extended alphabet $\mathrm{Lab}(n) \oplus \mathrm{GNet}(n)$, where $\mathrm{net}(i,j,m)$ is the delivery of $m$ from sender $j$ to receiver $i$.
-  Its twenty-one rules split the alphabet by role.
-  On the calls and returns it owns, $\mathrm{callG}\,r\,j\,b$ and $\mathrm{retG}\,r\,j\,g$, it runs the rule of that name in Algorithm~\ref{alg:gbca-impl}, together with the input-enabledness loop; on a call or return addressed to another process it idles.
-  On $\mathrm{fail}(k)$ every automaton applies the corruption transform to its own copy of $F$, which is what keeps the copies equal.
-  On $\mathrm{net}(i,j,m)$ the sender supplies the outbox guard $m \in out$ and does not move, the receiver files $m$ under row $j$ and carries no outbox guard, a process that is both supplies the guard and files the message, and a process that is neither idles.
-  The internal rules of Algorithm~\ref{alg:gbca-impl} --- the INPUT relay, the ECHO, VOTE, BIND and SEAL multicasts, and the Byzantine injection of D5 --- carry $\tau$.
-  Every guard reads the node alone.
-  The composite is
-  \[
-    \mathrm{perProcInst}(P,r) \;=\;
-      \mathrm{relabel}\Bigl(
-        \mathrm{abstract}_{\mathrm{netLabels}}\bigl(
-          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{procInst}(P,r,j)
-        \bigr)\Bigr),
-  \]
-  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{ProcNode}(n)$, where $\mathrm{netLabels}$ is the set of $\mathrm{net}(i,j,m)$.
-\end{definition}
-
-\begin{definition}[The per-process core]
-  \label{def:aba-core-perproc}
-  \lean{PLTS.ABA.DNet}\lean{PLTS.ABA.CoreNode}\lean{PLTS.ABA.CoreProcStep}\lean{PLTS.ABA.CoreProc}\lean{PLTS.ABA.gossipLabels}\lean{PLTS.ABA.perProcCore}\leanok
-  \uses{def:aba-core, def:relabel, def:syncproduct}
-  The state of core process $j$ is the node $\mathrm{CoreNode}$: the control record $proc$, $j$'s own DECIDED pool $decOut$, the rows $decIn(k)$ of DECIDED receipts addressed to $j$, and $j$'s copy of $F$.
-  Deviation D12$'$ is what admits the split: the DECIDED pools of Definition~\ref{def:aba-core} are already indexed by process, so $decOut$ is one process's field and $decIn$ one process's rows.
-  The extended alphabet is $\mathrm{Lab}(n) \oplus \mathrm{DNet}(n)$, where $\mathrm{net}(i,j,b)$ carries $j$'s $\langle\mathrm{DECIDED},b\rangle$ to $i$.
-  Its twenty-four rules split the alphabet by role.
-  Process $j$ owns $\mathrm{callABA}(j,b)$, $\mathrm{retABA}(j,b)$ and the four round-tagged handshake labels naming $j$, and runs the rule of Definition~\ref{def:aba-core} at each, including the Byzantine driver rules of D11; on the same labels naming another process it idles.
-  On $\mathrm{fail}(k)$ every automaton corrupts its own copy of $F$.
-  The DECIDED echo and the Byzantine DECIDED injection carry $\tau$.
-  On $\mathrm{net}(i,j,b)$ the sender contributes the soundness guard $b \in decOut$ and does not move, and the receiver contributes the freshness guard $b \notin decIn(j)$ and the write.
-  Every guard reads the node alone, and no guard of Definition~\ref{def:aba-core} is otherwise altered.
-  The composite is
-  \[
-    \mathrm{perProcCore}(P) \;=\;
-      \mathrm{relabel}\Bigl(
-        \mathrm{abstract}_{\mathrm{gossipLabels}}\bigl(
-          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{CoreProc}(P,j)
-        \bigr)\Bigr),
-  \]
-  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{CoreNode}(n)$.
-\end{definition}
-
-\begin{theorem}[The per-process GBCA instance is the implementation instance]
-  \label{thm:aba-gbca-perproc}
-  \lean{PLTS.ABA.GBCA.perProcRefines}\lean{PLTS.ABA.GBCA.implRefinesPerProc}\lean{PLTS.ABA.GBCA.perProcInst_atd}\leanok
-  \uses{def:aba-gbca-perproc, def:aba-gbca-impl, def:achievable}
-  For all parameters $P$ and all rounds $r$,
-  \[
-    \operatorname{ATD}(\mathrm{perProcInst}(P,r)) \;=\;
-    \operatorname{ATD}(\mathrm{implInst}(P,r)) .
-  \]
-  Each inclusion is an LTS forward simulation along the packing map $\mathrm{unpack}$, and the step matching is one-to-one in both directions.
-\end{theorem}
-
-\begin{proof}\leanok
-  \uses{def:aba-gbca-perproc, def:aba-gbca-impl, def:relabel, def:syncproduct, def:achievable, thm:forward-sound}
-  Define the packing map $\mathrm{unpack}(q)(j) = (proc\,j,\ sent\,j,\ recv\,j,\ F)$ and take both relations to be its graph, which holds at the initial states.
-  It makes every node's copy of the corrupted set equal to the monolithic $F$, and the $\mathrm{fail}$ broadcast preserves that equality, since every component applies the same corruption transform to its own copy.
-  The step matching is one-to-one and uses no stuttering in either direction.
-  A hidden rendezvous $\mathrm{net}(i,j,m)$ matches $\mathrm{deliver}\,i\,j\,m$, the sender component supplying the outbox guard and the receiver component the row update, every other component idle.
-  An interleaved $\tau$ of one component matches the monolithic rule of the same name.
-  A synchronised visible step matches the monolithic rule with the same guards, the counts taken over a packed node's rows being the monolithic counts.
-  Both systems are LTS, so each matching is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) applied in each direction gives the two inclusions.
-\end{proof}
-
-Both composites of Definitions~\ref{def:aba-gbca-perproc} and~\ref{def:aba-core-perproc} have the same shape.
-The frame is $\mathrm{relabel}$ composed with $\mathrm{abstract}_{\mathrm{netLabels}}$: it turns every $\mathrm{net}(i,j,m)$ into $\tau$, and what leaves it is the visible API $\mathrm{callG}$, $\mathrm{retG}$ and $\mathrm{fail}$ together with $\tau$.
-At a rendezvous $\mathrm{net}(i,j,m)$ the sender $j$ supplies the guard $m \in \mathrm{out}_j$ and does not move, the receiver $i$ files $m$ under row $j$, and every other component answers with an idle self-loop, so full synchronisation moves exactly the two participants.
-On a visible label every component steps, its owner by its own rule and the rest by an idle loop; on $\mathrm{fail}$ every copy of the corrupted set is corrupted.
-The core composite carries the same description with $\mathrm{CoreProc}(P,j)$, $\mathrm{net}(i,j,b)$ and $\mathrm{gossipLabels}$ in place of the GBCA names.
-
-\blueprintfig{fig-perproc}{The per-process presentation: the family $\mathrm{procInst}(P,r,j)$ under $\mathrm{syncProduct}$, the network alphabet hidden by the dashed frame $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netLabels}$, and the composite read back over $\mathrm{Lab}(n)$.
-The dashed vertical is Theorem~\ref{thm:aba-gbca-perproc}: the composite and the monolithic instance achieve the same trace distributions, the relation being the graph of $\mathrm{unpack}$.}
+The round-loop inventory is monolithic in the same sense.
+Its \texttt{deliver} rule reads a sender's DECIDED pool and a receiver's row in
+one guard, and the counts of \texttt{echo} and \texttt{ret} range over one
+receiver's rows.
+The same equality holds of it.
 
 \begin{theorem}[The per-process core is the core]
   \label{thm:aba-core-perproc}
@@ -1622,26 +1684,6 @@ The dashed vertical is Theorem~\ref{thm:aba-gbca-perproc}: the composite and the
   A label no component owns is blocked by the product, which is how the composite reproduces a monolithic guard that fails.
   Both systems are LTS, so each matching is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) applied in each direction gives the two inclusions.
 \end{proof}
-
-\dynamics{What the presentation certifies}{%
-Calling either encoding a distributed algorithm is a claim about which state a
-rule is allowed to read.
-The monolithic encoding is the composed system with the tuple of nodes packed
-into one record and the rendezvous already resolved, and Theorems
-\ref{thm:aba-gbca-perproc} and~\ref{thm:aba-core-perproc} say that the packing
-costs no observable behaviour in either direction.
-Since every rule of the per-process automata is a function of one node, no rule
-of either implementation reads across a process boundary.
-The theorems also fix what stays centralized.
-The corruption budget is the one piece of shared state: the guard
-$k \notin F \wedge |F| < f$ is evaluated on each node's own copy of $F$, and
-the copies agree only because $\mathrm{fail}$ is a broadcast every component
-answers.
-That is the adversary's bookkeeping and not the protocol's.
-Nothing else is shared.
-The message pools, the receipt rows and the control records each belong to one
-process, and every quorum count is taken over one node's rows.
-}
 
 \subsection{The ABA specification and its safety}
 
