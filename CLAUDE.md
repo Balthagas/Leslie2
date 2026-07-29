@@ -30,9 +30,23 @@ There is no test suite. CI (`.github/workflows/blueprint.yml`) runs `lake-action
 
 ## Blueprint
 
-The math write-up is a Lean blueprint in `blueprint/src/` (`content.tex` is the actual content; `web.tex` / `print.tex` are the web/PDF entry points; `macros/` holds the `\lean{}`/`\leanok` macros used to cross-link to Lean declarations). The Jekyll site under `home_page/` is what gets published to GitHub Pages alongside the blueprint and doc-gen output. The blueprint hyperlinks at `https://Balthagas.github.io/Leslie2`.
+The math write-up is a Lean blueprint in `blueprint/src/` (`content.tex` is the actual content; `web.tex` / `print.tex` are the web/PDF entry points; `macros/` holds the `\lean{}`/`\leanok` macros used to cross-link to Lean declarations). The Jekyll site under `home_page/` is what gets published to GitHub Pages alongside the blueprint and doc-gen output. The blueprint hyperlinks at `https://sathiyavrs.github.io/Leslie2`.
 
 When adding a Lean declaration that should appear in the blueprint, mirror it with a `\begin{definition}\label{...}\lean{NamespacedName}\leanok ...\end{definition}` block in `content.tex` — `checkdecls` will fail CI if the `\lean{}` target doesn't resolve.
+
+### Blueprint commands (local loop)
+
+The blueprint is a genuine [leanblueprint](https://github.com/PatrickMassot/leanblueprint) project; the CLI is installed via pipx. Run from the repo root:
+
+```bash
+leanblueprint pdf        # print edition → blueprint/print/print.pdf (latexmk/xelatex)
+leanblueprint web        # web edition → blueprint/web/ (plasTeX; also writes
+                         #   blueprint/web/dep_graph_document.html and blueprint/lean_decls)
+leanblueprint checkdecls # verify every \lean{} target exists (needs a completed lake build)
+leanblueprint serve      # serve blueprint/web/ at http://0.0.0.0:8000/
+```
+
+Caveats: plasTeX 3.1 silently breaks on **Python 3.14** (packages fail to load, `\lean`/`\uses` fall back to default renderers, no dep graph, no `lean_decls`, no theorem badges), and `leanblueprint web` resolves `plastex` from PATH — so there must be exactly ONE pipx installation, on Python ≤ 3.13, exposing both apps: `pipx install leanblueprint --python /opt/homebrew/bin/python3.13 --include-deps` (uninstall any standalone `plastex` pipx venv first). The dependency graph needs no external `dot` binary (`pygraphviz` ships bundled Graphviz libraries). plasTeX caches the parse in `blueprint/src/web.paux` — after preamble/URL changes, `rm -rf blueprint/web blueprint/src/web.paux` before rebuilding.
 
 ## Code conventions
 
