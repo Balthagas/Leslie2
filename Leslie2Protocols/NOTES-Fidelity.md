@@ -9,7 +9,11 @@ for a reader holding the sources open beside the Lean.
 `Papers/Leslie_blueprint.pdf` — supplies the transition systems (TS 1 = ABA, TS 2 =
 GBCA, TS 3 = WCC, pp. 18–19) and the pseudocode (Algorithm 1 = the ABA core, p. 14;
 Algorithm 2 = GBCA, p. 15). It in turn adapts *ABDY22* (Abraham, Ben-David and
-Yandamuri, PODC 2022), whose Algorithm 6 is the GBCA of record. The encoding follows the
+Yandamuri, PODC 2022), which numbers independently: ABDY22's Algorithm 2 is the
+weak-coin agreement framework `AA_ε` that the source blueprint's Algorithm 1
+realises (ABDY22's Algorithm 1 is the strong-coin framework, not encoded here),
+and ABDY22's Algorithm 6 is the GBCA of record. Bare algorithm numbers in this
+file are the source blueprint's. The encoding follows the
 source blueprint; where the source blueprint departs from ABDY22 the encoding inherits
 the departure, with the single exception of §1.
 

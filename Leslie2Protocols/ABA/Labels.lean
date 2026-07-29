@@ -13,7 +13,8 @@ import Leslie2Protocols.ABA.Params
 Every system of the case study — `ABA.Core`, `ABA.Spec`, the `GBCA` instance
 families and the `WCC` spec family — lives over the single label type
 `ABA.Lab n`. Sub-protocol API labels are tagged with their round `r : ℕ`
-(Algorithm 1 uses countably many `GBCA_r` / `WCC_r` instances).
+(the source blueprint's Algorithm 1 uses countably many `GBCA_r` / `WCC_r`
+instances).
 
 Composition is by the core's full-synchronisation `System.parallel`: a visible
 label fires iff *every* component steps on it. Components therefore carry

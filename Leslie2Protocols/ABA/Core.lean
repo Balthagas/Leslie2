@@ -8,11 +8,17 @@ import Leslie2.Systems.LTS
 import Leslie2Protocols.ABA.Labels
 
 /-!
-# The ABA core (blueprint Algorithm 1)
+# The ABA core (the source blueprint's Algorithm 1 = ABDY22's Algorithm 2)
 
 The round-loop control component of ABDY22's Asynchronous Byzantine Agreement
-protocol (blueprint Algorithm 1), as an LTS over the shared alphabet
-`ABA.Lab n`. Per process, on external input `b`:
+protocol, as an LTS over the shared alphabet `ABA.Lab n`. The pseudocode is
+the source blueprint's Algorithm 1, which realises **ABDY22's Algorithm 2** —
+the weak-coin framework `AA_ε`: rounds of GBCA followed by a weak-coin flip,
+the coin adopted only on a `⊥` decision — with the DECIDED gossip below in
+place of the paper's bare grade-2 commit. (The paper's Algorithm 1 is the
+*strong*-coin framework over ungraded BCA and is not encoded anywhere in this
+development; algorithm numbers below refer to the source blueprint unless the
+paper is named.) Per process, on external input `b`:
 
     r ← 0
     loop:

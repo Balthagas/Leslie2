@@ -264,7 +264,8 @@ end CoreNode
 
 /-! ### The automaton of one process -/
 
-/-- The step relation of process `j`'s automaton (blueprint Algorithm 1, read as
+/-- The step relation of process `j`'s automaton (the source blueprint's
+Algorithm 1, read as
 the code of a single process). Every guard reads only `j`'s own fields; labels
 `j` does not own carry idle self-loops so that full synchronisation lets their
 owner move. All transitions are Dirac. -/

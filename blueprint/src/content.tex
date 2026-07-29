@@ -847,15 +847,22 @@ Transition System~1 is the ABA specification, Transition System~2 the GBCA
 specification, and Transition System~3 the WCC specification.
 These names are used throughout this section and follow the numbering of the
 source blueprint~\cite{LeslieBP}, whose pseudocode is numbered there as well:
-Algorithm~1 is the ABA core algorithm and Algorithm~2 the GBCA implementation.
+the source blueprint's Algorithm~1 is the ABA core algorithm and its
+Algorithm~2 the GBCA implementation.
 Of those two only the ABA core is reproduced here.
+The cited paper carries a third, independent numbering, always written here
+with ``ABDY22's'' attached: ABDY22's Algorithm~2 is the weak-coin agreement
+framework $AA_\varepsilon$, which the source blueprint's Algorithm~1 realises
+(ABDY22's Algorithm~1, the strong-coin framework over ungraded BCA, is not
+encoded in this development); ABDY22's Algorithm~6 is the graded
+sub-protocol.
 The GBCA implementation this chapter displays and encodes is ABDY22's
 Algorithm~6, of which the source blueprint's Algorithm~2 is a compression that
 violates Binding (D18).
 A cross-reference of the form ``Algorithm~\ref{alg:aba-core}'' always points to
-a displayed float of this document, whose numbering runs independently of the
-source's; the source's own numbers appear only in the phrase ``the source
-blueprint's Algorithm~$k$''.
+a displayed float of this document, whose numbering runs independently of both;
+the other two numberings appear only in the phrases ``the source blueprint's
+Algorithm~$k$'' and ``ABDY22's Algorithm~$k$''.
 
 \paragraph{Deviations.}
 The encodings depart from~\cite{LeslieBP} in catalogued ways.
