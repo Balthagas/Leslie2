@@ -1325,21 +1325,26 @@ theorem grade_ne_true_of_sealBot_quorum {s : ImplState P.n} {t : SpecState P.n}
 
 /-! ### Answering a return by a kill burst -/
 
-/-- `bindUnset (!v) ; retA v` from a state where `!v` is still alive. The
-`bindUnset (!v)` support guard reads `some (!(!v))`; `Bool.not_not` rewrites
-it to `hw`'s `some v`. -/
+/-- A `Finset Bool` that omits both `v` and `!v` omits everything. -/
+theorem dead_empty_of_both {d : Finset Bool} {v : Bool}
+    (h1 : v ∉ d) (h2 : (!v) ∉ d) : d = ∅ := by
+  ext b; cases b <;> cases v <;> simp_all
+
+/-- `bindUnset (!v) ; retA v` from an all-alive state (`dead = ∅`, the
+`bindUnset` guard). The `bindUnset (!v)` support guard reads `some (!(!v))`;
+`Bool.not_not` rewrites it to `hw`'s `some v`. -/
 theorem killThenRetA_burst {r : ℕ} {t : SpecState P.n} {id : Fin P.n} {v : Bool}
     (hq : t.quorum P)
     (hw : P.f + 1 ≤ (Finset.univ.filter
       (fun k => t.call k = some v ∨ k ∈ t.F)).card)
-    (hlive : v ∉ t.dead) (hkill : (!v) ∉ t.dead)
+    (hlive : v ∉ t.dead) (hd0 : t.dead = ∅)
     (hg : t.grade = none ∨ t.grade = some true)
     (hr : t.ret id = false) :
     (specInst P r).weakLStep t (.retG r id (.A v))
       { t with dead := insert (!v) t.dead, grade := some true,
                ret := Function.update t.ret id true } := by
   have h1 : (specInst P r).LStep t Silent.τ { t with dead := insert (!v) t.dead } :=
-    Step.bindUnset t (!v) hq (by simpa only [Bool.not_not] using hw) hkill
+    Step.bindUnset t (!v) hq (by simpa only [Bool.not_not] using hw) hd0
   have h2 : (specInst P r).LStep { t with dead := insert (!v) t.dead }
       (.retG r id (.A v))
       { t with dead := insert (!v) t.dead, grade := some true,
@@ -1358,7 +1363,7 @@ theorem killThenRetB_burst {r : ℕ} {t : SpecState P.n} {id : Fin P.n} {v : Boo
     (hq : t.quorum P)
     (hw : P.f + 1 ≤ (Finset.univ.filter
       (fun k => t.call k = some v ∨ k ∈ t.F)).card)
-    (hlive : v ∉ t.dead) (hkill : (!v) ∉ t.dead)
+    (hlive : v ∉ t.dead) (hd0 : t.dead = ∅)
     (hd : P.f + 1 ≤ (Finset.univ.filter
       (fun k => t.call k = some (!v) ∨ k ∈ t.F)).card)
     (hr : t.ret id = false) :
@@ -1366,7 +1371,7 @@ theorem killThenRetB_burst {r : ℕ} {t : SpecState P.n} {id : Fin P.n} {v : Boo
       { t with dead := insert (!v) t.dead,
                ret := Function.update t.ret id true } := by
   have h1 : (specInst P r).LStep t Silent.τ { t with dead := insert (!v) t.dead } :=
-    Step.bindUnset t (!v) hq (by simpa only [Bool.not_not] using hw) hkill
+    Step.bindUnset t (!v) hq (by simpa only [Bool.not_not] using hw) hd0
   have h2 : (specInst P r).LStep { t with dead := insert (!v) t.dead }
       (.retG r id (.B v))
       { t with dead := insert (!v) t.dead,
@@ -1379,13 +1384,13 @@ theorem killThenRetB_burst {r : ℕ} {t : SpecState P.n} {id : Fin P.n} {v : Boo
     · exact hlive hv
   exact weakLStep_tauThen h1 h2 (by simp)
 
-/-- `bindUnset b ; retC` from an all-alive state: the kill supplies the
-`1 ≤ |dead|` witness (`insert` is nonempty). -/
+/-- `bindUnset b ; retC` from an all-alive state (`dead = ∅`, the `bindUnset`
+guard): the kill supplies the `1 ≤ |dead|` witness (`insert` is nonempty). -/
 theorem killThenRetC_burst {r : ℕ} {t : SpecState P.n} {id : Fin P.n} {b : Bool}
     (hq : t.quorum P)
     (hw : P.f + 1 ≤ (Finset.univ.filter
       (fun k => t.call k = some (!b) ∨ k ∈ t.F)).card)
-    (hkill : b ∉ t.dead)
+    (hd0 : t.dead = ∅)
     (hwT : P.f + 1 ≤ (Finset.univ.filter
       (fun k => t.call k = some true ∨ k ∈ t.F)).card)
     (hwF : P.f + 1 ≤ (Finset.univ.filter
@@ -1396,7 +1401,7 @@ theorem killThenRetC_burst {r : ℕ} {t : SpecState P.n} {id : Fin P.n} {b : Boo
       { t with dead := insert b t.dead, grade := some false,
                ret := Function.update t.ret id true } := by
   have h1 : (specInst P r).LStep t Silent.τ { t with dead := insert b t.dead } :=
-    Step.bindUnset t b hq hw hkill
+    Step.bindUnset t b hq hw hd0
   have h2 : (specInst P r).LStep { t with dead := insert b t.dead }
       (.retG r id .C)
       { t with dead := insert b t.dead, grade := some false,
@@ -1702,7 +1707,8 @@ theorem implRefines (P : Params) (r : ℕ) :
         (echoQuorum_of_vote_receipts hRR.inv (i := k) (v := v) (by omega))
       refine ⟨{ q2 with dead := insert (!v) q2.dead, grade := some true,
                         ret := Function.update q2.ret id true },
-        Or.inr ⟨by simp, killThenRetA_burst hq hw hlive hdead hgr hret⟩,
+        Or.inr ⟨by simp,
+          killThenRetA_burst hq hw hlive (dead_empty_of_both hlive hdead) hgr hret⟩,
         hI', ?_, ?_, hRR.F_eq, ?_,
         fun _ => ⟨v, id, hcnt⟩,
         fun hgf => absurd hgf (by simp)⟩
@@ -1761,7 +1767,8 @@ theorem implRefines (P : Params) (r : ℕ) :
         (echoQuorum_of_vote_receipts hRR.inv (i := k) (v := v) (by omega))
       refine ⟨{ q2 with dead := insert (!v) q2.dead,
                         ret := Function.update q2.ret id true },
-        Or.inr ⟨by simp, killThenRetB_burst hq hw hlive hdead hd hret⟩,
+        Or.inr ⟨by simp,
+          killThenRetB_burst hq hw hlive (dead_empty_of_both hlive hdead) hd hret⟩,
         hI', ?_, ?_, hRR.F_eq, ?_, hRR.gradeA_ev, hRR.gradeC_ev⟩
       · intro k'
         by_cases hk : k' = id
@@ -1803,9 +1810,6 @@ theorem implRefines (P : Params) (r : ℕ) :
     rcases Finset.eq_empty_or_nonempty q2.dead with hde | hdne
     · -- `dead = ∅`: kill the certified bit, then return
       obtain ⟨b, hcert⟩ := deadCert_of_sealBot_quorum hRR.inv hcnt
-      have hkill : b ∉ q2.dead := by
-        rw [hde]
-        exact Finset.notMem_empty b
       have hq : q2.quorum P := quorum_of_msg_quorum hRR
         (fun j hj hm' => hRR.inv.input_called j true hj hm')
         (ImplState.bothValid_le hval true)
@@ -1814,7 +1818,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         hRR.spec_supp (suppI_of_valid hRR.inv hval (!b))
       refine ⟨{ q2 with dead := insert b q2.dead, grade := some false,
                         ret := Function.update q2.ret id true },
-        Or.inr ⟨by simp, killThenRetC_burst hq hw hkill hwT hwF hgr hret⟩,
+        Or.inr ⟨by simp, killThenRetC_burst hq hw hde hwT hwF hgr hret⟩,
         hI', ?_, ?_, hRR.F_eq, ?_,
         fun hgt => absurd hgt (by simp),
         fun _ => ⟨id, hcnt⟩⟩

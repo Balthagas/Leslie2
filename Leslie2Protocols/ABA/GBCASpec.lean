@@ -16,10 +16,14 @@ Binding is *negative* information. The state field `dead : Finset Bool` is the
 set of bits the instance can no longer hand out; it starts empty. The internal
 τ-transition `bindUnset b` kills one bit — `dead := insert b dead` — once a
 quorum has spoken and `f + 1` F-blind supporters back the *surviving* bit `!b`.
-No rule removes a bit and `bindUnset b` requires `b ∉ dead`, so `dead` is
-monotone along every execution and write-once per bit; `corrupt` leaves it
-alone. Every property below is a consequence of that monotonicity plus the
-membership guards on the return rules, with no auxiliary invariant.
+No rule removes a bit and `bindUnset` requires `dead = ∅`, so `dead` is written
+at most once per instance — the kill commits the round — and is monotone along
+every execution; `corrupt` leaves it alone. The once-only guard is what makes
+every fair round completable: a second kill after an `A`-return would strand
+the processes yet to return, the value-bearing returns needing a live bit and
+`retC` being blocked by the A-latch. Every property below is a consequence of
+that monotonicity plus the membership guards on the return rules, with no
+auxiliary invariant.
 
 Grades: `A b` (decide `b`), `B b` (adopt `b`), `C` (no output; adopt the coin).
 The `grade` field (`some true` ≈ grade `1`/A-side, `some false` ≈ grade
@@ -45,22 +49,20 @@ at grade `≥ 1` in any extension*. A member of `dead` is exactly such a `1 − 
 — the witness `b` is its complement, the surviving bit — because the
 value-bearing returns refuse a dead bit, and `dead` only grows, so the witness
 is valid in every extension of the run and not merely at the moment of the
-return. (At `dead = {0, 1}` either bit serves as the witness, both complements
-being dead.) A `C`-return thus commits the instance: from that point on at most
+return. A `C`-return thus commits the instance: from that point on at most
 one bit is alive anywhere in the future, which is what makes handing out no bit
 the right answer. `retC` additionally requires `f + 1` F-blind support for each
 bit (D15), which is what certifies that neither bit was forced.
 
 ## The all-⊥ run
 
-`dead` is a *set*, so it can reach `{false, true}`: two `bindUnset` steps, one
-per bit, each certified by the surviving bit's support at the moment it fires.
-In that state no value-bearing return is enabled at either bit and only
-`C`-returns remain — the run in which the instance decides nothing at all.
-A single bound value of type `Option Bool` cannot express this point: `⊥` there
-means *undecided*, which enables both bits rather than neither. The exclusion
-set separates "no bit chosen yet" (`dead = ∅`) from "no bit available"
-(`dead = {0, 1}`).
+In a round where neither bit is decidable the specification still commits
+internally to a single killed bit, and the run ends with `C`-returns alone.
+That commitment is sound because the `C`-return's label carries no bit: the
+instance never announces which bit it killed, so no process is answered with
+the internal choice. `retC`'s guard `1 ≤ dead.card` is the binding witness
+either way — a bit that no extension can hand out — whether the round goes on
+to hand out its complement or hands out nothing at all.
 
 ## Provenance (D14/D15)
 
@@ -92,12 +94,15 @@ set separates "no bit chosen yet" (`dead = ∅`) from "no bit available"
   caller of `v` behind every value-bearing return.
 
 * **D19 (the state shape).** The source blueprint's TS 2 carries a bound value
-  `bind ∈ {0, 1, ⊥}`. The exclusion set embeds it — `bind = ⊥ ↦ dead = ∅`,
-  `bind = b ↦ dead = {!b}` — and adds the point `dead = {0, 1}` that no bound
-  value denotes. The blueprint's `bind = some v` guard on the value-bearing
-  returns becomes the pair `v ∉ dead ∧ (!v) ∈ dead`, its `bind = none` guard on
-  binding becomes the per-bit freshness `b ∉ dead`, and the `C`-return's
-  binding obligation becomes `1 ≤ dead.card`.
+  `bind ∈ {0, 1, ⊥}`. The exclusion set is the killed-bit reading of that
+  value: `dead ∈ {∅, {b}}`, embedding `bind = ⊥ ↦ dead = ∅` and
+  `bind = b ↦ dead = {!b}`. The two states therefore differ in the guards, not
+  in the cardinality. The blueprint's `bind = some v` guard on the
+  value-bearing returns becomes the pair `v ∉ dead ∧ (!v) ∈ dead`, its
+  `bind = none` guard on binding becomes `dead = ∅`, and the `C`-return's
+  binding obligation `bind ≠ ⊥` — which in the source also puts the bound
+  value on the label — becomes `1 ≤ dead.card`, read off a label that names no
+  bit.
 
 Every transition is Dirac, so the instance is an LTS and the `ForwardLTS`
 bridge applies. `fail` is the determinised D1 `corrupt`; the family
@@ -115,7 +120,7 @@ structure SpecState (n : ℕ) where
   /-- Which processes have received their return. -/
   ret : Fin n → Bool
   /-- The exclusion set: the bits the instance can no longer hand out.
-  Monotone, written only by `bindUnset`, one bit at a time. -/
+  Monotone, written at most once, by `bindUnset`. -/
   dead : Finset Bool
   /-- The grade lock: `some true` after an `A`-return, `some false` after a
   `C`-return (`⊥` before either). -/
@@ -159,13 +164,13 @@ inductive Step (P : Params) (r : ℕ) :
   | callLoop (s : SpecState P.n) (id : Fin P.n) (b : Bool) :
       Step P r s (.callG r id b) (PMF.pure s)
   /-- Binding: a quorum has spoken and `f + 1` processes support the surviving
-  bit `!b` (D15, SuppOK form: caller or `F`-member); kill `b`. Write-once per
-  bit, and `dead` never shrinks. -/
+  bit `!b` (D15, SuppOK form: caller or `F`-member); kill `b`. Fires at most
+  once per instance — the guard is `dead = ∅` — and `dead` never shrinks. -/
   | bindUnset (s : SpecState P.n) (b : Bool)
       (hq : s.quorum P)
       (hw : P.f + 1 ≤ (Finset.univ.filter
         (fun id => s.call id = some (!b) ∨ id ∈ s.F)).card)
-      (hb : b ∉ s.dead) :
+      (hd0 : s.dead = ∅) :
       Step P r s .tau (PMF.pure { s with dead := insert b s.dead })
   /-- `B`-return: adopt the surviving bit `v` (`f + 1` dissenting supporters,
   D15). The guard pair `v ∉ dead`, `(!v) ∈ dead` is graded agreement. -/

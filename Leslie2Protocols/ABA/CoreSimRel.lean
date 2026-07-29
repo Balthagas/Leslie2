@@ -998,9 +998,6 @@ theorem hybrid_step_tau (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : CoreS
 /-! ### Stage B: preservation of `Inv` -/
 
 /-- GBCA corruption changes only `F`. -/
-theorem GBCA.corrupt_call {P : Params} (id : Fin P.n) (s : GBCA.SpecState P.n) :
-    (s.corrupt P id).call = s.call := by unfold GBCA.SpecState.corrupt; split <;> rfl
-
 theorem GBCA.corrupt_grade {P : Params} (id : Fin P.n) (s : GBCA.SpecState P.n) :
     (s.corrupt P id).grade = s.grade := by unfold GBCA.SpecState.corrupt; split <;> rfl
 
@@ -1337,7 +1334,7 @@ theorem Inv.step_fail {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : CoreSta
   set g' := fun r => (g r).corrupt P id with hg'def
   set c' := c.corrupt P id with hc'def
   set w' := fun r => (w r).corrupt P id with hw'def
-  have hcall : ∀ r, (g' r).call = (g r).call := fun r => GBCA.corrupt_call id (g r)
+  have hcall : ∀ r, (g' r).call = (g r).call := fun r => GBCA.corrupt_call (g r) id
   have hbind : ∀ r, (g' r).dead = (g r).dead := fun r => GBCA.corrupt_dead P (g r) id
   have hgrade : ∀ r, (g' r).grade = (g r).grade := fun r => GBCA.corrupt_grade id (g r)
   have hval : ∀ r, (w' r).val = (w r).val := fun r => WCC.corrupt_val id (w r)
@@ -1519,8 +1516,9 @@ theorem Inv.step_gbcaTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : Core
     Inv P (Function.update g r gr') c w ∧
       AbsFrame P g (Function.update g r gr') c c := by
   cases hstep
-  case bindUnset b _hq _hw hb =>
+  case bindUnset b _hq _hw hd0 =>
     rw [PMF.mem_support_pure_iff] at hgr'; subst hgr'
+    have hb : b ∉ (g r).dead := by rw [hd0]; simp
     set g' := Function.update g r { g r with dead := insert b (g r).dead } with hg'def
     have hFeq : ∀ r', (g' r').F = (g r').F := by
       intro r'; by_cases h : r' = r
