@@ -200,7 +200,52 @@ Two repairs are available; this note records both and decides neither.
 Which is right depends on what the fair-inclusion proof needs from the markings, so the
 choice belongs to that proof rather than to this note.
 
-## 6. Pointers
+## 6. Design note: the GBCA kill under fairness
+
+The GBCA specification's `bindUnset` carries the guard `dead = ∅` (`ABA/GBCASpec.lean`), so
+one kill happens per instance. Safety is indifferent to the guard — every statement of
+`GBCASafety.lean` rests on monotonicity of `dead` and would hold without it — but a fair
+reading of the specification is not.
+
+Suppose the guard were the per-bit one, `b ∉ dead`, so that a round could kill both bits in
+turn. Take a mixed round: a quorum, `f + 1` F-blind support at each bit, and an `A`-return
+of `v` already fired. `bindUnset v` is then enabled — its guards would be the quorum, `f + 1`
+support for the spared bit `!v`, and `v` not yet dead, none of which the return disturbs —
+so under a blanket-fair marking of the internal transitions every fair scheduler must
+eventually fire it. After that kill no bit is alive: `retA` and `retB` are disabled at both
+bits, and `retC` is disabled by the A-latch (`grade = some true`). The processes that had
+not yet returned never return, in any extension, under any scheduler. Spec-level
+Termination — "if `n − f` correct processes take part then all correct processes eventually
+return" — would then be false of the specification itself, and no marking on the
+implementation side could repair it.
+
+The `dead = ∅` guard removes those states rather than the obligation. Every reachable state
+has `dead ∈ {∅, {b}}` (`GBCASafety.dead_card_le_one`), the surviving bit stays alive, and
+the A-latch still admits `A`- and `B`-returns. The resolution is structural, so no marking
+has anything to decide here. That is the opposite of TS 1's rule 5 (§5), where the two
+repairs on the table each cost something a proof depends on and the choice is open.
+
+**Termination proof sketch for the specification as encoded.** Assume the `n − f` honest
+processes have called, so the quorum guard holds and holds forever (the count is monotone
+in `call` and `F`). The quorum's `n − f ≥ 2f + 1` callers-or-corrupted fall on two bits, so
+some bit `v` carries `f + 1` of them by pigeonhole — the `SuppOK(v)` count, itself monotone.
+All three guards of `bindUnset (!v)` therefore hold, and they persist until the rule is
+taken, so weak fairness fires it; `dead = {!v}` from then on, and `v` is alive at every
+later state.
+
+Split on whether the dissent count at `!v` ever reaches `f + 1`. If it never does, `retB`
+and `retC` stay disabled forever — each asks `f + 1` at the dissenting bit, `retC` at both
+bits — and no `C`-lock can arise, so `retA v` is enabled at every un-returned process for
+the rest of the run and the round decides. This is the near-unanimous case: under unanimous
+honest input the count is capped by the corruption budget outright
+(`GBCASafety.supp_le_of_unanimous`). If the count does reach `f + 1`, then from that point
+`retB v` is enabled at every un-returned process, whatever the grade lock, since `retB`
+reads no grade. Either way each un-returned process has a return enabled from some point on
+and permanently, so a fair scheduler answers it. Nothing in the sketch mentions the coin: it
+is a statement about one GBCA instance, and it is what item 1 of §4 would have to supply for
+the sub-protocol slot.
+
+## 7. Pointers
 
 - Ranked witness + transfers: `Leslie_LTS/Framework/Simulation.lean:1339,1506,2110,2246`
 - Fairness/WF1/LTL: `Leslie_LTS/Framework/{Liveness,LTL,Divergence}.lean`

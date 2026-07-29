@@ -51,13 +51,16 @@ such note.
 
 On the specification side the matching item is **D19**. TS 2's bound value
 `bind ∈ {0,1,⊥}` is replaced by the exclusion set `dead : Finset Bool`, the bits the
-instance can no longer hand out (`GBCASpec.lean`). The bound value embeds — `bind = ⊥` as
-`dead = ∅`, `bind = b` as `dead = {!b}` — and the embedding is not onto: `dead = {0,1}`,
-where no bit is available at all, denotes no bound value. `dead` is monotone and
-write-once per bit, so Graded Agreement is the return guard pair `v ∉ dead ∧ !v ∈ dead`
-and Binding is the `C`-return guard `1 ≤ dead.card`, both proved from monotonicity alone
-in `GBCASafety.lean` (`retG_value_agree`, `specInst_binding`, `retC_dead_nonempty`) with
-no auxiliary invariant.
+instance can no longer hand out (`GBCASpec.lean`). The kill fires under the guard
+`dead = ∅`, so reachable states are exactly `dead ∈ {∅, {b}}`
+(`GBCASafety.dead_card_le_one`) and the bound value embeds onto them — `bind = ⊥` as
+`dead = ∅`, `bind = b` as `dead = {!b}`. The two state shapes therefore differ in the
+guards rather than in the cardinality. `dead` is monotone and written once, so Graded
+Agreement is the return guard pair `v ∉ dead ∧ !v ∈ dead` and Binding is the `C`-return
+guard `1 ≤ dead.card`, both proved from monotonicity alone in `GBCASafety.lean`
+(`retG_value_agree`, `specInst_binding`, `retC_dead_nonempty`) with no auxiliary
+invariant; the same file carries Validity's safety half (`specInst_validity`,
+`specInst_no_retC`).
 
 A transcription question of ABDY22's own: the prose preceding Algorithm 6 says "upon
 receiving `echo4` messages from `2t + 1` parties" where the pseudocode's lines 19–20 say

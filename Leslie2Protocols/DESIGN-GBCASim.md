@@ -86,7 +86,7 @@ instance can no longer hand out. The rules:
 * `call` / `callLoop` — as in every instance spec (D15 file conventions);
 * `bindUnset b` (τ) — guards `s.quorum P`,
   `f + 1 ≤ #{id | s.call id = some (!b) ∨ id ∈ s.F}` (the D15 SuppOK count,
-  at the *surviving* bit `!b`), and `b ∉ s.dead`; effect
+  at the *surviving* bit `!b`), and `hd0 : s.dead = ∅`; effect
   `dead := insert b s.dead`;
 * `retA id v` — guards `v ∉ s.dead`, `(!v) ∈ s.dead`,
   `s.grade = none ∨ s.grade = some true`, `s.ret id = false`; effect
@@ -98,6 +98,13 @@ instance can no longer hand out. The rules:
   `s.grade = none ∨ s.grade = some false`, `s.ret id = false`; effect
   `grade := some false`, mark returned;
 * `fail` — D1 corruption, `dead` untouched.
+
+The `hd0` guard admits `bindUnset` from the empty set only, so an instance kills
+at most once and every reachable state has `dead ∈ {∅, {b}}`
+(`GBCASafety.dead_card_le_one`). The once-only kill is also what keeps a round
+completable: after an `A`-return a second kill would leave no live bit for the
+value-bearing returns while the A-latch blocks `retC`, stranding the processes
+yet to return.
 
 `dead` is monotone (only `bindUnset` writes it, by `insert`), so the graded
 binding property is structural: a killed bit is never handed out (`v ∉ dead`
@@ -296,14 +303,15 @@ burst through `weakLStep_tauThen`. Unlike a bound-value
 design there is no "first return" phase distinction: **every** return row does
 the same decidable case split on the spec's `dead`, and the burst is enabled
 whenever the kill is missing, regardless of how many returns happened before.
+Every burst carries `hd0 : t.dead = ∅`, the `bindUnset` guard:
 
 ```lean
-/-- `bindUnset (!v) ; retA v` from a state where `!v` is still alive. -/
+/-- `bindUnset (!v) ; retA v` from an all-alive state (`dead = ∅`). -/
 theorem killThenRetA_burst {r t id v}
     (hq : t.quorum P)
     (hw : P.f + 1 ≤ (Finset.univ.filter
       (fun k => t.call k = some v ∨ k ∈ t.F)).card)
-    (hlive : v ∉ t.dead) (hkill : (!v) ∉ t.dead)
+    (hlive : v ∉ t.dead) (hd0 : t.dead = ∅)
     (hg : t.grade = none ∨ t.grade = some true) (hr : t.ret id = false) :
     (specInst P r).weakLStep t (.retG r id (.A v))
       { t with dead := insert (!v) t.dead, grade := some true,
@@ -318,12 +326,12 @@ latch, landing in `{ t with dead := insert (!v) t.dead, ret := … }`. The
 `C`-side burst kills one arbitrary bit:
 
 ```lean
-/-- `bindUnset b ; retC` from an all-alive state. -/
+/-- `bindUnset b ; retC` from an all-alive state (`dead = ∅`). -/
 theorem killThenRetC_burst {r t id b}
     (hq : t.quorum P)
     (hw : P.f + 1 ≤ (Finset.univ.filter
       (fun k => t.call k = some (!b) ∨ k ∈ t.F)).card)
-    (hkill : b ∉ t.dead)
+    (hd0 : t.dead = ∅)
     (hwT : P.f + 1 ≤ #{k | t.call k = some true  ∨ k ∈ t.F})
     (hwF : P.f + 1 ≤ #{k | t.call k = some false ∨ k ∈ t.F})
     (hg : t.grade = none ∨ t.grade = some false) (hr : t.ret id = false) :
@@ -333,6 +341,24 @@ theorem killThenRetC_burst {r t id b}
 ```
 
 (`retC`'s `1 ≤ dead.card` holds because `insert` is nonempty).
+
+### Where `hd0` comes from at the call sites
+
+The two value-return rows derive it from the branch they are in rather than
+carrying it in the relation. At `retA`/`retB` the row already holds
+`hlive : v ∉ t.dead` (the certificate refutation) and enters the burst branch
+under `hdead : (!v) ∉ t.dead`, and a `Finset Bool` missing both `v` and `!v` is
+empty:
+
+```lean
+theorem dead_empty_of_both {d : Finset Bool} {v : Bool}
+    (h1 : v ∉ d) (h2 : (!v) ∉ d) : d = ∅
+```
+
+so the call sites read `killThenRetA_burst hq hw hlive (dead_empty_of_both
+hlive hdead) hgr hret`, and likewise for `retB`. The `retC` row splits on
+`Finset.eq_empty_or_nonempty t.dead` outright, so its empty branch *is* `hd0`
+and its nonempty branch answers with a single `Step.retC`.
 
 ### Which bit the `C`-return kills
 
@@ -385,7 +411,8 @@ then
    double-sealer, contradicting `seal_once`;
 3. dissent count (`retB` only) — `spec_supp (suppI_of_valid hval (!v))`;
 4. case `(!v) ∈ t.dead`: single labelled step. Case `(!v) ∉ t.dead`: burst, with
-   `bindUnset_guards` fed by `echoQuorum_of_vote_receipts hvq`;
+   `bindUnset_guards` fed by `echoQuorum_of_vote_receipts hvq` and `hd0` by
+   `dead_empty_of_both hlive hdead`;
 5. restore: `dead_cert` — old bits by `DeadCert.mono` (the step only sets
    `returned`), the new bit `!v` by `deadCert_of_voteQuorum hvq`;
    `gradeA_ev := ⟨v, id, hcnt⟩` (`retA`), other grade evidence by
@@ -590,11 +617,14 @@ at the seal level, alongside `unpack_recvCount` and the other per-level counts.
    quantitative or decidability layer) needs the choice computable, replace it
    with the explicit case split (`if EchoQuorum … true then false else …`);
    nothing in the simulation depends on which certified bit is chosen.
-4. **`dead.card ≤ 1` is deliberately not an invariant.** Sim-reachable spec
-   states happen to satisfy it (kills fire only on demand), but the relation
-   neither needs nor states it; adding it would create obligations at the
-   `retC` burst for no benefit. Recorded so nobody "strengthens" the relation
-   into extra work.
+4. **`dead.card ≤ 1` is an invariant, and the relation still does not carry
+   it.** It holds at every state of every execution of the specification
+   instance (`GBCASafety.dead_card_le_one`), by the `hd0 : dead = ∅` guard on
+   the single writer. The relation neither states nor needs it: each burst gets
+   its `hd0` from the branch analysis of its own row (`dead_empty_of_both` at
+   the value returns, `Finset.eq_empty_or_nonempty` at `retC`), so adding the
+   conjunct would create restoration obligations on every row for no benefit.
+   Recorded so nobody "strengthens" the relation into extra work.
 5. **`VoteWall` reads process-local slots.** Unlike `EchoQuorum` it counts
    `sentVote` slots, not receipts — still monotone in `F` (a corrupted slot
    stays in the wall via the `j ∈ F` disjunct) and in `sentVote` (write-once),

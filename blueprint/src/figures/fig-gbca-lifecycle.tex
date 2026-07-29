@@ -1,45 +1,39 @@
 % GBCA specification instance (PLTS.ABA.GBCA.Step). Automata style.
-% Nodes are the reachable (dead, grade) pairs quotiented by the exchange of the
-% two bits: b is a free bit, so each {b} node stands for two states and the
-% seven nodes cover the ten reachable states. (empty, A) and (empty, C) are
-% unreachable, every graded return needing dead nonempty. call/callLoop are
-% enabled in every state and drawn once, on the initial state; fail is omitted.
+% Nodes are the reachable states quotiented to the pair (|dead|, grade). The
+% bit-labelled reachable states are (empty, bot), ({b}, bot), ({b}, A) and
+% ({b}, C) for each bit b, seven in all. (empty, A) and (empty, C) are
+% unreachable, every graded return needing dead nonempty; and dead never holds
+% two bits, bindUnset being enabled from dead = empty alone, so no second kill
+% is drawn. The kill edge names the bit it kills, so 1-b is the surviving bit
+% at every node to its right. call/callLoop are enabled in every state and
+% drawn once, on the initial state; fail is omitted.
 \begin{tikzpicture}[
     ->, >={Stealth[round]}, auto, semithick, on grid,
     every state/.style={draw, minimum size=1.45cm, align=center, font=\small},
     lbl/.style={font=\footnotesize, align=center, fill=white, inner sep=1.5pt}]
 
-  \node[state]                           (ba) at (4.9,3.3)   {$(\{b\},\mathrm A)$};
-  \node[state]                           (2a) at (9.8,3.3)   {$(\{0,1\},\mathrm A)$};
-  \node[state, initial, initial text={}] (e0) at (0,0)       {$(\emptyset,\bot)$};
-  \node[state]                           (b0) at (4.9,0)     {$(\{b\},\bot)$};
-  \node[state]                           (20) at (9.8,0)     {$(\{0,1\},\bot)$};
-  \node[state]                           (bc) at (4.9,-3.3)  {$(\{b\},\mathrm C)$};
-  \node[state]                           (2c) at (9.8,-3.3)  {$(\{0,1\},\mathrm C)$};
+  \node[state]                           (dA) at (4.9,3.0)  {$(1,\mathrm A)$};
+  \node[state, initial, initial text={}] (e0) at (0,0)      {$(0,\bot)$};
+  \node[state]                           (d0) at (4.9,0)    {$(1,\bot)$};
+  \node[state]                           (dC) at (4.9,-3.0) {$(1,\mathrm C)$};
 
   % self-loops
   \path
     (e0) edge[loop below, looseness=5]
       node[lbl, below]{1 \texttt{call}\\2 \texttt{callLoop}} (e0)
-    (b0) edge[loop, out=28, in=62]
-      node[lbl, above right]{4 \texttt{retB}\ $1{-}b$} (b0)
-    (ba) edge[loop above, looseness=5]
-      node[lbl, above]{4 \texttt{retB}\ $1{-}b$\\5 \texttt{retA}\ $1{-}b$} (ba)
-    (bc) edge[loop below, looseness=5]
-      node[lbl, below]{4 \texttt{retB}\ $1{-}b$\\6 \texttt{retC}} (bc)
-    (2c) edge[loop below, looseness=5]
-      node[lbl, below]{6 \texttt{retC}} (2c);
+    (d0) edge[loop, out=-28, in=28, looseness=5]
+      node[lbl, right]{4 \texttt{retB}\ $1{-}b$} (d0)
+    (dA) edge[loop above, looseness=5]
+      node[lbl, above]{4 \texttt{retB}\ $1{-}b$\\5 \texttt{retA}\ $1{-}b$} (dA)
+    (dC) edge[loop below, looseness=5]
+      node[lbl, below]{4 \texttt{retB}\ $1{-}b$\\6 \texttt{retC}} (dC);
 
-  % the kills
+  % the kill
   \path
-    (e0) edge node[lbl, above]{3 \texttt{bindUnset}\ $b$} (b0)
-    (b0) edge node[lbl, above]{3 \texttt{bindUnset}\ $1{-}b$} (20)
-    (ba) edge node[lbl, above]{3 \texttt{bindUnset}\ $1{-}b$} (2a)
-    (bc) edge node[lbl, above]{3 \texttt{bindUnset}\ $1{-}b$} (2c);
+    (e0) edge node[lbl, above]{3 \texttt{bindUnset}\ $b$} (d0);
 
   % the two grade latches
   \path
-    (b0) edge node[lbl, left]{5 \texttt{retA}\ $1{-}b$} (ba)
-    (b0) edge node[lbl, left]{6 \texttt{retC}} (bc)
-    (20) edge node[lbl, right]{6 \texttt{retC}} (2c);
+    (d0) edge node[lbl, left]{5 \texttt{retA}\ $1{-}b$} (dA)
+    (d0) edge node[lbl, left]{6 \texttt{retC}} (dC);
 \end{tikzpicture}

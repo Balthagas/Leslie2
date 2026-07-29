@@ -69,18 +69,25 @@ per-row stutter arguments: every hidden row preserves the three projections, so 
 `Abs`-match is one `Abs.frame`/`Abs.w_swap` invocation rather than a bespoke
 re-derivation (the six Stage-C stutter lemmas of `CoreSimRel.lean` are all instances).
 
-### Certificates: burned rounds and what survives them
+### Certificates: decided values stated without the live pair
 
 Under D19 a GBCA round records exclusion, not a bound value: `(g r).dead : Finset Bool`
-grows one bit at a time by `bindUnset`, and a value-bearing return needs the *live pair*
-`(!v) ∈ (g r).dead ∧ v ∉ (g r).dead`. The pair is not permanent. A second `bindUnset`
-at the same round is enabled after that return — its guards are a quorum, `f + 1`
-F-blind support for the spared bit (`hw` counts `!b`), and the killed bit not yet dead
-(`hb : b ∉ dead`), none of which the return
-disturbs — so `dead = {0, 1}` is reachable at a round that has already handed out `v`.
-Such a **burned** round still carries `grade = some true`, but its exclusion set no
-longer names `v`. Every fact about a decided value therefore has to be stated in a form
-that a burn cannot erase.
+is written by `bindUnset`, and a value-bearing return needs the *live pair*
+`(!v) ∈ (g r).dead ∧ v ∉ (g r).dead`. The relation does not state decided values through
+that pair. It states them through certificates, which name their bit off a single
+permanent membership `(!b) ∈ (g r).dead` plus commitments that only `call`, `F` and the
+honest `procs` fields can affect. That is the landed design and it is sound as it
+stands; the certificates are what `Inv.decided_src`, `Inv.grade_A_src` and phase 2 of
+`Abs` carry.
+
+The certificate form is also stronger than the specification now requires. `bindUnset`
+carries the guard `dead = ∅`, so a round kills at most once
+(`GBCASafety.dead_card_le_one`) and `dead = {0,1}` is unreachable: a live pair
+established by a return is in fact permanent, and pair-form invariants are maintainable.
+Trading the certificates for the pair is therefore available as a simplification. It is
+recorded here as an option and is not scheduled work: the exchange would touch
+`decided_src`, `grade_A_src`, `Abs`'s phase 2 and every `AbsFrame` obligation, and the
+certificate form needs no reachability argument of its own.
 
 - **`ACommit P g c r b`** — the permanent commitments of an `A`-locked round: the live
   pair at every round `r' ≥ r` (round `r` itself included), every honest call above `r`,
@@ -92,8 +99,8 @@ that a burn cannot erase.
   fields.
 - **`ACert P g c r b`** := `(g r).grade = some true ∧ (!b) ∈ (g r).dead ∧ ACommit P g c r b`
   — an `A`-locked round whose surviving bit at lock time was `b`, plus those commitments.
-  `(!b) ∈ dead` is permanent (`dead` only grows), so a certificate names `b` forever even
-  after the round burns. This, not a live pair, is what `Inv.decided_src` and
+  `(!b) ∈ dead` is permanent (`dead` only grows), so a certificate names `b` forever
+  whatever else the round does. This, not a live pair, is what `Inv.decided_src` and
   `Inv.grade_A_src` produce and what phase 2 of `Abs` holds. `ACommit.of_frame` /
   `ACert.of_frame` transport both along any step that keeps `dead`, `call`, honest
   `round`/`est`, reflects carriers and only grows `F` (`hF : c.F ⊆ c'.F` — the honesty
@@ -102,13 +109,13 @@ that a burn cannot erase.
 - **`Inv.dead_supp` (I28)** — every kill keeps its D15 guard: `b ∈ (g r).dead` implies
   `f + 1` F-blind call support for the spared bit `!b` at round `r`. Both `call` and `F`
   only grow, so the count is permanent, and `GBCA.exists_honest_caller` harvests it into a
-  never-corrupted caller of `!b`. That harvest is what recovers the value of a burned
-  round from its residue.
+  never-corrupted caller of `!b`. That harvest is what recovers a round's value from the
+  membership alone, with no live pair in hand.
 - **`Inv.carrier_agree` (I29)** — any two honest carriers of round `r`'s outcome agree,
   unless the round is `C`-locked. This is the state residue of the order argument "two
   opposite value-bearing returns cannot both fire at one round": the first kills the
-  rival bit, and the second's liveness guard then fails. The exclusion set forgets that
-  argument once the round burns; the conjunct remembers it.
+  rival bit, and the second's liveness guard then fails. The conjunct carries that
+  argument as state, so no row has to replay it.
 - **`Inv.alock_agree` (I30)** — any two honest `AHolder`s agree globally, across rounds,
   where `AHolder P c id b` is a live `A`-grade `lastGrade = some (.A b)` or a pooled
   `b ∈ decidedSent id`. Each new holder is compared at its own `retG` row, where the
@@ -328,15 +335,15 @@ fields), grouped:
   matching bit, so the coin disjunct alone does not pin `v`; only the `C`-lock does, and
   every downstream use reads just that half), `c_chain`.
 - **Locks and DECIDED**: `a_commit` (an `A`-locked round whose surviving bit `b` is still
-  alive yields `ACommit` for `b` — the live-pair form, which weakens vacuously once the
-  round burns), `agree_locked` (keyed on the frontier reading
+  alive yields `ACommit` for `b` — the live-pair form, hypothesis-guarded so that no row
+  has to establish the pair to use it), `agree_locked` (keyed on the frontier reading
   `IsLastBound g r := (g r).dead ≠ ∅ ∧ (g (r + 1)).dead = ∅`), `gradeA_needs_bind`
   (A-side only: `retA` reads the live pair, so an `A`-graded round has a non-empty
   exclusion set — a `C`-return reads no pair and constrains none), `grade_A_src` and
-  `decided_src` (both producing an `ACert`, the burn-proof form), `recv_sound` (D12′
+  `decided_src` (both producing an `ACert`, the pair-free form), `recv_sound` (D12′
   per-bit and honesty-free — see above), `bound_quorum`.
 - **Certificates**: `dead_supp` (I28), `carrier_agree` (I29), `alock_agree` (I30) — the
-  three conjuncts that survive a burned round; see § Certificates.
+  three conjuncts that state a round's value without the live pair; see § Certificates.
 - **Support pools**: `bind_supp` (I26) — a round whose exclusion set names `!v` carries a
   permanent `f + 1` input-or-`F` pool for `v` (`InputSupp`, the concrete mirror of TS 1's
   V-P1), established

@@ -912,13 +912,24 @@ The labels D2, D6 and D7 are unused.
   \item D19: the GBCA specification state carries an exclusion set
     $dead \subseteq \{0,1\}$, the bits the instance can no longer hand out, in
     place of the source's bound value $bind \in \{0,1,\bot\}$.
-    The bound value embeds, $bind = \bot$ as $dead = \emptyset$ and $bind = b$
-    as $dead = \{1-b\}$, and the embedding is not onto: the point
-    $dead = \{0,1\}$, where no bit is available at all, denotes no bound value.
-    Binding is thereby negative and monotone --- the internal transition only
-    ever adds a bit --- which makes Graded Agreement and Binding structural
-    rather than invariants of the specification
-    (Theorem~\ref{thm:gbca-spec-binding}).
+    The set is the killed-bit reading of that value.
+    Its only writer is the internal binding transition, which fires from
+    $dead = \emptyset$ alone, so every reachable state has $dead = \emptyset$ or
+    $dead = \{b\}$ for one bit $b$, and the bound value embeds onto exactly
+    those states, $bind = \bot$ as $dead = \emptyset$ and $bind = b$ as
+    $dead = \{1-b\}$.
+    The two state shapes therefore differ in the guards rather than in the
+    cardinality.
+    The source's guard $bind = v$ on the value-bearing returns becomes the pair
+    $v \notin dead$, $1-v \in dead$; its guard $bind = \bot$ on binding becomes
+    $dead = \emptyset$; and the $C$-return's binding obligation
+    $bind \neq \bot$, which in the source also puts the bound value on the
+    return label, becomes $|dead| \ge 1$, read off a label that names no bit.
+    Binding is thereby negative and monotone --- the internal transition adds
+    one bit and no rule removes one --- which makes Graded Agreement and Binding
+    structural rather than invariants of the specification
+    (Theorem~\ref{thm:gbca-spec-binding}) and carries the safety half of
+    Validity (Theorem~\ref{thm:gbca-spec-validity}).
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -1204,23 +1215,25 @@ slot to be empty.
   GBCA with internal binding and graded returns, WCC with the
   $\varepsilon$-probabilistic coin resolution. The GBCA side is an LTS.\lean{PLTS.ABA.GBCA.specFamily_isLTS}\leanok{}
   GBCA binds by exclusion: the state carries the set $dead \subseteq \{0,1\}$ of bits the instance can no longer hand out, in place of the source's bound value (D19).
+  The kill is an internal transition enabled from $dead = \emptyset$ alone, so it fires at most once per instance.
   The GBCA kill, the dissenting bit at its $B$-return and each of the two bits at its $C$-return carry an $f{+}1$ $F$-blind support guard (SuppOK): $f{+}1$ distinct callers-or-corrupted of the bit in question.
   Since at most $f$ processes are ever corrupted, one of the $f{+}1$ is a never-corrupted genuine caller (D15).
 \end{definition}
 
-\blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance (Transition System 2): the reachable $(dead, grade)$ pairs, the exclusion set growing one bit at a time under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
-The drawn abstraction is the pair $(dead, grade)$, and $b$ is a free bit, so the seven nodes are the quotient of the ten reachable states by the exchange of $0$ and $1$: each $\{b\}$ node stands for the two states $(\{0\},\cdot)$ and $(\{1\},\cdot)$, and the three $\{0,1\}$ nodes and the initial node stand for themselves.
+\blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance (Transition System 2): the reachable states quotiented to the pair $(|dead|, grade)$, the single kill under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
+The bit-labelled reachable states are $(\emptyset,\bot)$, $(\{b\},\bot)$, $(\{b\},\mathrm A)$ and $(\{b\},\mathrm C)$ for each bit $b$, seven in all, and the four nodes are their quotient by the exchange of $0$ and $1$.
 The pairs $(\emptyset,\mathrm A)$ and $(\emptyset,\mathrm C)$ are unreachable, since every graded return requires $dead \neq \emptyset$.
+The exclusion set never holds two bits: \texttt{bindUnset} is its only writer and is enabled from $dead = \emptyset$ alone, so no second kill appears anywhere in the figure.
+The kill edge names the bit it kills, so $1{-}b$ is the surviving bit at every node to its right.
 The abstraction does not track $ret$, so a repeat return is a self-loop.
-Binding (\texttt{bindUnset}) fires under a quorum with $f{+}1$ $\mathrm{SuppOK}$ support for the surviving bit and kills the other, and its only $dead$-related guard is that the bit it kills is still alive, so a second kill follows any latch.
-\texttt{retA} hands out the surviving bit and latches the A-side; it loops on $(\{b\},\mathrm A)$.
-\texttt{retB} hands out the surviving bit under $f{+}1$ dissent support; it writes neither component and carries no grade guard, so it is a self-loop on the singleton states of every grade.
-\texttt{retC} carries $f{+}1$ support for each of the two bits, hands out no bit, and needs only $dead \neq \emptyset$, so it latches the C-side from $(\{b\},\bot)$ and $(\{0,1\},\bot)$ alike and loops on both C-states.
-The state $(\{0,1\},\mathrm A)$ is entered only as an A-latch followed by a second kill, and is a sink for the value-bearing returns: they require a singleton $dead$, and \texttt{retC} is blocked by the A-latch.
+Binding (rule~3, \texttt{bindUnset}) fires under a quorum with $f{+}1$ $\mathrm{SuppOK}$ support for the surviving bit and kills the other.
+\texttt{retA} (rule~5) hands out the surviving bit and latches the A-side; it loops on $(1,\mathrm A)$.
+\texttt{retB} (rule~4) hands out the surviving bit under $f{+}1$ dissent support; it writes neither component and carries no grade guard, so it loops on all three states with $|dead| = 1$.
+\texttt{retC} (rule~6) carries $f{+}1$ support for each of the two bits, hands out no bit and needs only $dead \neq \emptyset$; it latches the C-side from $(1,\bot)$ and loops on $(1,\mathrm C)$.
 The A- and C-latches are mutually exclusive, \texttt{retA} needing $grade \in \{\bot,\mathrm A\}$ and \texttt{retC} needing $grade \in \{\bot,\mathrm C\}$.
 Every $\mathrm{SuppOK}$ count is $f{+}1$ distinct callers-or-corrupted (D15) and $F$-blind.
-The \texttt{fail} broadcast is omitted.
-\texttt{call} and \texttt{callLoop} are enabled in every state and are drawn once, on the initial state.}
+The \texttt{fail} broadcast (rule~7) is enabled in every state and is omitted.
+\texttt{call} and \texttt{callLoop} (rules~1 and~2) leave the drawn pair unchanged and are drawn once, on the initial state.}
 
 \noindent\textbf{The GBCA specification, round-$r$ instance.}
 
@@ -1234,9 +1247,10 @@ The \texttt{fail} broadcast is omitted.
   \item $F \subseteq [n]$, the corrupted set, a local copy kept in lockstep by the $\mathrm{fail}$ broadcast.
 \end{itemize}
 \noindent Binding is internal specification state, and it is negative information (D19).
-The set $dead$ starts empty; the internal transition \texttt{bindUnset} kills one bit at a time and requires that bit to be alive, and no rule ever revives one, so $dead$ grows along every execution and each bit is written at most once.
+The set $dead$ starts empty, and its only writer is the internal transition \texttt{bindUnset}, which fires from $dead = \emptyset$ alone and inserts one bit.
+No rule ever revives a bit, so $dead$ grows along every execution, the kill happens at most once per instance, and every reachable state has $dead = \emptyset$ or $dead = \{b\}$ for one bit $b$.
 The $A$- and $B$-returns hand out a bit that is alive while the other bit is dead; the $C$-return hands out no bit and requires only that some bit be dead.
-The source blueprint's bound value embeds, $bind = \bot$ as $dead = \emptyset$ and $bind = b$ as $dead = \{1-b\}$, and the state $dead = \{0,1\}$ is the point the embedding adds: no bit is chosen there, and none is available either.
+The source blueprint's bound value embeds onto those reachable states, $bind = \bot$ as $dead = \emptyset$ and $bind = b$ as $dead = \{1-b\}$, so the two state shapes differ in the guards rather than in the cardinality (D19).
 
 \noindent\textbf{Labels.}
 $\mathrm{callG}(r,id,b)$, $\mathrm{retG}(r,id,out)$ with $out \in \{A\,b,\ B\,b,\ C\}$, $\mathrm{fail}(id)$ and $\tau$, for $id \in [n]$ and $b \in \mathbb{B}$.
@@ -1265,10 +1279,11 @@ Guard
 \[ \begin{aligned}
      &\bigl|\{id \in [n]\setminus F \mid call[id] \neq \bot\} \cup F\bigr| \ge n - f,\\
      &\bigl|\{id \in [n] \mid call[id] = 1-b \vee id \in F\}\bigr| \ge f + 1,\\
-     &b \notin dead.
+     &dead = \emptyset.
    \end{aligned} \]
 \[ s \xrightarrow{\;\tau\;} \delta\bigl(s[\,dead := dead \cup \{b\}\,]\bigr) \]
 \noindent The support count is at the bit the rule \emph{spares}: killing $b$ is certified by $f{+}1$ callers-or-corrupted of $1-b$.
+The third guard admits the rule from the empty exclusion set only, so an instance kills at most once and $dead$ is a singleton ever after.
 
 \noindent\textbf{4.} \texttt{retB} (D14, D15, D19).
 Guard
@@ -1310,9 +1325,9 @@ No guard.
 
 \dynamics{Binding as negative information}{%
 An instance binds by removing an option rather than by choosing one.
-The only writer of $dead$ is \texttt{bindUnset}, which inserts, and it requires
-the bit it kills to be alive, so $dead$ grows along every execution and each
-bit is killed at most once.
+The only writer of $dead$ is \texttt{bindUnset}, which inserts, and it fires
+from the empty set only, so $dead$ grows along every execution and one bit is
+killed per instance.
 Corruption does not touch the field.
 Every property below is a consequence of that monotonicity together with the
 membership guards on the returns, with no auxiliary invariant.
@@ -1333,12 +1348,39 @@ A $C$-return therefore commits the instance --- from that point at most one bit
 is alive anywhere in the future --- which is what makes handing out no bit the
 right answer, and it is why every return, $C$-returns included, requires a kill
 to have happened.
-Since $dead$ is a set it can reach $\{0,1\}$, by two kills, one per bit, each
-certified by the surviving bit's support at the moment it fires.
-In that state no value-bearing return is enabled at either bit and only
-$C$-returns remain: the run in which the instance hands out nothing at all.
-A bound value cannot express that point, its $\bot$ meaning \emph{undecided},
-which enables both bits rather than neither (D19).
+}
+
+\dynamics{Why the kill is once-only}{%
+The guard $dead = \emptyset$ on \texttt{bindUnset} is what keeps every round
+completable.
+Let us see what a second kill would cost.
+Suppose the rule were enabled again after an $A$-return of $v$, and fired on
+$v$ itself.
+The processes yet to return would then have no return available: the
+value-bearing returns need a live bit, and there is none, while the $C$-return
+is blocked by the $A$-latch.
+The round would be stranded, and a fair scheduler could not complete it.
+Under the once-only guard no such state is reachable.
+A round that has answered one process at grade $\ge 1$ can answer every other
+process the same way, since the surviving bit stays alive and the $A$-latch
+admits further $A$- and $B$-returns.
+}
+
+\dynamics{What the contract asks and what is proved here}{%
+The GBCA contract listed at the start of this case study has four clauses.
+The specification instance settles two of them outright and the safety half of
+a third.
+Graded Agreement is the guard pair on the value side and the grade latch on the
+grade side, both structural (Theorem~\ref{thm:gbca-spec-binding}).
+Binding is the $C$-return guard read through monotonicity, again a theorem of
+the same statement.
+Validity has a safety half, that under unanimous honest input $v$ every return
+of the instance hands out $v$ and no $C$-return occurs, and that half is
+Theorem~\ref{thm:gbca-spec-validity}.
+What the clause asks beyond that half --- that the grade is the top one, and
+that every correct process is answered at all --- is a statement about which
+runs the scheduler must extend, as is Termination.
+Fairness is not encoded here, so those clauses lie outside this development.
 }
 
 \dynamics{What the grades promise}{%
@@ -1368,6 +1410,7 @@ there certified $f+1$ $F$-blind supporters of $v$ itself.
   Any two returns of one execution of the round-$r$ GBCA specification instance that hand out a bit hand out the same bit, whatever their grades and whichever processes they answer; the bit a graded outcome hands out is the one $A\,b$ and $B\,b$ name, $C$ naming none.\lean{PLTS.ABA.GBCA.outValue}\leanok{}
   Read on traces: every trace in the support of every achievable trace distribution of the instance satisfies $\mathrm{BindingTrace}$, that any two round-$r$ graded returns of the trace which name a bit name the same one.\lean{PLTS.ABA.GBCA.BindingTrace}\leanok{}
   A $C$-return moreover leaves $dead$ nonempty in every later state of the execution, so the bit it kills is a bit no extension of the run hands out at grade $\ge 1$, and the Binding witness is that bit's complement.\lean{PLTS.ABA.GBCA.retC_dead_nonempty}\leanok{}
+  The exclusion set holds at most one bit at every state of every execution, so its reachable shape is $dead = \emptyset$ or $dead = \{b\}$ (D19).\lean{PLTS.ABA.GBCA.dead_card_le_one}\leanok{}
 \end{theorem}
 
 \begin{proof}\leanok
@@ -1378,7 +1421,34 @@ there certified $f+1$ $F$-blind supporters of $v$ itself.
   Monotonicity carries $1-v_1 \in dead$ from the first state to the second, the second return demands $v_2 \notin dead$, so $v_2 \neq 1-v_1$, and on a two-element domain $v_2 = v_1$; the opposite order is symmetric.
   The trace form follows by Theorem~\ref{thm:trace-support}, which turns a positive-probability trace into a genuine execution whose graded-return labels are steps of the kind just treated.
   The $C$-return clause is the same monotonicity applied to the witness its own guard $|dead| \ge 1$ produces.
+  The cardinality clause is an induction along the execution: the field starts empty, and its single writer fires only from $\emptyset$, so it leaves a singleton.\lean{PLTS.ABA.GBCA.Step.dead_card_le_one}\leanok{}
   No invariant, no quorum arithmetic and no reachability hypothesis beyond membership in one execution enters (D19).
+\end{proof}
+
+\begin{theorem}[Validity of the GBCA specification, safety half]
+  \label{thm:gbca-spec-validity}
+  \lean{PLTS.ABA.GBCA.specInst_validity}\leanok
+  \uses{def:aba-subspecs, thm:trace-support}
+  Fix a bit $v$ and a trace in the support of an achievable trace distribution of the round-$r$ GBCA specification instance.
+  Call the trace \emph{unanimous at $v$} when every round-$r$ call of the trace carries $v$, unless the calling process is corrupted somewhere along the trace.\lean{PLTS.ABA.GBCA.UnanimousInput}\leanok{}
+  Corruption is the trace-level notion of Theorem~\ref{thm:aba-spec-safe}, non-membership in the fold of the corruption transform over the trace's $\mathrm{fail}$ labels, so a $\mathrm{fail}$ the budget refuses corrupts nobody.\lean{PLTS.ABA.NeverCorrupted}\leanok{}
+  On a trace unanimous at $v$, every round-$r$ return of the trace hands out $v$.\lean{PLTS.ABA.GBCA.ValidityTrace}\leanok{}
+  The conclusion quantifies over all returners, corrupted ones included, and it rules out the $C$-return outright, $C$ handing out no bit.\lean{PLTS.ABA.GBCA.specInst_no_retC}\leanok{}
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-subspecs, thm:trace-support}
+  The instance carries one bookkeeping invariant: every pending input has a $\mathrm{callG}$ event in the label history, and $F$ is the fold of that history's $\mathrm{fail}$ labels.\lean{PLTS.ABA.GBCA.CallInv}\leanok{}
+  Both conjuncts are read off the rules, $call$ being written only by rule~1 and $F$ only by rule~7, and the filter that produces the trace keeps every $\mathrm{callG}$ and every $\mathrm{fail}$ label, so both transfer from the history to the trace.
+  Now fix a state of the execution and count the supporters of the dissenting bit $1-v$.
+  Each of them is corrupted at some stage of the trace: a caller of $1-v$ by unanimity, a member of $F$ by the fold.
+  The stages form a chain, so the whole set sits inside a single stage, which the corruption budget caps at $f$.\lean{PLTS.ABA.GBCA.supp_le_of_unanimous}\leanok{}
+  Every $f{+}1$ guard at that bit is therefore unreachable.
+  In particular \texttt{bindUnset}\,$v$ never fires, and $v$ is alive at every state of the execution.\lean{PLTS.ABA.GBCA.dead_notMem_of_unanimous}\leanok{}
+  Take a return from such a state.
+  A value-bearing return of $w$ demands $1-w \in dead$, and $v \notin dead$, so $1-w \neq v$ and $w = v$.
+  A $C$-return demands $f{+}1$ support at both bits, and the count at $1-v$ is the capped one, so no $C$-return fires.\lean{PLTS.ABA.GBCA.retG_value_of_unanimous}\leanok{}
+  Theorem~\ref{thm:trace-support} supplies the genuine execution behind the trace and pulls each return label back to a step of it.
 \end{proof}
 
 \blueprintfig{fig-wcc}{The WCC specification instance (Transition System 3): the four-outcome coin resolution and the return of the common bit or an adversary-chosen bit.
@@ -1781,7 +1851,8 @@ supplies them from the receipts.
   Case (a)'s $n{-}f$ $\mathrm{SEAL}\,v$ quorum has an honest sender, whose $\mathrm{SEAL}\,v$ is backed by an $n{-}f$ $\mathrm{BIND}\,v$ quorum; case (b)'s $f{+}1$ $\mathrm{BIND}\,v$ receipts exceed $|F|$ directly.
   Either way an honest $\mathrm{BIND}\,v$ sender appears, and its wait condition is an $n{-}f$ $\mathrm{VOTE}\,v$ receipt quorum.
   That quorum both certifies $1-v$ dead --- its members are each corrupted or committed to $v$, so it is itself the wall --- and refutes any certificate for $v$, which is the specification guard $v \notin dead$.
-  Refining it to an $n{-}f$ $\mathrm{ECHO}\,v$ and then $\mathrm{INPUT}\,v$ receipt quorum supplies both guards of $\mathrm{bindUnset}\,(1-v)$: its honest senders each hold an input (D8), which is the quorum guard, and $n - f \ge f + 1$ makes the same count the $f{+}1$ $\mathrm{SuppOK}(v)$ count at the spared bit (D15).
+  Refining it to an $n{-}f$ $\mathrm{ECHO}\,v$ and then $\mathrm{INPUT}\,v$ receipt quorum supplies the first two guards of $\mathrm{bindUnset}\,(1-v)$: its honest senders each hold an input (D8), which is the quorum guard, and $n - f \ge f + 1$ makes the same count the $f{+}1$ $\mathrm{SuppOK}(v)$ count at the spared bit (D15).
+  The third guard, $dead = \emptyset$, is the two memberships together: the refutation gives $v \notin dead$, the case gives $1-v \notin dead$, and a subset of $\{0,1\}$ missing both bits is empty.
   The return is then answered by the weak transition $\mathrm{bindUnset};\mathrm{retA}$, resp.\ $\mathrm{bindUnset};\mathrm{retB}$, whose leading $\tau$-step is absorbed by the $\tau$-closure of the weak step.
   A return met by a state that already has $1-v \in dead$ is answered by a single specification return.
 
