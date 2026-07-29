@@ -2663,6 +2663,77 @@ Theorem~\ref{thm:aba-assembly} and as a matched coordinate in
 Theorem~\ref{thm:aba-flat}.
 }
 
+\subsection{What a process knows about corruption}
+
+No honest rule of any node reads the corrupted set.
+The set is read by the Byzantine rules alone, each of which asks only whether the node it belongs to is itself corrupted, and it is written by the $\mathrm{fail}$ broadcast.
+So the copies of $F$ carried by the nodes of Definition~\ref{def:aba-flat} hold no honest-side knowledge, and a process that carries one bit in their place runs the same program.
+The following definition makes that structural.
+
+\begin{definition}[The own-flag program]
+  \label{def:aba-ownflag}
+  \lean{PLTS.ABA.GBCA.ProcNodeU}\lean{PLTS.ABA.CoreNodeU}\lean{PLTS.ABA.OwnFlag.ABANodeU}\lean{PLTS.ABA.OwnFlag.ABAProcStepU}\lean{PLTS.ABA.OwnFlag.ownFlagFlat}\lean{PLTS.ABA.OwnFlag.BudgetTrace}\leanok
+  \uses{def:aba-flat, def:aba-gbca-vocab, def:aba-core-vocab, def:aba-subspecs}
+  Let $\mathrm{CoreNodeU}(n)$ and $\mathrm{ProcNodeU}(n)$ be the round-loop node and the stage node of Definition~\ref{def:aba-flat} with the copy of the corrupted set deleted, so that each holds the record of Definition~\ref{def:aba-core-vocab} or of Definition~\ref{def:aba-gbca-vocab} together with its pools and receipt rows and nothing else.
+  The state of process $j$ is
+  \[
+    \mathrm{ABANodeU}(n) \;=\;
+      \mathrm{CoreNodeU}(n) \times (\mathbb{N} \to \mathrm{ProcNodeU}(n)) \times \{\text{true},\text{false}\},
+  \]
+  the last coordinate being that process's own corruption flag, false initially.
+  The rule table $\mathrm{ABAProcStepU}(P,j)$ is the table of Definition~\ref{def:aba-flat} rule for rule, with three changes.
+  The honest rules are unchanged beyond the record shape, since none of them names $F$.
+  Every Byzantine guard $j \in F$ becomes the guard $\mathit{flag} = \text{true}$ on the node's own flag.
+  On $\mathrm{fail}(k)$ process $k$ sets its flag to true and every other process fixes its own, under no guard and no budget, so the write is idempotent and always enabled.
+  The composition is that of Definition~\ref{def:aba-flat}:
+  \[
+    \mathrm{ownFlagFlat}(P) \;=\; \mathrm{abstract}_H\bigl(
+      \mathrm{ownFlagGroup}(P) \parallel \mathrm{WCC.specFamily}(P) \bigr),
+  \]
+  where $\mathrm{ownFlagGroup}(P)$ is the full-synchronisation product of the $n$ programs with both networks hidden.
+  The coin oracle of Definition~\ref{def:aba-subspecs} enters unchanged, keeping its own copy of the corrupted set and its budget-guarded corruption.
+  The budget is carried by traces instead.
+  A trace $t$ over $\mathrm{Lab}(n)$ satisfies $\mathrm{BudgetTrace}(f,t)$ when there is a set $A$ of at most $f$ process ids with $\mathrm{fail}(id) \in t \Rightarrow id \in A$.
+\end{definition}
+
+\begin{theorem}[The own-flag program is the analyzed one]
+  \label{thm:aba-ownflag}
+  \lean{PLTS.ABA.OwnFlag.ownFlagFlat_safe}\lean{PLTS.ABA.OwnFlag.ownFlagFlat_traces}\leanok
+  \uses{def:aba-ownflag, thm:aba-flat}
+  Let $P$ be parameters and let $t$ be a trace of positive probability under an achievable trace distribution of $\mathrm{ownFlagFlat}(P)$ satisfying $\mathrm{BudgetTrace}(f,t)$.
+  Then $t$ satisfies Validity and Agreement, and $t$ has positive probability under an achievable trace distribution of $\mathrm{hybridImpl}(P)$.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-ownflag, thm:aba-flat}
+  Define the inflation map $\mathrm{inflate}$ from own-flag states to the states of Definition~\ref{def:aba-flat}.
+  It copies every protocol field, and it reconstructs each deleted copy of the corrupted set --- the round loop's and every stage's, in every node --- as the one set
+  \[
+    \mathrm{flagSet}(u) \;=\; \{\, k \in [n] \;\mid\; \text{the flag of } u(k) \text{ is raised} \,\}.
+  \]
+  The oracle's coordinate is left alone.
+  Write $\mathrm{ownFlagFlatB}(P)$ for $\mathrm{ownFlagFlat}(P)$ restricted to the steps whose $\mathrm{fail}(k)$ label satisfies $k \in \mathrm{flagSet}(u)$ or $|\mathrm{flagSet}(u)| < f$, every other label being unrestricted.
+  Along $\mathrm{inflate}$ each rule of that system is the rule of the same name in $\mathrm{flatHybrid}(P)$.
+  The honest rules match because neither side reads the corrupted set.
+  The Byzantine rules match because a process's flag is raised exactly when that process lies in $\mathrm{flagSet}(u)$.
+  The $\mathrm{fail}(k)$ rule matches because under the step restriction the corruption transform of Definition~\ref{def:aba-flat}, whose guard is $k \notin F \wedge |F| < f$, adds $k$ to $\mathrm{flagSet}(u)$ in either branch, which is the unguarded flag write read through $\mathrm{inflate}$.
+  The map also carries the initial state to the initial state, every flag being false there.
+  Pushing an execution of $\mathrm{ownFlagFlatB}(P)$ forward along $\mathrm{inflate}$ therefore gives an execution of $\mathrm{flatHybrid}(P)$ assigning every trace the same probability, so $\operatorname{ATD}(\mathrm{ownFlagFlatB}(P)) \subseteq \operatorname{ATD}(\mathrm{flatHybrid}(P))$.
+
+  It remains to remove the step restriction.
+  Fix an execution of $\mathrm{ownFlagFlat}(P)$ of positive probability whose trace is $t$, and let $A$ be a budget set for $t$.
+  Every $\mathrm{fail}$ label of the execution is exposed in $t$, so it names a member of $A$.
+  Only its own $\mathrm{fail}$ label raises a process's flag, so $\mathrm{flagSet}$ stays inside $A$ at every state of the execution.
+  Consider a step of the execution on $\mathrm{fail}(k)$ and suppose $k$ is not already flagged.
+  Then $k$ lies in $A$ and not in $\mathrm{flagSet}$, so that inclusion is strict and $|\mathrm{flagSet}| < |A| \le f$.
+  The step therefore has budget headroom, and every step of the execution meets the restriction.
+  Pruning the scheduler's out-of-budget emissions leaves the probability of that execution unchanged, so $t$ keeps positive probability in $\mathrm{ownFlagFlatB}(P)$.
+  Composing the inclusion with Theorem~\ref{thm:aba-flat} gives both conclusions.
+\end{proof}
+
+The budget is therefore a constraint on the adversary and not a mechanism of the processes.
+Deleting it from the state costs the development nothing, and the theorem is the certificate of that.
+
 \begin{thebibliography}{LeslieBP}
 
 \bibitem[ABDY22]{ABDY22}
