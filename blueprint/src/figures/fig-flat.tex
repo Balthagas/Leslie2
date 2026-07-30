@@ -1,49 +1,60 @@
-% The deployed system (PLTS.ABA.OwnFlag.ABAProcU, PLTS.ABA.OwnFlag.ownFlagFlat):
-% n programs, both networks hidden, the coin oracle the one component that is not a process.
+% The deployed system (PLTS.ABA.Net.ABAProcN, PLTS.ABA.Net.netAdv, PLTS.ABA.Net.netFlat):
+% n corruption-blind programs, the network adversary, the coin oracle.
 \begin{tikzpicture}[
     >={Stealth[round]}, semithick,
     prog/.style={draw, rounded corners, align=center, font=\footnotesize,
-      minimum width=2.4cm, minimum height=1.5cm, inner sep=3pt},
+      minimum width=2.4cm, minimum height=1.35cm, inner sep=3pt},
     box/.style={draw, rounded corners, align=center, font=\footnotesize,
-      minimum width=4.6cm, minimum height=0.9cm, inner sep=3pt},
+      minimum width=4.0cm, minimum height=1.1cm, inner sep=3pt},
     lbl/.style={font=\scriptsize, fill=white, inner sep=1.5pt},
     ann/.style={font=\scriptsize, align=center, inner sep=1.5pt}]
   % the outer frame: the sub-protocol API hidden
-  \draw[dashed, rounded corners] (-1.3,-3.3) rectangle (11.0,3.5);
+  \draw[dashed, rounded corners] (-1.3,-3.9) rectangle (11.0,3.5);
   \node[font=\footnotesize] at (8.9,3.15) {$\mathrm{abstract}\,\mathrm{hiddenAPI}$};
-  % the inner frame: the two networks hidden
-  \draw[dashed, rounded corners] (-1.0,-1.62) rectangle (10.4,2.6);
+  % the inner frame: the rendezvous alphabet hidden
+  \draw[dashed, rounded corners] (-1.0,-3.3) rectangle (10.4,2.6);
   \node[font=\footnotesize] at (7.6,2.33)
-    {$\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{flatNetLabels}$};
+    {$\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netEvtLabels}$};
   % the n programs
-  \node[prog] (p1) at (0.6,0.9)
-    {$\mathrm{ABAProcU}(P,1)$\\ round loop\\ stages $r = 0,1,\dots$\\ own flag};
-  \node[prog] (pj) at (4.9,0.9)
-    {$\mathrm{ABAProcU}(P,j)$\\ round loop\\ stages $r = 0,1,\dots$\\ own flag};
-  \node[prog] (pn) at (8.9,0.9)
-    {$\mathrm{ABAProcU}(P,n)$\\ round loop\\ stages $r = 0,1,\dots$\\ own flag};
-  \node[font=\footnotesize] at (2.75,0.9) {$\cdots$};
-  \node[font=\footnotesize] at (6.9,0.9) {$\cdots$};
+  \node[prog] (p1) at (0.6,1.0)
+    {$\mathrm{ABAProcN}(P,1)$\\ round loop\\ stages $r = 0,1,\dots$\\ inbox rows};
+  \node[prog] (pj) at (4.9,1.0)
+    {$\mathrm{ABAProcN}(P,j)$\\ round loop\\ stages $r = 0,1,\dots$\\ inbox rows};
+  \node[prog] (pn) at (8.9,1.0)
+    {$\mathrm{ABAProcN}(P,n)$\\ round loop\\ stages $r = 0,1,\dots$\\ inbox rows};
+  \node[font=\footnotesize] at (2.75,1.0) {$\cdots$};
+  \node[font=\footnotesize] at (6.9,1.0) {$\cdots$};
   % the synchronised visible bus
   \draw[thick] (-0.7,1.95) -- (10.1,1.95);
   \foreach \x in {0.6,4.9,8.9} \draw[->] (\x,1.95) -- (\x,1.68);
   \node[ann] at (1.8,2.33) {$\mathrm{Lab}(n)$: every program steps};
   \draw[->] (10.1,1.95) -- (10.7,1.95) -- (10.7,3.85)
     node[ann, above]{visible\\ $\mathrm{callABA}$, $\mathrm{retABA}$, $\mathrm{fail}$};
-  % the two hidden networks
-  \draw[thick] (-0.7,-0.55) -- (10.1,-0.55);
-  \foreach \x in {0.6,4.9,8.9} \draw[<->] (\x,0.12) -- (\x,-0.55);
-  \node[ann] at (4.7,-1.05)
-    {$\mathrm{gnet}(r,i,j,m)$ and $\mathrm{dnet}(i,j,b) \to \tau$: two-party rendezvous,\\
-     the sender's guard and the receiver's write, every other program idle};
-  % the coin oracle, outside the group
-  \node[box] (w) at (4.9,-2.5)
-    {$\mathrm{WCC.specFamily}(P)$: the coin oracle,\\ the one component that is not a process};
-  \draw[<->] (4.9,-1.62) -- (4.9,-2.05);
-  \node[ann, anchor=west] at (5.15,-1.84)
-    {$\mathrm{callW}\,r\,j$, $\mathrm{retW}\,r\,j\,c$};
+  % the rendezvous bus
+  \draw[thick] (-0.7,-0.35) -- (10.1,-0.35);
+  \foreach \x in {0.6,4.9,8.9} \draw[<->] (\x,0.32) -- (\x,-0.35);
+  % the network adversary
+  \node[box] (adv) at (2.2,-2.6)
+    {$\mathrm{netAdv}(P)$: the adversary\\
+     pools $pool(r,j)$, $dpool(j)$\\
+     corrupted set $F$, $|F| < f$};
+  \draw[<->] (2.2,-0.35) -- (2.2,-2.05);
+  \node[ann, anchor=east] at (1.95,-1.5) {$k \in F$ authorises\\ every drive};
+  % the coin oracle, joined through the pullback
+  \node[box] (w) at (7.6,-2.6)
+    {$\mathrm{WCC.specFamily}(P)$\\ along $\mathrm{wccPull}$:\\
+     the one non-Dirac rule};
+  \draw[<->] (7.6,-0.35) -- (7.6,-2.05);
+  \node[ann, anchor=west] at (7.85,-1.5)
+    {$\mathrm{callW}$, $\mathrm{retW}$,\\ $\mathrm{byzCallW}$, $\mathrm{byzRetW}$,\\
+     $\mathrm{retWPub}$};
   % the assembly it is equal to
-  \node[box] (impl) at (4.9,-4.6) {the assembly\\ $\mathrm{hybridImpl}(P)$};
-  \draw[<->, dashed] (4.9,-3.3) --
-    node[lbl, right, align=left]{$\operatorname{ATD}$ equal under the budget,\\ along $\mathrm{deflateFull}$} (impl.north);
+  \node[box] (impl) at (4.9,-5.2) {the assembly\\ $\mathrm{hybridImpl}(P)$};
+  \draw[<->, dashed] (4.9,-3.9) --
+    node[lbl, right, align=left, pos=0.72]{$\operatorname{ATD}$ equal, no restriction,\\ along $\mathrm{deflNet}$} (impl.north);
+  % the rendezvous bus legend, drawn last so it masks the descending arrows
+  \node[ann, fill=white] at (4.7,-0.8)
+    {$\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$,
+     $\mathrm{retWPub}$, $\mathrm{gcallLoop}$, the five drives $\to \tau$:\\
+     one half at the named program, the other at the adversary};
 \end{tikzpicture}

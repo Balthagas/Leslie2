@@ -77,7 +77,8 @@ receiving `echo4` messages from `2t + 1` parties" where the pseudocode's lines 1
 received once". `ImplStep.retB` reads this as *from at least one sender*: `honce : ∃ k,
 Msg.seal (some v) ∈ s.recv id k` (`GBCAImpl.lean:467`), not as a cardinality constraint
 of exactly one receipt. The hypothesis is a genuine part of the rule, carried through the
-deployed rendering (`FlatOwnFlag.lean:313`, the fused `retG_B` row), but no proof
+deployed rendering (`FlatNetwork.lean:415`, the `retG_B` row of the corruption-blind
+program, and `:610`, its Byzantine-drive twin), but no proof
 consumes it: the refinement's `retB` rows bind it and leave it unused, discharging the
 `B`-return's specification-side guards from the `f + 1` `BIND v` receipts and `hval`
 instead. Either reading supports the same theorems.
@@ -100,9 +101,14 @@ carries no counterpart, its only hypothesis being soundness `h : m ∈ s.sent j`
 (`GBCAImpl.lean:378`). Both are sound for the same reason — receipt sets are `Finset`s
 and re-delivery is `insert` into a set, so the guard removes redundant transitions
 rather than reachable states — and the asymmetry reappears exactly in the deployed
-automaton, each guard splitting across the two ends of a rendezvous: the DECIDED halves
-carry it (`ABAProcStepU.dnetSelf`/`dnetRecv`, `FlatOwnFlag.lean:474`, `:482`), the stage
-halves do not (`ABAProcStepU.gnetSelf`/`gnetRecv`, `FlatOwnFlag.lean:490`, `:499`).
+rendering, where each delivery is a rendezvous whose two halves are held by different
+components. Soundness is the network adversary's conjunct on both layers: `NetStep.gdlv`
+requires `h : m ∈ s.pool r j` (`FlatNetwork.lean:664`) and `NetStep.ddlv` requires
+`h : b ∈ s.dpool j` (`:672`), neither consuming the pooled message. Freshness is the
+receiver's, and only at the DECIDED layer: `ABAProcStepN.ddlvRecv` carries
+`hr : b ∉ c.decIn k` (`FlatNetwork.lean:550`) while `ABAProcStepN.gdlvRecv` carries no
+hypothesis at all (`:529`), filing the message under the sender's inbox row
+unconditionally.
 
 ## 4. Source defects the encoding does not reproduce
 

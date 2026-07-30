@@ -14,16 +14,18 @@ hybridImpl := (GBCA.implFamily ∥ (core ∥ WCC.specFamily)).abstract hiddenAPI
    ⊑ hybridSpec (substitution: swap GBCA impl for its spec, Results 3+5)
    ⊑ ABA.spec   (the core simulation `coreSim`)
 
-ownFlagFlatB  =ATD=  hybridImplB      (`ownFlag_atd`: the deployed n programs
-                                       and the analyzed assembly, budget for budget)
+netFlat  =ATD=  hybridImpl           (`netFlat_atd`: the deployed n corruption-blind
+                                      programs beside the network adversary and the
+                                      coin, and the analyzed assembly — no restriction
+                                      on either side)
 ```
 
 Components talk only through synchronized handshake labels (`callG`/`retG`/
 `callW`/`retW`), which the outer `abstract` hides; no component reads another's
 state. `hybridImpl` is the analysis form, one automaton over the whole system
-state; the deployed form is `ownFlagFlat`, one automaton per process, and the
-second line above is what identifies them. Design rationale for the core
-simulation: `../DESIGN-CoreSim.md`.
+state; the deployed form is `netFlat`, one automaton per process beside a network
+adversary and the coin oracle, and the second line above is what identifies them.
+Design rationale for the core simulation: `../DESIGN-CoreSim.md`.
 
 **Scope.** GBCA is verified to
 *implementation* level; WCC is *assumed* at specification level (its coin is
@@ -96,7 +98,7 @@ specification state shape (an exclusion set in place of a bound value).
 ### Layer 7 — the deployed system
 | file | lines | what it is |
 |---|---|---|
-| `FlatOwnFlag.lean` | 2956 | **The protocol as it runs, connected directly to `hybridImpl`.** `OwnFlag.ABAProcU P j` is *the program of process j*: one `ABANodeU = CoreNodeU × (ℕ → GBCA.ProcNodeU) × Bool` — the round-loop node, one graded-agreement stage per round, and that process's own corruption flag, with no copy of the corrupted set anywhere in the node — and 43 rules, each `callG`/`retG` handshake fused into a single atomic rule of the two halves of the *same* process, both networks (`gnet` round-tagged, `dnet`) carried by the auxiliary alphabet `FlatNet` that the composition hides, and every guard reading `j`'s own node. Eleven rules are τ (the DECIDED echo and injection, and the nine stage rules `stageRelay`, `stageEcho`, the two `stageVote*`, the two `stageBind*`, the two `stageSeal*` and `stageByz`); the six fused return rows (`retG_A`/`_B`/`_C` and their `retGByz*` twins) carry the SEAL-level guards of the stage node verbatim; every Byzantine guard is the node's own flag, and `fail k` raises `k`'s flag with no guard and no budget in the state. `ownFlagFlat = ((syncProduct ABAProcU).abstract nets).relabel ∥ WCC.specFamily` with the sub-protocol API hidden; the coin oracle is the one component that is not a process and enters unchanged, keeping its own copy of the corrupted set and its budget-guarded `corrupt`. **The correspondence with the monolith**: `deflateFull` reads the product as one `hybridImpl` state — `deflStage u r` assembled from the round-`r` slices (receiver rows transposed into the monolithic `recv`), `deflCore u` from the coordinator slices, and every `F` the nodes do not carry reconstructed as `flagSet u`. The budget is what makes the two `fail` rows correspond, so both sides are restricted to their in-budget steps: `okLabel` reads the budget off the flags, `okLabelM` reads the same condition off the core's `F`, and `okLabelM_deflate` shows the two restrictions name the same steps along the map. `ownFlagFlatB` and `hybridImplB` are then related by strong functional matchings in both directions (`ownFlagSim`, `ownFlagSimConverse` — the map is not surjective, so the converse is the graph read backwards). Three headlines, each with a `#guard_msgs` axiom firewall: **`ownFlag_atd`** (`ATD (ownFlagFlatB P) = ATD (hybridImplB P)` — the deployed system *is* the analyzed one, budget for budget), **`ownFlagFlat_safe`** and **`ownFlagFlat_traces`** (every positive-probability trace of the *unrestricted* `ownFlagFlat` satisfying `BudgetTrace P.f` is valid and agreeing, and is a trace of `hybridImpl`). The last two close the gap to the unrestricted system by `exec_flag_sub` — every `fail` of a witness execution is exposed in its trace, so the flag set stays inside the trace's fail set and every `fail` step is a repeat or has headroom — plus `pruneSched`, which prunes the scheduler's out-of-budget emissions without moving that execution's probability, then `hybridImplB_refines` and `PLTS.ABA.main`. |
+| `FlatNetwork.lean` | 3533 | **The protocol as it runs, connected directly to `hybridImpl`.** Three kinds of component. (1) `Net.ABAProcN P j` is *the program of process j*, and it is **corruption-blind**: one `ABANodeN = CoreNodeN × (ℕ → GBCA.ProcNodeN)` — the round-loop node and one graded-agreement stage per round, each carrying only its own control record and its inbox rows — with **no** corrupted set, **no** corruption flag and **no** outbox anywhere in the node, so no guard of its table can ask whether the process is honest or what it has multicast. 44 rules, all Dirac, and **none of them fires on τ** (`procStepN_no_tau`): 16 over the shared alphabet `Lab n`, 28 over the rendezvous alphabet `NetEvt` (`gsnd`/`gdlv`/`dsnd`/`ddlv`, the fused `retWPub`, `gcallLoop`, and the five Byzantine drives), which the composition hides. Every label has a row — the participant's or an idle self-loop — so the sub-protocol ports are **input-enabled**: a driven call opens the stage record exactly as an honest call would (`byzCallG`) and the three `byzRetG` rows mark it returned under the same SEAL-level evidence as `retG_A`/`_B`/`_C`, the program supplying the instance-side content and never a round-loop write. (2) `Net.netAdv P` is *the network adversary*, holding everything a process may not see: `NetState = pool : ℕ → Fin n → Finset Msg` (D5), `dpool : Fin n → Finset Bool` (D12′) and `F`. 20 rules, all Dirac; the send rows pool (`gsnd`, `callG`, `retWPub`, `dsnd` under the write-once `b ∉ dpool j`), the delivery rows carry the soundness guards `m ∈ pool r j` / `b ∈ dpool j` and consume nothing, `retABA` requires `b ∈ dpool id`, seven rows read `F` — the five drive authorisations plus the two τ injections `byzG` (arbitrary stage message) and `byzD` (either DECIDED bit, hence equivocation) — and `fail` is `NetState.corrupt`, the total Dirac transform **guarded by `k ∉ F ∧ |F| < f`**. The corruption budget is that component guard: nothing restricts the transition relation and no theorem assumes it of a trace. (3) `WCC.specFamily` enters unchanged, joined over the extended alphabet through a partial label pullback (`PLTS.System.mapIdle` along `wccPull`: `byzCallW`/`byzRetW`/`retWPub` map onto the oracle's own `callW`/`retW` rows, every other rendezvous label leaves it idle), keeping its own copy of `F` and its own budget-guarded `corrupt`; it is the one component with a non-Dirac rule. Assembly: `netPre = syncProduct ABAProcN ∥ (netAdv ∥ wccLift)`, `netGroup = (netPre.abstract netEvtLabels).relabel`, `netFlat = netGroup.abstract hiddenAPI`. **The correspondence with the monolith**: `deflNet` reads the triple as one `hybridImpl` state — `deflStageN u w r` (local records and transposed inbox rows from the round-`r` node slices, `sent` from the adversary's `pool r`, `F` the adversary's), `deflCoreN u w` (control records and `decIn` rows from the coordinator slices, `decidedSent = dpool`, `F` again the adversary's), the oracle coordinate untouched. All copies of `F` in the monolithic state are the adversary's one set and the three `corrupt` transforms share the guard, so the `fail` rows correspond with **no restriction machinery** on either side: `netForward`/`netConverse` give strong functional matchings both ways (`netSim`, `netSimConverse` — the map is not surjective, so the converse is the graph read backwards). Three headlines, each with a `#guard_msgs` axiom firewall: **`netFlat_atd`** (`ATD (netFlat P) = ATD (hybridImpl P)` — the deployed system *is* the analyzed one, plain against plain), and the **hypothesis-free** **`netFlat_safe`** and **`netFlat_traces`** (every positive-probability trace of `netFlat` is valid and agreeing, and is a trace of `hybridImpl`), which follow from `netFlat_refines` and `PLTS.ABA.main` by `safety_transfer` alone. |
 
 ## Future work
 
@@ -105,10 +107,14 @@ specification state shape (an exclusion set in place of a bound value).
   (probOf ≥ the ε-product via a traceProb single-execution lower bound) — the
   machine-checked non-vacuity for `main`'s own system, exercising Agreement with two
   returns.
-- **Budget as an assumption throughout** (banked): unguarded `fail` in every system,
-  `|F| ≤ f` relativized out of the invariants, every headline conditional on
-  `BudgetTrace` — a full-replacement campaign. `FlatOwnFlag`'s `ownFlag_atd` is the
-  conservativity certificate that makes it optional.
+- **Budget as an assumption throughout** (not pursued): the alternative shape is an
+  unguarded `fail` in every system, `|F| ≤ f` relativized out of the invariants, and
+  every headline conditional on a trace-level budget predicate — a full-replacement
+  campaign. It is unnecessary here. In `FlatNetwork.lean` the budget is a component
+  guard (`NetState.corrupt`, `k ∉ F ∧ |F| < f`) on the one box that owns the corrupted
+  set, so the deployed system enforces it structurally and `netFlat_safe`/`netFlat_traces`
+  need no hypothesis on the trace; `netFlat_atd` relates the plain systems, plain
+  against plain.
 - **`ValidityTrace` witness strengthening**: the current witness clause accepts any
   preceding `callABA id' b`; the proof yields a stronger ghost-backed witness. Care:
   the D13 ghost is *last*-rule-1-write (D16 junk-erasure), so a "first call" restatement
