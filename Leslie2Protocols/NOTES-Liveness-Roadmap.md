@@ -254,8 +254,8 @@ the sub-protocol slot.
 - PLTS + adapters in Leslie: `Leslie_LTS/Framework/Probabilistic.lean:34-70`
 - Certificates: `Leslie/Prob/Liveness.lean` (`FairASTCertificate`, `sound` at :1719)
 - This repo's fairness line: `Leslie2Extra/Fairness/Simulation/{Defs,Soundness}.lean`
-- Own-flag deployed model and its conservativity bridge: `ABA/FlatOwnFlag.lean`
-  (`ownFlagFlatB_bridge`, `BudgetTrace`) — the presentation to state fair termination
+- Own-flag deployed model and its correspondence with the analyzed hybrid:
+  `ABA/FlatOwnFlag.lean` (`ownFlag_atd`, `BudgetTrace`) — the presentation to state fair termination
   over if it is to be stated of the deployed system: `fail` is always enabled there and
   the budget is a hypothesis on traces, so the marking of `fail` is an explicit choice
   rather than one the state makes.

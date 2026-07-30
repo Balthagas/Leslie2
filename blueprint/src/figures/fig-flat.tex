@@ -1,4 +1,4 @@
-% The flat presentation (PLTS.ABA.Flat.ABAProc, PLTS.ABA.Flat.flatHybrid):
+% The deployed system (PLTS.ABA.OwnFlag.ABAProcU, PLTS.ABA.OwnFlag.ownFlagFlat):
 % n programs, both networks hidden, the coin oracle the one component that is not a process.
 \begin{tikzpicture}[
     >={Stealth[round]}, semithick,
@@ -17,11 +17,11 @@
     {$\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{flatNetLabels}$};
   % the n programs
   \node[prog] (p1) at (0.6,0.9)
-    {$\mathrm{ABAProc}(P,1)$\\ round loop\\ stages $r = 0,1,\dots$};
+    {$\mathrm{ABAProcU}(P,1)$\\ round loop\\ stages $r = 0,1,\dots$\\ own flag};
   \node[prog] (pj) at (4.9,0.9)
-    {$\mathrm{ABAProc}(P,j)$\\ round loop\\ stages $r = 0,1,\dots$};
+    {$\mathrm{ABAProcU}(P,j)$\\ round loop\\ stages $r = 0,1,\dots$\\ own flag};
   \node[prog] (pn) at (8.9,0.9)
-    {$\mathrm{ABAProc}(P,n)$\\ round loop\\ stages $r = 0,1,\dots$};
+    {$\mathrm{ABAProcU}(P,n)$\\ round loop\\ stages $r = 0,1,\dots$\\ own flag};
   \node[font=\footnotesize] at (2.75,0.9) {$\cdots$};
   \node[font=\footnotesize] at (6.9,0.9) {$\cdots$};
   % the synchronised visible bus
@@ -42,8 +42,8 @@
   \draw[<->] (4.9,-1.62) -- (4.9,-2.05);
   \node[ann, anchor=west] at (5.15,-1.84)
     {$\mathrm{callW}\,r\,j$, $\mathrm{retW}\,r\,j\,c$};
-  % the monolithic hybrid
-  \node[box] (impl) at (4.9,-4.6) {monolithic hybrid\\ $\mathrm{hybridImpl}(P)$};
+  % the assembly it is equal to
+  \node[box] (impl) at (4.9,-4.6) {the assembly\\ $\mathrm{hybridImpl}(P)$};
   \draw[<->, dashed] (4.9,-3.3) --
-    node[lbl, right]{$\operatorname{ATD}$ equal, along $\mathrm{unflat}$} (impl.north);
+    node[lbl, right, align=left]{$\operatorname{ATD}$ equal under the budget,\\ along $\mathrm{deflateFull}$} (impl.north);
 \end{tikzpicture}

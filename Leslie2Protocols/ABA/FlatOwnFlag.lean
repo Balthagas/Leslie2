@@ -228,9 +228,10 @@ abbrev ABANodeU (n : ℕ) : Type := CoreNodeU n × (ℕ → GBCA.ProcNodeU n) ×
 
 /-! ### The rule table
 
-`Flat.ABAProcStep`, rule for rule. Honest rules are verbatim modulo the
-record change; the Byzantine guards `j ∈ F` (round loop) and `j ∈ (g r).F`
-(stage) both become `fl = true`; the `fail k` row raises `k`'s own flag
+Process `j`'s rules, splitting the alphabet by role exactly as the
+monolithic composition's handshakes and stage rules do. Honest rules read
+only the node's protocol fields; the Byzantine guards (round loop and
+stage alike) read `fl = true`; the `fail k` row raises `k`'s own flag
 unconditionally and idempotently, and every other node takes the broadcast
 label without moving. -/
 
@@ -534,8 +535,8 @@ noncomputable def ownFlagPre (P : Params) :
     System ((∀ _ : Fin P.n, ABANodeU P.n) × (ℕ → WCC.SpecState P.n)) (Lab P.n) :=
   (ownFlagGroup P).parallel (WCC.specFamily P)
 
-/-- **The own-flag flat hybrid**: the own-flag counterpart of
-`Flat.flatHybrid`, with the sub-protocol API hidden. -/
+/-- **The deployed system**: the `n` own-flag programs beside the coin
+oracle, with the sub-protocol API hidden. -/
 noncomputable def ownFlagFlat (P : Params) :
     System ((∀ _ : Fin P.n, ABANodeU P.n) × (ℕ → WCC.SpecState P.n)) (Lab P.n) :=
   (ownFlagPre P).abstract (Lab.hiddenAPI P.n)
@@ -553,8 +554,8 @@ private theorem pure_inj {α : Type} {a b : α}
   have hm : a ∈ (PMF.pure b).support := by rw [← h]; simp
   simpa using hm
 
-/-- The composite step relation of the own-flag group, mirroring
-`Flat.flatGroup_step_iff`. -/
+/-- The composite step relation of the own-flag group, unfolded to the
+one-mover/broadcast case analysis of the synchronised product. -/
 theorem ownGroup_step_iff (P : Params) (q : ∀ _ : Fin P.n, ABANodeU P.n)
     (l : Lab P.n) (μ : PMF (∀ _ : Fin P.n, ABANodeU P.n)) :
     (ownFlagGroup P).step q l μ ↔

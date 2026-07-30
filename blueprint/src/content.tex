@@ -835,13 +835,14 @@ The recursion stops at GBCA, which is carried to implementation level.
 GBCA calls no sub-protocol, so no further substitution arises there.
 WCC is left at specification level.
 The system as deployed is $n$ programs beside a coin oracle, and
-Section~\ref{sec:aba-perproc} gives it in that form: at each implementation
-layer one automaton per process, equal on achievable trace distributions to a
-single automaton over the whole system state.
-The verification argument runs on a layered assembly of the same components,
-and Theorems~\ref{thm:aba-assembly} and~\ref{thm:aba-flat} carry its conclusion
-back to the deployed form, with the layer boundary in place and with it
-removed.
+Section~\ref{sec:aba-perproc} gives it in that form: one automaton per process,
+carrying that process's round loop, its graded-agreement stage at every round,
+and one bit recording whether it is itself corrupted.
+The verification argument runs instead on a layered assembly of the same
+components over the whole system state, and
+Theorem~\ref{thm:aba-ownflag-atd} identifies the two on achievable trace
+distributions, each restricted to the adversaries a corruption budget of $f$
+admits.
 
 \paragraph{Object names.}
 Transition System~1 is the ABA specification, Transition System~2 the GBCA
@@ -1033,20 +1034,22 @@ once and read by every presentation of those layers below.
 
 What runs is $n$ programs and a coin oracle.
 Each program is one process: its round loop, its graded-agreement stage at every
-round, and its share of the two message networks.
+round, its share of the two message networks, and one Boolean flag recording
+whether that process has been corrupted.
 The coin oracle is the weak common coin, which this development holds at
 specification level (Transition System~3).
-Two implementation layers make up the programs, and this section gives each of
-them in the form it runs in: the pseudocode of one process, and then the
-automaton of one process, every guard of which reads that process's own node.
-Each layer carries a second presentation as well, a rule inventory over the whole
-system state, in which a guard is read against the line of pseudocode it
-transcribes.
-The two subsections after this one carry those inventories, each followed by the
-equality on achievable trace distributions that identifies it with the
-per-process form given here.
-The two forms therefore name one system, and the choice between them fixes only
-which state a rule is written to read.
+Two implementation layers make up the programs, and this section gives them in
+the form they run in: the pseudocode of one process, and then the automaton of
+one process, every guard of which reads that process's own node.
+The two subsections after this one give the same two layers a second time, as
+rule inventories over the whole system state, in which a guard is read against
+the line of pseudocode it transcribes.
+Those inventories are what the verification argument runs on; the equality on
+achievable trace distributions that identifies their composition with the
+programs given here is Theorem~\ref{thm:aba-ownflag-atd}.
+The two forms therefore name one system, and the choice between them fixes
+which state a rule is written to read and where the corruption budget is
+enforced.
 
 Algorithm~\ref{alg:gbca-impl} is the graded-agreement stage of one process and
 Algorithm~\ref{alg:aba-core} the round loop that calls it, with one stage
@@ -1140,90 +1143,118 @@ instance and one coin instance per round.
     \end{algorithmic}
 \end{algorithm}
 
-\blueprintfig{fig-perproc}{The per-process presentation: the family $\mathrm{procInst}(P,r,j)$ under $\mathrm{syncProduct}$, the network alphabet hidden by the dashed frame $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netLabels}$, and the composite read back over $\mathrm{Lab}(n)$.
-The dashed vertical is Theorem~\ref{thm:aba-gbca-perproc}: the composite and the monolithic instance achieve the same trace distributions, the relation being the graph of $\mathrm{unpack}$.}
+What a process knows about corruption is one bit.
+No honest rule of either layer reads the corrupted set: it is read by the
+Byzantine rules alone, and each of those asks only whether the process it
+belongs to is itself corrupted.
+A process therefore needs no copy of that set, and the program below carries
+none.
+It carries one Boolean of its own instead, raised by its own $\mathrm{fail}$
+label, and every guard that would otherwise consult the corrupted set consults
+that Boolean.
 
-Each layer is encoded as the full-synchronisation composition of $n$ automata,
-one per process, communicating only through delivery labels that the composition
-hides.
+The programs are composed by full synchronisation, communicating only through
+delivery labels that the composition hides.
 That composition is the product of Definition~\ref{def:syncproduct}, taken over
 the extended alphabet of Definition~\ref{def:relabel} and read back along the
 restriction that definition supplies.
-The node of one automaton holds that process's record, its outbox and its inbox
-rows and nothing further, so locality sits in the state shape and not in the
-guards alone.
+The node of one automaton holds that process's records, its outboxes, its inbox
+rows and its flag and nothing further, so locality sits in the state shape and
+not in the guards alone.
 
-\begin{definition}[The per-process GBCA instance]
-  \label{def:aba-gbca-perproc}
-  \lean{PLTS.ABA.GBCA.GNet}\lean{PLTS.ABA.GBCA.ProcNode}\lean{PLTS.ABA.GBCA.ProcStep}\lean{PLTS.ABA.GBCA.procInst}\lean{PLTS.ABA.GBCA.netLabels}\lean{PLTS.ABA.GBCA.perProcInst}\leanok
-  \uses{def:aba-gbca-vocab, def:relabel, def:syncproduct}
-  The state of process $j$ is the node $\mathrm{ProcNode}$: the stage record $proc$ of Definition~\ref{def:aba-gbca-vocab}, the outbox $out$, the inbox rows $inbox(k)$ indexed by sender, and $j$'s own copy of the corrupted set $F$.
-  No field of the node names another process's record or pools.
-  The automaton runs over the extended alphabet $\mathrm{Lab}(n) \oplus \mathrm{GNet}(n)$, where $\mathrm{net}(i,j,m)$ is the delivery of $m$ from sender $j$ to receiver $i$.
-  Its twenty-one rules split the alphabet by role.
-  On the calls and returns it owns, $\mathrm{callG}\,r\,j\,b$ and $\mathrm{retG}\,r\,j\,g$, it runs the rule of that name in Algorithm~\ref{alg:gbca-impl}, together with the input-enabledness loop; on a call or return addressed to another process it idles.
-  On $\mathrm{fail}(k)$ every automaton applies the corruption transform to its own copy of $F$, which is what keeps the copies equal.
-  On $\mathrm{net}(i,j,m)$ the sender supplies the outbox guard $m \in out$ and does not move, the receiver files $m$ under row $j$ and carries no outbox guard, a process that is both supplies the guard and files the message, and a process that is neither idles.
-  The internal rules of Algorithm~\ref{alg:gbca-impl} --- the INPUT relay, the ECHO, VOTE, BIND and SEAL multicasts, and the Byzantine injection of D5 --- carry $\tau$.
-  Every guard reads the node alone.
+\begin{definition}[The program of one process]
+  \label{def:aba-ownflag}
+  \lean{PLTS.ABA.GBCA.ProcNodeU}\lean{PLTS.ABA.CoreNodeU}\lean{PLTS.ABA.OwnFlag.ABANodeU}\lean{PLTS.ABA.OwnFlag.FlatNet}\lean{PLTS.ABA.OwnFlag.FLab}\lean{PLTS.ABA.OwnFlag.ABAProcStepU}\lean{PLTS.ABA.OwnFlag.ABAProcU}\lean{PLTS.ABA.OwnFlag.flatNetLabels}\lean{PLTS.ABA.OwnFlag.ownFlagGroup}\lean{PLTS.ABA.OwnFlag.ownFlagPre}\lean{PLTS.ABA.OwnFlag.ownFlagFlat}\lean{PLTS.ABA.OwnFlag.flagSet}\lean{PLTS.ABA.OwnFlag.okLabel}\lean{PLTS.ABA.OwnFlag.ownFlagFlatB}\lean{PLTS.ABA.OwnFlag.BudgetTrace}\leanok
+  \uses{def:aba-labels, def:aba-gbca-vocab, def:aba-core-vocab, def:relabel, def:syncproduct}
+  The stage node $\mathrm{ProcNodeU}(n)$ is the stage record $proc$ of Definition~\ref{def:aba-gbca-vocab} together with the outbox $out$ and the inbox rows $inbox(k)$ indexed by sender.
+  The round-loop node $\mathrm{CoreNodeU}(n)$ is the control record $proc$ of Definition~\ref{def:aba-core-vocab} together with the DECIDED pool $decOut$ and the rows $decIn(k)$ of DECIDED receipts indexed by sender; each process owns its pool and its rows, so a corrupted process may pool both bits and have them delivered selectively (D12$'$).
+  The state of process $j$ is
+  \[
+    \mathrm{ABANodeU}(n) \;=\;
+      \mathrm{CoreNodeU}(n) \times (\mathbb{N} \to \mathrm{ProcNodeU}(n))
+        \times \{\text{true},\text{false}\},
+  \]
+  its round-loop node, one stage node per round, and its own corruption flag, false initially.
+  No field of the node names another process's record or pools, and no field of it is a copy of the corrupted set.
+
+  The automaton $\mathrm{ABAProcU}(P,j)$ runs over the extended alphabet $\mathrm{FLab}(n) = \mathrm{Lab}(n) \oplus \mathrm{FlatNet}(n)$, where $\mathrm{FlatNet}$ carries both networks: $\mathrm{gnet}(r,i,j,m)$ is the round-$r$ stage delivery of $m$ from $j$ to $i$, and $\mathrm{dnet}(i,j,b)$ the delivery of $j$'s $\langle\mathrm{DECIDED},b\rangle$ to $i$.
+  Its forty-three rules split the alphabet by role, and every transition is Dirac.
+  On $\mathrm{callABA}(j,b)$ and $\mathrm{retABA}(j,b)$ only the round-loop half moves and no stage does, by the rule of that name in Algorithm~\ref{alg:aba-core}; on either label naming another process the automaton idles.
+  Beside the rule that records the input, $\mathrm{callABA}(j,b)$ carries a self-loop fixing the node, so a call is never refused for want of a rule.
+  The two sub-protocol handshakes of round $r$ are the labels on which the round-loop half and the round-$r$ stage of the \emph{same} process move together, so each of them is one fused rule.
+  A $\mathrm{callG}\,r\,j\,b$ fuses one of the two round-loop behaviours, honest or corrupted, with one of the two stage behaviours, the genuine call of Algorithm~\ref{alg:gbca-impl} or the input-enabledness loop, which is four rules; a $\mathrm{retG}\,r\,j\,g$ fuses the two round-loop behaviours with the stage evidence that fixes the grade, which is six.
+  The $\mathrm{retG}$ rules are the only ones in which stage evidence guards a visible label, and the evidence each of the six reads is the SEAL level of the round-$r$ stage node: an $n-f$ $\mathrm{SEAL}\,v$ receipt quorum for grade $A$, an $n-f$ any-$\mathrm{SEAL}$ count carrying a $\mathrm{SEAL}\,v$ witness together with $f+1$ $\mathrm{BIND}\,v$ receipts and $|Valid| > 1$ for grade $B$, and an $n-f$ $\mathrm{SEAL}\,\bot$ quorum with $|Valid| > 1$ for grade $C$ --- the three wait-until cases of the last block of Algorithm~\ref{alg:gbca-impl}, each reading the receipts its own case names.
+  On $\mathrm{callW}\,r\,j$ and $\mathrm{retW}\,r\,j\,c$ the automaton carries the round loop's half alone, the oracle's half being supplied at the outer composition; the per-round bookkeeping between the coin return and the next stage call is fused into the $\mathrm{retW}$ rule (D10), which multicasts $\langle\mathrm{DECIDED},b\rangle$ when the round's grade was $A\,b$.
+  The corrupted round-loop behaviour is what lets the adversary drive a process's calls and returns out of phase (D11): at each of the four round-tagged handshakes it drops the phase, round and estimate guards of Algorithm~\ref{alg:aba-core}, asks $j$'s flag instead, and leaves the round-loop half of the node where it stands, the stage half still moving by the rule it would have moved by.
+  At $\mathrm{callW}$ and $\mathrm{retW}$, where the stage takes no part, the corrupted behaviour is therefore a self-loop.
+  Eleven rules carry $\tau$: the DECIDED echo and the corrupted DECIDED injection of the round loop (D12$'$), and the nine internal rules of Algorithm~\ref{alg:gbca-impl} at an arbitrary round --- the INPUT relay, the ECHO, VOTE, BIND and SEAL multicasts, and the Byzantine injection of D5.
+  Each of the two networks is a two-party rendezvous split into the self, sender, receiver and bystander roles, eight rules in all: the sender supplies the guard that the message sits in its own pool and does not move, the receiver files the message under the sender's row, a process that is both supplies the guard and files the message, and a process that is neither idles.
+  The two carry different guards by design: a DECIDED delivery is refused when the receiver already holds that payload from that sender, whereas a stage delivery carries no such guard, stage delivery being idempotent.
+  Every guard reads $j$'s node alone, and a label that $j$ does not own carries an idle self-loop, so full synchronisation lets that label's owner move.
+
+  The corrupted set appears nowhere in the table.
+  Every Byzantine guard is the node's own flag, and on $\mathrm{fail}(k)$ process $k$ sets its flag to true while every other process fixes its own, under no guard and no budget, so the write is idempotent and always enabled.
+  Write
+  \[
+    \mathrm{flagSet}(u) \;=\;
+      \{\, k \in [n] \;:\; \text{the flag of } u(k) \text{ is raised} \,\}
+  \]
+  for the set of processes flagged in a tuple $u$ of nodes.
+
   The composite is
   \[
-    \mathrm{perProcInst}(P,r) \;=\;
+    \mathrm{ownFlagGroup}(P) \;=\;
       \mathrm{relabel}\Bigl(
-        \mathrm{abstract}_{\mathrm{netLabels}}\bigl(
-          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{procInst}(P,r,j)
+        \mathrm{abstract}_{\mathrm{flatNetLabels}}\bigl(
+          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{ABAProcU}(P,j)
         \bigr)\Bigr),
   \]
-  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{ProcNode}(n)$, where $\mathrm{netLabels}$ is the set of $\mathrm{net}(i,j,m)$.
-\end{definition}
-
-\begin{definition}[The per-process core]
-  \label{def:aba-core-perproc}
-  \lean{PLTS.ABA.DNet}\lean{PLTS.ABA.CoreNode}\lean{PLTS.ABA.CoreProcStep}\lean{PLTS.ABA.CoreProc}\lean{PLTS.ABA.gossipLabels}\lean{PLTS.ABA.perProcCore}\leanok
-  \uses{def:aba-core-vocab, def:relabel, def:syncproduct}
-  The state of core process $j$ is the node $\mathrm{CoreNode}$: the control record $proc$ of Definition~\ref{def:aba-core-vocab}, $j$'s own DECIDED pool $decOut$, the rows $decIn(k)$ of DECIDED receipts addressed to $j$, and $j$'s copy of $F$.
-  Each process owns its DECIDED pool and its receipt rows, so that layer is per process by construction (D12$'$), and a corrupted process may pool both bits and have them delivered selectively.
-  The extended alphabet is $\mathrm{Lab}(n) \oplus \mathrm{DNet}(n)$, where $\mathrm{net}(i,j,b)$ carries $j$'s $\langle\mathrm{DECIDED},b\rangle$ to $i$.
-  Its twenty-four rules split the alphabet by role.
-  Process $j$ owns $\mathrm{callABA}(j,b)$, $\mathrm{retABA}(j,b)$ and the four round-tagged handshake labels naming $j$, and runs the rule of Algorithm~\ref{alg:aba-core} at each; on the same labels naming another process it idles.
-  Two rule families have no line of that pseudocode behind them.
-  The first is input-enabledness: $\mathrm{callABA}(j,b)$ carries, beside the rule that records the input, a self-loop fixing the node, so a call is never refused for want of a rule.
-  The second is the Byzantine drivers: for $j \in F$ each of the four handshake labels naming $j$ carries a further rule guarded by membership of $F$ alone, changing no state, which is what lets the adversary drive a corrupted process's calls and returns out of phase (D11).
-  On $\mathrm{fail}(k)$ every automaton corrupts its own copy of $F$.
-  The DECIDED echo and the Byzantine DECIDED injection carry $\tau$.
-  On $\mathrm{net}(i,j,b)$ the sender contributes the soundness guard $b \in decOut$ and does not move, and the receiver contributes the freshness guard $b \notin decIn(j)$ and the write.
-  Every guard reads the node alone, and the split fixes where a guard is read and nothing else.
-  The composite is
+  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{ABANodeU}(n)$, where $\mathrm{flatNetLabels}$ is the set of $\mathrm{gnet}$ and $\mathrm{dnet}$ labels, and the deployed system is
   \[
-    \mathrm{perProcCore}(P) \;=\;
-      \mathrm{relabel}\Bigl(
-        \mathrm{abstract}_{\mathrm{gossipLabels}}\bigl(
-          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{CoreProc}(P,j)
-        \bigr)\Bigr),
+    \mathrm{ownFlagFlat}(P) \;=\; \mathrm{abstract}_H\bigl(
+      \mathrm{ownFlagGroup}(P) \parallel \mathrm{WCC.specFamily}(P) \bigr),
   \]
-  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{CoreNode}(n)$.
+  whose argument is written $\mathrm{ownFlagPre}(P)$ and whose hidden alphabet $H$ is the sub-protocol API of Definition~\ref{def:aba-labels}.
+  The coin oracle $\mathrm{WCC.specFamily}(P)$, Transition System~3, is the one component that is not a process; it keeps its own copy of the corrupted set and its budget-guarded corruption.
+
+  The corruption budget is carried by traces rather than by the state.
+  A trace $t$ over $\mathrm{Lab}(n)$ satisfies $\mathrm{BudgetTrace}(f,t)$ when there is a set $A$ of at most $f$ process ids with $\mathrm{fail}(id) \in t \Rightarrow id \in A$.
+  Its step-level form is $\mathrm{okLabel}$: a $\mathrm{fail}(k)$ label is admissible at a state when $k$'s flag is already raised or fewer than $f$ flags are raised, and every other label is admissible unconditionally.
+  Write $\mathrm{ownFlagFlatB}(P)$ for $\mathrm{ownFlagFlat}(P)$ restricted to the steps whose label is admissible.
 \end{definition}
 
-Both composites of Definitions~\ref{def:aba-gbca-perproc} and~\ref{def:aba-core-perproc} have the same shape.
-The frame is $\mathrm{relabel}$ composed with $\mathrm{abstract}_{\mathrm{netLabels}}$: it turns every $\mathrm{net}(i,j,m)$ into $\tau$, and what leaves it is the visible API $\mathrm{callG}$, $\mathrm{retG}$ and $\mathrm{fail}$ together with $\tau$.
-At a rendezvous $\mathrm{net}(i,j,m)$ the sender $j$ supplies the guard $m \in \mathrm{out}_j$ and does not move, the receiver $i$ files $m$ under row $j$, and every other component answers with an idle self-loop, so full synchronisation moves exactly the two participants.
-On a visible label every component steps, its owner by its own rule and the rest by an idle loop; on $\mathrm{fail}$ every copy of the corrupted set is corrupted.
-The core composite carries the same description with $\mathrm{CoreProc}(P,j)$, $\mathrm{net}(i,j,b)$ and $\mathrm{gossipLabels}$ in place of the GBCA names.
+\blueprintfig{fig-flat}{The deployed system: the $n$ programs $\mathrm{ABAProcU}(P,j)$ under $\mathrm{syncProduct}$, both networks hidden, the coin oracle beside the group.
+Each program holds one process's round loop, its stage of every round and its own corruption flag, and every guard of its forty-three rules reads that program's own node.
+The inner dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{flatNetLabels}$: every $\mathrm{gnet}(r,i,j,m)$ and every $\mathrm{dnet}(i,j,b)$ becomes $\tau$, the sender supplying its guard and the receiver performing the write while every other program idles.
+The outer dashed frame is $\mathrm{abstract}_H$, which hides the coin handshake $\mathrm{callW}/\mathrm{retW}$ between the group and the oracle; what leaves it is the API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ together with $\tau$.
+The dashed vertical is Theorem~\ref{thm:aba-ownflag-atd}: under the corruption budget the deployed system and the assembly $\mathrm{hybridImpl}$ achieve the same trace distributions, along the graph of $\mathrm{deflateFull}$ and its converse.}
 
-\dynamics{What the presentation certifies}{%
-Calling either encoding a distributed algorithm is a claim about which state a
-rule is allowed to read.
-Since every rule of the per-process automata is a function of one node, no rule
-of either implementation reads across a process boundary.
-The presentation also fixes what stays centralized.
-The corruption budget is the one piece of shared state: the guard
-$k \notin F \wedge |F| < f$ is evaluated on each node's own copy of $F$, and
-the copies agree only because $\mathrm{fail}$ is a broadcast every component
-answers.
-That is the adversary's bookkeeping and not the protocol's.
-Nothing else is shared.
+\dynamics{What is distributed and what is not}{%
+Calling the encoding a distributed algorithm is a claim about which state a
+rule is allowed to read, and the presentation states it in its sharpest form.
+Every implemented part of the protocol is $n$ programs: the round loop, the
+graded-agreement stage of each round, the DECIDED gossip and the stage network
+all sit inside $\mathrm{ABAProcU}(P,j)$, and every guard of its forty-three
+rules is a function of $j$'s node.
+Nothing of the protocol is shared.
 The message pools, the receipt rows and the control records each belong to one
-process, and every quorum count is taken over one node's rows.
+process, every quorum count is taken over one node's rows, and the only thing
+a process knows about corruption is whether it is itself corrupted.
+The corruption budget is not part of the state either: $\mathrm{fail}$ writes
+one flag under no guard, and the arithmetic $k \notin F \wedge |F| < f$ is the
+adversary's bookkeeping, held over the traces the adversary may produce.
+One component is centralized, and it is centralized of necessity.
+An $\varepsilon$-common coin is a correlation between processes: the assumption
+is that with probability at least $\varepsilon$ the processes of a round read the
+same bit.
+A correlation is not a property of any one process's state, so no assignment of
+the oracle's transitions to per-process rules expresses it.
+Writing the oracle as $n$ programs would mean supplying the protocol that
+produces the correlation, which is the layer this development assumes rather
+than proves.
+It is also the one factor whose transitions are not Dirac, which is why it
+survives the argument untouched, as a matched coordinate in
+Theorem~\ref{thm:aba-ownflag-atd}.
 }
 
 \subsection{The graded-agreement stage}
@@ -1433,31 +1464,11 @@ The inventory above is monolithic.
 It is a single automaton whose state is the whole system, so its rules may read
 fields of processes other than the one they move: \texttt{deliver} inspects the
 sender's message pool and the receiver's row in one guard.
-That the guards are nevertheless local is a property of the rules and not of the
-state shape, and the equality below is where that is stated.
-
-\begin{theorem}[The per-process GBCA instance is the implementation instance]
-  \label{thm:aba-gbca-perproc}
-  \lean{PLTS.ABA.GBCA.perProcRefines}\lean{PLTS.ABA.GBCA.implRefinesPerProc}\lean{PLTS.ABA.GBCA.perProcInst_atd}\leanok
-  \uses{def:aba-gbca-perproc, def:aba-gbca-impl, def:achievable}
-  For all parameters $P$ and all rounds $r$,
-  \[
-    \operatorname{ATD}(\mathrm{perProcInst}(P,r)) \;=\;
-    \operatorname{ATD}(\mathrm{implInst}(P,r)) .
-  \]
-  Each inclusion is an LTS forward simulation along the packing map $\mathrm{unpack}$, and the step matching is one-to-one in both directions.
-\end{theorem}
-
-\begin{proof}\leanok
-  \uses{def:aba-gbca-perproc, def:aba-gbca-impl, def:relabel, def:syncproduct, def:achievable, thm:forward-sound}
-  Define the packing map $\mathrm{unpack}(q)(j) = (proc\,j,\ sent\,j,\ recv\,j,\ F)$ and take both relations to be its graph, which holds at the initial states.
-  It makes every node's copy of the corrupted set equal to the monolithic $F$, and the $\mathrm{fail}$ broadcast preserves that equality, since every component applies the same corruption transform to its own copy.
-  The step matching is one-to-one and uses no stuttering in either direction.
-  A hidden rendezvous $\mathrm{net}(i,j,m)$ matches $\mathrm{deliver}\,i\,j\,m$, the sender component supplying the outbox guard and the receiver component the row update, every other component idle.
-  An interleaved $\tau$ of one component matches the monolithic rule of the same name.
-  A synchronised visible step matches the monolithic rule with the same guards, the counts taken over a packed node's rows being the monolithic counts.
-  Both systems are LTS, so each matching is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) applied in each direction gives the two inclusions.
-\end{proof}
+That the guards are nevertheless local is a property of the rules and not of
+the state shape, and Definition~\ref{def:aba-ownflag} is where each of them is
+written against one node: \texttt{deliver} becomes the four roles of a
+$\mathrm{gnet}$ rendezvous, the sender supplying the pool guard and the
+receiver performing the row update.
 
 \subsection{The round loop}
 
@@ -1661,29 +1672,10 @@ The round-loop inventory is monolithic in the same sense.
 Its \texttt{deliver} rule reads a sender's DECIDED pool and a receiver's row in
 one guard, and the counts of \texttt{echo} and \texttt{ret} range over one
 receiver's rows.
-The same equality holds of it.
-
-\begin{theorem}[The per-process core is the core]
-  \label{thm:aba-core-perproc}
-  \lean{PLTS.ABA.CoreRel}\lean{PLTS.ABA.perProcCore_sim}\lean{PLTS.ABA.core_sim}\lean{PLTS.ABA.perProcCore_atd}\leanok
-  \uses{def:aba-core-perproc, def:aba-core, def:achievable}
-  For all parameters $P$,
-  \[
-    \operatorname{ATD}(\mathrm{perProcCore}(P)) \;=\; \operatorname{ATD}(\mathrm{core}(P)) .
-  \]
-  Each inclusion is an LTS forward simulation along the packing relation $\mathrm{CoreRel}$, and the step matching is one-to-one in both directions.
-\end{theorem}
-
-\begin{proof}\leanok
-  \uses{def:aba-core-perproc, def:aba-core, def:relabel, def:syncproduct, def:achievable, thm:forward-sound}
-  Take the packing relation $\mathrm{CoreRel}$, which holds of a tuple $q$ and a monolithic state $s$ when $(q\,k).proc = procs\,k$, $(q\,k).decOut = decidedSent\,k$, $(q\,i).decIn\,k = decidedRecv\,i\,k$ and $(q\,k).F = s.F$ for all $i$ and $k$.
-  Its last clause is the lockstep invariant on the corrupted set; the $\mathrm{fail}$ broadcast preserves it, every component answering that label with the same transform.
-  It holds at the initial states, where the records are idle and the pools empty.
-  Each rule of Definition~\ref{def:aba-core} is answered by one composite step, with no stuttering: on a visible label the owner moves and the rest idle, the DECIDED echo and the Byzantine injection are interleaved $\tau$-steps of one component, and $\mathrm{deliver}\,i\,j\,b$ is the hidden rendezvous $\mathrm{net}(i,j,b)$ with its two guards split between the sender and the receiver.
-  Conversely each composite step is inverted by label class, and each class supplies exactly one monolithic rule.
-  A label no component owns is blocked by the product, which is how the composite reproduces a monolithic guard that fails.
-  Both systems are LTS, so each matching is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) applied in each direction gives the two inclusions.
-\end{proof}
+Definition~\ref{def:aba-ownflag} writes the same rules against one node, the
+$\mathrm{dnet}$ rendezvous splitting the soundness guard $b \in decOut$ at the
+sender from the freshness guard $b \notin decIn(j)$ and the write at the
+receiver.
 
 \subsection{The ABA specification and its safety}
 
@@ -2258,17 +2250,23 @@ Keeping the layers apart is what makes the two moves of the argument available,
 since a sub-protocol is replaceable by its specification only where it is a
 component of the composition.
 The assembly is therefore an analysis device, and
-Theorems~\ref{thm:aba-assembly} and~\ref{thm:aba-flat} identify it with the
-deployed system on achievable trace distributions.
+Theorem~\ref{thm:aba-ownflag-atd} identifies it with the deployed system on
+achievable trace distributions.
 
 \begin{definition}[The hybrids]
   \label{def:aba-hybrids}
-  \lean{PLTS.ABA.hybridImpl}\lean{PLTS.ABA.hybridSpec}\leanok
+  \lean{PLTS.ABA.hybridImpl}\lean{PLTS.ABA.hybridSpec}\lean{PLTS.ABA.OwnFlag.okLabelM}\lean{PLTS.ABA.OwnFlag.hybridImplB}\leanok
   \uses{def:aba-subspecs, def:aba-labels}
   The composed systems $\mathsf{GBCA} \parallel (\mathsf{Core} \parallel
   \mathsf{WCC.Spec})$ with the sub-protocol API hidden, at implementation and
   specification level for the GBCA slot respectively. GBCA occupies the
   refinable slot of the parallel composition.
+  The budget restriction of the implementation-side hybrid is
+  $\mathrm{hybridImplB}(P)$: the steps of $\mathrm{hybridImpl}(P)$ whose label
+  is admissible in the sense of $\mathrm{okLabelM}$, a $\mathrm{fail}(k)$ being
+  admissible at a state when $k$ lies in the round loop's copy of the corrupted
+  set or that copy has fewer than $f$ members, and every other label being
+  admissible unconditionally.
 \end{definition}
 
 \blueprintfig{fig-hybrid}{The hybrids: the composition $\mathsf{GBCA} \parallel (\mathsf{Core} \parallel \mathsf{WCC.Spec})$ under $\mathrm{abstract}\,\mathrm{hiddenAPI}$.
@@ -2343,56 +2341,42 @@ corruption, namely $\mathrm{callABA}(i,b)$, $\mathrm{retABA}(i,b)$ and
 $\mathrm{fail}(i)$.
 The two hybrids are thus compared on the ABA interface alone.
 
-\subsection{The flat program}
+The assembly and the deployed system of Definition~\ref{def:aba-ownflag}
+differ in two ways at once: where a rule's state lives, and where the
+corruption budget is enforced.
+Restricting both to the adversaries that budget admits makes them equal.
 
-Removing the layer boundary turns the assembly into $n$ programs beside the coin
-oracle.
-The round loop of a process and its graded-agreement stage at each round become
-one automaton, so every implemented part of the protocol sits inside a program
-whose guards read that program's own node.
-The composite is the deployed system in a single presentation, and
-Theorem~\ref{thm:aba-flat} is the equality that identifies it with the
-assembly.
-
-\begin{definition}[The program of one process]
-  \label{def:aba-flat}
-  \lean{PLTS.ABA.Flat.FlatNet}\lean{PLTS.ABA.Flat.FLab}\lean{PLTS.ABA.Flat.ABANode}\lean{PLTS.ABA.Flat.ABAProcStep}\lean{PLTS.ABA.Flat.ABAProc}\lean{PLTS.ABA.Flat.flatNetLabels}\lean{PLTS.ABA.Flat.flatGroup}\lean{PLTS.ABA.Flat.flatPre}\lean{PLTS.ABA.Flat.flatHybrid}\leanok
-  \uses{def:aba-core-perproc, def:aba-gbca-perproc, def:relabel, def:syncproduct, def:aba-hybrids}
-  The state of process $j$ is the node $\mathrm{ABANode}(n) = \mathrm{CoreNode}(n) \times (\mathbb{N} \to \mathrm{ProcNode}(n))$: the round-loop node of Definition~\ref{def:aba-core-perproc} together with one graded-agreement stage of Definition~\ref{def:aba-gbca-perproc} per round.
-  The automaton $\mathrm{ABAProc}(P,j)$ runs over the extended alphabet $\mathrm{Lab}(n) \oplus \mathrm{FlatNet}(n)$, where $\mathrm{FlatNet}$ carries both networks: $\mathrm{gnet}(r,i,j,m)$ is the round-$r$ stage delivery of $m$ from $j$ to $i$, and $\mathrm{dnet}(i,j,b)$ the delivery of $j$'s $\langle\mathrm{DECIDED},b\rangle$ to $i$.
-  Its forty-three rules split the alphabet by role, and every transition is Dirac.
-  On $\mathrm{callABA}(j,b)$ and $\mathrm{retABA}(j,b)$ only the round-loop half moves and no stage does.
-  The two sub-protocol handshakes of round $r$ are the labels on which the round-loop half and the round-$r$ stage of the \emph{same} process move together, so each of them is one fused rule.
-  A $\mathrm{callG}\,r\,j\,b$ fuses one of the two round-loop behaviours, honest or corrupted, with one of the two stage behaviours, the genuine call or the input-enabledness loop, which is four rules; a $\mathrm{retG}\,r\,j\,g$ fuses the two round-loop behaviours with the stage evidence that fixes the grade, which is six.
-  The $\mathrm{retG}$ rules are the only ones in which stage evidence guards a visible label, and the evidence each of the six reads is the SEAL level of the round-$r$ stage node: an $n-f$ $\mathrm{SEAL}\,v$ receipt quorum for grade $A$, an $n-f$ any-$\mathrm{SEAL}$ count carrying a $\mathrm{SEAL}\,v$ witness together with $f+1$ $\mathrm{BIND}\,v$ receipts and $|Valid| > 1$ for grade $B$, and an $n-f$ $\mathrm{SEAL}\,\bot$ quorum with $|Valid| > 1$ for grade $C$.
-  On $\mathrm{callW}\,r\,j$ and $\mathrm{retW}\,r\,j\,c$ the automaton carries the round loop's half alone, the oracle's half being supplied at the outer composition.
-  On $\mathrm{fail}(k)$ the round-loop copy of the corrupted set and every stage copy are written at once.
-  Eleven rules carry $\tau$: the DECIDED echo and the corrupted DECIDED injection of the round loop, and nine stage rules at an arbitrary round.
-  Each of the two networks is a two-party rendezvous split into the self, sender, receiver and bystander roles, eight rules in all.
-  Their guards differ by design: a DECIDED delivery is refused when the receiver already holds that payload from that sender, whereas a stage delivery carries no such guard, stage delivery being idempotent.
-  A Byzantine guard is read off the copy of the corrupted set belonging to the half it drives.
-  Every guard reads $j$'s node alone, and a label that $j$ does not own carries an idle self-loop, so full synchronisation lets that label's owner move.
-  The composites are
+\begin{theorem}[The deployed system is the assembly, budget for budget]
+  \label{thm:aba-ownflag-atd}
+  \lean{PLTS.ABA.OwnFlag.deflCore}\lean{PLTS.ABA.OwnFlag.deflStage}\lean{PLTS.ABA.OwnFlag.deflateFull}\lean{PLTS.ABA.OwnFlag.okLabelM_deflate}\lean{PLTS.ABA.OwnFlag.ownFlagSim}\lean{PLTS.ABA.OwnFlag.ownFlagSimConverse}\lean{PLTS.ABA.OwnFlag.ownFlag_atd}\leanok
+  \uses{def:aba-ownflag, def:aba-hybrids, def:achievable, def:strongfunctional}
+  For all parameters $P$,
   \[
-    \mathrm{flatGroup}(P) \;=\;
-      \mathrm{relabel}\Bigl(
-        \mathrm{abstract}_{\mathrm{flatNetLabels}}\bigl(
-          \mathrm{syncProduct}_{j \in [n]}\ \mathrm{ABAProc}(P,j)
-        \bigr)\Bigr),
+    \operatorname{ATD}(\mathrm{ownFlagFlatB}(P)) \;=\;
+    \operatorname{ATD}(\mathrm{hybridImplB}(P)) :
   \]
-  a system over $\mathrm{Lab}(n)$ with state space $[n] \to \mathrm{ABANode}(n)$, and
-  \[
-    \mathrm{flatHybrid}(P) \;=\; \mathrm{abstract}_H\bigl(
-      \mathrm{flatGroup}(P) \parallel \mathrm{WCC.specFamily}(P) \bigr),
-  \]
-  whose argument is written $\mathrm{flatPre}(P)$.
-\end{definition}
+  the deployed own-flag system and the analyzed assembly, each restricted to
+  the steps a corruption budget of $f$ admits, achieve exactly the same trace
+  distributions.
+\end{theorem}
 
-\blueprintfig{fig-flat}{The flat presentation: the $n$ programs $\mathrm{ABAProc}(P,j)$ under $\mathrm{syncProduct}$, both networks hidden, the coin oracle beside the group.
-Each program holds one process's round loop and its stage of every round, and every guard of its forty-three rules reads that program's own node.
-The inner dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{flatNetLabels}$: every $\mathrm{gnet}(r,i,j,m)$ and every $\mathrm{dnet}(i,j,b)$ becomes $\tau$, the sender supplying its guard and the receiver performing the write while every other program idles.
-The outer dashed frame is $\mathrm{abstract}_H$, which hides the coin handshake $\mathrm{callW}/\mathrm{retW}$ between the group and the oracle; what leaves it is the API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ together with $\tau$.
-The dashed vertical is Theorem~\ref{thm:aba-flat}: the flat hybrid and $\mathrm{hybridImpl}$ achieve the same trace distributions, along the graph of $\mathrm{unflat}$ and its converse.}
+\begin{proof}\leanok
+  \uses{def:aba-ownflag, def:aba-hybrids, def:strongfunctional, def:achievable, thm:forward-sound}
+  Define the deflation map $\mathrm{deflateFull}$ from states of the deployed system to states of the assembly.
+  It reads the round-$r$ stage $\mathrm{deflStage}(u,r)$ off the round-$r$ slices of the nodes, transposing their receiver rows into the monolithic $recv$, and the round loop $\mathrm{deflCore}(u)$ off the coordinator slices; each copy of the corrupted set that the deployed nodes do not carry is reconstructed as the one set $\mathrm{flagSet}(u)$, and the coin oracle's coordinate is left untouched.
+  The map carries the initial state to the initial state, no flag being raised and no process corrupted there.
+
+  The two budget restrictions name the same steps along it.
+  The assembly's condition $\mathrm{okLabelM}$ reads the round loop's copy of the corrupted set, which under $\mathrm{deflateFull}$ \emph{is} $\mathrm{flagSet}(u)$, so it holds of $\mathrm{deflateFull}(s)$ exactly when the deployed condition $\mathrm{okLabel}$ holds of $s$.
+  Within the restriction the two $\mathrm{fail}$ rows agree: the assembly's guarded insert adds $k$ to every copy when $k$ is fresh and there is headroom and changes nothing when $k$ is already in, and the unguarded flag write does the same to $\mathrm{flagSet}$ in either branch.
+  Every other rule matches guard for guard.
+  The honest rules match because neither side reads the corrupted set; the Byzantine rules match because a process's flag is raised exactly when that process lies in $\mathrm{flagSet}(u)$; a fused handshake of one process matches the assembly's rendezvous between the round loop and the round-$r$ stage; a hidden network rendezvous matches the delivery rule of the layer it belongs to, the counts taken over a deflated node's rows being the monolithic counts; and the coin resolution appears on the two sides as the same pushforward of $\mathrm{wccPMF}$.
+  Every transition of either system other than that resolution is Dirac, and a transition and its image have the same successor, so $\mathrm{deflateFull}$ both commutes with steps and reflects them.
+
+  Lemma~\ref{def:strongfunctional} therefore gives a probabilistic forward simulation along the graph of $\mathrm{deflateFull}$ and a second along its converse, neither system being an LTS.
+  The map is not surjective --- a state of the assembly whose copies of the corrupted set disagree has no preimage --- which is why the backward direction is the converse of the graph and not the graph of an inverse.
+  Soundness (Theorem~\ref{thm:forward-sound}) turns each matching into a trace-distribution inclusion, and antisymmetry of $\subseteq$ gives the equality.
+\end{proof}
 
 \subsection{The GBCA refinement and substitution}
 
@@ -2580,159 +2564,42 @@ trace of positive probability in the composed implementation.
 
 \subsection{Transport to the deployed system}
 
-Theorem~\ref{thm:aba-main} is a statement about $\mathrm{hybridImpl}$, the layered assembly of Definition~\ref{def:aba-hybrids}.
-Two equalities carry it to the deployed system.
-The first substitutes both per-process layers into the assembly at once, so that every implemented box of the composition is a composition of one automaton per process, the layer boundary staying in place.
-The second removes the boundary, matching the flat program of Definition~\ref{def:aba-flat} against the same assembly.
-Both rest on the functional matchings of Lemma~\ref{def:strongfunctional}, in which the abstract state is a function of the concrete one, and each carries the safety conclusion of Theorem~\ref{thm:aba-main} along the equality it proves.
+Theorem~\ref{thm:aba-main} is a statement about $\mathrm{hybridImpl}$, the
+layered assembly of Definition~\ref{def:aba-hybrids}.
+Theorem~\ref{thm:aba-ownflag-atd} carries it to the deployed system of
+Definition~\ref{def:aba-ownflag} once the two restrictions it is stated under
+are removed: on the assembly's side by forgetting the restriction, which the
+identity map does, and on the deployed side by the trace-level budget, which
+supplies the step-level one along any execution that exposes its $\mathrm{fail}$
+labels.
 
-\begin{theorem}[The assembled hybrid]
-  \label{thm:aba-assembly}
-  \lean{PLTS.ABA.perProcGBCAFamily}\lean{PLTS.ABA.perProcContext}\lean{PLTS.ABA.hybridPerProc}\lean{PLTS.ABA.atd_parallel_left}\lean{PLTS.ABA.hybridPerProc_atd}\lean{PLTS.ABA.hybridPerProc_safe}\leanok
-  \uses{thm:aba-gbca-perproc, thm:aba-core-perproc, def:aba-hybrids, def:achievable, def:strongfunctional}
-  Let $\mathrm{perProcGBCAFamily}(P)$ be the $\mathbb{N}$-indexed family of the instances $\mathrm{perProcInst}(P,r)$, and let
-  \[
-    \mathrm{perProcContext}(P) \;=\;
-      \mathrm{perProcCore}(P) \parallel \mathrm{WCC.specFamily}(P)
-  \]
-  be the context of Definition~\ref{def:aba-hybrids} with its core in per-process form.
-  Set
-  \[
-    \mathrm{hybridPerProc}(P) \;=\; \mathrm{abstract}_H\bigl(
-      \mathrm{perProcGBCAFamily}(P) \parallel \mathrm{perProcContext}(P)\bigr).
-  \]
-  Then $\operatorname{ATD}(\mathrm{hybridPerProc}(P)) = \operatorname{ATD}(\mathrm{hybridImpl}(P))$, and every trace of positive probability under an achievable trace distribution of $\mathrm{hybridPerProc}(P)$ satisfies Validity and Agreement.
-\end{theorem}
-
-\begin{proof}\leanok
-  \uses{thm:aba-gbca-perproc, thm:aba-core-perproc, thm:precong-parallel, thm:precong-abstract, thm:forward-sound, thm:aba-main, def:strongfunctional, def:idle-family}
-  The two per-instance GBCA matchings of Theorem~\ref{thm:aba-gbca-perproc} lift to the two families by the family congruence, whose broadcast hypothesis is that packing commutes with the corruption transform on $\mathrm{fail}(k)$, the one label the family broadcasts.
-  Both families are LTS, so each lifted matching is a probabilistic forward simulation, and so are the two core matchings of Theorem~\ref{thm:aba-core-perproc}.
-  Each of the four is transported into the composition by the precongruences for parallel composition (Theorem~\ref{thm:precong-parallel}) and for abstraction (Theorem~\ref{thm:precong-abstract}); the core occupies the right factor, so its two transports are the parallel precongruence conjugated by the coordinate exchange of Lemma~\ref{def:strongfunctional}.
-  Soundness (Theorem~\ref{thm:forward-sound}) turns each transport into a trace-distribution inclusion, and the four chain by transitivity of $\subseteq$ into the two inclusions of the equality.
-  The coin oracle is never simulated: it is the fixed context of every precongruence step, which is what admits the argument although it is the one factor that is not an LTS.
-  Safety is Theorem~\ref{thm:aba-main} read along the equality.
-\end{proof}
-
-\begin{theorem}[ABA is $n$ programs and a coin oracle]
-  \label{thm:aba-flat}
-  \lean{PLTS.ABA.Flat.unflat}\lean{PLTS.ABA.Flat.flatSim}\lean{PLTS.ABA.Flat.flatSimConverse}\lean{PLTS.ABA.Flat.flatABA_atd}\lean{PLTS.ABA.Flat.flatABA_safe}\leanok
-  \uses{def:aba-flat, def:aba-hybrids, def:achievable}
-  For all parameters $P$,
-  \[
-    \operatorname{ATD}(\mathrm{flatHybrid}(P)) \;=\; \operatorname{ATD}(\mathrm{hybridImpl}(P)),
-  \]
-  and every trace of positive probability under an achievable trace distribution of $\mathrm{flatHybrid}(P)$ satisfies Validity and Agreement.
-\end{theorem}
-
-\begin{proof}\leanok
-  \uses{def:aba-flat, def:strongfunctional, thm:precong-abstract, thm:forward-sound, thm:aba-main, def:achievable}
-  Both systems of the statement are abstractions of the same shape, so it suffices to match $\mathrm{flatPre}(P)$ with $\mathrm{GBCA.implFamily}(P) \parallel (\mathrm{core}(P) \parallel \mathrm{WCC.specFamily}(P))$.
-  Define the unflattening map $\mathrm{unflat}$: it splits each array of a monolithic state along the process index, giving process $x$ the round-loop record, DECIDED pool and receipt rows of $x$ together with $x$'s row of every round's stage, and it leaves the coin oracle's coordinate untouched.
-  Every transition of either system other than the coin resolution is Dirac, and a transition and its image have the same successor, so $\mathrm{unflat}$ both commutes with steps and reflects them; the coin resolution appears on the two sides as the same pushforward of $\mathrm{wccPMF}$ and is matched by itself.
-  Lemma~\ref{def:strongfunctional} therefore gives a probabilistic forward simulation along the graph of $\mathrm{unflat}$ and a second along its converse, neither system being an LTS.
-  The map is not surjective --- a flat state whose copies of the corrupted set disagree has no preimage --- which is why the backward direction is the converse of the graph and not the graph of an inverse.
-  Abstraction (Theorem~\ref{thm:precong-abstract}) transports both matchings, soundness (Theorem~\ref{thm:forward-sound}) turns each into a trace-distribution inclusion, and antisymmetry of $\subseteq$ gives the equality.
-  Safety is Theorem~\ref{thm:aba-main} read along the equality.
-\end{proof}
-
-\dynamics{What is distributed and what is not}{%
-The flat presentation states the read-access claim in its sharpest form.
-Every implemented part of the protocol is $n$ programs.
-The round loop, the graded-agreement stage of each round, the DECIDED gossip and
-the stage network all sit inside $\mathrm{ABAProc}(P,j)$, and every guard of its
-forty-three rules is a function of $j$'s node.
-Two things stay centralized.
-The first is the corruption budget, exactly as in the layer theorems: the guard
-$k \notin F \wedge |F| < f$ is evaluated on each program's own copy of $F$, and
-the copies agree only because $\mathrm{fail}$ is a broadcast every program
-answers in lockstep.
-That is the adversary's bookkeeping and not the protocol's.
-The second is the coin oracle, and it is centralized of necessity.
-An $\varepsilon$-common coin is a correlation between processes: the assumption
-is that with probability at least $\varepsilon$ the processes of a round read the
-same bit.
-A correlation is not a property of any one process's state, so no assignment of
-the oracle's transitions to per-process rules expresses it.
-Writing the oracle as $n$ programs would mean supplying the protocol that
-produces the correlation, which is the layer this development assumes rather
-than proves.
-It is also the one factor whose transitions are not Dirac, which is why it
-survives both arguments untouched, as a fixed context in
-Theorem~\ref{thm:aba-assembly} and as a matched coordinate in
-Theorem~\ref{thm:aba-flat}.
-}
-
-\subsection{What a process knows about corruption}
-
-No honest rule of any node reads the corrupted set.
-The set is read by the Byzantine rules alone, each of which asks only whether the node it belongs to is itself corrupted, and it is written by the $\mathrm{fail}$ broadcast.
-So the copies of $F$ carried by the nodes of Definition~\ref{def:aba-flat} hold no honest-side knowledge, and a process that carries one bit in their place runs the same program.
-The following definition makes that structural.
-
-\begin{definition}[The own-flag program]
-  \label{def:aba-ownflag}
-  \lean{PLTS.ABA.GBCA.ProcNodeU}\lean{PLTS.ABA.CoreNodeU}\lean{PLTS.ABA.OwnFlag.ABANodeU}\lean{PLTS.ABA.OwnFlag.ABAProcStepU}\lean{PLTS.ABA.OwnFlag.ownFlagFlat}\lean{PLTS.ABA.OwnFlag.BudgetTrace}\leanok
-  \uses{def:aba-flat, def:aba-gbca-vocab, def:aba-core-vocab, def:aba-subspecs}
-  Let $\mathrm{CoreNodeU}(n)$ and $\mathrm{ProcNodeU}(n)$ be the round-loop node and the stage node of Definition~\ref{def:aba-flat} with the copy of the corrupted set deleted, so that each holds the record of Definition~\ref{def:aba-core-vocab} or of Definition~\ref{def:aba-gbca-vocab} together with its pools and receipt rows and nothing else.
-  The state of process $j$ is
-  \[
-    \mathrm{ABANodeU}(n) \;=\;
-      \mathrm{CoreNodeU}(n) \times (\mathbb{N} \to \mathrm{ProcNodeU}(n)) \times \{\text{true},\text{false}\},
-  \]
-  the last coordinate being that process's own corruption flag, false initially.
-  The rule table $\mathrm{ABAProcStepU}(P,j)$ is the table of Definition~\ref{def:aba-flat} rule for rule, with three changes.
-  The honest rules are unchanged beyond the record shape, since none of them names $F$.
-  Every Byzantine guard $j \in F$ becomes the guard $\mathit{flag} = \text{true}$ on the node's own flag.
-  On $\mathrm{fail}(k)$ process $k$ sets its flag to true and every other process fixes its own, under no guard and no budget, so the write is idempotent and always enabled.
-  The composition is that of Definition~\ref{def:aba-flat}:
-  \[
-    \mathrm{ownFlagFlat}(P) \;=\; \mathrm{abstract}_H\bigl(
-      \mathrm{ownFlagGroup}(P) \parallel \mathrm{WCC.specFamily}(P) \bigr),
-  \]
-  where $\mathrm{ownFlagGroup}(P)$ is the full-synchronisation product of the $n$ programs with both networks hidden.
-  The coin oracle of Definition~\ref{def:aba-subspecs} enters unchanged, keeping its own copy of the corrupted set and its budget-guarded corruption.
-  The budget is carried by traces instead.
-  A trace $t$ over $\mathrm{Lab}(n)$ satisfies $\mathrm{BudgetTrace}(f,t)$ when there is a set $A$ of at most $f$ process ids with $\mathrm{fail}(id) \in t \Rightarrow id \in A$.
-\end{definition}
-
-\begin{theorem}[The own-flag program is the analyzed one]
+\begin{theorem}[Safety of the deployed system]
   \label{thm:aba-ownflag}
-  \lean{PLTS.ABA.OwnFlag.ownFlagFlat_safe}\lean{PLTS.ABA.OwnFlag.ownFlagFlat_traces}\leanok
-  \uses{def:aba-ownflag, thm:aba-flat}
+  \lean{PLTS.ABA.OwnFlag.hybridImplB_refines}\lean{PLTS.ABA.OwnFlag.exec_flag_sub}\lean{PLTS.ABA.OwnFlag.traceProb_ne_zero_of_budget}\lean{PLTS.ABA.OwnFlag.ownFlagFlat_safe}\lean{PLTS.ABA.OwnFlag.ownFlagFlat_traces}\leanok
+  \uses{def:aba-ownflag, thm:aba-ownflag-atd, thm:aba-main}
   Let $P$ be parameters and let $t$ be a trace of positive probability under an achievable trace distribution of $\mathrm{ownFlagFlat}(P)$ satisfying $\mathrm{BudgetTrace}(f,t)$.
   Then $t$ satisfies Validity and Agreement, and $t$ has positive probability under an achievable trace distribution of $\mathrm{hybridImpl}(P)$.
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-ownflag, thm:aba-flat}
-  Define the inflation map $\mathrm{inflate}$ from own-flag states to the states of Definition~\ref{def:aba-flat}.
-  It copies every protocol field, and it reconstructs each deleted copy of the corrupted set --- the round loop's and every stage's, in every node --- as the one set
-  \[
-    \mathrm{flagSet}(u) \;=\; \{\, k \in [n] \;\mid\; \text{the flag of } u(k) \text{ is raised} \,\}.
-  \]
-  The oracle's coordinate is left alone.
-  Write $\mathrm{ownFlagFlatB}(P)$ for $\mathrm{ownFlagFlat}(P)$ restricted to the steps whose $\mathrm{fail}(k)$ label satisfies $k \in \mathrm{flagSet}(u)$ or $|\mathrm{flagSet}(u)| < f$, every other label being unrestricted.
-  Along $\mathrm{inflate}$ each rule of that system is the rule of the same name in $\mathrm{flatHybrid}(P)$.
-  The honest rules match because neither side reads the corrupted set.
-  The Byzantine rules match because a process's flag is raised exactly when that process lies in $\mathrm{flagSet}(u)$.
-  The $\mathrm{fail}(k)$ rule matches because under the step restriction the corruption transform of Definition~\ref{def:aba-flat}, whose guard is $k \notin F \wedge |F| < f$, adds $k$ to $\mathrm{flagSet}(u)$ in either branch, which is the unguarded flag write read through $\mathrm{inflate}$.
-  The map also carries the initial state to the initial state, every flag being false there.
-  Pushing an execution of $\mathrm{ownFlagFlatB}(P)$ forward along $\mathrm{inflate}$ therefore gives an execution of $\mathrm{flatHybrid}(P)$ assigning every trace the same probability, so $\operatorname{ATD}(\mathrm{ownFlagFlatB}(P)) \subseteq \operatorname{ATD}(\mathrm{flatHybrid}(P))$.
-
-  It remains to remove the step restriction.
+  \uses{def:aba-ownflag, thm:aba-ownflag-atd, thm:aba-main, def:achievable, thm:forward-sound}
   Fix an execution of $\mathrm{ownFlagFlat}(P)$ of positive probability whose trace is $t$, and let $A$ be a budget set for $t$.
   Every $\mathrm{fail}$ label of the execution is exposed in $t$, so it names a member of $A$.
   Only its own $\mathrm{fail}$ label raises a process's flag, so $\mathrm{flagSet}$ stays inside $A$ at every state of the execution.
   Consider a step of the execution on $\mathrm{fail}(k)$ and suppose $k$ is not already flagged.
   Then $k$ lies in $A$ and not in $\mathrm{flagSet}$, so that inclusion is strict and $|\mathrm{flagSet}| < |A| \le f$.
-  The step therefore has budget headroom, and every step of the execution meets the restriction.
-  Pruning the scheduler's out-of-budget emissions leaves the probability of that execution unchanged, so $t$ keeps positive probability in $\mathrm{ownFlagFlatB}(P)$.
-  Composing the inclusion with Theorem~\ref{thm:aba-flat} gives both conclusions.
+  The step therefore has budget headroom, and every step of the execution carries an admissible label.
+  Pruning the scheduler's out-of-budget emissions leaves the probability of that execution unchanged, so $t$ keeps positive probability under an achievable trace distribution of $\mathrm{ownFlagFlatB}(P)$.
+
+  Theorem~\ref{thm:aba-ownflag-atd} carries that trace distribution to $\mathrm{hybridImplB}(P)$.
+  Forgetting the restriction is a functional matching of $\mathrm{hybridImplB}(P)$ by $\mathrm{hybridImpl}(P)$ along the identity, so soundness (Theorem~\ref{thm:forward-sound}) places the trace distribution in $\operatorname{ATD}(\mathrm{hybridImpl}(P))$, which is the second conclusion.
+  Theorem~\ref{thm:aba-main} read along that membership is the first.
 \end{proof}
 
-The budget is therefore a constraint on the adversary and not a mechanism of the processes.
-Deleting it from the state costs the development nothing, and the theorem is the certificate of that.
+The budget is therefore a constraint on the adversary and not a mechanism of the
+processes.
+Deleting it from the state costs the development nothing, and the theorem is the
+certificate of that.
 
 \begin{thebibliography}{LeslieBP}
 

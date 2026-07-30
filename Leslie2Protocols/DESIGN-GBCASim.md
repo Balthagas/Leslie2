@@ -591,10 +591,15 @@ guard pair `(!b) ∈ dead ∧ b ∉ dead` — the D19 rendering of `bind = some 
 with `bind ≠ none` rendered as `dead ≠ ∅`. `GBCAFamily.instRel_corrupt`
 carries the `dead_cert` row through `DeadCert.mono`, whose three hypotheses it
 discharges by `corrupt_recv`, `corrupt_proc` and `corrupt_F_subset`.
-`GBCAProc.lean`'s per-process rendering mirrors `ImplStep` rule for rule,
-including the `sealBit`/`sealBot` rules and the `sentSeal` field, and relates
-the per-process and global views by the `unpack` bridges — `unpack_sealCount`
-at the seal level, alongside `unpack_recvCount` and the other per-level counts.
+`FlatOwnFlag.lean`'s deployed rendering carries the same ladder inside one
+process: the stage node `GBCA.ProcNodeU` keeps the write-once `sentSeal` slot in
+its `proc` record and carries its own `sealCount` over its inbox rows, the
+τ-rules `stageSealBit`/`stageSealBot` are the seal multicasts
+read off that node, and the three fused `retG` rows read the seal level off it.
+The bridge to the global view is `deflStage`, which assembles the round-`r`
+`ImplState` from the round-`r` slices of the nodes; the seal-level counts agree
+across it because a deflated `recv` row is the sender's row of the node that
+receives it.
 
 ## Risks and open points
 
@@ -628,8 +633,9 @@ at the seal level, alongside `unpack_recvCount` and the other per-level counts.
    `sentVote` slots, not receipts — still monotone in `F` (a corrupted slot
    stays in the wall via the `j ∈ F` disjunct) and in `sentVote` (write-once),
    which is all the simulation needs. Any per-process decomposition must
-   therefore transport it through `unpack` like the other `proc`-field
-   predicates, as `GBCAProc.lean` does via `unpack_proc`/`unpack_F`.
+   therefore transport it along the state map like the other `proc`-field
+   predicates — in `FlatOwnFlag.lean` that is `deflStage_proc` for the slot and
+   `deflStage_F` for the corrupted set, the latter reading `flagSet`.
 6. **Vacuous-fill hazard in `deadCert_of_sealBot_quorum`.** The Case B branch
    needs the global classical split "some honest bit-voter exists"; its
    **no**-branch uses `bindBot_conf` on a *specific* honest `BIND` sender
