@@ -1547,5 +1547,1071 @@ end NetInversion
 
 end Net
 
+
+namespace Net
+
+/-! ### The deflation map
+
+A deployed state is read as one monolithic state by assembling the record
+layers slice by slice. The round-`r` stage takes its local records from the
+nodes' round-`r` stage slices and its receiver rows from those slices'
+inboxes (the transposition), while its sender rows and its copy of the
+corrupted set are the network's. The round loop takes its control records and
+its receiver rows from the nodes' coordinator slices, and its sender rows and
+corrupted set from the network again. The coin oracle occupies the same slot
+on both sides and is carried across untouched. -/
+
+private theorem implStateN_ext {n : ℕ} {a b : GBCA.ImplState n}
+    (h1 : a.proc = b.proc) (h2 : a.sent = b.sent)
+    (h3 : a.recv = b.recv) (h4 : a.F = b.F) : a = b := by
+  cases a; cases b
+  cases h1; cases h2; cases h3; cases h4
+  rfl
+
+private theorem coreStateN_ext {n : ℕ} {a b : CoreState n}
+    (h1 : a.procs = b.procs) (h2 : a.decidedSent = b.decidedSent)
+    (h3 : a.decidedRecv = b.decidedRecv) (h4 : a.F = b.F) : a = b := by
+  cases a; cases b
+  cases h1; cases h2; cases h3; cases h4
+  rfl
+
+theorem pureN_inj {α : Type} {a b : α}
+    (h : (PMF.pure a : PMF α) = PMF.pure b) : a = b := by
+  have hm : a ∈ (PMF.pure b).support := by rw [← h]; simp
+  simpa using hm
+
+/-! #### The network's own field algebra -/
+
+@[simp] theorem gpool_pool_self {n : ℕ} (s : NetState n) (r : ℕ) (j : Fin n)
+    (m : GBCA.Msg) :
+    (s.gpool r j m).pool r = Function.update (s.pool r) j (insert m (s.pool r j)) := by
+  simp [NetState.gpool]
+
+theorem gpool_pool_ne {n : ℕ} (s : NetState n) (r : ℕ) (j : Fin n) (m : GBCA.Msg)
+    {r' : ℕ} (h : r' ≠ r) : (s.gpool r j m).pool r' = s.pool r' := by
+  simp [NetState.gpool, Function.update_of_ne h]
+
+@[simp] theorem gpool_dpool {n : ℕ} (s : NetState n) (r : ℕ) (j : Fin n)
+    (m : GBCA.Msg) : (s.gpool r j m).dpool = s.dpool := rfl
+
+@[simp] theorem gpool_F {n : ℕ} (s : NetState n) (r : ℕ) (j : Fin n)
+    (m : GBCA.Msg) : (s.gpool r j m).F = s.F := rfl
+
+@[simp] theorem dput_pool {n : ℕ} (s : NetState n) (j : Fin n) (b : Bool) :
+    (s.dput j b).pool = s.pool := rfl
+
+@[simp] theorem dput_dpool {n : ℕ} (s : NetState n) (j : Fin n) (b : Bool) :
+    (s.dput j b).dpool = Function.update s.dpool j (insert b (s.dpool j)) := rfl
+
+@[simp] theorem dput_F {n : ℕ} (s : NetState n) (j : Fin n) (b : Bool) :
+    (s.dput j b).F = s.F := rfl
+
+@[simp] theorem netCorrupt_pool {P : Params} (s : NetState P.n) (k : Fin P.n) :
+    (NetState.corrupt P k s).pool = s.pool := by
+  unfold NetState.corrupt; split <;> rfl
+
+@[simp] theorem netCorrupt_dpool {P : Params} (s : NetState P.n) (k : Fin P.n) :
+    (NetState.corrupt P k s).dpool = s.dpool := by
+  unfold NetState.corrupt; split <;> rfl
+
+theorem netCorrupt_F {P : Params} (s : NetState P.n) (k : Fin P.n) :
+    (NetState.corrupt P k s).F =
+      if k ∉ s.F ∧ s.F.card < P.f then insert k s.F else s.F := by
+  unfold NetState.corrupt; split <;> rfl
+
+/-! #### The map -/
+
+/-- The round-`r` stage of the deflation. -/
+def deflStageN {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w : NetState n) (r : ℕ) :
+    GBCA.ImplState n where
+  proc := fun j => ((u j).2 r).proc
+  sent := w.pool r
+  recv := fun i => ((u i).2 r).inbox
+  F := w.F
+
+@[simp] theorem deflStageN_proc {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) (r : ℕ) :
+    (deflStageN u w r).proc = fun j => ((u j).2 r).proc := rfl
+@[simp] theorem deflStageN_sent {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) (r : ℕ) : (deflStageN u w r).sent = w.pool r := rfl
+@[simp] theorem deflStageN_recv {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) (r : ℕ) :
+    (deflStageN u w r).recv = fun i => ((u i).2 r).inbox := rfl
+@[simp] theorem deflStageN_F {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) (r : ℕ) : (deflStageN u w r).F = w.F := rfl
+
+/-- The round-loop half of the deflation. -/
+def deflCoreN {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w : NetState n) :
+    CoreState n where
+  procs := fun j => (u j).1.proc
+  decidedSent := w.dpool
+  decidedRecv := fun i => (u i).1.decIn
+  F := w.F
+
+@[simp] theorem deflCoreN_procs {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) : (deflCoreN u w).procs = fun j => (u j).1.proc := rfl
+@[simp] theorem deflCoreN_decidedSent {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) : (deflCoreN u w).decidedSent = w.dpool := rfl
+@[simp] theorem deflCoreN_decidedRecv {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) : (deflCoreN u w).decidedRecv = fun i => (u i).1.decIn := rfl
+@[simp] theorem deflCoreN_F {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) : (deflCoreN u w).F = w.F := rfl
+
+/-- **The deflation**: the assembled stages and round loop beside the
+untouched coin oracle. -/
+def deflNet {P : Params}
+    (s : (∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n))) :
+    (ℕ → GBCA.ImplState P.n) × (CoreState P.n × (ℕ → WCC.SpecState P.n)) :=
+  (fun r => deflStageN s.1 s.2.1 r, deflCoreN s.1 s.2.1, s.2.2)
+
+/-- The deflation carries the deployed initial state to the monolithic one. -/
+theorem deflNet_init (P : Params) : deflNet (netFlat P).init = (hybridImpl P).init := by
+  refine Prod.ext (funext fun r => ?_) (Prod.ext ?_ rfl)
+  · exact implStateN_ext rfl rfl rfl rfl
+  · exact coreStateN_ext rfl rfl rfl rfl
+
+/-! #### The corruption commutation
+
+All four copies of the corrupted set — the network's and the three the
+monolithic state carries — are the network's one set, and the three `corrupt`
+functions share the guard `k ∉ F ∧ |F| < f`, so corrupting the network
+corrupts every deflated layer. -/
+
+theorem deflStageN_corrupt {P : Params} (u : ∀ _ : Fin P.n, ABANodeN P.n)
+    (w : NetState P.n) (k : Fin P.n) (r : ℕ) :
+    deflStageN u (NetState.corrupt P k w) r = (deflStageN u w r).corrupt P k := by
+  unfold GBCA.ImplState.corrupt NetState.corrupt
+  simp only [deflStageN_F]
+  by_cases hc : k ∉ w.F ∧ w.F.card < P.f
+  · rw [if_pos hc, if_pos hc]; rfl
+  · rw [if_neg hc, if_neg hc]
+
+theorem deflCoreN_corrupt {P : Params} (u : ∀ _ : Fin P.n, ABANodeN P.n)
+    (w : NetState P.n) (k : Fin P.n) :
+    deflCoreN u (NetState.corrupt P k w) = (deflCoreN u w).corrupt P k := by
+  unfold CoreState.corrupt NetState.corrupt
+  simp only [deflCoreN_F]
+  by_cases hc : k ∉ w.F ∧ w.F.card < P.f
+  · rw [if_pos hc, if_pos hc]; rfl
+  · rw [if_neg hc, if_neg hc]
+
+/-! #### Deltas of the deflation
+
+Each rendezvous or handshake writes one node slice and one network slot; read
+through the deflation, the pair becomes the matching one-row update of one
+monolithic layer, every other layer being left alone. -/
+
+/-- A node update at `j` touching only the round-loop slice leaves every
+deflated stage alone, over a network whose pools and corrupted set are. -/
+theorem deflStagesN_core {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w w' : NetState n)
+    (j : Fin n) (c' : CoreNodeN n) (hp : w'.pool = w.pool) (hF : w'.F = w.F) :
+    (fun r => deflStageN (Function.update u j (c', (u j).2)) w' r)
+      = fun r => deflStageN u w r := by
+  funext r
+  refine implStateN_ext ?_ (by simp only [deflStageN_sent, hp]) ?_
+    (by simp only [deflStageN_F, hF])
+  all_goals
+    simp only [deflStageN_proc, deflStageN_recv]
+    funext i
+    by_cases hi : i = j
+    · subst hi; simp only [Function.update_self]
+    · rw [Function.update_of_ne hi]
+
+/-- A node update at `j` deflates the round loop to the field-wise one-row
+update; the node's stage slices do not enter. -/
+theorem deflCoreN_core {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w w' : NetState n)
+    (j : Fin n) (c' : CoreNodeN n) (g' : ℕ → GBCA.ProcNodeN n) (hF : w'.F = w.F) :
+    deflCoreN (Function.update u j (c', g')) w'
+      = { procs := Function.update (fun i => (u i).1.proc) j c'.proc,
+          decidedSent := w'.dpool,
+          decidedRecv := Function.update (fun i => (u i).1.decIn) j c'.decIn,
+          F := w.F } := by
+  refine coreStateN_ext ?_ rfl ?_ (by simp only [deflCoreN_F, hF])
+  all_goals
+    simp only [deflCoreN_procs, deflCoreN_decidedRecv]
+    funext i
+    by_cases hi : i = j
+    · subst hi; simp only [Function.update_self]
+    · rw [Function.update_of_ne hi, Function.update_of_ne hi]
+
+/-- A node update at `j` touching only stage slices leaves the deflated round
+loop alone, over a network whose DECIDED pools and corrupted set are. -/
+theorem deflCoreN_stage {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w w' : NetState n)
+    (j : Fin n) (g' : ℕ → GBCA.ProcNodeN n) (hd : w'.dpool = w.dpool)
+    (hF : w'.F = w.F) :
+    deflCoreN (Function.update u j ((u j).1, g')) w' = deflCoreN u w := by
+  refine coreStateN_ext ?_ (by simp only [deflCoreN_decidedSent, hd]) ?_
+    (by simp only [deflCoreN_F, hF])
+  all_goals
+    simp only [deflCoreN_procs, deflCoreN_decidedRecv]
+    funext i
+    by_cases hi : i = j
+    · subst hi; simp only [Function.update_self]
+    · rw [Function.update_of_ne hi]
+
+/-- A node update at `j` whose stage-`r` slice becomes `p'` deflates the stage
+tuple to the one-coordinate update at `r`. -/
+theorem deflStagesN_stage {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w w' : NetState n)
+    (j : Fin n) (c' : CoreNodeN n) (r : ℕ) (p' : GBCA.ProcNodeN n)
+    (hF : w'.F = w.F) (hne : ∀ r', r' ≠ r → w'.pool r' = w.pool r') :
+    (fun r' => deflStageN
+        (Function.update u j (c', Function.update (u j).2 r p')) w' r')
+      = Function.update (fun r' => deflStageN u w r') r
+          { proc := Function.update (fun i => ((u i).2 r).proc) j p'.proc,
+            sent := w'.pool r,
+            recv := Function.update (fun i => ((u i).2 r).inbox) j p'.inbox,
+            F := w.F } := by
+  funext r'
+  by_cases hr : r' = r
+  · subst hr
+    rw [Function.update_self]
+    refine implStateN_ext ?_ rfl ?_ (by simp only [deflStageN_F, hF])
+    all_goals
+      simp only [deflStageN_proc, deflStageN_recv]
+      funext i
+      by_cases hi : i = j
+      · subst hi; simp only [Function.update_self]
+      · rw [Function.update_of_ne hi, Function.update_of_ne hi]
+  · rw [Function.update_of_ne hr]
+    refine implStateN_ext ?_ (by simp only [deflStageN_sent, hne r' hr]) ?_
+      (by simp only [deflStageN_F, hF])
+    all_goals
+      simp only [deflStageN_proc, deflStageN_recv]
+      funext i
+      by_cases hi : i = j
+      · subst hi; simp only [Function.update_self, Function.update_of_ne hr]
+      · rw [Function.update_of_ne hi]
+
+/-- A network-only pool write deflates the stage tuple to the one-coordinate
+update at the written round. -/
+theorem deflStagesN_net {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w w' : NetState n)
+    (r : ℕ) (hF : w'.F = w.F) (hne : ∀ r', r' ≠ r → w'.pool r' = w.pool r') :
+    (fun r' => deflStageN u w' r')
+      = Function.update (fun r' => deflStageN u w r') r
+          { proc := fun i => ((u i).2 r).proc, sent := w'.pool r,
+            recv := fun i => ((u i).2 r).inbox, F := w.F } := by
+  funext r'
+  by_cases hr : r' = r
+  · subst hr
+    rw [Function.update_self]
+    exact implStateN_ext rfl rfl rfl (by simp only [deflStageN_F, hF])
+  · rw [Function.update_of_ne hr]
+    exact implStateN_ext rfl (by simp only [deflStageN_sent, hne r' hr]) rfl
+      (by simp only [deflStageN_F, hF])
+
+/-! ##### The stage deltas, rule by rule -/
+
+/-- A stage-record write joined with the sender's own pool insert: the
+monolithic local write followed by the monolithic multicast. -/
+theorem deflStagesN_setP_mcast {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) (j : Fin n) (c' : CoreNodeN n) (r : ℕ) (p : GBCA.ProcState)
+    (m : GBCA.Msg) :
+    (fun r' => deflStageN (Function.update u j (c',
+        Function.update (u j).2 r (((u j).2 r).setP p))) (w.gpool r j m) r')
+      = Function.update (fun r' => deflStageN u w r') r
+          (((deflStageN u w r).setProc j p).mcast j m) := by
+  rw [deflStagesN_stage u w (w.gpool r j m) j c' r _ rfl
+    (fun r' h => gpool_pool_ne w r j m h)]
+  congr 1
+  refine implStateN_ext rfl (gpool_pool_self w r j m) ?_ rfl
+  exact Function.update_eq_self j _
+
+/-- A stage-record write that multicasts nothing. -/
+theorem deflStagesN_setP {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w : NetState n)
+    (j : Fin n) (c' : CoreNodeN n) (r : ℕ) (p : GBCA.ProcState) :
+    (fun r' => deflStageN (Function.update u j (c',
+        Function.update (u j).2 r (((u j).2 r).setP p))) w r')
+      = Function.update (fun r' => deflStageN u w r') r
+          ((deflStageN u w r).setProc j p) := by
+  rw [deflStagesN_stage u w w j c' r _ rfl (fun _ _ => rfl)]
+  congr 1
+  exact implStateN_ext rfl rfl (Function.update_eq_self j _) rfl
+
+/-- A stage delivery: the receiver's inbox row is the monolithic receiver
+row. -/
+theorem deflStagesN_deliverTo {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) (i : Fin n) (c' : CoreNodeN n) (r : ℕ) (k : Fin n)
+    (m : GBCA.Msg) :
+    (fun r' => deflStageN (Function.update u i (c',
+        Function.update (u i).2 r (((u i).2 r).deliverTo k m))) w r')
+      = Function.update (fun r' => deflStageN u w r') r
+          ((deflStageN u w r).recvMsg i k m) := by
+  rw [deflStagesN_stage u w w i c' r _ rfl (fun _ _ => rfl)]
+  congr 1
+  exact implStateN_ext (Function.update_eq_self i _) rfl rfl rfl
+
+/-- A pool insert with no node write: the monolithic Byzantine multicast. -/
+theorem deflStagesN_mcast {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w : NetState n)
+    (r : ℕ) (k : Fin n) (m : GBCA.Msg) :
+    (fun r' => deflStageN u (w.gpool r k m) r')
+      = Function.update (fun r' => deflStageN u w r') r
+          ((deflStageN u w r).mcast k m) := by
+  rw [deflStagesN_net u w (w.gpool r k m) r rfl (fun r' h => gpool_pool_ne w r k m h)]
+  congr 1
+  exact implStateN_ext rfl (gpool_pool_self w r k m) rfl rfl
+
+/-! ##### The round-loop deltas, rule by rule -/
+
+/-- A control-record write is the monolithic one-row control write. -/
+theorem deflCoreN_setProc {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w : NetState n)
+    (j : Fin n) (g' : ℕ → GBCA.ProcNodeN n) (p : ProcCore n) :
+    deflCoreN (Function.update u j ((u j).1.setProc p, g')) w
+      = (deflCoreN u w).setProc j p := by
+  rw [deflCoreN_core u w w j _ g' rfl]
+  exact coreStateN_ext rfl rfl (Function.update_eq_self j _) rfl
+
+/-- A DECIDED receipt is the monolithic delivery. -/
+theorem deflCoreN_recvDec {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w : NetState n)
+    (i : Fin n) (g' : ℕ → GBCA.ProcNodeN n) (k : Fin n) (b : Bool) :
+    deflCoreN (Function.update u i ((u i).1.recvDec k b, g')) w
+      = (deflCoreN u w).deliverDecided i k b := by
+  rw [deflCoreN_core u w w i _ g' rfl]
+  exact coreStateN_ext (Function.update_eq_self i _) rfl rfl rfl
+
+/-- A DECIDED pool insert is the monolithic multicast. -/
+theorem deflCoreN_dput {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w : NetState n)
+    (j : Fin n) (b : Bool) :
+    deflCoreN u (w.dput j b) = (deflCoreN u w).sendDecided j b := rfl
+
+/-- The fused coin return (D10): the node's round advance joined with the
+network's publication is the monolithic round advance on an `A` grade. -/
+theorem deflCoreN_stepRound_pub {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) (j : Fin n) (co b : Bool)
+    (hg : (u j).1.proc.lastGrade = some (.A b)) :
+    deflCoreN (Function.update u j ((u j).1.stepRound co, (u j).2)) (w.dput j b)
+      = (deflCoreN u w).stepRound j co := by
+  have h1 : deflCoreN (Function.update u j ((u j).1.stepRound co, (u j).2)) (w.dput j b)
+      = (deflCoreN u (w.dput j b)).setProc j
+        { (u j).1.proc with
+          est := some ((u j).1.proc.est.getD co), lastGrade := none,
+          round := (u j).1.proc.round + 1, phase := .toCallG } :=
+    deflCoreN_setProc u (w.dput j b) j (u j).2 _
+  rw [h1, deflCoreN_dput]
+  unfold CoreState.stepRound
+  rw [show ((deflCoreN u w).procs j).lastGrade = some (.A b) from hg]
+  rfl
+
+/-- The unfused coin return: the round advance publishes nothing. -/
+theorem deflCoreN_stepRound_plain {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n)
+    (w : NetState n) (j : Fin n) (co : Bool)
+    (hg : ∀ v : Bool, (u j).1.proc.lastGrade ≠ some (.A v)) :
+    deflCoreN (Function.update u j ((u j).1.stepRound co, (u j).2)) w
+      = (deflCoreN u w).stepRound j co := by
+  have h1 : deflCoreN (Function.update u j ((u j).1.stepRound co, (u j).2)) w
+      = (deflCoreN u w).setProc j
+        { (u j).1.proc with
+          est := some ((u j).1.proc.est.getD co), lastGrade := none,
+          round := (u j).1.proc.round + 1, phase := .toCallG } :=
+    deflCoreN_setProc u w j (u j).2 _
+  rw [h1]
+  unfold CoreState.stepRound
+  cases hlg : (u j).1.proc.lastGrade with
+  | none =>
+    rw [show ((deflCoreN u w).procs j).lastGrade = none from hlg]; rfl
+  | some out =>
+    cases out with
+    | A v => exact absurd hlg (hg v)
+    | B v =>
+      rw [show ((deflCoreN u w).procs j).lastGrade = some (.B v) from hlg]; rfl
+    | C =>
+      rw [show ((deflCoreN u w).procs j).lastGrade = some .C from hlg]; rfl
+
+end Net
+
+
+namespace Net
+
+/-! ### Assembling the monolithic transitions
+
+The monolithic hybrid is `(GBCA.implFamily ∥ (core ∥ WCC.specFamily))` with the
+sub-protocol API hidden; the lemmas below build each of its rows out of the
+component rows the deployed system supplies. -/
+
+/-- The system whose sub-protocol API `hybridImpl` hides. -/
+noncomputable def hybridPreN (P : Params) :
+    System ((ℕ → GBCA.ImplState P.n) × (CoreState P.n × (ℕ → WCC.SpecState P.n)))
+      (Lab P.n) :=
+  (GBCA.implFamily P).parallel (context P)
+
+theorem hybridImpl_eqN (P : Params) :
+    hybridImpl P = (hybridPreN P).abstract (Lab.hiddenAPI P.n) := rfl
+
+/-! #### The stage family's rows -/
+
+/-- The round-`r` instance moves on a label it owns. -/
+theorem implFamilyN_owned (P : Params) (S : ℕ → GBCA.ImplState P.n) (r : ℕ)
+    {l : Lab P.n} (hl : Lab.gbcaRound l = some r) {X : GBCA.ImplState P.n}
+    (h : GBCA.ImplStep P r (S r) l (PMF.pure X)) :
+    (GBCA.implFamily P).step S l (PMF.pure (Function.update S r X)) := by
+  rw [GBCA.implFamily, System.family_step_iff]
+  exact Or.inr (Or.inl ⟨r, hl, PMF.pure X, h, by rw [PMF.pure_map]⟩)
+
+/-- The round-`r` instance takes one of its own silent rules. -/
+theorem implFamilyN_tau (P : Params) (S : ℕ → GBCA.ImplState P.n) (r : ℕ)
+    {X : GBCA.ImplState P.n} (h : GBCA.ImplStep P r (S r) .tau (PMF.pure X)) :
+    (GBCA.implFamily P).step S Lab.tau (PMF.pure (Function.update S r X)) := by
+  rw [GBCA.implFamily, System.family_step_iff]
+  exact Or.inl ⟨rfl, r, PMF.pure X, h, by rw [PMF.pure_map]⟩
+
+/-- A label no instance owns and no broadcast: the family idles. -/
+theorem implFamilyN_idle (P : Params) (S : ℕ → GBCA.ImplState P.n) {l : Lab P.n}
+    (hl : l ≠ Lab.tau) (hr : Lab.gbcaRound l = none) (hf : ¬ Lab.isFail l) :
+    (GBCA.implFamily P).step S l (PMF.pure S) := by
+  rw [GBCA.implFamily, System.family_step_iff]
+  exact Or.inr (Or.inr (Or.inr ⟨hl, hr, hf, rfl⟩))
+
+/-- Corruption is broadcast to every instance. -/
+theorem implFamilyN_fail (P : Params) (S : ℕ → GBCA.ImplState P.n) (k : Fin P.n) :
+    (GBCA.implFamily P).step S (.fail k)
+      (PMF.pure (fun r => (S r).corrupt P k)) := by
+  rw [GBCA.implFamily, System.family_step_iff]
+  exact Or.inr (Or.inr (Or.inl ⟨by simp, rfl, trivial, rfl⟩))
+
+/-! #### The coin family's idle row -/
+
+theorem wccFamilyN_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {l : Lab P.n}
+    (hl : l ≠ Lab.tau) (hr : Lab.wccRound l = none) (hf : ¬ Lab.isFail l) :
+    (WCC.specFamily P).step o l (PMF.pure o) := by
+  rw [WCC.specFamily, System.family_step_iff]
+  exact Or.inr (Or.inr (Or.inr ⟨hl, hr, hf, rfl⟩))
+
+/-! #### The three factors together -/
+
+/-- A visible joint step of the three monolithic factors. -/
+theorem hybridPreN_lab (P : Params) {S S' : ℕ → GBCA.ImplState P.n}
+    {C C' : CoreState P.n} {o : ℕ → WCC.SpecState P.n}
+    {ω : PMF (ℕ → WCC.SpecState P.n)} {l : Lab P.n} (hl : l ≠ Lab.tau)
+    (hI : (GBCA.implFamily P).step S l (PMF.pure S'))
+    (hC : CoreStep P C l (PMF.pure C'))
+    (hW : (WCC.specFamily P).step o l ω) :
+    (hybridPreN P).step (S, C, o) l
+      (prodPMF (PMF.pure S') (prodPMF (PMF.pure C') ω)) := by
+  rw [hybridPreN, System.parallel_step]
+  refine Or.inl ⟨hl, _, _, hI, ?_, rfl⟩
+  rw [context, System.parallel_step]
+  exact Or.inl ⟨hl, _, _, hC, hW, rfl⟩
+
+/-- A silent step of the stage family alone. -/
+theorem hybridPreN_tau_impl (P : Params) {S S' : ℕ → GBCA.ImplState P.n}
+    {C : CoreState P.n} {o : ℕ → WCC.SpecState P.n}
+    (hI : (GBCA.implFamily P).step S Lab.tau (PMF.pure S')) :
+    (hybridPreN P).step (S, C, o) Lab.tau (PMF.pure (S', C, o)) := by
+  rw [hybridPreN, System.parallel_step]
+  exact Or.inr (Or.inl ⟨rfl, PMF.pure S', hI, (prodPMF_pure_pure _ _).symm⟩)
+
+/-- A silent step of the round loop alone. -/
+theorem hybridPreN_tau_core (P : Params) {S : ℕ → GBCA.ImplState P.n}
+    {C C' : CoreState P.n} {o : ℕ → WCC.SpecState P.n}
+    (hC : CoreStep P C Lab.tau (PMF.pure C')) :
+    (hybridPreN P).step (S, C, o) Lab.tau (PMF.pure (S, C', o)) := by
+  rw [hybridPreN, System.parallel_step]
+  refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure C') (PMF.pure o), ?_, ?_⟩)
+  · rw [context, System.parallel_step]
+    exact Or.inr (Or.inl ⟨rfl, PMF.pure C', hC, rfl⟩)
+  · rw [prodPMF_pure_pure, prodPMF_pure_pure]
+
+/-- The coin resolution, the one non-Dirac row. -/
+theorem hybridPreN_tau_wcc (P : Params) {S : ℕ → GBCA.ImplState P.n}
+    {C : CoreState P.n} {o : ℕ → WCC.SpecState P.n}
+    {ω : PMF (ℕ → WCC.SpecState P.n)}
+    (hW : (WCC.specFamily P).step o Lab.tau ω) :
+    (hybridPreN P).step (S, C, o) Lab.tau
+      (prodPMF (PMF.pure S) (prodPMF (PMF.pure C) ω)) := by
+  rw [hybridPreN, System.parallel_step]
+  refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure C) ω, ?_, rfl⟩)
+  rw [context, System.parallel_step]
+  exact Or.inr (Or.inr ⟨rfl, ω, hW, rfl⟩)
+
+/-! #### Through the outer hiding -/
+
+theorem hybridImplN_of_tau (P : Params)
+    {x : (ℕ → GBCA.ImplState P.n) × (CoreState P.n × (ℕ → WCC.SpecState P.n))}
+    {μ : PMF ((ℕ → GBCA.ImplState P.n) × (CoreState P.n × (ℕ → WCC.SpecState P.n)))}
+    (h : (hybridPreN P).step x Lab.tau μ) :
+    (hybridImpl P).step x Lab.tau μ := by
+  rw [hybridImpl_eqN, System.abstract_step]
+  exact Or.inr ⟨by simp, h⟩
+
+theorem hybridImplN_of_hidden (P : Params)
+    {x : (ℕ → GBCA.ImplState P.n) × (CoreState P.n × (ℕ → WCC.SpecState P.n))}
+    {l : Lab P.n} (hl : l ∈ Lab.hiddenAPI P.n)
+    {μ : PMF ((ℕ → GBCA.ImplState P.n) × (CoreState P.n × (ℕ → WCC.SpecState P.n)))}
+    (h : (hybridPreN P).step x l μ) : (hybridImpl P).step x Lab.tau μ := by
+  rw [hybridImpl_eqN, System.abstract_step]
+  exact Or.inl ⟨rfl, l, hl, h⟩
+
+/-! #### Pushing the successor distribution forward
+
+The only factor whose successor need not be a Dirac is the coin oracle, and it
+occupies the same coordinate on both sides; the deflation is therefore applied
+under one `map`. -/
+
+theorem map_deflNet_prod {P : Params} (x : ∀ _ : Fin P.n, ABANodeN P.n)
+    (w : NetState P.n) (ω : PMF (ℕ → WCC.SpecState P.n)) :
+    (prodPMF (PMF.pure x) (prodPMF (PMF.pure w) ω)).map deflNet
+      = prodPMF (PMF.pure (fun r => deflStageN x w r))
+          (prodPMF (PMF.pure (deflCoreN x w)) ω) := by
+  rw [prodPMF_pure_left, prodPMF_pure_left, prodPMF_pure_left, prodPMF_pure_left,
+    PMF.map_comp, PMF.map_comp, PMF.map_comp]
+  rfl
+
+theorem map_deflNet_pure {P : Params} (x : ∀ _ : Fin P.n, ABANodeN P.n)
+    (w : NetState P.n) (o : ℕ → WCC.SpecState P.n) :
+    (prodPMF (PMF.pure x) (prodPMF (PMF.pure w) (PMF.pure o))).map deflNet
+      = PMF.pure ((fun r => deflStageN x w r), deflCoreN x w, o) := by
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, PMF.pure_map]
+  rfl
+
+end Net
+
+
+namespace Net
+
+/-! ### Reading a deployed transition into its three factors -/
+
+/-- A rendezvous transition: every process, the network and the lifted oracle
+move together, and only the oracle's successor can fail to be a Dirac. -/
+theorem netPre_event_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+    {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} {e : NetEvt P.n}
+    {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
+      (NetState P.n × (ℕ → WCC.SpecState P.n)))}
+    (h : (netPre P).step (u, w, o) (Sum.inr e) μ) :
+    ∃ (x : ∀ _ : Fin P.n, ABANodeN P.n) (w' : NetState P.n)
+      (μ₃ : PMF (ℕ → WCC.SpecState P.n)),
+      (∀ i, ABAProcStepN P i (u i) (Sum.inr e) (PMF.pure (x i))) ∧
+      NetStep P w (Sum.inr e) (PMF.pure w') ∧
+      (wccLift P).step o (Sum.inr e) μ₃ ∧
+      μ = prodPMF (PMF.pure x) (prodPMF (PMF.pure w') μ₃) := by
+  rw [netPre, System.parallel_step] at h
+  rcases h with ⟨-, μ₁, μ₂₃, hS, hNW, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
+  · obtain ⟨x, rfl, hall⟩ := syncN_inv hS
+    rw [System.parallel_step] at hNW
+    rcases hNW with ⟨-, μ₂, μ₃, hN, hO, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
+    · obtain ⟨w', rfl⟩ := netStep_dirac hN
+      exact ⟨x, w', μ₃, hall, hN, hO, rfl⟩
+    · simp [nlab_tau] at habs
+    · simp [nlab_tau] at habs
+  · simp [nlab_tau] at habs
+  · simp [nlab_tau] at habs
+
+/-- A visible shared-label transition. -/
+theorem netPre_lab_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+    {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} {l : Lab P.n} (hl : l ≠ Lab.tau)
+    {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
+      (NetState P.n × (ℕ → WCC.SpecState P.n)))}
+    (h : (netPre P).step (u, w, o) (Sum.inl l) μ) :
+    ∃ (x : ∀ _ : Fin P.n, ABANodeN P.n) (w' : NetState P.n)
+      (ω : PMF (ℕ → WCC.SpecState P.n)),
+      (∀ i, ABAProcStepN P i (u i) (Sum.inl l) (PMF.pure (x i))) ∧
+      NetStep P w (Sum.inl l) (PMF.pure w') ∧
+      (WCC.specFamily P).step o l ω ∧
+      μ = prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω) := by
+  rw [netPre, System.parallel_step] at h
+  rcases h with ⟨-, μ₁, μ₂₃, hS, hNW, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
+  · obtain ⟨x, rfl, hall⟩ := syncN_inv hS
+    rw [System.parallel_step] at hNW
+    rcases hNW with ⟨-, μ₂, μ₃, hN, hO, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
+    · obtain ⟨w', rfl⟩ := netStep_dirac hN
+      exact ⟨x, w', μ₃, hall, hN,
+        (System.mapIdle_step_some (wccPull_inl l) μ₃).mp hO, rfl⟩
+    · rw [nlab_tau] at habs; exact absurd (Sum.inl_injective habs) hl
+    · rw [nlab_tau] at habs; exact absurd (Sum.inl_injective habs) hl
+  · rw [nlab_tau] at habs; exact absurd (Sum.inl_injective habs) hl
+  · rw [nlab_tau] at habs; exact absurd (Sum.inl_injective habs) hl
+
+/-- A silent shared-label transition: no process has a `τ` row, so it is the
+network's own injection or the coin resolution. -/
+theorem netPre_tau_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+    {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
+    {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
+      (NetState P.n × (ℕ → WCC.SpecState P.n)))}
+    (h : (netPre P).step (u, w, o) (Sum.inl Lab.tau) μ) :
+    (∃ w', NetStep P w (Sum.inl .tau) (PMF.pure w') ∧ μ = PMF.pure (u, w', o)) ∨
+    (∃ ω, (WCC.specFamily P).step o Lab.tau ω ∧
+      μ = prodPMF (PMF.pure u) (prodPMF (PMF.pure w) ω)) := by
+  rw [netPre, System.parallel_step] at h
+  rcases h with ⟨habs, -⟩ | ⟨-, μ₁, hS, rfl⟩ | ⟨-, μ₂₃, hNW, rfl⟩
+  · exact absurd rfl habs
+  · exact (syncN_no_tau hS).elim
+  · rw [System.parallel_step] at hNW
+    rcases hNW with ⟨habs, -⟩ | ⟨-, μ₂, hN, rfl⟩ | ⟨-, μ₃, hO, rfl⟩
+    · exact absurd rfl habs
+    · obtain ⟨w', rfl⟩ := netStep_dirac hN
+      exact Or.inl ⟨w', hN, by rw [prodPMF_pure_pure, prodPMF_pure_pure]⟩
+    · exact Or.inr ⟨μ₃,
+        (System.mapIdle_step_some (wccPull_inl Lab.tau) μ₃).mp hO, rfl⟩
+
+/-! ### Pinning the process tuple -/
+
+theorem procsN_update {P : Params} {u x : ∀ _ : Fin P.n, ABANodeN P.n}
+    {id : Fin P.n} {nd : ABANodeN P.n}
+    (hown : (PMF.pure (x id) : PMF (ABANodeN P.n)) = PMF.pure nd)
+    (hfor : ∀ i, i ≠ id → (PMF.pure (x i) : PMF (ABANodeN P.n)) = PMF.pure (u i)) :
+    x = Function.update u id nd := by
+  funext i
+  by_cases hi : i = id
+  · subst hi; rw [Function.update_self]; exact pureN_inj hown
+  · rw [Function.update_of_ne hi]; exact pureN_inj (hfor i hi)
+
+theorem procsN_id {P : Params} {u x : ∀ _ : Fin P.n, ABANodeN P.n}
+    (hall : ∀ i, (PMF.pure (x i) : PMF (ABANodeN P.n)) = PMF.pure (u i)) : x = u :=
+  funext fun i => pureN_inj (hall i)
+
+@[simp] theorem deflNet_apply {P : Params} (u : ∀ _ : Fin P.n, ABANodeN P.n)
+    (w : NetState P.n) (o : ℕ → WCC.SpecState P.n) :
+    deflNet (u, w, o) = ((fun r => deflStageN u w r), deflCoreN u w, o) := rfl
+
+/-- An owned label whose instance stands still. -/
+theorem implFamilyN_owned_id (P : Params) (S : ℕ → GBCA.ImplState P.n) (r : ℕ)
+    {l : Lab P.n} (hl : Lab.gbcaRound l = some r)
+    (h : GBCA.ImplStep P r (S r) l (PMF.pure (S r))) :
+    (GBCA.implFamily P).step S l (PMF.pure S) := by
+  have hstep := implFamilyN_owned P S r hl h
+  rwa [Function.update_eq_self] at hstep
+
+end Net
+
+
+namespace Net
+
+/-! ### The hidden rendezvous labels
+
+Each rendezvous of the deployed system is a silent transition of the
+monolithic hybrid: either one of its components' own silent rules, or — for
+the Byzantine handshake drives and the fused coin return — a genuine
+monolithic handshake that the outer hiding sends to `τ`. -/
+
+theorem hybridImplN_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+    {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} (e : NetEvt P.n)
+    {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
+      (NetState P.n × (ℕ → WCC.SpecState P.n)))}
+    (h : (netPre P).step (u, w, o) (Sum.inr e) μ) :
+    (hybridImpl P).step (deflNet (u, w, o)) Lab.tau (μ.map deflNet) := by
+  obtain ⟨x, w', μ₃, hall, hn, ho, rfl⟩ := netPre_event_inv P h
+  rw [map_deflNet_prod, deflNet_apply]
+  cases e with
+  | gsnd r j m =>
+    obtain rfl : w' = w.gpool r j m := pureN_inj (netStep_gsnd hn)
+    obtain rfl : μ₃ = PMF.pure o :=
+      (System.mapIdle_step_none (wccPull_gsnd r j m) μ₃).mp ho
+    rw [prodPMF_pure_pure, prodPMF_pure_pure]
+    cases m with
+    | input b =>
+      obtain ⟨hin, hcnt, hsend, hx0⟩ := stepN_gsnd_input_self (hall j)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_gsnd_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_setP_mcast u w j _ r _ (.input b),
+        deflCoreN_stage u w (w.gpool r j (.input b)) j _ rfl rfl]
+      exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+        (implFamilyN_tau P _ r (GBCA.ImplStep.relay _ j b hin hcnt hsend)))
+    | echo b =>
+      obtain ⟨hin, hcnt, hsend, hx0⟩ := stepN_gsnd_echo_self (hall j)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_gsnd_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_setP_mcast u w j _ r _ (.echo b),
+        deflCoreN_stage u w (w.gpool r j (.echo b)) j _ rfl rfl]
+      exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+        (implFamilyN_tau P _ r (GBCA.ImplStep.echo _ j b hin hcnt hsend)))
+    | vote v =>
+      cases v with
+      | some b =>
+        obtain ⟨hin, hcnt, hsend, hx0⟩ := stepN_gsnd_voteBit_self (hall j)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_gsnd_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP_mcast u w j _ r _ (.vote (some b)),
+          deflCoreN_stage u w (w.gpool r j (.vote (some b))) j _ rfl rfl]
+        exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+          (implFamilyN_tau P _ r (GBCA.ImplStep.voteBit _ j b hin hcnt hsend)))
+      | none =>
+        obtain ⟨hin, hcnt, hval, hsend, hx0⟩ := stepN_gsnd_voteBot_self (hall j)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_gsnd_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP_mcast u w j _ r _ (.vote none),
+          deflCoreN_stage u w (w.gpool r j (.vote none)) j _ rfl rfl]
+        exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+          (implFamilyN_tau P _ r (GBCA.ImplStep.voteBot _ j hin hcnt hval hsend)))
+    | bind v =>
+      cases v with
+      | some b =>
+        obtain ⟨hin, hcnt, hsend, hx0⟩ := stepN_gsnd_bindBit_self (hall j)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_gsnd_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP_mcast u w j _ r _ (.bind (some b)),
+          deflCoreN_stage u w (w.gpool r j (.bind (some b))) j _ rfl rfl]
+        exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+          (implFamilyN_tau P _ r (GBCA.ImplStep.bindBit _ j b hin hcnt hsend)))
+      | none =>
+        obtain ⟨hin, hcnt, hval, hsend, hx0⟩ := stepN_gsnd_bindBot_self (hall j)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_gsnd_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP_mcast u w j _ r _ (.bind none),
+          deflCoreN_stage u w (w.gpool r j (.bind none)) j _ rfl rfl]
+        exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+          (implFamilyN_tau P _ r (GBCA.ImplStep.bindBot _ j hin hcnt hval hsend)))
+    | «seal» v =>
+      cases v with
+      | some b =>
+        obtain ⟨hin, hcnt, hsend, hx0⟩ := stepN_gsnd_sealBit_self (hall j)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_gsnd_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP_mcast u w j _ r _ (.seal (some b)),
+          deflCoreN_stage u w (w.gpool r j (.seal (some b))) j _ rfl rfl]
+        exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+          (implFamilyN_tau P _ r (GBCA.ImplStep.sealBit _ j b hin hcnt hsend)))
+      | none =>
+        obtain ⟨hin, hcnt, hval, hsend, hx0⟩ := stepN_gsnd_sealBot_self (hall j)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_gsnd_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP_mcast u w j _ r _ (.seal none),
+          deflCoreN_stage u w (w.gpool r j (.seal none)) j _ rfl rfl]
+        exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+          (implFamilyN_tau P _ r (GBCA.ImplStep.sealBot _ j hin hcnt hval hsend)))
+  | gdlv r i j m =>
+    obtain ⟨hmem, hw⟩ := netStep_gdlv hn
+    rw [show w' = w from pureN_inj hw]
+    obtain rfl : μ₃ = PMF.pure o :=
+      (System.mapIdle_step_none (wccPull_gdlv r i j m) μ₃).mp ho
+    rw [prodPMF_pure_pure, prodPMF_pure_pure]
+    have hx := procsN_update (stepN_gdlv_self (hall i))
+      (fun k hk => stepN_gdlv_foreign (Ne.symm hk) (hall k))
+    subst hx
+    rw [deflStagesN_deliverTo u w i _ r j m, deflCoreN_stage u w w i _ rfl rfl]
+    exact hybridImplN_of_tau P (hybridPreN_tau_impl P
+      (implFamilyN_tau P _ r (GBCA.ImplStep.deliver _ i j m hmem)))
+  | dsnd j b =>
+    obtain ⟨hpool, hw⟩ := netStep_dsnd hn
+    obtain rfl : w' = w.dput j b := pureN_inj hw
+    obtain rfl : μ₃ = PMF.pure o :=
+      (System.mapIdle_step_none (wccPull_dsnd j b) μ₃).mp ho
+    rw [prodPMF_pure_pure, prodPMF_pure_pure]
+    obtain ⟨hcnt, hx0⟩ := stepN_dsnd_self (hall j)
+    have hx : x = u := procsN_id fun i => by
+      by_cases hi : i = j
+      · subst hi; exact hx0
+      · exact stepN_dsnd_foreign (Ne.symm hi) (hall i)
+    subst hx
+    exact hybridImplN_of_tau P (hybridPreN_tau_core P
+      (CoreStep.echo _ j b hcnt hpool))
+  | ddlv i j b =>
+    obtain ⟨hmem, hw⟩ := netStep_ddlv hn
+    rw [show w' = w from pureN_inj hw]
+    obtain rfl : μ₃ = PMF.pure o :=
+      (System.mapIdle_step_none (wccPull_ddlv i j b) μ₃).mp ho
+    rw [prodPMF_pure_pure, prodPMF_pure_pure]
+    obtain ⟨hnr, hx0⟩ := stepN_ddlv_self (hall i)
+    have hx := procsN_update hx0
+      (fun k hk => stepN_ddlv_foreign (Ne.symm hk) (hall k))
+    subst hx
+    rw [deflStagesN_core u w w i _ rfl rfl, deflCoreN_recvDec u w i _ j b]
+    exact hybridImplN_of_tau P (hybridPreN_tau_core P
+      (CoreStep.deliver _ i j b hmem hnr))
+  | retWPub r id c b =>
+    obtain rfl : w' = w.dput id b := pureN_inj (netStep_retWPub hn)
+    obtain ⟨hph, hr, hg, hx0⟩ := stepN_retWPub_self (hall id)
+    have hx := procsN_update hx0
+      (fun i hi => stepN_retWPub_foreign (Ne.symm hi) (hall i))
+    subst hx
+    have hW := (System.mapIdle_step_some (wccPull_retWPub r id c b) μ₃).mp ho
+    rw [deflStagesN_core u w (w.dput id b) id _ rfl rfl,
+      deflCoreN_stepRound_pub u w id c b hg]
+    exact hybridImplN_of_hidden P (Lab.retW_mem_hiddenAPI r id c)
+      (hybridPreN_lab P (by simp) (implFamilyN_idle P _ (by simp) rfl not_false)
+        (CoreStep.retW _ r id c hph hr) hW)
+  | gcallLoop r id b =>
+    rw [show w' = w from pureN_inj (netStep_gcallLoop hn)]
+    obtain rfl : μ₃ = PMF.pure o :=
+      (System.mapIdle_step_none (wccPull_gcallLoop r id b) μ₃).mp ho
+    obtain ⟨hph, hr, hest, hx0⟩ := stepN_gcallLoop_self (hall id)
+    have hx := procsN_update hx0
+      (fun i hi => stepN_gcallLoop_foreign (Ne.symm hi) (hall i))
+    subst hx
+    rw [deflStagesN_core u w w id _ rfl rfl, deflCoreN_setProc u w id _ _]
+    exact hybridImplN_of_hidden P (Lab.callG_mem_hiddenAPI r id b)
+      (hybridPreN_lab P (by simp)
+        (implFamilyN_owned_id P _ r rfl (GBCA.ImplStep.callLoop _ id b))
+        (CoreStep.callG _ r id b hph hr hest)
+        (wccFamilyN_idle P o (by simp) rfl not_false))
+  | byzCallG r k b =>
+    obtain ⟨hF, hw⟩ := netStep_byzCallG hn
+    obtain rfl : w' = w.gpool r k (.input b) := pureN_inj hw
+    obtain rfl : μ₃ = PMF.pure o :=
+      (System.mapIdle_step_none (wccPull_byzCallG r k b) μ₃).mp ho
+    obtain ⟨hin, hx0⟩ := stepN_byzCallG_self (hall k)
+    have hx := procsN_update hx0
+      (fun i hi => stepN_byzCallG_foreign (Ne.symm hi) (hall i))
+    subst hx
+    rw [deflStagesN_setP_mcast u w k _ r _ (.input b),
+      deflCoreN_stage u w (w.gpool r k (.input b)) k _ rfl rfl]
+    exact hybridImplN_of_hidden P (Lab.callG_mem_hiddenAPI r k b)
+      (hybridPreN_lab P (by simp)
+        (implFamilyN_owned P _ r rfl (GBCA.ImplStep.call _ k b hin))
+        (CoreStep.callGByz _ r k b hF)
+        (wccFamilyN_idle P o (by simp) rfl not_false))
+  | byzCallGLoop r k b =>
+    obtain ⟨hF, hw⟩ := netStep_byzCallGLoop hn
+    rw [show w' = w from pureN_inj hw]
+    obtain rfl : μ₃ = PMF.pure o :=
+      (System.mapIdle_step_none (wccPull_byzCallGLoop r k b) μ₃).mp ho
+    have hx : x = u := procsN_id fun i => stepN_byzCallGLoop (hall i)
+    subst hx
+    exact hybridImplN_of_hidden P (Lab.callG_mem_hiddenAPI r k b)
+      (hybridPreN_lab P (by simp)
+        (implFamilyN_owned_id P _ r rfl (GBCA.ImplStep.callLoop _ k b))
+        (CoreStep.callGByz _ r k b hF)
+        (wccFamilyN_idle P o (by simp) rfl not_false))
+  | byzRetG r k out =>
+    obtain ⟨hF, hw⟩ := netStep_byzRetG hn
+    rw [show w' = w from pureN_inj hw]
+    obtain rfl : μ₃ = PMF.pure o :=
+      (System.mapIdle_step_none (wccPull_byzRetG r k out) μ₃).mp ho
+    cases out with
+    | A v =>
+      obtain ⟨hcnt, hret, hx0⟩ := stepN_byzRetG_A_self (hall k)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_byzRetG_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_setP u w k _ r _, deflCoreN_stage u w w k _ rfl rfl]
+      exact hybridImplN_of_hidden P (Lab.retG_mem_hiddenAPI r k (.A v))
+        (hybridPreN_lab P (by simp)
+          (implFamilyN_owned P _ r rfl (GBCA.ImplStep.retA _ k v hcnt hret))
+          (CoreStep.retGByz _ r k (.A v) hF)
+          (wccFamilyN_idle P o (by simp) rfl not_false))
+    | B v =>
+      obtain ⟨hcnt, honce, hbind, hval, hret, hx0⟩ := stepN_byzRetG_B_self (hall k)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_byzRetG_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_setP u w k _ r _, deflCoreN_stage u w w k _ rfl rfl]
+      exact hybridImplN_of_hidden P (Lab.retG_mem_hiddenAPI r k (.B v))
+        (hybridPreN_lab P (by simp)
+          (implFamilyN_owned P _ r rfl
+            (GBCA.ImplStep.retB _ k v hcnt honce hbind hval hret))
+          (CoreStep.retGByz _ r k (.B v) hF)
+          (wccFamilyN_idle P o (by simp) rfl not_false))
+    | C =>
+      obtain ⟨hcnt, hval, hret, hx0⟩ := stepN_byzRetG_C_self (hall k)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_byzRetG_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_setP u w k _ r _, deflCoreN_stage u w w k _ rfl rfl]
+      exact hybridImplN_of_hidden P (Lab.retG_mem_hiddenAPI r k .C)
+        (hybridPreN_lab P (by simp)
+          (implFamilyN_owned P _ r rfl (GBCA.ImplStep.retC _ k hcnt hval hret))
+          (CoreStep.retGByz _ r k .C hF)
+          (wccFamilyN_idle P o (by simp) rfl not_false))
+  | byzCallW r k =>
+    obtain ⟨hF, hw⟩ := netStep_byzCallW hn
+    rw [show w' = w from pureN_inj hw]
+    have hW := (System.mapIdle_step_some (wccPull_byzCallW r k) μ₃).mp ho
+    have hx : x = u := procsN_id fun i => stepN_byzCallW (hall i)
+    subst hx
+    exact hybridImplN_of_hidden P (Lab.callW_mem_hiddenAPI r k)
+      (hybridPreN_lab P (by simp) (implFamilyN_idle P _ (by simp) rfl not_false)
+        (CoreStep.callWByz _ r k hF) hW)
+  | byzRetW r k b =>
+    obtain ⟨hF, hw⟩ := netStep_byzRetW hn
+    rw [show w' = w from pureN_inj hw]
+    have hW := (System.mapIdle_step_some (wccPull_byzRetW r k b) μ₃).mp ho
+    have hx : x = u := procsN_id fun i => stepN_byzRetW (hall i)
+    subst hx
+    exact hybridImplN_of_hidden P (Lab.retW_mem_hiddenAPI r k b)
+      (hybridPreN_lab P (by simp) (implFamilyN_idle P _ (by simp) rfl not_false)
+        (CoreStep.retWByz _ r k b hF) hW)
+
+end Net
+
+
+namespace Net
+
+/-! ### The shared labels
+
+A label of the shared alphabet is answered by the monolithic hybrid on the
+same label: the surviving ABA API and `fail` visibly, the sub-protocol API
+under the outer hiding, and `τ` by the network's own injections or by the coin
+resolution. -/
+
+theorem hybridPreN_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+    {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} {l : Lab P.n}
+    {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
+      (NetState P.n × (ℕ → WCC.SpecState P.n)))}
+    (h : (netPre P).step (u, w, o) (Sum.inl l) μ) :
+    (hybridPreN P).step (deflNet (u, w, o)) l (μ.map deflNet) := by
+  rw [deflNet_apply]
+  by_cases hl : l = Lab.tau
+  · subst hl
+    rcases netPre_tau_inv P h with ⟨w', hnet, rfl⟩ | ⟨ω, hW, rfl⟩
+    · rw [PMF.pure_map, deflNet_apply]
+      rcases netStep_tau hnet with ⟨r, k, m, hF, hw⟩ | ⟨k, b, hF, hw⟩
+      · obtain rfl : w' = w.gpool r k m := pureN_inj hw
+        rw [deflStagesN_mcast u w r k m]
+        exact hybridPreN_tau_impl P
+          (implFamilyN_tau P _ r (GBCA.ImplStep.byz _ k m hF))
+      · obtain rfl : w' = w.dput k b := pureN_inj hw
+        exact hybridPreN_tau_core P (CoreStep.byzDecided _ k b hF)
+    · rw [map_deflNet_prod]
+      exact hybridPreN_tau_wcc P hW
+  · obtain ⟨x, w', ω, hall, hn, hW, rfl⟩ := netPre_lab_inv P hl h
+    rw [map_deflNet_prod]
+    cases l with
+    | tau => exact absurd rfl hl
+    | callABA id b =>
+      rw [show w' = w from pureN_inj (netStep_callABA hn)]
+      rcases stepN_callABA_own (hall id) with ⟨hin, hx0⟩ | hx0
+      · have hx := procsN_update hx0
+          (fun i hi => stepN_callABA_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_core u w w id _ rfl rfl, deflCoreN_setProc u w id _ _]
+        exact hybridPreN_lab P (by simp)
+          (implFamilyN_idle P _ (by simp) rfl not_false)
+          (CoreStep.input _ id b hin) hW
+      · have hx : x = u := procsN_id fun i => by
+          by_cases hi : i = id
+          · subst hi; exact hx0
+          · exact stepN_callABA_foreign (Ne.symm hi) (hall i)
+        subst hx
+        exact hybridPreN_lab P (by simp)
+          (implFamilyN_idle P _ (by simp) rfl not_false)
+          (CoreStep.inputLoop _ id b) hW
+    | retABA id b =>
+      obtain ⟨hpool, hw⟩ := netStep_retABA hn
+      rw [show w' = w from pureN_inj hw]
+      obtain ⟨hcnt, hret, hx0⟩ := stepN_retABA_own (hall id)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_retABA_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_core u w w id _ rfl rfl, deflCoreN_setProc u w id _ _]
+      exact hybridPreN_lab P (by simp)
+        (implFamilyN_idle P _ (by simp) rfl not_false)
+        (CoreStep.ret _ id b hcnt hpool hret) hW
+    | callG r id b =>
+      obtain rfl : w' = w.gpool r id (.input b) := pureN_inj (netStep_callG hn)
+      obtain ⟨hph, hr, hest, hin, hx0⟩ := stepN_callG_own (hall id)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_callG_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_setP_mcast u w id _ r _ (.input b),
+        deflCoreN_setProc u (w.gpool r id (.input b)) id _ _]
+      exact hybridPreN_lab P (by simp)
+        (implFamilyN_owned P _ r rfl (GBCA.ImplStep.call _ id b hin))
+        (CoreStep.callG _ r id b hph hr hest) hW
+    | retG r id out =>
+      rw [show w' = w from pureN_inj (netStep_retG hn)]
+      cases out with
+      | A v =>
+        obtain ⟨hph, hr, hcnt, hret, hx0⟩ := stepN_retG_A_own (hall id)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_retG_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP u w id _ r _, deflCoreN_setProc u w id _ _]
+        exact hybridPreN_lab P (by simp)
+          (implFamilyN_owned P _ r rfl (GBCA.ImplStep.retA _ id v hcnt hret))
+          (CoreStep.retG _ r id (.A v) hph hr) hW
+      | B v =>
+        obtain ⟨hph, hr, hcnt, honce, hbind, hval, hret, hx0⟩ :=
+          stepN_retG_B_own (hall id)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_retG_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP u w id _ r _, deflCoreN_setProc u w id _ _]
+        exact hybridPreN_lab P (by simp)
+          (implFamilyN_owned P _ r rfl
+            (GBCA.ImplStep.retB _ id v hcnt honce hbind hval hret))
+          (CoreStep.retG _ r id (.B v) hph hr) hW
+      | C =>
+        obtain ⟨hph, hr, hcnt, hval, hret, hx0⟩ := stepN_retG_C_own (hall id)
+        have hx := procsN_update hx0
+          (fun i hi => stepN_retG_foreign (Ne.symm hi) (hall i))
+        subst hx
+        rw [deflStagesN_setP u w id _ r _, deflCoreN_setProc u w id _ _]
+        exact hybridPreN_lab P (by simp)
+          (implFamilyN_owned P _ r rfl (GBCA.ImplStep.retC _ id hcnt hval hret))
+          (CoreStep.retG _ r id .C hph hr) hW
+    | callW r id =>
+      rw [show w' = w from pureN_inj (netStep_callW hn)]
+      obtain ⟨hph, hr, hx0⟩ := stepN_callW_own (hall id)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_callW_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_core u w w id _ rfl rfl, deflCoreN_setProc u w id _ _]
+      exact hybridPreN_lab P (by simp)
+        (implFamilyN_idle P _ (by simp) rfl not_false)
+        (CoreStep.callW _ r id hph hr) hW
+    | retW r id c =>
+      rw [show w' = w from pureN_inj (netStep_retW hn)]
+      obtain ⟨hph, hr, hgr, hx0⟩ := stepN_retW_own (hall id)
+      have hx := procsN_update hx0
+        (fun i hi => stepN_retW_foreign (Ne.symm hi) (hall i))
+      subst hx
+      rw [deflStagesN_core u w w id _ rfl rfl,
+        deflCoreN_stepRound_plain u w id c hgr]
+      exact hybridPreN_lab P (by simp)
+        (implFamilyN_idle P _ (by simp) rfl not_false)
+        (CoreStep.retW _ r id c hph hr) hW
+    | fail k =>
+      obtain rfl : w' = NetState.corrupt P k w := pureN_inj (netStep_fail hn)
+      rw [show x = u from procsN_id fun i => stepN_fail (hall i),
+        show (fun r => deflStageN u (NetState.corrupt P k w) r)
+            = fun r => (deflStageN u w r).corrupt P k from
+          funext (fun r => deflStageN_corrupt u w k r),
+        deflCoreN_corrupt u w k]
+      exact hybridPreN_lab P (by simp) (implFamilyN_fail P _ k)
+        (CoreStep.fail _ k) hW
+
+end Net
+
+
+namespace Net
+
+/-! ### The forward simulation and the inclusion
+
+The deflation is a step-commuting state map: every deployed transition is the
+monolithic hybrid's transition on the same label, its successor distribution
+pushed forward. That is exactly the hypothesis of
+`ProbabilisticForwardSimulation.ofStrongFunctional`, and soundness (Result 1)
+turns the resulting simulation into the trace-distribution inclusion. -/
+
+/-- **The forward matching**: every transition of the deployed system is the
+matching transition of the monolithic hybrid along the deflation. -/
+theorem netForward (P : Params) :
+    ∀ s l μ, (netFlat P).step s l μ →
+      (hybridImpl P).step (deflNet s) l (μ.map deflNet) := by
+  rintro ⟨u, w, o⟩ l μ h
+  rw [netFlat_step_iff] at h
+  rcases h with ⟨rfl, l', hl', hg⟩ | ⟨hn, hg⟩
+  · rw [netGroup_step_iff] at hg
+    rcases hg with ⟨rfl, e, hpre⟩ | hpre
+    · exact absurd hl' (by simp)
+    · exact hybridImplN_of_hidden P hl' (hybridPreN_of_netPre P hpre)
+  · rw [netGroup_step_iff] at hg
+    rcases hg with ⟨rfl, e, hpre⟩ | hpre
+    · exact hybridImplN_of_netEvt P e hpre
+    · rw [hybridImpl_eqN, System.abstract_step]
+      exact Or.inr ⟨hn, hybridPreN_of_netPre P hpre⟩
+
+/-- **The deployed system simulates into the hybrid** along the graph of the
+deflation. -/
+noncomputable def netSim (P : Params) :
+    ProbabilisticForwardSimulation (netFlat P) (hybridImpl P)
+      (fun s ν => ν = PMF.pure (deflNet s)) :=
+  ProbabilisticForwardSimulation.ofStrongFunctional deflNet (deflNet_init P)
+    (netForward P)
+
+/-- **The deployed reading refines the hybrid**: every trace distribution
+achievable by the `n` corruption-blind programs beside the network adversary
+and the coin oracle is achievable by the monolithic hybrid. -/
+theorem netFlat_refines (P : Params) :
+    achievableTraceDists (netFlat P) ⊆ achievableTraceDists (hybridImpl P) :=
+  (netSim P).achievableTraceDists_subset
+
+end Net
+
 end ABA
 end PLTS
