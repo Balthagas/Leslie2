@@ -1,7 +1,7 @@
 \begin{definition}[Stage messages and the stage record]
   \label{def:aba-gbca-vocab}
   \lean{PLTS.ABA.GBCA.Msg}\lean{PLTS.ABA.GBCA.ProcState}\leanok
-  The messages of one graded-agreement stage form a five-level ladder $\mathrm{Msg}$: $\langle\mathrm{INPUT},b\rangle$ and $\langle\mathrm{ECHO},b\rangle$ carry a bit, and $\langle\mathrm{VOTE},v\rangle$, $\langle\mathrm{BIND},v\rangle$ and $\langle\mathrm{SEAL},v\rangle$ carry a bit or $\bot$, the level $\mathrm{SEAL}$ being $\mathrm{echo5}$ of~\cite{ABDY22}.
-  The stage state of one process is the record $\mathrm{ProcState}$: the call payload $input$, unset before the call; the flags $sentInput : \{0,1\} \to \{\text{true},\text{false}\}$ recording which $\mathrm{INPUT}$ payloads that process has multicast; the write-once payloads $sentEcho$, $sentVote$, $sentBind$ and $sentSeal$, each unset until its own multicast and the last three admitting $\bot$; and the flag $returned$.
-  No field of the record names another process.
+  The messages of one graded-agreement stage form a five-level ladder $\mathrm{Msg}$: $\langle\mathrm{INPUT},b\rangle$ and $\langle\mathrm{ECHO},b\rangle$ carry a bit, and $\langle\mathrm{VOTE},v\rangle$, $\langle\mathrm{BIND},v\rangle$ and $\langle\mathrm{SEAL},v\rangle$ carry a bit or $\bot$, the five levels being $\mathrm{echo}$ through $\mathrm{echo5}$ of~\cite{ABDY22}.
+  The stage state of one process is the record $\mathrm{ProcState}$, holding its call payload $\mathit{input}$, a flag $\mathit{sentInput}$ per $\mathrm{INPUT}$ payload it has multicast, the write-once payload slots $\mathit{sentEcho}$, $\mathit{sentVote}$, $\mathit{sentBind}$ and $\mathit{sentSeal}$, one per higher level, and the flag $\mathit{returned}$; no field of it names another process.
+  Full records: \leandecl{PLTS.ABA.GBCA.Msg} and \leandecl{PLTS.ABA.GBCA.ProcState}.
 \end{definition}

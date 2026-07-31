@@ -1,9 +1,8 @@
 \begin{definition}[Extended alphabets and restriction]
   \label{def:relabel}
   \lean{PLTS.instSilentSum}\lean{PLTS.System.relabel}\lean{PLTS.System.relabel_isLTS}\lean{PLTS.System.abstract_isLTS}\leanok
-  A composition whose components rendezvous on labels the composite is not meant to expose is built over the extended alphabet $\mathrm{Label} \oplus \mathrm{Extra}$, with $\mathrm{Extra}$ carrying the auxiliary labels.
-  The silent label of the extended alphabet is $\mathrm{inl}\,\tau$, so every auxiliary label $\mathrm{inr}\,e$ is observable and hence hideable by $\mathrm{abstract}$.
-  Restriction along the left embedding, $\mathrm{relabel}(sys)$, keeps the state space and the initial state of $sys$ and retains exactly its $\mathrm{inl}$-labelled transitions.
-  Auxiliary transitions are discarded, so they must be abstracted to $\tau$ first if they are to survive.
-  Restriction discards transitions and not states, so it preserves the LTS property; abstraction preserves it as well, relabelling each transition and keeping its distribution.
+  A composition whose components rendezvous on labels the composite is not meant to expose is built over the extended alphabet $\mathrm{Label} \oplus \mathrm{Extra}$, whose silent label is $\mathrm{inl}\,\tau$, so every auxiliary label $\mathrm{inr}\,e$ is observable and hence hideable by $\mathrm{abstract}$.
+  Restriction along the left embedding, $\mathrm{relabel}(sys)$, keeps the state space and the initial state and retains exactly the $\mathrm{inl}$-labelled transitions, so an auxiliary transition must be abstracted to $\tau$ first if it is to survive.
+  Restriction discards transitions and not states, so it preserves the LTS property, and abstraction preserves it as well.
+  Full construction: \leandecl{PLTS.System.relabel}.
 \end{definition}

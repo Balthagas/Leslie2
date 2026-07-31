@@ -2,39 +2,14 @@
   \label{thm:strongsound}
   \lean{PLTS.StrongProbabilisticSimulation.achievableTraceDists_subset}\leanok
   \uses{def:strongsim, lem:map}
-  If $R$ is a strong simulation of $sys_C$ by $sys_A$, then
-  $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A)$.
+  If $R$ is a strong simulation of $sys_C$ by $sys_A$, then $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A)$.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{def:strongsim, lem:map}
-  A strong simulation is \emph{lockstep} --- each concrete step is matched by an
-  abstract step with the same label, no stuttering --- so the proof factors through
-  the \emph{coupled product} $\operatorname{simProd} sys_C\ sys_A\ R$
-  (\lean{PLTS.simProd}) over $State_C \times State_A$. Its step relation
-  $(s_C, s_A) \xrightarrow{l} \omega$ requires that the two marginals
-  $\omega.map\ \pi_1$ and $\omega.map\ \pi_2$ be valid $sys_C$- and $sys_A$-steps
-  and that $\operatorname{supp}\omega \subseteq R$; its initial state
-  $(sys_C.init, sys_A.init)$ is $R$-related by the simulation's $init$ clause. Two
-  inclusions compose.
-
-  \emph{Lift} (\lean{PLTS.simProd_achievableTraceDists_superset}):
-  $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(\operatorname{simProd}\,sys_C\,sys_A\,R)$.
-  From a $sys_C$-execution $pe_C$ build the joint execution
-  \lean{PLTS.simJointExec}: drive $pe_C$ on the concrete component, and whenever it
-  emits $(l, \mu_C)$ from a joint history whose current pair $(s_C, s_A)$ is
-  $R$-related, apply $sim.step$ to $s_C \xrightarrow{l} \mu_C$ to obtain a coupling
-  $\omega$ with $\omega.map\ \pi_1 = \mu_C$, a valid abstract step
-  $\omega.map\ \pi_2$, and $\operatorname{supp}\omega \subseteq R$; emit
-  $(l, \omega)$. By construction the concrete projection of the joint execution is
-  exactly $pe_C$ and labels are shared, so their trace distributions agree. This
-  direction is purely forward (no marginalisation).
-
-  \emph{Project}: the second projection $\pi_2$ is a functional, label-preserving
-  simulation of $\operatorname{simProd} sys_C\ sys_A\ R$ by $sys_A$ --- it sends the
-  joint init to $sys_A.init$, and the marginal condition makes every joint step map
-  to a genuine $sys_A$-step $\pi_2(p) \xrightarrow{l} \omega.map\ \pi_2$ --- so
-  Lemma~\ref{lem:map} gives
-  $\operatorname{ATD}(\operatorname{simProd}\,sys_C\,sys_A\,R) \subseteq \operatorname{ATD}(sys_A)$.
-  Compose the two inclusions.
+  A strong simulation is lockstep, so the proof factors through the coupled product $\operatorname{simProd} sys_C\ sys_A\ R$ (\leandeclnamed{simProd}{PLTS.simProd}) over $State_C \times State_A$, whose steps out of an $R$-related pair are the couplings $\omega$ with $\omega.map\ \pi_1$ a $sys_C$-step, $\omega.map\ \pi_2$ a $sys_A$-step and $\operatorname{supp}\omega \subseteq R$.
+  Two inclusions compose.
+  The lift \leandeclnamed{simProd_achievableTraceDists_superset}{PLTS.simProd_achievableTraceDists_superset} drives a $sys_C$-execution on the concrete component and answers each of its moves by the coupling the simulation supplies.
+  It gives the joint execution \leandeclnamed{simJointExec}{PLTS.simJointExec}, whose concrete projection is the original one and whose labels are shared, so the two trace distributions agree.
+  The projection is Lemma~\ref{lem:map} applied to $\pi_2$, which the marginal condition makes a functional label-preserving simulation of the coupled product by $sys_A$.
 \end{proof}

@@ -2,13 +2,7 @@
   \label{def:aba-spec}
   \lean{PLTS.ABA.SpecStep}\lean{PLTS.ABA.spec}\leanok
   \uses{def:aba-labels}
-  Transition System 1 of~\cite{LeslieBP}, ten rules, with four deviations.
-  Corruption is a total deterministic transform (D1).
-  A ghost map $input$ records genuine $\mathrm{callABA}$ events: rule 1 writes it unconditionally, the input-enabledness loop rule 2 writes it first-write-wins (D13).
-  The mixed-bind rule 4 carries an $f{+}1$-support guard, requiring $f{+}1$ callers of the bound bit, counted $F$-blind (D13).
-  The re-propose rule 7 carries the guard $(val = \bot \wedge (input\,id = b \vee bind = b)) \vee val = b$: while undecided a process re-proposes only a recorded own input or the bound value, and once the decision value is fixed it re-proposes only $val$ (D3, D13).
-  A tenth rule, $\mathrm{callByzFill}$, lets a corrupted process fill an empty call slot with an arbitrary bit and no ghost record (D13), the abstract image of the concrete adversary's hidden Byzantine $\mathrm{callG}$ drivers.
-  The source blueprint's $Initial$ clause mentions an undeclared $out$ field; the field is omitted.
-  The rule-7 and rule-4 guards are load-bearing: without them the specification violates Agreement and Validity respectively; the two counterexamples follow the rule listing.
-  At most $f$ processes are ever corrupted, so $f{+}1$ distinct supporters always include a never-corrupted one, and $3f < n$ supplies $n - 2f \ge f + 1$.
+  Transition System 1 of~\cite{LeslieBP}, the ABA specification $\mathrm{spec}(P)$: ten rules over the ABA interface, on a state carrying the pending call of each process, the bound value $bind$, the decision value $val$, the coin outcome $coin$ and the corrupted set $F$, with four deviations.
+  Corruption is a total deterministic transform (D1), and the Validity provenance apparatus (D13) supplies a ghost map $input$ recording genuine $\mathrm{callABA}$ events, an $f{+}1$ $F$-blind support guard on the mixed-bind rule~4, a provenance guard on the re-propose rule~7 (D3), and a tenth rule $\mathrm{callByzFill}$ by which a corrupted process fills an empty call slot with no ghost record, the abstract image of the concrete adversary's hidden Byzantine $\mathrm{callG}$ drivers.
+  Full rule table: \leandecl{PLTS.ABA.spec}.
 \end{definition}

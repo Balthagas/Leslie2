@@ -7,7 +7,7 @@
   each finite history, returns a sub-distribution over the next $(l, \mu)$ move (or
   halts). For a finite execution $e$ it induces a mass
   $probOf(e) \in [0, \infty]$
-  (\lean{PLTS.ProbabilisticExecution.probOf}), the probability that the
+  (\leandeclnamed{probOf}{PLTS.ProbabilisticExecution.probOf}), the probability that the
   scheduler, started from $initState$, follows exactly the path $e$: the initial
   mass on $e.init$ times the product of the one-step kernels along $trans$.
 \end{definition}

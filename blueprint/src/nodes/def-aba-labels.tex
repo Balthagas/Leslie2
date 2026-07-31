@@ -2,7 +2,7 @@
   \label{def:aba-labels}
   \lean{PLTS.ABA.Lab}\lean{PLTS.ABA.Lab.hiddenAPI}\leanok
   \uses{def:aba-params}
-  All systems of the case study share one label type: the ABA API, the
-  round-tagged GBCA/WCC APIs (hidden in the hybrids), corruption
-  $\mathrm{fail}(id)$, and $\tau$.
+  All systems of the case study share one label type: the ABA API $\mathrm{callABA}(id,b)$ and $\mathrm{retABA}(id,b)$, the round-tagged GBCA API $\mathrm{callG}(r,id,b)$ and $\mathrm{retG}(r,id,g)$ with $g$ a graded outcome $A\,b$, $B\,b$ or $C$, the round-tagged WCC API $\mathrm{callW}(r,id)$ and $\mathrm{retW}(r,id,b)$, the corruption broadcast $\mathrm{fail}(id)$, and $\tau$.
+  The two sub-protocol APIs make up the hidden alphabet of every composed system.
+  Full label type: \leandecl{PLTS.ABA.Lab}.
 \end{definition}

@@ -2,11 +2,8 @@
   \label{def:syncproduct}
   \lean{PLTS.System.syncProduct}\lean{PLTS.System.syncProduct_isLTS}\leanok
   \uses{def:idle-family}
-  Let $sys_i : \mathrm{System}\,(State_i)\,\mathrm{Label}$ for $i$ ranging over a finite index type.
-  On a visible label $l \neq \tau$ the product $\mathrm{syncProduct}(sys)$ steps every component on $l$ simultaneously, and the joint successor is the independent product of the per-component distributions.
-  On $\tau$ exactly one component steps and the others hold their state.
-  Ownership of a label is carried by the components and not by the operator, which stays a single conjunction over the family.
-  A component idles on the labels it does not own (Definition~\ref{def:idle-family}), so a label owned by exactly two components moves those two and leaves every other component in place.
-  A label no component offers is blocked, the conjunction over the family having no witness.
-  A product of LTS components is an LTS: a product of Diracs is the Dirac on the tuple of their points, and a single-coordinate update of an all-Dirac family is again a Dirac.
+  For $sys_i : \mathrm{System}\,(State_i)\,\mathrm{Label}$ over a finite index type, the product $\mathrm{syncProduct}(sys)$ steps every component simultaneously on a visible label, with the joint successor the independent product, and on $\tau$ steps exactly one.
+  Ownership of a label is carried by the components and not by the operator, which stays a single conjunction over the family: a component idles on the labels it does not own (Definition~\ref{def:idle-family}), so a label owned by exactly two components moves those two alone, and a label no component offers is blocked.
+  A product of LTS components is an LTS.
+  Full construction: \leandecl{PLTS.System.syncProduct}.
 \end{definition}

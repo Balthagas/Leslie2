@@ -2,22 +2,13 @@
   \label{thm:forward-trans}
   \lean{PLTS.ProbabilisticForwardSimulation.trans}\leanok
   \uses{def:forwardsim}
-  If $sys_C$ is forward-simulated by $sys_B$ along $R_{BC}$ and $sys_B$ is
-  forward-simulated by $sys_A$ along $R_{AB}$, then $sys_C$ is
-  forward-simulated by $sys_A$ along the composite relation
-  $\operatorname{compRel} R_{BC}\ R_{AB}$.
+  If $sys_C$ is forward-simulated by $sys_B$ along $R_{BC}$ and $sys_B$ is forward-simulated by $sys_A$ along $R_{AB}$, then $sys_C$ is forward-simulated by $sys_A$ along the composite relation $\operatorname{compRel} R_{BC}\ R_{AB}$.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{def:forwardsim, def:weakstep, lem:bridge}
-  The composite relation holds of $s_C$ and $\mu_A$ when some intermediate
-  $\mu_B$ satisfies $R_{BC}$ against $s_C$ and simulates $\mu_A$ under
-  $R_{AB}$. For the initial condition, bind the intermediate initial
-  distribution against the constant abstract one. For the step condition,
-  match the concrete step on the $sys_B$ side, which yields a weak transition
-  out of $\mu_B$, and then lift that weak transition along $R_{AB}$ to a weak
-  transition of $sys_A$. That lift is the crux: it promotes a simulation of
-  single steps to a simulation of the $\tau^\ast \cdot l \cdot \tau^\ast$
-  segments a weak transition is built from, and it supplies the coupling
-  witnessing the composite relation on the successors.
+  The composite relation holds of $s_C$ and $\mu_A$ when some intermediate $\mu_B$ satisfies $R_{BC}$ against $s_C$ and simulates $\mu_A$ under $R_{AB}$.
+  For the initial condition, bind the intermediate initial distribution against the constant abstract one.
+  For the step condition, match the concrete step on the $sys_B$ side, which yields a weak transition out of $\mu_B$, and lift that weak transition along $R_{AB}$ to a weak transition of $sys_A$.
+  That lift is the crux: it promotes a simulation of single steps to a simulation of the $\tau^\ast \cdot l \cdot \tau^\ast$ segments a weak transition is built from, and it supplies the coupling witnessing the composite relation on the successors.
 \end{proof}

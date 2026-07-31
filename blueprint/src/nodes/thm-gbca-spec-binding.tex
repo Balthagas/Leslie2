@@ -10,12 +10,10 @@
 
 \begin{proof}\leanok
   \uses{def:aba-subspecs, thm:trace-support}
-  The exclusion set never shrinks: its single writer inserts, and corruption leaves it alone, so the inclusion holds rule by rule and lifts to whole executions.\lean{PLTS.ABA.GBCA.Step.dead_mono}\leanok{}
+  The exclusion set never shrinks, its single writer inserting and corruption leaving it alone, so the inclusion holds rule by rule and lifts to whole executions.\lean{PLTS.ABA.GBCA.Step.dead_mono}\leanok{}
   Inverting the two value-bearing return rows yields the guard pair $v \notin dead$, $1-v \in dead$ at the state each fires from.\lean{PLTS.ABA.GBCA.retG_value_guards}\leanok{}
-  Take two such returns at positions $k_1 \le k_2$ handing out $v_1$ and $v_2$.
-  Monotonicity carries $1-v_1 \in dead$ from the first state to the second, the second return demands $v_2 \notin dead$, so $v_2 \neq 1-v_1$, and on a two-element domain $v_2 = v_1$; the opposite order is symmetric.
-  The trace form follows by Theorem~\ref{thm:trace-support}, which turns a positive-probability trace into a genuine execution whose graded-return labels are steps of the kind just treated.
-  The $C$-return clause is the same monotonicity applied to the witness its own guard $|dead| \ge 1$ produces.
-  The cardinality clause is an induction along the execution: the field starts empty, and its single writer fires only from $\emptyset$, so it leaves a singleton.\lean{PLTS.ABA.GBCA.Step.dead_card_le_one}\leanok{}
+  Monotonicity carries $1-v_1 \in dead$ from the earlier return to the later, which demands $v_2 \notin dead$, so $v_2 \neq 1-v_1$ and on a two-element domain $v_2 = v_1$; the $C$-return clause is the same monotonicity applied to the witness its own guard $|dead| \ge 1$ produces.
+  Theorem~\ref{thm:trace-support} turns a positive-probability trace into a genuine execution whose graded-return labels are steps of the kind just treated, which is the trace form.
+  The cardinality clause is an induction along the execution, the field starting empty and its single writer firing from $\emptyset$ alone.\lean{PLTS.ABA.GBCA.Step.dead_card_le_one}\leanok{}
   No invariant, no quorum arithmetic and no reachability hypothesis beyond membership in one execution enters (D19).
 \end{proof}

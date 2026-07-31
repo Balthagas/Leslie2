@@ -7,61 +7,15 @@
     \operatorname{ATD}(\mathrm{netFlat}(P)) \;=\;
     \operatorname{ATD}(\mathrm{exploded}(P)) :
   \]
-  the $n$ corruption-blind programs beside the network adversary and the coin
-  oracle, and the same system cut along its layer boundaries, achieve exactly
-  the same trace distributions.
-  Neither side is restricted.
-  The corruption budget is the guard on the $\mathrm{fail}$ row of the one
-  component that owns the corrupted set on either side, so it holds of every
-  execution of either system by construction and enters the statement nowhere.
+  the deployed system and the same system cut along its layer boundaries achieve exactly the same trace distributions.
+  Neither side is restricted, and the corruption budget enters the statement nowhere, being the guard on the $\mathrm{fail}$ row of the one component that owns the corrupted set on either side.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{def:aba-exploded, def:aba-procnet, def:aba-netadv, def:strongfunctional, def:achievable, thm:forward-sound}
-  Define the regrouping $\mathrm{regroup}$ from states of the deployed system
-  to states of the exploded one.
-  The round-$r$ subsystem takes its stage programs from the round-$r$ stage
-  slices of the nodes and its fabric from the adversary's $pool(r,\cdot)$; the
-  round loops take the nodes' coordinator slices; the ABA-side network takes
-  the adversary's $dpool$; the coin oracle occupies the same coordinate on both
-  sides and is carried across untouched.
-  Every copy of the corrupted set on the exploded side is the adversary's one
-  set $F$.
-  The map carries the initial state to the initial state, every pool being
-  empty and nobody corrupted there.
-
-  Every rule matches guard for guard.
-  A row of a deployed program splits along the layer boundary into its
-  core-slice half, which is a row of $\mathrm{coreProcN}(P,j)$, and its
-  stage-slice half, which is a row of a stage program; the composition joins
-  them again, and the two rows the fusion of layers created --- the call and
-  the graded return --- are exactly the ones with content on both sides.
-  A row of the adversary splits the same way: the round-tagged pools and the
-  injection $\mathrm{byzG}$ are a round fabric's, the DECIDED pools and the
-  corrupted set are $\mathrm{aNet}(P)$'s.
-  A stage multicast and a stage delivery are events internal to a round
-  subsystem on the exploded side and hidden rendezvous of the deployed
-  composition on the other; both are relabelled to $\tau$, and the hiding order
-  is the same on both sides.
-  A Byzantine drive matches because its authorisation $k \in F$ is read at
-  $\mathrm{aNet}(P)$ off the very set the deployed adversary's guard reads
-  (D11), while its effect is read at the round subsystem.
-  The coin resolution appears on the two sides as the same pushforward of
-  $\mathrm{wccPMF}$.
-  Every transition of either system other than that resolution is Dirac, and a
-  transition and its image have the same successor, so $\mathrm{regroup}$ both
-  commutes with steps and reflects them.
-  No reachability hypothesis and no invariant is needed for this, because every
-  copy of the corrupted set on the exploded side is the adversary's set along
-  the map rather than a separate field that could drift from it.
-
-  Lemma~\ref{def:strongfunctional} therefore gives a probabilistic forward
-  simulation along the graph of $\mathrm{regroup}$ and a second along its
-  converse, neither system being an LTS.
-  The map is not surjective --- an exploded state whose copies of the corrupted
-  set disagree has no preimage --- which is why the backward direction is the
-  converse of the graph and not the graph of an inverse.
-  Soundness (Theorem~\ref{thm:forward-sound}) turns each matching into a
-  trace-distribution inclusion, and antisymmetry of $\subseteq$ gives the
-  equality.
+  The regrouping \leandecl{PLTS.ABA.regroup} carries a deployed state to an exploded one: the round-$r$ stage slices of the nodes and the adversary's round-$r$ pools make the round-$r$ subsystem, the nodes' coordinator slices make the round loops, the adversary's DECIDED pools make $\mathrm{aNet}(P)$, and the coin oracle is carried across untouched.
+  Every rule matches guard for guard along it, each row splitting along the layer boundary into its core-slice half and its stage-slice half, each Byzantine drive keeping its authorisation at $\mathrm{aNet}(P)$ and its effect at the round subsystem (D11), and the hiding order being the same on both sides.
+  No invariant and no reachability hypothesis enters, every copy of the corrupted set on the exploded side being the adversary's set read along the map rather than a field that could drift from it.
+  Every transition but the coin resolution is Dirac and a transition and its image have the same successor, so Lemma~\ref{def:strongfunctional} gives a probabilistic forward simulation along the graph of the regrouping and a second along its converse; the map is not surjective, an exploded state whose copies of the corrupted set disagree having no preimage, which is why the backward direction is the converse of the graph and not the graph of an inverse.
+  Soundness (Theorem~\ref{thm:forward-sound}) turns each matching into an inclusion, and antisymmetry of $\subseteq$ gives the equality.
 \end{proof}

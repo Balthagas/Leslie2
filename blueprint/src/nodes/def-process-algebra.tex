@@ -3,22 +3,8 @@
   \lean{PLTS.System.parallel}\lean{PLTS.System.interleave}\lean{PLTS.System.abstract}\leanok
   \uses{def:system}
   Three operators build compound systems over a shared label type.
-
-  \emph{Parallel composition} $sys_1 \parallel sys_2$ has state space
-  $State_1 \times State_2$ and initial state the pair of initial states. It
-  synchronises on visible labels and interleaves on $\tau$: a step labelled
-  $l \neq \tau$ requires both components to step on $l$, with successor the
-  independent product $\mu_1 \otimes \mu_2$; a step labelled $\tau$ moves
-  exactly one component and holds the other fixed.
-
-  \emph{Interleaving} $\operatorname{interleave} sys$ of an indexed family has
-  state space $\prod_i State_i$ and moves exactly one component per step, at
-  any label: $s \xrightarrow{l} \mu$ when some $sys_i$ has
-  $s_i \xrightarrow{l} \mu_i$ and $\mu$ is the independent product of $\mu_i$
-  with the Diracs on the unchanged components.
-
-  \emph{Abstraction} $sys.\operatorname{abstract} L$ leaves states and initial
-  state untouched and relabels the alphabet: every $L$-labelled transition
-  becomes a $\tau$-transition, and transitions on labels outside $L$ are kept
-  as they are.
+  \emph{Parallel composition} $sys_1 \parallel sys_2$ has state space $State_1 \times State_2$; it synchronises on a visible label, with successor the independent product of the two component successors, and on $\tau$ moves exactly one component.
+  \emph{Interleaving} $\operatorname{interleave} sys$ of an indexed family has state space $\prod_i State_i$ and moves exactly one component per step, at any label.
+  \emph{Abstraction} $sys.\operatorname{abstract} L$ keeps the states and the initial state and relabels every $L$-labelled transition to $\tau$, leaving transitions on labels outside $L$ as they are.
+  Full constructions: \leandecl{PLTS.System.parallel}, \leandecl{PLTS.System.interleave} and \leandecl{PLTS.System.abstract}.
 \end{definition}

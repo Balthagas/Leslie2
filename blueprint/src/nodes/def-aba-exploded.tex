@@ -2,55 +2,14 @@
   \label{def:aba-exploded}
   \lean{PLTS.ABA.CoreProcStepN}\lean{PLTS.ABA.coreProcN}\lean{PLTS.ABA.ANetState}\lean{PLTS.ABA.ANetState.corrupt}\lean{PLTS.ABA.ANetStep}\lean{PLTS.ABA.aNet}\lean{PLTS.ABA.ExpState}\lean{PLTS.ABA.explodedPre}\lean{PLTS.ABA.explodedGroup}\lean{PLTS.ABA.exploded}\leanok
   \uses{def:aba-gbcasub, def:aba-procnet, def:aba-netadv, def:aba-core-vocab, def:relabel, def:syncproduct, def:process-algebra}
-  The deployed protocol cut along its layer boundaries: four factors over the
-  extended alphabet $\mathrm{NLab}(n)$.
-
-  The first is the family $\mathrm{gbcaSide}(P)$ of round subsystems of
-  Definition~\ref{def:aba-gbcasub}.
-
-  The second is the round loop of each process, $\mathrm{coreProcN}(P,j)$ over
-  the node $\mathrm{CoreNodeN}(n)$ of Definition~\ref{def:aba-procnet}, the $n$
-  of them under the product of Definition~\ref{def:syncproduct}.
-  Its twenty-seven rows are the core-slice half of the rows of
-  Definition~\ref{def:aba-procnet}: the external call and the return, the two
-  sub-protocol handshakes, the DECIDED relay and delivery, the fused round
-  advance, and an idle row wherever another process is named or the row's whole
-  content is a stage write.
-  The six multicast levels and the stage delivery leave no row at all, their
-  events being internal to a round subsystem.
-  These programs are not round-filtered: a round loop answers every round's
-  $\mathrm{callG}$, its own as a participant and every other process's as a
-  bystander.
-
-  The third is $\mathrm{aNet}(P)$, what is left of the network adversary once
-  the round-tagged pools have gone to the round fabrics.
-  Its state $\mathrm{ANetState}(n)$ is the DECIDED pools $dpool(j)$ (D12$'$)
-  and the corrupted set $F$.
-  Its seventeen rows are the DECIDED layer --- the relay, the delivery, the
-  publication carried by the fused round advance, the injection
-  $\mathrm{byzD}$, and the guard $b \in dpool(id)$ on $\mathrm{retABA}$ --- the
-  budget-guarded corruption row $\mathrm{fail}$ (D1), the authorisation
-  $k \in F$ of each of the five Byzantine drives (D11), and idle rows
-  elsewhere.
-
-  The fourth is the coin oracle, joined through the partial map
-  $\mathrm{wccPull}$ of Definition~\ref{def:aba-netadv}.
-
-  The composition is that of Definition~\ref{def:aba-netadv}, factor for
-  factor:
+  The deployed protocol cut along its layer boundaries into four factors over the extended alphabet $\mathrm{NLab}(n)$: the family $\mathrm{gbcaSide}(P)$ of round subsystems, the round loop $\mathrm{coreProcN}(P,j)$ of each process, the ABA-side network $\mathrm{aNet}(P)$ holding the DECIDED pools (D12$'$) and the corrupted set with its budget, and the coin oracle joined through $\mathrm{wccPull}$.
   \[
     \mathrm{explodedPre}(P) \;=\;
       \mathrm{gbcaSide}(P) \parallel \bigl(\mathrm{syncProduct}_{j}\ \mathrm{coreProcN}(P,j)
-        \parallel (\mathrm{aNet}(P) \parallel \mathrm{wccLift}(P))\bigr),
+        \parallel (\mathrm{aNet}(P) \parallel \mathrm{wccLift}(P))\bigr)
   \]
-  \[
-    \mathrm{explodedGroup}(P) \;=\; \mathrm{relabel}\bigl(
-      \mathrm{abstract}_{\mathrm{netEvtLabels}}(\mathrm{explodedPre}(P))\bigr),
-  \]
-  \[
-    \mathrm{exploded}(P) \;=\;
-      \mathrm{abstract}_H\bigl(\mathrm{explodedGroup}(P)\bigr).
-  \]
-  The graded-agreement family occupies the left argument of the outer parallel
-  composition, which is the refinable slot.
+  runs through the pipeline of Definition~\ref{def:aba-netadv} factor for factor, giving $\mathrm{explodedGroup}(P)$ inside the inner frame and $\mathrm{exploded}(P)$ inside the outer.
+  A round loop is not round-filtered: it answers every round's $\mathrm{callG}$, its own as a participant and every other process's as a bystander.
+  The graded-agreement family occupies the left argument of the outer parallel composition, which is the refinable slot.
+  Full construction: \leandecl{PLTS.ABA.exploded}, over \leandecl{PLTS.ABA.coreProcN} and \leandecl{PLTS.ABA.aNet}.
 \end{definition}

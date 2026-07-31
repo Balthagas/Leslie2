@@ -2,12 +2,9 @@
   \label{def:aba-gbca-impl}
   \lean{PLTS.ABA.GBCA.implInst}\leanok
   \uses{def:aba-labels, def:aba-params, def:aba-gbca-vocab}
-  The graded-agreement layer regrouped as one per-round PLTS over the whole system state, the analysis form of \algoref{alg:gbca-impl}{the GBCA implementation}, which is ABDY22's Algorithm~6 (deviation D18); the deviation registry's D18 entry records how it relates to the source blueprint's compressed four-round form.
-  Each process runs a five-stage message exchange over an authenticated set-based network, the levels INPUT, ECHO, VOTE, BIND, SEAL being the paper's $\mathrm{echo}$ through $\mathrm{echo5}$.
-  On a $\mathrm{callG}$ it multicasts $\langle\mathrm{INPUT},b\rangle$; it relays $\langle\mathrm{INPUT},b\rangle$ once $f{+}1$ receipts of it arrive (the relay gate); it multicasts $\langle\mathrm{ECHO},b\rangle$ on an $n{-}f$ INPUT-$b$ quorum, $\langle\mathrm{VOTE},v\rangle$ on an $n{-}f$ ECHO quorum, $\langle\mathrm{BIND},v\rangle$ on an $n{-}f$ VOTE quorum, and $\langle\mathrm{SEAL},v\rangle$ on an $n{-}f$ BIND quorum, each payload above INPUT and ECHO a real bit or $\bot$.
-  A process returns grade $A\,b$ on an $n{-}f$ SEAL-$b$ quorum, $B\,b$ on an $n{-}f$ any-SEAL quorum containing $b$ with $f{+}1$ BIND-$b$s and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ SEAL-$\bot$ quorum with $|\mathrm{Valid}|>1$.
-  The network is set-based and authenticated (D5): each sender owns one idempotent message set, the adversary schedules delivery ($\mathrm{deliver}$), and a corrupted $j\in F$ injects an arbitrary message ($\mathrm{byz}$).
-  Protocol sends are gated on prior participation (D8).
-  The state is the protocol's own data, and the three returns read nothing beyond the receipts \algoref{alg:gbca-impl}{the GBCA implementation}'s three wait-until cases name.
-  The prose preceding Algorithm~6 in~\cite{ABDY22} says ``upon receiving $\mathrm{echo4}$ messages from $2t+1$ parties'' where its own pseudocode says $n - t$; the two coincide only at $n = 3t+1$, and the encoding follows the pseudocode, $n - f$.
+  The graded-agreement layer regrouped as one per-round PLTS over the whole system state, the analysis form of \algoref{alg:gbca-impl}{the GBCA implementation}, which is ABDY22's Algorithm~6 (D18).
+  Each process runs a five-stage exchange over the message ladder of Definition~\ref{def:aba-gbca-vocab}: it multicasts $\langle\mathrm{INPUT},b\rangle$ on a call and relays it on $f{+}1$ receipts, and each higher level is multicast into its own write-once slot under an $n{-}f$ quorum at the level below and prior participation (D8).
+  A process returns grade $A\,b$, $B\,b$ or $C$ by the three wait-until cases of the last block, each reading the receipts its own case names, and the network is set-based and authenticated (D5): each sender owns one idempotent message set, the adversary schedules delivery, and a corrupted sender may inject an arbitrary message.
+  The state is the protocol's own data, so the specification's $dead$ and $grade$ appear nowhere in it.
+  Full rule table: \leandecl{PLTS.ABA.GBCA.implInst}.
 \end{definition}

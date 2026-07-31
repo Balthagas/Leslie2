@@ -1,7 +1,8 @@
 \begin{definition}[The round-loop control record]
   \label{def:aba-core-vocab}
   \lean{PLTS.ABA.ProcCore}\leanok
-  The control state of one process in the round loop is the record $\mathrm{ProcCore}$: the external input bit $input$, unset before the call; the estimate $est$, whose unset value is the algorithm's $\bot$ awaiting the coin; the round counter $round \in \mathbb{N}$, counted from $0$ (D9); the handshake phase $phase$, one of $\mathrm{idle}$, $\mathrm{toCallG}$, $\mathrm{awaitG}$, $\mathrm{toCallW}$ and $\mathrm{awaitW}$; the graded outcome $lastGrade$ of the current round's stage, unset before that return and cleared by the round advance; and the flag $returned$.
+  The control state of one process in the round loop is the record $\mathrm{ProcCore}$: its external input bit, its estimate, whose unset value is the algorithm's $\bot$ awaiting the coin, its round counter, counted from $0$ (D9), its handshake phase, one of $\mathrm{idle}$, $\mathrm{toCallG}$, $\mathrm{awaitG}$, $\mathrm{toCallW}$ and $\mathrm{awaitW}$, the graded outcome of the current round's stage, and a returned flag.
   The round loop's one message is $\langle\mathrm{DECIDED},b\rangle$, a bare bit, so a pool of such messages is a set of bits.
   No field of the record names another process.
+  Full record: \leandecl{PLTS.ABA.ProcCore}.
 \end{definition}

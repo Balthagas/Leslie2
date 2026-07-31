@@ -14,11 +14,7 @@
 \begin{proof}\leanok
   \uses{def:forwardsim, def:process-algebra}
   Take the graph of $f$ first.
-  The initial clause is the hypothesis $f(sys_C.init) = sys_A.init$, read as $\delta_{f(sys_C.init)}$ supported on $sys_A.init$.
-  For the step clause, the pushforward $\mu.\mathrm{map}\,f$ matches $\mu$ outcome by outcome, so the coupling is the pushforward of $\mu$ along $s \mapsto (s, \delta_{f\,s})$, and the abstract side answers with its single strong step, read as a weak transition.
-  Now take the converse of the graph of $g$.
-  A related pair is $(g\,q, \delta_q)$, and the hypothesis reflects the concrete step $g\,q \xrightarrow{l} \mu$ to an abstract step $q \xrightarrow{l} \nu$ with $\mu = \nu.\mathrm{map}\,g$.
-  The coupling is the pushforward of $\nu$ along $q' \mapsto (g\,q', \delta_{q'})$, whose first marginal is $\mu$ and whose support lies in the relation.
-  Transport along a pointwise equivalence of relations restates either matching along $\operatorname{diracRel}$.
-  For $\mathrm{swap}$ the step clause is that a product distribution pushed forward along $\mathrm{swap}$ is the product taken the other way round, which is exactly the step relation of $sys_2 \parallel sys_1$.
+  The initial clause is the hypothesis, read as $\delta_{f(sys_C.init)}$ supported on $sys_A.init$, and for the step clause the coupling is the pushforward of $\mu$ along $s \mapsto (s, \delta_{f\,s})$, the abstract side answering with its single strong step read as a weak transition.
+  For the converse of the graph of $g$, a related pair is $(g\,q, \delta_q)$, the hypothesis reflects the concrete step to an abstract step $q \xrightarrow{l} \nu$ with $\mu = \nu.\mathrm{map}\,g$, and the coupling is the pushforward of $\nu$ along $q' \mapsto (g\,q', \delta_{q'})$.
+  Transport along a pointwise equivalence of relations restates either matching along $\operatorname{diracRel}$, and for $\mathrm{swap}$ the step clause is that a product distribution pushed forward along $\mathrm{swap}$ is the product taken the other way round.
 \end{proof}

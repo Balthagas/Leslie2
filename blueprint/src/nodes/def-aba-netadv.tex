@@ -2,32 +2,10 @@
   \label{def:aba-netadv}
   \lean{PLTS.ABA.Net.NetState}\lean{PLTS.ABA.Net.NetState.corrupt}\lean{PLTS.ABA.Net.NetStep}\lean{PLTS.ABA.Net.netAdv}\lean{PLTS.System.mapIdle}\lean{PLTS.ABA.Net.wccPull}\lean{PLTS.ABA.Net.wccLift}\lean{PLTS.ABA.Net.netPre}\lean{PLTS.ABA.Net.netGroup}\lean{PLTS.ABA.Net.netFlat}\leanok
   \uses{def:aba-procnet, def:aba-labels, def:aba-params, def:relabel, def:syncproduct, def:process-algebra}
-  The state $\mathrm{NetState}(n)$ of the network adversary is the round-tagged pools $pool(r,j)$ of the stage messages process $j$ has multicast in stage $r$ (D5), the pools $dpool(j)$ of the DECIDED payloads $j$ has multicast (D12$'$), and the corrupted set $F \subseteq [n]$.
-  Every pool is empty initially and so is $F$.
-  Each process owns a DECIDED pool, so a corrupted process may hold both bits and have them delivered selectively (D12$'$).
-
-  Corruption is one row.
-  On $\mathrm{fail}(k)$ the adversary inserts $k$ into $F$ when $k \notin F$ and $|F| < f$, and changes nothing otherwise (D1).
-  The corruption budget is that guard, and it is a guard of a component: nothing outside the adversary enforces it, and no restriction of the system and no hypothesis on its traces is needed to hold the adversary to $f$ corruptions.
-
-  The automaton $\mathrm{netAdv}(P)$ has twenty rows, all Dirac.
-  The send rows write a pool: $\mathrm{gsnd}$ pools $m$ under its sender, $\mathrm{callG}$ pools the $\langle\mathrm{INPUT},b\rangle$ that the call multicasts, $\mathrm{retWPub}$ pools the published payload (D10), and $\mathrm{dsnd}$ pools $b$ under the guard $b \notin dpool(j)$, the write-once condition of the DECIDED relay.
-  The delivery rows carry the soundness of the authenticated network and consume nothing: $\mathrm{gdlv}$ requires $m \in pool(r,j)$ and $\mathrm{ddlv}$ requires $b \in dpool(j)$, so no message reaches a receiver that its named sender did not multicast.
-  The row for $\mathrm{retABA}(id,b)$ requires $b \in dpool(id)$: a process returns only a payload it has itself published.
-  On $\mathrm{callABA}$, $\mathrm{retG}$, $\mathrm{callW}$, $\mathrm{retW}$ and $\mathrm{gcallLoop}$ nothing is sent and the adversary stands.
-
-  Seven rows read $F$, and they are the only rules of any component that do.
-  Five are the authorisations of the Byzantine drives (D11): $\mathrm{byzCallG}$, $\mathrm{byzCallGLoop}$, $\mathrm{byzRetG}$, $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ each carry $k \in F$ and nothing else, the first of them additionally pooling the driven $\langle\mathrm{INPUT},b\rangle$.
-  Two are the injections, and they are the only rows of any component labelled $\tau$ before hiding: $\mathrm{byzG}$ pools an arbitrary stage message under a corrupted sender at an arbitrary round (D5), and $\mathrm{byzD}$ pools either DECIDED bit under one (D12$'$), so equivocation at the DECIDED layer is $\mathrm{byzD}$ fired twice on one sender.
-
-  The coin oracle $\mathrm{WCC.specFamily}(P)$, Transition System~3, is the third component and the only one whose transitions are not all Dirac.
-  It speaks $\mathrm{Lab}(n)$, so it is read over the extended alphabet along a partial map $\mathrm{wccPull}$.
-  A shared label is its own; the drive $\mathrm{byzCallW}(r,k)$ is the coin call $\mathrm{callW}(r,k)$, the drive $\mathrm{byzRetW}(r,k,b)$ the coin return $\mathrm{retW}(r,k,b)$, and the fused return $\mathrm{retWPub}(r,id,c,b)$ the coin return $\mathrm{retW}(r,id,c)$; every other rendezvous label has no image.
-  The construction $\mathrm{mapIdle}$ reads a system over one alphabet as a system over another along such a map: a label with an image steps by that image's rows, and a label without one is a self-loop.
-  The Byzantine handshake drives therefore reach the oracle over hidden labels while the network rendezvous leave it untouched.
-  The oracle keeps its own copy of the corrupted set and its own budget-guarded corruption, and its resolution threshold reads that copy.
-
-  The composition is
+  The network adversary $\mathrm{netAdv}(P)$ holds what a process may not see: the round-tagged pools $pool(r,j)$ of the stage messages $j$ has multicast in round $r$ (D5), the pools $dpool(j)$ of the DECIDED payloads $j$ has multicast (D12$'$), and the corrupted set $F$ with its budget, the guard $k \notin F \wedge |F| < f$ on the $\mathrm{fail}$ row (D1).
+  It supplies the other half of every send and every delivery, the delivery guards $m \in pool(r,j)$ and $b \in dpool(j)$ being the soundness of the authenticated network; it carries the authorisation $k \in F$ of each of the five Byzantine drives (D11), and the two injections $\mathrm{byzG}$ and $\mathrm{byzD}$, by which a corrupted sender pools an arbitrary stage message or either DECIDED bit and so equivocates at that layer.
+  The coin oracle $\mathrm{WCC.specFamily}(P)$ speaks $\mathrm{Lab}(n)$, so it is read over the extended alphabet by the construction $\mathrm{mapIdle}$ along the partial map $\mathrm{wccPull}$, which sends the two coin drives and the fused return $\mathrm{retWPub}$ to the coin handshake they stand for and every other rendezvous label to none: a label with an image steps by that image's rows, and a label without one is a self-loop.
+  The deployed system is built in three stages,
   \[
     \mathrm{netPre}(P) \;=\;
       \bigl(\mathrm{syncProduct}_{j \in [n]}\ \mathrm{ABAProcN}(P,j)\bigr)
@@ -42,11 +20,6 @@
     \mathrm{netFlat}(P) \;=\; \mathrm{abstract}_H\bigl(\mathrm{netGroup}(P)\bigr),
   \]
   where $\mathrm{wccLift}(P)$ is the oracle read along $\mathrm{wccPull}$ and $H$ is the sub-protocol API of Definition~\ref{def:aba-labels}.
-  Hiding $\mathrm{netEvtLabels}$ discharges the extended alphabet, so $\mathrm{netGroup}(P)$ is read back along the left embedding and speaks exactly $\mathrm{Lab}(n)$.
-  The state space of $\mathrm{netFlat}(P)$ is
-  \[
-    \bigl([n] \to \mathrm{ABANodeN}(n)\bigr) \times
-      \bigl(\mathrm{NetState}(n) \times
-        (\mathbb{N} \to \mathrm{WCC.SpecState})\bigr).
-  \]
+  Hiding $\mathrm{netEvtLabels}$ discharges the extended alphabet, so $\mathrm{netGroup}(P)$ speaks exactly $\mathrm{Lab}(n)$.
+  Full construction: \leandecl{PLTS.ABA.Net.netAdv} and \leandecl{PLTS.ABA.Net.netFlat}.
 \end{definition}

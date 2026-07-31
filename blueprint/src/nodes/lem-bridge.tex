@@ -11,18 +11,11 @@
       weakStep\ sys\ \mu\ l\ \nu & (l \ne \tau).
     \end{cases}
   \]
-  Equivalently: a step of $\mathcal{D}(sys^w)$ out of $\mu$ is exactly a weak
-  transition of $sys$ out of $\mu$.
+  Equivalently: a step of $\mathcal{D}(sys^w)$ out of $\mu$ is exactly a weak transition of $sys$ out of $\mu$.
 \end{lemma}
 
 \begin{proof}\leanok
   \uses{lem:decomp, lem:mix, lem:bind}
-  ($\Leftarrow$) Decompose the weak transition out of $\mu$ into per-point weak
-  transitions (Lemma~\ref{lem:decomp}); each is precisely a step of $sys^w$ out of a
-  Dirac, so their $\mu$-average is a hyper-step $hyperStep\ sys^w\ \mu\ l\ \nu$.
-  ($\Rightarrow$) A hyper-step provides, for each $s \in \operatorname{supp}\mu$, a
-  distribution $p\,s$ over $sys^w$-successors of $s$ --- i.e.\ a \emph{mixture of
-  weak transitions out of $\delta_s$}. Collapse that mixture to a single per-point
-  weak transition with Lemma~\ref{lem:bind}, then recombine over the source with
-  Lemma~\ref{lem:mix}.
+  ($\Leftarrow$) Decompose the weak transition out of $\mu$ into per-point weak transitions (Lemma~\ref{lem:decomp}); each is a step of $sys^w$ out of a Dirac, so their $\mu$-average is the hyper-step.
+  ($\Rightarrow$) A hyper-step supplies, for each $s$ in the support of $\mu$, a distribution over $sys^w$-successors of $s$, that is a mixture of weak transitions out of $\delta_s$; collapse it to a single per-point weak transition with Lemma~\ref{lem:bind}, then recombine over the source with Lemma~\ref{lem:mix}.
 \end{proof}

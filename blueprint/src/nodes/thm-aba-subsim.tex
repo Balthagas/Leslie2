@@ -2,68 +2,16 @@
   \label{thm:aba-subsim}
   \lean{PLTS.ABA.GSub.subDefl}\lean{PLTS.ABA.GSub.sub_projects}\lean{PLTS.ABA.GSub.gPull}\lean{PLTS.ABA.GSub.liftedSpecG}\lean{PLTS.ABA.GSub.Rsub}\lean{PLTS.ABA.GSub.subSim}\lean{PLTS.ABA.GSub.subSim_init}\lean{PLTS.ABA.GSub.subSim_failAct}\leanok
   \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-subspecs, thm:gbca-inst-refines, def:forwardsim}
-  For all parameters $P$ and every round $r$, the round subsystem
-  $\mathrm{sub}(P,r)$ is forward-simulated by the round-$r$ GBCA specification
-  instance, read over the subsystem's interface.
-  The relation is the instance relation of
-  Theorem~\ref{thm:gbca-inst-refines}, read on the deflated state.
+  For all parameters $P$ and every round $r$, the round subsystem $\mathrm{sub}(P,r)$ is forward-simulated by the round-$r$ GBCA specification instance, read over the subsystem's interface.
+  The relation is the instance relation of Theorem~\ref{thm:gbca-inst-refines}, read on the deflated state.
   It holds at the initial states and survives the corruption broadcast.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-subspecs, thm:gbca-inst-refines, def:forwardsim, def:weakstep}
-  The argument runs through the monolithic instance of
-  Definition~\ref{def:aba-gbca-impl} in two legs, and reproves none of
-  Theorem~\ref{thm:gbca-inst-refines}.
-
-  The first leg is strong and functional.
-  Define $\mathrm{subDefl}$ on a subsystem state by reading the programs'
-  records as the instance's $proc$, their inbox rows as its $recv$, the
-  fabric's pools as its $sent$ and the fabric's corrupted set as its $F$.
-  The two state shapes hold the same four fields under a different partition,
-  so the map is a bijection onto the instance's state space.
-  Every transition of $\mathrm{sub}(P,r)$ is a transition of the instance at
-  the deflated state, on the label the interface label projects to, with the
-  successor pushed forward: one step for one step, with no stuttering.
-  A joint call is the instance's call; a hidden multicast is the protocol rule
-  it carries and a hidden delivery the instance's delivery; a fabric injection
-  is the instance's Byzantine row; a drive is the instance's own row for the
-  handshake it drives.
-
-  The second leg is the projection of alphabets.
-  The specification instance speaks $\mathrm{Lab}(n)$, the subsystem
-  $\mathrm{NLab}(n)$, in which the drives and the call loop of round $r$ are
-  separate labels.
-  Let $\mathrm{gPull}$ be the partial map that identifies them with the
-  specification labels they stand for: a driven call and either call loop are
-  the call $\mathrm{callG}(r,\cdot,\cdot)$, a driven return is the return
-  $\mathrm{retG}(r,\cdot,\cdot)$, a shared label is its own, and every other
-  extended label has no image.
-  The lifted specification $\mathrm{liftedSpecG}(P,r)$ is the specification
-  instance read back along $\mathrm{gPull}$ by the construction
-  $\mathrm{mapIdle}$ of Definition~\ref{def:aba-netadv}: a label with an image
-  steps by that image's rows, and a label without one is a self-loop.
-  Only $\tau$ projects to $\tau$, since every drive projects to a handshake
-  port.
-
-  Now compose the legs.
-  A step of the subsystem on $l$ is a step of the instance on
-  $\mathrm{gPull}(l)$, which Theorem~\ref{thm:gbca-inst-refines} answers by a
-  weak transition of the specification instance.
-  That answer is read back to the interface along the section of
-  $\mathrm{gPull}$ that sends $\mathrm{gPull}(l)$ to $l$ itself and every other
-  specification label to its own copy.
-  This is where the specification's own call row answers a driven call and its
-  own return row a driven return: the specification is input-enabled on those
-  rows (D11), and the answer needs no rule of its own.
-  A weak transition transports segment by segment under the section, because
-  the silent segments are answered by silent segments and the visible label is
-  answered by $l$.
-
-  Two side conditions remain.
-  The initial states are related, being the instance's own initial states under
-  $\mathrm{subDefl}$.
-  Corruption preserves the relation: the fabric's corrupted set is the
-  instance's, so the two guards $k \notin F \wedge |F| < f$ are the same
-  proposition and the instance-level statement applies verbatim (D1).
+  The argument runs in two legs through the monolithic instance of Definition~\ref{def:aba-gbca-impl} and reproves nothing of Theorem~\ref{thm:gbca-inst-refines}.
+  The first leg is the strong functional bijection \leandecl{PLTS.ABA.GSub.subDefl}, which reads the programs' stage records and inbox rows and the fabric's pools and corrupted set as the four fields of the instance state; every transition of the subsystem is a transition of the instance at the deflated state, one step for one step.
+  The second leg is the partial map \leandecl{PLTS.ABA.GSub.gPull}, which identifies the drives and the call loop of round $r$ with the specification labels they stand for, and along which the specification instance is read back by the construction $\mathrm{mapIdle}$ of Definition~\ref{def:aba-netadv}.
+  Composing the legs, a step of the subsystem on $l$ is a step of the instance on $\mathrm{gPull}(l)$, which Theorem~\ref{thm:gbca-inst-refines} answers by a weak transition transported segment by segment along the section of $\mathrm{gPull}$ that returns $l$; the specification is input-enabled on the driven call and the driven return, so that answer needs no rule of its own (D11).
+  The initial states are related under the deflation, and the corruption broadcast preserves the relation, the fabric's corrupted set being the instance's and the two budget guards the same proposition (D1).
 \end{proof}

@@ -2,10 +2,8 @@
   \label{def:aba-core}
   \lean{PLTS.ABA.core}\leanok
   \uses{def:aba-labels, def:aba-core-vocab}
-  The round loop regrouped as one PLTS over the whole system state, the analysis form of \algoref{alg:aba-core}{the ABA implementation}.
-  Each process runs a five-phase handshake cycle $\mathrm{idle} \to \mathrm{toCallG} \to \mathrm{awaitG} \to \mathrm{toCallW} \to \mathrm{awaitW}$ and back to $\mathrm{toCallG}$ of the next round, carrying an estimate adopted from the graded GBCA outcome or, when the estimate is $\bot$, from the coin.
-  The per-round bookkeeping between the coin return and the next GBCA call is fused into the $\mathrm{retW}$ step (D10), which multicasts $\langle\mathrm{DECIDED}, b\rangle$ when the round's grade was $A\,b$.
-  A DECIDED gossip layer pools the multicasts in per-process sent and received pools; a corrupted process may pool either bit and so equivocates at this layer (D12$'$).
-  A process returns $\mathrm{retABA}\,id\,b$ once $n - f$ distinct senders of $b$ have been delivered to it and $b$ is in its own sent pool.
-  Corrupted processes additionally carry Byzantine call- and return-driver rules at each handshake (D11).
+  The round loop regrouped as one PLTS over the whole system state $\mathrm{CoreState}$, the analysis form of \algoref{alg:aba-core}{the ABA implementation}.
+  Each process runs the five-phase handshake cycle of Definition~\ref{def:aba-core-vocab}, carrying an estimate adopted from the round's graded outcome or, when that outcome leaves it unset, from the round's coin; the bookkeeping between the coin return and the next call is fused into the $\mathrm{retW}$ step (D10), which multicasts $\langle\mathrm{DECIDED},b\rangle$ when the round's grade was $A\,b$.
+  A DECIDED gossip layer pools the multicasts per process (D12$'$), relays on $f{+}1$ distinct receipts, and gates $\mathrm{retABA}\,id\,b$ on $n - f$ distinct senders of $b$ together with $b$ in $id$'s own sent pool; corrupted processes additionally carry Byzantine call- and return-driver rules at each handshake (D11).
+  Full rule table: \leandecl{PLTS.ABA.core}.
 \end{definition}

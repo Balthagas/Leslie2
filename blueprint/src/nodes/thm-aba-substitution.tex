@@ -2,10 +2,7 @@
   \label{thm:aba-substitution}
   \lean{PLTS.ABA.substSimX}\lean{PLTS.ABA.substitutionX}\lean{PLTS.ABA.netFlat_flatSpec}\leanok
   \uses{def:aba-flatspec, def:aba-exploded, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-exploded-atd, def:achievable}
-  Replacing each round's graded-agreement subsystem by its specification, the
-  other three factors untouched, is a probabilistic forward simulation of
-  $\mathrm{exploded}(P)$ by $\mathrm{flatSpec}(P)$, and hence a
-  trace-distribution inclusion.
+  Replacing each round's graded-agreement subsystem by its specification, the other three factors untouched, is a probabilistic forward simulation of $\mathrm{exploded}(P)$ by $\mathrm{flatSpec}(P)$, and hence a trace-distribution inclusion.
   Composed with Theorem~\ref{thm:aba-exploded-atd},
   \[
     \operatorname{ATD}(\mathrm{netFlat}(P)) \;\subseteq\;
@@ -15,20 +12,6 @@
 
 \begin{proof}\leanok
   \uses{def:aba-flatspec, def:aba-exploded, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-exploded-atd}
-  The two systems are the same expression with one subterm replaced, so the
-  three precongruences apply to the family refinement of
-  Theorem~\ref{thm:gbca-family-refines} along the shape of that expression.
-  Parallel composition against the fixed right-hand factor --- the round loops,
-  the ABA-side network and the coin oracle --- is
-  Theorem~\ref{thm:precong-parallel}.
-  Hiding the rendezvous alphabet is Theorem~\ref{thm:precong-abstract}.
-  Reading the result back over $\mathrm{Lab}(n)$ is
-  Theorem~\ref{thm:precong-relabel}.
-  Hiding the sub-protocol API is Theorem~\ref{thm:precong-abstract} again.
-  Soundness (Theorem~\ref{thm:forward-sound}) turns the resulting simulation
-  into the inclusion
-  $\operatorname{ATD}(\mathrm{exploded}(P)) \subseteq
-   \operatorname{ATD}(\mathrm{flatSpec}(P))$, and
-  Theorem~\ref{thm:aba-exploded-atd} rewrites its left-hand side as
-  $\operatorname{ATD}(\mathrm{netFlat}(P))$.
+  The two systems are the same expression with one subterm replaced, so the precongruences apply to the family refinement of Theorem~\ref{thm:gbca-family-refines} along the shape of that expression: parallel composition against the fixed right-hand factor (Theorem~\ref{thm:precong-parallel}), hiding the rendezvous alphabet (Theorem~\ref{thm:precong-abstract}), reading the result back over $\mathrm{Lab}(n)$ (Theorem~\ref{thm:precong-relabel}), and hiding the sub-protocol API (Theorem~\ref{thm:precong-abstract} again).
+  Soundness (Theorem~\ref{thm:forward-sound}) turns the resulting simulation into $\operatorname{ATD}(\mathrm{exploded}(P)) \subseteq \operatorname{ATD}(\mathrm{flatSpec}(P))$, and Theorem~\ref{thm:aba-exploded-atd} rewrites its left-hand side.
 \end{proof}

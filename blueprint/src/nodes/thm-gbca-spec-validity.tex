@@ -12,14 +12,9 @@
 \begin{proof}\leanok
   \uses{def:aba-subspecs, thm:trace-support}
   The instance carries one bookkeeping invariant: every pending input has a $\mathrm{callG}$ event in the label history, and $F$ is the fold of that history's $\mathrm{fail}$ labels.\lean{PLTS.ABA.GBCA.CallInv}\leanok{}
-  Both conjuncts are read off the rules, $call$ being written only by rule~1 and $F$ only by rule~7, and the filter that produces the trace keeps every $\mathrm{callG}$ and every $\mathrm{fail}$ label, so both transfer from the history to the trace.
-  Now fix a state of the execution and count the supporters of the dissenting bit $1-v$.
-  Each of them is corrupted at some stage of the trace: a caller of $1-v$ by unanimity, a member of $F$ by the fold.
-  The stages form a chain, so the whole set sits inside a single stage, which the corruption budget caps at $f$.\lean{PLTS.ABA.GBCA.supp_le_of_unanimous}\leanok{}
-  Every $f{+}1$ guard at that bit is therefore unreachable.
-  In particular \texttt{bindUnset}\,$v$ never fires, and $v$ is alive at every state of the execution.\lean{PLTS.ABA.GBCA.dead_notMem_of_unanimous}\leanok{}
-  Take a return from such a state.
-  A value-bearing return of $w$ demands $1-w \in dead$, and $v \notin dead$, so $1-w \neq v$ and $w = v$.
-  A $C$-return demands $f{+}1$ support at both bits, and the count at $1-v$ is the capped one, so no $C$-return fires.\lean{PLTS.ABA.GBCA.retG_value_of_unanimous}\leanok{}
+  Both conjuncts are read off the rules, and the filter that produces the trace keeps every $\mathrm{callG}$ and every $\mathrm{fail}$ label, so both transfer from the history to the trace.
+  At any state of the execution every supporter of the dissenting bit $1-v$ is corrupted at some stage of the trace, a caller of $1-v$ by unanimity and a member of $F$ by the fold; the stages form a chain, so the whole set sits inside a single stage, which the corruption budget caps at $f$.\lean{PLTS.ABA.GBCA.supp_le_of_unanimous}\leanok{}
+  Every $f{+}1$ guard at that bit is therefore unreachable, so the kill at $v$ never fires and $v$ is alive at every state.\lean{PLTS.ABA.GBCA.dead_notMem_of_unanimous}\leanok{}
+  A value-bearing return of $w$ from such a state demands $1-w \in dead$, so $1-w \neq v$ and $w = v$, while a $C$-return demands $f{+}1$ support at both bits and so does not fire.\lean{PLTS.ABA.GBCA.retG_value_of_unanimous}\leanok{}
   Theorem~\ref{thm:trace-support} supplies the genuine execution behind the trace and pulls each return label back to a step of it.
 \end{proof}

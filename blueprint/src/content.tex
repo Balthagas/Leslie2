@@ -815,6 +815,11 @@ receipts exceed the corruption budget, so they put an honest $\mathrm{BIND}\,v$
 sender behind every grade-$1$ output, and that sender's own wait condition is an
 $n{-}f$ $\mathrm{VOTE}\,v$ quorum over the write-once $\mathrm{VOTE}$ level ---
 the object the binding argument of~\cite{ABDY22} counts.
+The prose preceding Algorithm~6 in~\cite{ABDY22} says ``upon receiving
+$\mathrm{echo4}$ messages from $2t+1$ parties'' where its own pseudocode says
+$n - t$.
+The two coincide only at $n = 3t+1$, and the encoding follows the pseudocode,
+$n - f$.
 The $dead$ and $grade$ fields of Transition System~2 are abstractions of these
 receipt patterns and belong to the specification alone;
 Theorem~\ref{thm:gbca-inst-refines} supplies them from the receipts.
@@ -1084,6 +1089,7 @@ Rule 9 (\leandeclnamed{fail}{PLTS.ABA.SpecStep.fail}), the total corruption rule
 \noindent Here $\mathbb{B}$ is the two-element type, written $0,1$ for protocol bits and $\mathrm{false},\mathrm{true}$ for flags.
 The equation $bind = coin$ is the cross-domain equality of $\{0,1,\bot\}$ with $\{0,1,\bot,\top,\dagger\}$: either both sides are $\bot$, or both are the same bit.
 The outcomes $\top$ and $\dagger$ agree with nothing.
+The source blueprint's $Initial$ clause mentions an undeclared $out$ field; the field is omitted.
 
 \noindent\textbf{Labels.}
 $\mathrm{callABA}(id,b)$, $\mathrm{retABA}(id,b)$, $\mathrm{fail}(id)$ and $\tau$, for $id \in [n]$ and $b \in \mathbb{B}$.
@@ -1620,7 +1626,7 @@ property woven through it.
 \subsection{The analysis-side composition}
 
 The core simulation of Theorem~\ref{thm:aba-coresim} is hand-built, and it is
-written against the monolithic coordinator rather than against $n$ round-loop
+written against the monolithic round loop rather than against $n$ round-loop
 programs beside a network.
 The composition it runs on is fixed here, and
 Theorem~\ref{thm:aba-flatspec-refines} carries the deployment-shaped
@@ -1691,6 +1697,13 @@ No process node records it, no restriction of the transition relation enforces
 it, and no theorem assumes it of a trace.
 
 \subsection{Non-vacuity}
+
+A refinement statement is compatible with a system that does nothing, so the
+chain is accompanied by machine-checked witnesses that the analysis-side
+composition executes and reaches a return.
+Membership of a decision trace in
+$\operatorname{ATD}(\mathrm{netFlat}\ P4)$ is not established; the
+witnesses are about the analysis-side composition alone.
 
 \input{nodes/def-aba-examples}
 

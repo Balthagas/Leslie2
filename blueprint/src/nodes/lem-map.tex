@@ -2,30 +2,13 @@
   \label{lem:map}
   \lean{PLTS.achievableTraceDists_map}\leanok
   \uses{def:achievable}
-  Let $f : X \to Y$ be a label-preserving \emph{functional} simulation between
-  systems: $f(sys_X.init) = sys_Y.init$ and every step $s \xrightarrow{l} \mu$
-  lifts to $f(s) \xrightarrow{l} f_\ast\mu$ (the pushforward $\mu.map\ f$). Then
-  $\operatorname{ATD}(sys_X) \subseteq \operatorname{ATD}(sys_Y)$.
+  Let $f : X \to Y$ be a label-preserving \emph{functional} simulation between systems: $f(sys_X.init) = sys_Y.init$ and every step $s \xrightarrow{l} \mu$ lifts to $f(s) \xrightarrow{l} f_\ast\mu$ (the pushforward $\mu.map\ f$).
+  Then $\operatorname{ATD}(sys_X) \subseteq \operatorname{ATD}(sys_Y)$.
 \end{lemma}
 
 \begin{proof}\leanok
-  Fix a probabilistic execution $pe_X$ of $sys_X$ with initial distribution
-  $\delta_{sys_X.init}$ realising $D$. Since $f$ preserves labels, pushing each
-  $X$-history $E_X$ forward to the $Y$-history $f_\ast E_X$ (apply $f$ to every
-  state, leave labels alone) preserves the label sequence, hence the trace and the
-  tightness status. What must be produced is a \emph{single} $sys_Y$-scheduler
-  realising this pushforward, and it is recovered by \emph{disintegration}. To a
-  finite $Y$-history $E_Y$ attach the fibre weight
-  \[
-    g(E_Y, E_X) \;=\; pe_X.probOf(E_X)
-    \qquad\text{for } E_X \text{ in the fibre } f_\ast E_X = E_Y,
-  \]
-  and let the $Y$-scheduler at $E_Y$ emit each next move with probability
-  proportional to the total $g$-weight of the fibre members emitting a preimage of
-  that move. This is exactly the posterior over the $f$-fibre of $E_Y$ weighted by
-  path mass --- it averages $pe_X$'s next-step law over all $X$-histories that $f$
-  collapses onto $E_Y$. Because labels are untouched, the induced $sys_Y$-execution
-  assigns each tight $Y$-history the summed $probOf$-mass of its fibre, so
-  $traceProb$ is preserved cone by cone and the realised trace distribution is
-  again $D$.
+  Fix a probabilistic execution $pe_X$ with initial distribution $\delta_{sys_X.init}$ realising $D$.
+  Since $f$ preserves labels, pushing each $X$-history forward to the $Y$-history $f_\ast E_X$ leaves the label sequence alone, hence the trace and the tightness status.
+  What must be produced is a \emph{single} $sys_Y$-scheduler realising the pushforward, and it is recovered by \emph{disintegration}: at a finite $Y$-history $E_Y$, emit each next move with probability proportional to the total $probOf$-weight of the members of the fibre $f_\ast E_X = E_Y$ that emit a preimage of that move.
+  That weight is the posterior over the fibre weighted by path mass, so the induced $sys_Y$-execution assigns each tight $Y$-history the summed $probOf$-mass of its fibre, and $traceProb$ is preserved cone by cone.
 \end{proof}

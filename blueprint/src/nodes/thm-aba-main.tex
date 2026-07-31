@@ -2,29 +2,15 @@
   \label{thm:aba-main}
   \lean{PLTS.ABA.refines}\lean{PLTS.ABA.main}\leanok
   \uses{thm:aba-netflat, thm:aba-exploded-atd, thm:aba-substitution, thm:aba-flatspec-refines, thm:aba-coresim, thm:aba-spec-safe}
-  Every trace distribution achievable by the deployed protocol is achievable by
-  the ABA specification, and hence every positive-probability trace of the
-  deployed protocol satisfies Validity and Agreement.
-  The four steps of the chain enter as four inclusions chained by transitivity
-  of set inclusion; transitivity of probabilistic forward simulation is not
-  used.
-  The composed simulation is additionally provided, by
-  Theorem~\ref{thm:forward-trans}, along the composite of the four relations:
-  the graph of the regrouping, the pointwise round substitution, the graph of
-  the deflation, and the core relation.\lean{PLTS.ABA.simComposed}
-  All three are machine-checked axiom-clean, documented by pinned axiom guards.
+  Every trace distribution achievable by the deployed protocol is achievable by the ABA specification, and hence every positive-probability trace of the deployed protocol satisfies Validity and Agreement.
+  The four steps of the chain enter as four inclusions chained by transitivity of set inclusion; transitivity of probabilistic forward simulation is not used.
+  The composed simulation is additionally provided, along the composite of the four relations: the graph of the regrouping, the pointwise round substitution, the graph of the deflation, and the core relation.\lean{PLTS.ABA.simComposed}
+  \leandeclnamed{refines}{PLTS.ABA.refines}, \leandeclnamed{main}{PLTS.ABA.main} and \leandeclnamed{simComposed}{PLTS.ABA.simComposed} are machine-checked axiom-clean, documented by pinned axiom guards.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{thm:aba-netflat, thm:aba-substitution, thm:aba-flatspec-refines, thm:aba-coresim, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, thm:forward-trans}
-  The two conclusions are those of Theorem~\ref{thm:aba-netflat}, assembled
-  from the substitution inclusion of Theorem~\ref{thm:aba-substitution}, the
-  deflation inclusion of Theorem~\ref{thm:aba-flatspec-refines}, and soundness
-  (Theorem~\ref{thm:forward-sound}) applied to
-  Theorem~\ref{thm:aba-coresim}.
-  For the composed simulation, apply transitivity of probabilistic forward
-  simulation (Theorem~\ref{thm:forward-trans}) to the four simulations
-  themselves rather than to their soundness inclusions.
-  The two routes are independent: the inclusion never invokes transitivity of
-  simulation, so the headline does not rest on it.
+  The two conclusions are those of Theorem~\ref{thm:aba-netflat}.
+  For the composed simulation, apply transitivity of probabilistic forward simulation (Theorem~\ref{thm:forward-trans}) to the four simulations themselves rather than to their soundness inclusions.
+  The two routes are independent, the inclusion never invoking transitivity of simulation, so the headline does not rest on it.
 \end{proof}

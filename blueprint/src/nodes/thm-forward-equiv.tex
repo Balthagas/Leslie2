@@ -12,18 +12,7 @@
 
 \begin{proof}\leanok
   \uses{lem:bridge}
-  Both notions carry the \emph{same} relation $R$: the state type of
-  $\mathcal{D}(sys_A^w)$ is $\operatorname{PMF} State_A$, exactly the type of the
-  forward simulation's abstract argument. On initial states, the forward
-  simulation's ``distribution supported on $sys_A.init$'' is forced to be the Dirac
-  $\delta_{sys_A.init}$, which is the initial state of $\mathcal{D}(sys_A^w)$; and
-  the internal vs.\ external case split coincides because $\tau$ is canonical. The
-  step clauses then match verbatim under the bridge (Lemma~\ref{lem:bridge}): a
-  forward step matches $s_C \xrightarrow{l} \mu_C$ by a weak transition
-  $\mu_A \Rightarrow (\omega \mathbin{\gg\!=} \mathrm{id})$, while a
-  $\mathcal{D}(sys_A^w)$ strong step matches it by a hyper-step
-  $\mu_A \xrightarrow{l} \omega$, i.e.\
-  $hyperStep\ sys_A^w\ \mu_A\ l\ (\omega \mathbin{\gg\!=}\mathrm{id})$ --- and these
-  are equivalent, with the \emph{same} coupling $\omega$ and the same
-  $\operatorname{PMFRel} R\ \mu_C\ \omega$ witnessing both.
+  Both notions carry the \emph{same} relation $R$, the state type of $\mathcal{D}(sys_A^w)$ being $\operatorname{PMF} State_A$, which is the type of the forward simulation's abstract argument.
+  On initial states, the forward simulation's distribution supported on $sys_A.init$ is forced to be $\delta_{sys_A.init}$, the initial state of $\mathcal{D}(sys_A^w)$, and the internal-versus-external case split coincides because $\tau$ is canonical.
+  The step clauses then match verbatim under the bridge (Lemma~\ref{lem:bridge}), the same coupling $\omega$ and the same $\operatorname{PMFRel} R\ \mu_C\ \omega$ witnessing both.
 \end{proof}

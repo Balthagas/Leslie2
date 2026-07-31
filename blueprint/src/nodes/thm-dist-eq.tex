@@ -7,28 +7,10 @@
 
 \begin{proof}\leanok
   \uses{lem:map}
-  The easy inclusion
-  $\operatorname{ATD}(sys) \subseteq \operatorname{ATD}(\mathcal{D}(sys))$
-  (\lean{PLTS.dist_traceProb_subset}) is Lemma~\ref{lem:map} for the Dirac
-  embedding $s \mapsto \delta_s$: a step $s \xrightarrow{l} \mu$ lifts to the
-  hyper-step $\delta_s \xrightarrow{l} \delta_\mu$, whose flattening is $\mu$.
-
-  The hard inclusion (\lean{PLTS.dist_traceProb_superset}) flattens the genuine
-  $\operatorname{PMF}(\operatorname{PMF} State)$-randomness of a
-  $\mathcal{D}(sys)$-execution $pe'$ back to an ordinary $sys$-execution. Its
-  initial distribution is $pe'.initState \mathbin{\gg\!=}\mathrm{id}$ and its
-  scheduler is the \emph{lowering} \lean{PLTS.ProbabilisticExecution.lower}: at a
-  concrete history $e$ with label list $labs$ and current state $s$, it forms the
-  \emph{trace-cone belief} \lean{PLTS.ProbabilisticExecution.beliefTC} --- the
-  posterior over those $\mathcal{D}(sys)$-histories $E$ whose full label list is
-  $labs$, weighted by the mass that $E$'s current distribution places on $s$ --- and
-  emits the corresponding average of $pe'$'s hyper-steps, each split into per-state
-  $sys$-steps by \lean{PLTS.ProbabilisticExecution.distHyperKernel}. Conditioning on
-  the \emph{full} label list (internal labels included, not just the external trace)
-  keeps the belief normalizer finite --- it is a level sum --- and makes the step a
-  genuine posterior. The resulting $sys$-execution has the same trace distribution as
-  $pe'$. The Dirac-init clause of $\operatorname{ATD}$ is exactly what makes this
-  reconstruction sound: a mixture initial distribution over
-  $\operatorname{PMF} State$ need not be realised by any single $sys$-execution, and
-  the belief reconstruction would then be unsound.
+  The easy inclusion (\leandeclnamed{dist_traceProb_subset}{PLTS.dist_traceProb_subset}) is Lemma~\ref{lem:map} for the Dirac embedding $s \mapsto \delta_s$, under which a step $s \xrightarrow{l} \mu$ lifts to the hyper-step $\delta_s \xrightarrow{l} \delta_\mu$.
+  The hard inclusion (\leandeclnamed{dist_traceProb_superset}{PLTS.dist_traceProb_superset}) flattens a $\mathcal{D}(sys)$-execution back to an ordinary one by the lowering \leandeclnamed{lower}{PLTS.ProbabilisticExecution.lower}.
+  At a concrete history the lowering forms the trace-cone belief \leandeclnamed{beliefTC}{PLTS.ProbabilisticExecution.beliefTC}, the posterior over those $\mathcal{D}(sys)$-histories carrying the same full label list, weighted by the mass each of them places on the current state.
+  It then emits the corresponding average of hyper-steps, split into per-state $sys$-steps by \leandeclnamed{distHyperKernel}{PLTS.ProbabilisticExecution.distHyperKernel}.
+  Conditioning on the full label list rather than on the external trace keeps the normaliser finite, it being a level sum, and makes the step a genuine posterior.
+  The Dirac-init clause of $\operatorname{ATD}$ is what makes the reconstruction sound: a mixture initial distribution over $\operatorname{PMF} State$ need not be realised by any single $sys$-execution.
 \end{proof}

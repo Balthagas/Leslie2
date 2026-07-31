@@ -2,50 +2,15 @@
   \label{def:aba-procnet}
   \lean{PLTS.ABA.GBCA.ProcNodeN}\lean{PLTS.ABA.CoreNodeN}\lean{PLTS.ABA.Net.ABANodeN}\lean{PLTS.ABA.Net.NetEvt}\lean{PLTS.ABA.Net.NLab}\lean{PLTS.ABA.Net.netEvtLabels}\lean{PLTS.ABA.Net.ABAProcStepN}\lean{PLTS.ABA.Net.ABAProcN}\leanok
   \uses{def:aba-labels, def:aba-gbca-vocab, def:aba-core-vocab, def:relabel, def:syncproduct}
-  The stage node $\mathrm{ProcNodeN}(n)$ is the stage record $proc$ of Definition~\ref{def:aba-gbca-vocab} together with the inbox rows $inbox(k)$ indexed by sender, the messages that have been delivered to this process from $k$.
-  It has no outbox: what a process has multicast is not among the things its own rules may read.
-  The round-loop node $\mathrm{CoreNodeN}(n)$ is the control record $proc$ of Definition~\ref{def:aba-core-vocab} together with the rows $decIn(k)$ of DECIDED receipts indexed by sender.
   The state of process $j$ is
   \[
     \mathrm{ABANodeN}(n) \;=\;
       \mathrm{CoreNodeN}(n) \times (\mathbb{N} \to \mathrm{ProcNodeN}(n)),
   \]
-  its round-loop node and one stage node per round.
-  No field of it names another process's record, none is a copy of the corrupted set, and none is a corruption flag.
-
-  The automaton $\mathrm{ABAProcN}(P,j)$ runs over the extended alphabet
-  \[
-    \mathrm{NLab}(n) \;=\; \mathrm{Lab}(n) \oplus \mathrm{NetEvt}(n),
-  \]
-  where $\mathrm{NetEvt}$ names the rendezvous the shared alphabet cannot: the stage multicast $\mathrm{gsnd}(r,j,m)$ and the stage delivery $\mathrm{gdlv}(r,i,j,m)$ of $m$ from $j$ to $i$; the DECIDED relay $\mathrm{dsnd}(j,b)$ and the DECIDED delivery $\mathrm{ddlv}(i,j,b)$; the fused coin return $\mathrm{retWPub}(r,id,c,b)$, which carries the payload $b$ to be published beside the coin $c$; the graded-agreement call $\mathrm{gcallLoop}(r,id,b)$ against an already-opened stage record; and the five Byzantine drives $\mathrm{byzCallG}$, $\mathrm{byzCallGLoop}$, $\mathrm{byzRetG}$, $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ (D11).
-  The set $\mathrm{netEvtLabels}(n)$ of these labels is what the composition hides; the silent label of $\mathrm{NLab}(n)$ is that of $\mathrm{Lab}(n)$, so every one of them is observable and hence hideable.
-
-  The rule table has forty-four rows, sixteen over the shared alphabet and twenty-eight over the rendezvous alphabet.
-  Every transition is Dirac, and no row fires on $\tau$: a program moves only in a rendezvous or on a shared label.
-  Every label of either alphabet has a row of process $j$ --- the participant's, or an idle self-loop --- so full synchronisation lets a label's owner move while every other program stands.
-  Every guard reads $j$'s node and nothing else.
-
-  On $\mathrm{callABA}(j,b)$ the round-loop half records the input and the estimate and opens round $0$; beside it a self-loop fixes the node, so a call is never refused for want of a rule.
-  On $\mathrm{retABA}(j,b)$ it returns under an $n-f$ DECIDED quorum over $j$'s receipt rows and the flag $returned$ unset.
-  Having multicast $b$ oneself, the second guard of that line of \algoref{alg:aba-core}{the ABA implementation}, is a condition on the pools and is therefore the adversary's conjunct rather than the program's.
-  On either label naming another process the automaton idles.
-  On $\mathrm{callG}\,r\,j\,b$ the round loop hands its estimate to the round-$r$ stage record, which opens on it; the accompanying $\langle\mathrm{INPUT},b\rangle$ multicast is the adversary's half.
-  A call against a stage record already opened moves the round loop alone and travels on $\mathrm{gcallLoop}\,r\,j\,b$ instead, that being the case in which nothing is multicast.
-  On $\mathrm{retG}\,r\,j\,g$ three rows, one per grade, read the SEAL level of the round-$r$ stage node: an $n-f$ $\mathrm{SEAL}\,v$ receipt quorum for grade $A$, an $n-f$ any-$\mathrm{SEAL}$ count carrying a $\mathrm{SEAL}\,v$ witness together with $f+1$ $\mathrm{BIND}\,v$ receipts and $|Valid| > 1$ for grade $B$, and an $n-f$ $\mathrm{SEAL}\,\bot$ quorum with $|Valid| > 1$ for grade $C$ --- the three wait-until cases of the last block of \algoref{alg:gbca-impl}{the GBCA implementation}, each reading the receipts its own case names.
-  These are the only rows on which stage evidence guards a shared label, and both halves of the process move: the stage record is marked returned and the round loop takes the grade as its estimate.
-  On $\mathrm{callW}\,r\,j$ and $\mathrm{retW}\,r\,j\,c$ the automaton carries the round loop's half alone, the oracle's being supplied at the outer composition; the $\mathrm{retW}$ row is the coin return that publishes nothing, the round's grade not having been an $A$ (D10).
-  On $\mathrm{fail}(k)$ the program stands, whoever is named.
-
-  The rendezvous rows carry the process's half of a joint step with the adversary.
-  On $\mathrm{gsnd}\,r\,j\,m$ the eight stage multicasts of \algoref{alg:gbca-impl}{the GBCA implementation} at round $r$ --- the $\mathrm{INPUT}$ relay, the $\mathrm{ECHO}$, the two $\mathrm{VOTE}$s, the two $\mathrm{BIND}$s and the two $\mathrm{SEAL}$s --- each write the write-once slot of their own level under the guards of their own line, and each require the stage record to have received its input (D8); pooling $m$ is the adversary's half.
-  On $\mathrm{gdlv}\,r\,j\,k\,m$ the receiver files $m$ under the inbox row of sender $k$; that $m$ really is $k$'s is the adversary's conjunct.
-  On $\mathrm{dsnd}\,j\,b$ the relay fires on an $f+1$ DECIDED quorum (D12$'$), the write-once condition on the pool and the pool insert both being the adversary's.
-  On $\mathrm{ddlv}\,j\,k\,b$ the receiver records $b$ from $k$, refused when that receipt is already held.
-  The two layers carry different guards by design: a DECIDED delivery is refused when the receiver already holds that payload from that sender, whereas a stage delivery carries no counterpart, delivery into a set of receipts being idempotent.
-  On $\mathrm{retWPub}\,r\,j\,c\,b$ the round advance publishes $b$, the round's grade having been $A\,b$ (D10); the payload is dictated by the node's own grade and is not a component of the shared coin-return label, which is why the fused case travels on a rendezvous label of its own.
-
-  Five rendezvous label classes are the Byzantine drives (D11), and on each of them the program supplies the instance-side content the monolithic rule has and nothing further.
-  A $\mathrm{byzCallG}$ opens the stage record on the driven bit and leaves the round loop where it stands; the three $\mathrm{byzRetG}$ rows mark the stage record returned under the same SEAL-level evidence as the honest returns, again leaving the round loop; and $\mathrm{byzCallGLoop}$, $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ have no instance-side content, so the program stands.
-  A round-loop write never occurs on a drive.
-  The corrupted set appears in none of these rows: what makes a drive available is the adversary's guard, and what a program does when one arrives is the program's own local effect.
+  its round-loop node --- the control record of Definition~\ref{def:aba-core-vocab} together with the DECIDED receipt rows $decIn(k)$ --- and one stage node per round, the stage record of Definition~\ref{def:aba-gbca-vocab} together with the inbox rows $inbox(k)$.
+  There is no outbox, no copy of the corrupted set and no corruption flag, so every guard of the automaton $\mathrm{ABAProcN}(P,j)$ reads $j$'s own node.
+  It runs over the extended alphabet $\mathrm{NLab}(n) = \mathrm{Lab}(n) \oplus \mathrm{NetEvt}(n)$, where $\mathrm{NetEvt}$ names the rendezvous the shared alphabet cannot: the stage multicast $\mathrm{gsnd}(r,j,m)$ and the stage delivery $\mathrm{gdlv}(r,i,j,m)$; the DECIDED relay $\mathrm{dsnd}(j,b)$ and the DECIDED delivery $\mathrm{ddlv}(i,j,b)$; the fused coin return $\mathrm{retWPub}(r,id,c,b)$, which carries beside the coin the payload to be published (D10); the graded-agreement call $\mathrm{gcallLoop}(r,id,b)$ against an already-opened stage record; and the five Byzantine drives $\mathrm{byzCallG}$, $\mathrm{byzCallGLoop}$, $\mathrm{byzRetG}$, $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ (D11).
+  The set $\mathrm{netEvtLabels}(n)$ of these labels is what the composition hides, the silent label of $\mathrm{NLab}(n)$ being that of $\mathrm{Lab}(n)$.
+  Every transition is Dirac, no row fires on $\tau$, and every label of either alphabet has a row of process $j$ --- the participant's, or an idle self-loop --- so full synchronisation lets a label's owner move while every other program stands.
+  Full rule table: \leandecl{PLTS.ABA.Net.ABAProcN}.
 \end{definition}
