@@ -11,13 +11,11 @@
 \usepackage[showmore, dep_graph]{blueprint}
 
 
-% plasTeX does not model the algorithm float; left unmodeled, the float's
-% \label attaches to the preceding environment and steals its anchor.
-% Declaring it as a numbered environment gives its labels a proper target.
-\newtheorem{algorithm}{Algorithm}
-
 \input{macros/common}
 \input{macros/web}
+
+% This edition omits the algorithm floats, so a reference renders as its prose name.
+\renewcommand{\algoref}[2]{#2}
 
 \home{https://sathiyavrs.github.io/Leslie2}
 \github{https://github.com/sathiyavrs/Leslie2}

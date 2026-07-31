@@ -1,0 +1,12 @@
+\begin{theorem}[Soundness of probabilistic forward simulation]
+  \label{thm:forward-sound}
+  \lean{PLTS.ProbabilisticForwardSimulation.achievableTraceDists_subset}\leanok
+  \uses{def:forwardsim, def:achievable, thm:forward-equiv, thm:strongsound,
+        thm:dist-eq, thm:weakclosure-eq}
+  A forward simulation of $sys_C$ by $sys_A$ gives $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A)$: \leandecl{PLTS.ProbabilisticForwardSimulation.achievableTraceDists_subset}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:forward-equiv, thm:strongsound, thm:dist-eq, thm:weakclosure-eq}
+  See the Lean proof of \leandecl{PLTS.ProbabilisticForwardSimulation.achievableTraceDists_subset}.
+\end{proof}

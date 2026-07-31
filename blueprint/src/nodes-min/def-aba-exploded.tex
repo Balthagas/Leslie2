@@ -1,0 +1,6 @@
+\begin{definition}[The exploded system]
+  \label{def:aba-exploded}
+  \lean{PLTS.ABA.CoreProcStepN}\lean{PLTS.ABA.coreProcN}\lean{PLTS.ABA.ANetState}\lean{PLTS.ABA.ANetState.corrupt}\lean{PLTS.ABA.ANetStep}\lean{PLTS.ABA.aNet}\lean{PLTS.ABA.ExpState}\lean{PLTS.ABA.explodedPre}\lean{PLTS.ABA.explodedGroup}\lean{PLTS.ABA.exploded}\leanok
+  \uses{def:aba-gbcasub, def:aba-procnet, def:aba-netadv, def:aba-core-vocab, def:relabel, def:syncproduct, def:process-algebra}
+  The deployed protocol cut along its layer boundaries into four factors --- the family of round subsystems, the $n$ round loops, the ABA-side network and the coin oracle --- with the graded-agreement family in the refinable slot: \leandecl{PLTS.ABA.exploded}.
+\end{definition}

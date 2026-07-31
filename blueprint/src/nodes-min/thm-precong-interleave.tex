@@ -1,0 +1,11 @@
+\begin{theorem}[Precongruence for interleaving]
+  \label{thm:precong-interleave}
+  \lean{PLTS.ProbabilisticForwardSimulation.interleave}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  Componentwise forward simulations lift to the interleavings of the two families, along the pointwise lifted relation: \leandecl{PLTS.ProbabilisticForwardSimulation.interleave}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:process-algebra, lem:decomp, lem:mix}
+  See the Lean proof of \leandecl{PLTS.ProbabilisticForwardSimulation.interleave}.
+\end{proof}

@@ -1,0 +1,32 @@
+% This file makes the web version of the full edition of the blueprint.
+% It shares macros and figures with the default edition (web.tex); its
+% connective prose (content-full.tex) and its node bodies (nodes/, against the
+% default edition's nodes-min/) are its own, and
+% blueprint/check-node-sync.py keeps the frontmatter of each node pair in sync.
+
+\documentclass{report}
+
+\usepackage{amssymb, amsthm, amsmath}
+\usepackage{hyperref}
+\usepackage[showmore, dep_graph]{blueprint}
+
+
+% plasTeX does not model the algorithm float; left unmodeled, the float's
+% \label attaches to the preceding environment and steals its anchor.
+% Declaring it as a numbered environment gives its labels a proper target.
+\newtheorem{algorithm}{Algorithm}
+
+\input{macros/common}
+\input{macros/web}
+
+\home{https://sathiyavrs.github.io/Leslie2}
+\github{https://github.com/sathiyavrs/Leslie2}
+\dochome{https://sathiyavrs.github.io/Leslie2/docs}
+
+\title{leslie2 (full edition)}
+\author{Gaspard Reghem}
+
+\begin{document}
+\maketitle
+\input{content-full}
+\end{document}

@@ -1,0 +1,11 @@
+\begin{lemma}[Hyper-step / weak-transition bridge]
+  \label{lem:bridge}
+  \lean{PLTS.hyperStep_weakClosure_of_weakTau, PLTS.weakTau_of_hyperStep_weakClosure, PLTS.hyperStep_weakClosure_of_weakStep, PLTS.weakStep_of_hyperStep_weakClosure}\leanok
+  \uses{def:hyperstep, def:weakclosure, lem:decomp, lem:mix, lem:bind}
+  A hyper-step of $sys^w$ out of a distribution is exactly a weak transition of $sys$ out of that distribution, silent or external according to the label: \leandecl{PLTS.hyperStep_weakClosure_of_weakTau}, \leandecl{PLTS.weakTau_of_hyperStep_weakClosure}, \leandecl{PLTS.hyperStep_weakClosure_of_weakStep}, \leandecl{PLTS.weakStep_of_hyperStep_weakClosure}.
+\end{lemma}
+
+\begin{proof}\leanok
+  \uses{lem:decomp, lem:mix, lem:bind}
+  See the Lean proofs of \leandecl{PLTS.weakTau_of_hyperStep_weakClosure} and \leandecl{PLTS.weakStep_of_hyperStep_weakClosure} and of their two converses.
+\end{proof}

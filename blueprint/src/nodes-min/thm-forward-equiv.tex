@@ -1,0 +1,11 @@
+\begin{theorem}[Forward simulation $=$ strong simulation into $\mathcal{D}(\cdot^w)$]
+  \label{thm:forward-equiv}
+  \lean{PLTS.probabilisticForwardSimulation_iff_strong_dist_weakClosure}\leanok
+  \uses{def:forwardsim, def:strongsim, def:dist, def:weakclosure, lem:bridge}
+  A relation is a forward simulation of $sys_C$ by $sys_A$ exactly when it is a strong simulation of $sys_C$ by $\mathcal{D}(sys_A^w)$: \leandecl{PLTS.probabilisticForwardSimulation_iff_strong_dist_weakClosure}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{lem:bridge}
+  See the Lean proof of \leandecl{PLTS.probabilisticForwardSimulation_iff_strong_dist_weakClosure}.
+\end{proof}

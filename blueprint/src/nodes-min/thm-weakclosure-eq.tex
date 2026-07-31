@@ -1,0 +1,11 @@
+\begin{theorem}[The weak closure preserves trace distributions]
+  \label{thm:weakclosure-eq}
+  \lean{PLTS.weakClosure_traceProb_eq}\leanok
+  \uses{def:achievable, def:weakclosure}
+  The weak closure achieves exactly the trace distributions of the system it closes, $\operatorname{ATD}(sys) = \operatorname{ATD}(sys^w)$: \leandecl{PLTS.weakClosure_traceProb_eq}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{lem:map}
+  See the Lean proof of \leandecl{PLTS.weakClosure_traceProb_eq}.
+\end{proof}

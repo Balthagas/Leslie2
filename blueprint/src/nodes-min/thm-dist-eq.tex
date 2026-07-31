@@ -1,0 +1,11 @@
+\begin{theorem}[The distribution-monad lift preserves trace distributions]
+  \label{thm:dist-eq}
+  \lean{PLTS.dist_traceProb_eq}\leanok
+  \uses{def:achievable, def:dist}
+  The distribution-monad lift achieves exactly the trace distributions of the system it lifts, $\operatorname{ATD}(sys) = \operatorname{ATD}(\mathcal{D}(sys))$: \leandecl{PLTS.dist_traceProb_eq}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{lem:map}
+  See the Lean proof of \leandecl{PLTS.dist_traceProb_eq}.
+\end{proof}

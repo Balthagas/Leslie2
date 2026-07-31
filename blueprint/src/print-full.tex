@@ -1,6 +1,8 @@
-% This file makes the printable version of the concise edition of the
-% blueprint. It shares macros, figures, and the formal nodes with the full
-% edition (print.tex); only the connective prose differs (content-min.tex).
+% This file makes the printable version of the full edition of the blueprint.
+% It shares macros and figures with the default edition (print.tex); its
+% connective prose (content-full.tex) and its node bodies (nodes/, against the
+% default edition's nodes-min/) are its own, and
+% blueprint/check-node-sync.py keeps the frontmatter of each node pair in sync.
 
 \documentclass[a4paper]{article}
 
@@ -27,14 +29,11 @@
 \input{macros/common}
 \input{macros/print}
 
-% This edition omits the algorithm floats, so a reference renders as its prose name.
-\renewcommand{\algoref}[2]{#2}
-
-\title{leslie2 (concise edition)}
+\title{leslie2 (full edition)}
 \author{Gaspard Reghem}
 
 \begin{document}
 \maketitle
 \tableofcontents
-\input{content-min}
+\input{content-full}
 \end{document}

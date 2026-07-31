@@ -1,0 +1,6 @@
+\begin{definition}[The process-algebra operators]
+  \label{def:process-algebra}
+  \lean{PLTS.System.parallel}\lean{PLTS.System.interleave}\lean{PLTS.System.abstract}\leanok
+  \uses{def:system}
+  Parallel composition synchronises two systems on a visible label and moves one of them on $\tau$, interleaving moves exactly one component of an indexed family per step, and abstraction relabels a chosen label set to $\tau$: \leandecl{PLTS.System.parallel}, \leandecl{PLTS.System.interleave} and \leandecl{PLTS.System.abstract}.
+\end{definition}

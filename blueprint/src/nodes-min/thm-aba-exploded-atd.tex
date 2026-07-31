@@ -1,0 +1,11 @@
+\begin{theorem}[The exploded presentation is exact]
+  \label{thm:aba-exploded-atd}
+  \lean{PLTS.ABA.regG}\lean{PLTS.ABA.regC}\lean{PLTS.ABA.regA}\lean{PLTS.ABA.regroup}\lean{PLTS.ABA.explodedForward}\lean{PLTS.ABA.explodedConverse}\lean{PLTS.ABA.explodedSim}\lean{PLTS.ABA.explodedSimConverse}\lean{PLTS.ABA.exploded_atd}\leanok
+  \uses{def:aba-exploded, def:aba-procnet, def:aba-netadv, def:strongfunctional, def:achievable, thm:forward-sound}
+  The deployed system and the same system cut along its layer boundaries achieve exactly the same trace distributions, $\operatorname{ATD}(\mathrm{netFlat}(P)) = \operatorname{ATD}(\mathrm{exploded}(P))$: \leandecl{PLTS.ABA.exploded_atd}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-exploded, def:aba-procnet, def:aba-netadv, def:strongfunctional, def:achievable, thm:forward-sound}
+  See the Lean proof of \leandecl{PLTS.ABA.exploded_atd}.
+\end{proof}

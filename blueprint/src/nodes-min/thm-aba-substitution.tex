@@ -1,0 +1,11 @@
+\begin{theorem}[Substitution]
+  \label{thm:aba-substitution}
+  \lean{PLTS.ABA.substSimX}\lean{PLTS.ABA.substitutionX}\lean{PLTS.ABA.netFlat_flatSpec}\leanok
+  \uses{def:aba-flatspec, def:aba-exploded, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-exploded-atd, def:achievable}
+  Replacing each round's graded-agreement subsystem by its specification is a forward simulation of $\mathrm{exploded}(P)$ by $\mathrm{flatSpec}(P)$, \leandecl{PLTS.ABA.substSimX}, and hence $\operatorname{ATD}(\mathrm{netFlat}(P)) \subseteq \operatorname{ATD}(\mathrm{flatSpec}(P))$: \leandecl{PLTS.ABA.substitutionX}, \leandecl{PLTS.ABA.netFlat_flatSpec}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-flatspec, def:aba-exploded, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-exploded-atd}
+  See the Lean proofs of \leandecl{PLTS.ABA.substitutionX} and \leandecl{PLTS.ABA.netFlat_flatSpec}.
+\end{proof}

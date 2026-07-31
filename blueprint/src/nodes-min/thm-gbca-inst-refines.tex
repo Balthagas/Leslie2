@@ -1,0 +1,11 @@
+\begin{theorem}[GBCA instance refinement]
+  \label{thm:gbca-inst-refines}
+  \lean{PLTS.ABA.GBCA.implRefines}\leanok
+  \uses{def:aba-gbca-impl, def:aba-subspecs}
+  The GBCA implementation instance is forward-simulated by the GBCA specification instance, along a relation certifying the exclusion set and the grade by receipt patterns and firing a kill on demand: \leandecl{PLTS.ABA.GBCA.implRefines}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-gbca-impl, def:aba-subspecs, def:forwardsim}
+  See the Lean proof of \leandecl{PLTS.ABA.GBCA.implRefines}.
+\end{proof}

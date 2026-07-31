@@ -1,0 +1,10 @@
+\begin{theorem}[Trace-support bridge]
+  \label{thm:trace-support}
+  \lean{PLTS.exists_exec_of_traceProb_ne_zero}\lean{PLTS.is_exec_of_probOf_ne_zero}\lean{PLTS.safety_transfer}\leanok
+  A trace of positive probability under a Dirac-initialised probabilistic execution comes from a genuine execution whose events characterise membership in that trace, so safety of trace supports transfers along inclusion of achievable trace distributions: \leandecl{PLTS.exists_exec_of_traceProb_ne_zero}, \leandecl{PLTS.is_exec_of_probOf_ne_zero}, \leandecl{PLTS.safety_transfer}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:probexec, def:traceprob, def:exec, def:achievable}
+  See the Lean proofs of \leandecl{PLTS.exists_exec_of_traceProb_ne_zero} and \leandecl{PLTS.safety_transfer}.
+\end{proof}

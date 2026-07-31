@@ -1,8 +1,8 @@
 \begin{definition}[Non-vacuity]
   \label{def:aba-examples}
   \lean{PLTS.ABA.P4}\leanok
-  \uses{def:aba-hybrids}
-  Machine-checked witnesses, at $n = 4$ and $f = 1$, that the analysis-side composition executes: a connected $21$-step run of $\mathrm{hybridSpec}(P4)$ of positive probability reaching $\mathrm{retABA}\,0\,\mathrm{true}$, every step of it Dirac but the single coin flip, whose chosen branch carries mass $\varepsilon > 0$.
+  \uses{thm:aba-flatspec-spec}
+  Machine-checked witnesses, at $n = 4$ and $f = 1$, that the composition the proof of Theorem~\ref{thm:aba-flatspec-spec} passes through executes: a connected $21$-step run of it of positive probability reaching $\mathrm{retABA}\,0\,\mathrm{true}$, every step of it Dirac but the single coin flip, whose chosen branch carries mass $\varepsilon > 0$.
   A synchronised corruption broadcast is witnessed separately.
   Parameters: \leandecl{PLTS.ABA.P4}; the witnesses are in \leanmodule{Leslie2Protocols/ABA/Examples}.
 \end{definition}

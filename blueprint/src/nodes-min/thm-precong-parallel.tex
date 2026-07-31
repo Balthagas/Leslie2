@@ -1,0 +1,11 @@
+\begin{theorem}[Precongruence for parallel composition]
+  \label{thm:precong-parallel}
+  \lean{PLTS.ProbabilisticForwardSimulation.parallel_right}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  A forward simulation survives parallel composition with any fixed context, along the pointwise lifted relation: \leandecl{PLTS.ProbabilisticForwardSimulation.parallel_right}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:process-algebra, lem:decomp, lem:mix, lem:bind}
+  See the Lean proof of \leandecl{PLTS.ProbabilisticForwardSimulation.parallel_right}.
+\end{proof}

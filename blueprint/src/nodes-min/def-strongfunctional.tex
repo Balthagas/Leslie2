@@ -1,0 +1,11 @@
+\begin{lemma}[Functional strong matchings]
+  \label{def:strongfunctional}
+  \lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional}\lean{PLTS.ProbabilisticForwardSimulation.congr_rel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_diracRel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_converse}\lean{PLTS.prodPMF_map_swap}\lean{PLTS.System.parallel_swap_step}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  A map on states that carries each step to the pushforward step on the same label is a probabilistic forward simulation along its graph, and a map whose image reflects steps is one along the converse of its graph: \leandecl{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional}, \leandecl{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_converse}.
+\end{lemma}
+
+\begin{proof}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  See the Lean proofs of \leandecl{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional} and \leandecl{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_converse}.
+\end{proof}

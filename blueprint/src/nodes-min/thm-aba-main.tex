@@ -1,0 +1,11 @@
+\begin{theorem}[Refinement and correctness of ABA]
+  \label{thm:aba-main}
+  \lean{PLTS.ABA.refines}\lean{PLTS.ABA.main}\leanok
+  \uses{thm:aba-netflat, thm:aba-exploded-atd, thm:aba-substitution, thm:aba-flatspec-spec, thm:aba-spec-safe}
+  Every trace distribution achievable by the deployed protocol is achievable by the ABA specification, and every positive-probability trace of the deployed protocol satisfies Validity and Agreement: \leandecl{PLTS.ABA.refines}, \leandecl{PLTS.ABA.main}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:aba-netflat, thm:aba-substitution, thm:aba-flatspec-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, thm:forward-trans}
+  See the Lean proofs of \leandecl{PLTS.ABA.refines} and \leandecl{PLTS.ABA.main}.
+\end{proof}

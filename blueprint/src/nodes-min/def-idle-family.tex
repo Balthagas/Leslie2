@@ -1,0 +1,6 @@
+\begin{definition}[Idle padding and instance families]
+  \label{def:idle-family}
+  \lean{PLTS.System.withIdle}\lean{PLTS.System.family}\leanok
+  \uses{def:process-algebra}
+  Idle self-loops on foreign labels make full synchronisation emulate sync-set composition, and the $\mathbb{N}$-indexed instance family moves one instance per owned or silent label, broadcasts corruption to all of them, and idles otherwise: \leandecl{PLTS.System.withIdle} and \leandecl{PLTS.System.family}.
+\end{definition}

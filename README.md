@@ -146,10 +146,13 @@ off in CI (warnings show locally but do not fail the build).
 ## Blueprint & conventions
 
 The mathematical write-up is a Lean blueprint under `blueprint/src/`, in two
-editions over the same formal nodes (`nodes/`): the full one (`content.tex`,
-entry points `web.tex` / `print.tex`), built by `leanblueprint pdf` /
-`leanblueprint web`, and a concise one (`content-min.tex`, entry points
-`web-min.tex` / `print-min.tex`), built by `bash blueprint/build-min.sh`. It
+editions over one set of statements. The default one is a reference: each node
+states its object or result and names the Lean declaration that carries it
+(`content.tex` over `nodes-min/`, entry points `web.tex` / `print.tex`), built
+by `leanblueprint pdf` / `leanblueprint web`. The full one adds the rule
+inventories, the pseudocode and the proof bodies (`content-full.tex` over
+`nodes/`, entry points `web-full.tex` / `print-full.tex`), built by
+`bash blueprint/build-full.sh`. It
 cross-links to Lean declarations by their **fully-qualified name** (e.g.
 `PLTS.dist_traceProb_eq`), which this reorganization leaves unchanged — every
 declaration still lives in `namespace PLTS`, so only file locations moved. The

@@ -1,0 +1,11 @@
+\begin{theorem}[The deployment-shaped specification refines the ABA specification]
+  \label{thm:aba-flatspec-spec}
+  \lean{PLTS.ABA.context}\lean{PLTS.ABA.hybridSpec}\lean{PLTS.ABA.deflCoreA}\lean{PLTS.ABA.flatSpecDefl}\lean{PLTS.ABA.flatSpecForward}\lean{PLTS.ABA.flatSpecSim}\lean{PLTS.ABA.flatSpec_refines}\lean{PLTS.ABA.coreSim}\leanok
+  \uses{def:aba-flatspec, def:aba-spec, def:aba-core, def:aba-subspecs, def:aba-labels, def:process-algebra, def:idle-family, def:strongfunctional, def:achievable, thm:forward-sound}
+  The deployment-shaped specification refines the ABA specification, $\operatorname{ATD}(\mathrm{flatSpec}(P)) \subseteq \operatorname{ATD}(\mathrm{spec}(P))$: \leandecl{PLTS.ABA.flatSpec_spec}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-flatspec, def:aba-spec, def:strongfunctional, def:weakstep, def:achievable, thm:forward-sound}
+  The proof re-coordinates the exploded round loop into the monolithic composition \leandecl{PLTS.ABA.hybridSpec} and applies the core simulation there; see the Lean proofs of \leandecl{PLTS.ABA.flatSpec_refines} and \leandecl{PLTS.ABA.coreSim}.
+\end{proof}

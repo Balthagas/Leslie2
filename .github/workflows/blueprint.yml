@@ -58,7 +58,7 @@ jobs:
       # \lean/\uses macros fall back to the default renderers, and neither the
       # dependency graph nor lean_decls is emitted -- with a zero exit code. The
       # 3.13 pin is load-bearing; do not float it to the runner default.
-      - name: Set up Python for the concise blueprint edition
+      - name: Set up Python for the full blueprint edition
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
@@ -67,17 +67,27 @@ jobs:
         run: pip install leanblueprint
 
       # Ordering constraint: this step MUST run before "Compile blueprint and
-      # documentation" below. It overwrites blueprint/lean_decls with the concise
-      # edition's subset of declarations; the full `leanblueprint web` inside the
-      # docgen-action step then regenerates the authoritative file that
-      # `checkdecls` reads. Only the web edition is built here -- there is no TeX
-      # toolchain on the runner outside the docgen-action container, so the
-      # concise PDF is deliberately not built in CI.
-      - name: Build concise blueprint edition and stage it for deployment
+      # documentation" below. It overwrites blueprint/lean_decls with the full
+      # edition's declarations; the default `leanblueprint web` inside the
+      # docgen-action step then regenerates the file that its own `checkdecls`
+      # reads, from the default edition's harvest. Only the web edition is built
+      # here -- there is no TeX toolchain on the runner outside the docgen-action
+      # container, so the full PDF is deliberately not built in CI.
+      - name: Build full blueprint edition and stage it for deployment
         run: |
-          cd blueprint/src && plastex -c plastex-min.cfg web-min.tex && cd ../..
-          mkdir -p home_page/blueprint-min
-          cp -r blueprint/web-min/. home_page/blueprint-min/
+          cd blueprint/src && plastex -c plastex-full.cfg web-full.tex && cd ../..
+          mkdir -p home_page/blueprint-full
+          cp -r blueprint/web-full/. home_page/blueprint-full/
+
+      # The full edition names declarations the default edition does not (its rule
+      # tables in particular), so the default harvest does not cover them: this
+      # checkdecls run against the full edition's lean_decls is the only check
+      # those declarations get. It must run while lean_decls still holds the full
+      # harvest, i.e. before the docgen-action step overwrites it.
+      - name: Check the full edition's declarations and node sync
+        run: |
+          lake exe checkdecls blueprint/lean_decls
+          python3 blueprint/check-node-sync.py
 
       - name: Compile blueprint and documentation
         uses: leanprover-community/docgen-action@deed0cdc44dd8e5de07a300773eb751d33e32fc8 # 2025-10-26

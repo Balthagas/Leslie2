@@ -5,12 +5,12 @@ shell.nix
 blueprint/lean_decls
 blueprint/print/
 blueprint/web/
-blueprint/print-min/
-blueprint/web-min/
+blueprint/print-full/
+blueprint/web-full/
 
 # Blueprint output staged into the Jekyll site for deployment
 home_page/blueprint/
-home_page/blueprint-min/
+home_page/blueprint-full/
 home_page/blueprint.pdf
 blueprint/src/*.aux
 blueprint/src/*.fdb_latexmk

@@ -30,13 +30,13 @@ There is no test suite. CI (`.github/workflows/blueprint.yml`) runs `lake-action
 
 ## Blueprint
 
-The math write-up is a Lean blueprint in `blueprint/src/` (`content.tex` is the actual content; `web.tex` / `print.tex` are the web/PDF entry points; `macros/` holds the `\lean{}`/`\leanok` macros used to cross-link to Lean declarations). The Jekyll site under `home_page/` is what gets published to GitHub Pages alongside the blueprint and doc-gen output. The blueprint hyperlinks at `https://sathiyavrs.github.io/Leslie2`.
+The math write-up is a Lean blueprint in `blueprint/src/` (`content.tex` is the actual content, connective prose around the statement nodes it inputs from `nodes-min/`; `web.tex` / `print.tex` are the web/PDF entry points; `macros/` holds the `\lean{}`/`\leanok` macros used to cross-link to Lean declarations). The Jekyll site under `home_page/` is what gets published to GitHub Pages alongside the blueprint and doc-gen output. The blueprint hyperlinks at `https://sathiyavrs.github.io/Leslie2`.
 
-When adding a Lean declaration that should appear in the blueprint, mirror it with a `\begin{definition}\label{...}\lean{NamespacedName}\leanok ...\end{definition}` block in `content.tex` — `checkdecls` will fail CI if the `\lean{}` target doesn't resolve.
+When adding a Lean declaration that should appear in the blueprint, mirror it with a `\begin{definition}\label{...}\lean{NamespacedName}\leanok ...\end{definition}` block in a node file — `checkdecls` will fail CI if the `\lean{}` target doesn't resolve. A node added to `nodes-min/` needs its counterpart in `nodes/` and vice versa; see the full edition below.
 
 ### Blueprint commands (local loop)
 
-The blueprint is a genuine [leanblueprint](https://github.com/PatrickMassot/leanblueprint) project; the CLI is installed via pipx. Run from the repo root:
+The blueprint is a genuine [leanblueprint](https://github.com/PatrickMassot/leanblueprint) project; the CLI is installed via pipx. These commands build the default edition — the reference-style one, whose nodes state each object and result and point at the Lean. Run from the repo root:
 
 ```bash
 leanblueprint pdf        # print edition → blueprint/print/print.pdf (latexmk/xelatex)
@@ -46,23 +46,25 @@ leanblueprint checkdecls # verify every \lean{} target exists (needs a completed
 leanblueprint serve      # serve blueprint/web/ at http://0.0.0.0:8000/
 ```
 
-#### Concise edition
+#### Full edition
 
-`blueprint/src/content-min.tex` is a second, much shorter edition of the same blueprint: it shares the formal nodes (`src/nodes/`), the figures (`src/figures/`) and the macros with the full edition and carries its own connective prose. It has its own roots, `src/web-min.tex` and `src/print-min.tex`, with its own plasTeX config `src/plastex-min.cfg`. Build it with
+`blueprint/src/content-full.tex` is a second, much longer edition of the same blueprint: it carries the rule inventories, the pseudocode floats and the full proof bodies (`src/nodes/`), where the default edition gives one-sentence statements pointing at the Lean (`src/nodes-min/`). The two editions share the figures (`src/figures/`) and the macros. The full edition has its own roots, `src/web-full.tex` and `src/print-full.tex`, with its own plasTeX config `src/plastex-full.cfg`. Build it with
 
 ```bash
-bash blueprint/build-min.sh   # both editions of the concise blueprint
-                              #   → blueprint/web-min/ and blueprint/print-min/print-min.pdf
+bash blueprint/build-full.sh   # both versions of the full blueprint
+                               #   → blueprint/web-full/ and blueprint/print-full/print-full.pdf
 ```
 
 or by hand, from `blueprint/src`:
 
 ```bash
-plastex -c plastex-min.cfg web-min.tex             # → ../web-min/
-latexmk -output-directory=../print-min print-min.tex  # → ../print-min/print-min.pdf
+plastex -c plastex-full.cfg web-full.tex               # → ../web-full/
+latexmk -output-directory=../print-full print-full.tex  # → ../print-full/print-full.pdf
 ```
 
-Caveat: the min web build writes `blueprint/lean_decls`, the same path `leanblueprint web` writes, and it harvests only the declarations the concise edition names. `build-min.sh` saves and restores that file; if you run `plastex -c plastex-min.cfg` by hand, re-run the full `leanblueprint web` before `lake exe checkdecls blueprint/lean_decls`.
+Caveat: the full web build writes `blueprint/lean_decls`, the same path `leanblueprint web` writes, and the two editions harvest different declaration sets. `build-full.sh` saves and restores that file; if you run `plastex -c plastex-full.cfg` by hand, re-run `leanblueprint web` before `lake exe checkdecls blueprint/lean_decls`.
+
+The two node directories must agree on their formal frontmatter (`\label`, `\lean`, `\leanok`, `\uses`) — that is what the dependency graph and the declaration harvest are built from. `python3 blueprint/check-node-sync.py` checks every pair and prints `N/N in sync`; only the bodies are allowed to differ.
 
 Caveats: plasTeX 3.1 silently breaks on **Python 3.14** (packages fail to load, `\lean`/`\uses` fall back to default renderers, no dep graph, no `lean_decls`, no theorem badges), and `leanblueprint web` resolves `plastex` from PATH — so there must be exactly ONE pipx installation, on Python ≤ 3.13, exposing both apps: `pipx install leanblueprint --python /opt/homebrew/bin/python3.13 --include-deps` (uninstall any standalone `plastex` pipx venv first). The dependency graph needs no external `dot` binary (`pygraphviz` ships bundled Graphviz libraries). plasTeX caches the parse in `blueprint/src/web.paux` — after preamble/URL changes, `rm -rf blueprint/web blueprint/src/web.paux` before rebuilding.
 

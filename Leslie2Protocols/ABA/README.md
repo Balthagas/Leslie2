@@ -171,5 +171,8 @@ of scope here) see `../NOTES-Liveness-Roadmap.md`; for how the encoding stands
 against the source blueprint and ABDY22 beyond the D-registry above, see
 `../NOTES-Fidelity.md`. The prose account of this case study is the ABA chapter
 of the repository's own blueprint (`../../blueprint/src/`), which carries it in
-two editions over one set of formal nodes: the full one (`content.tex`, with the
-rule inventories and the pseudocode) and a concise one (`content-min.tex`).
+two editions over one set of statements: the default one (`content.tex`, a
+reference stating each object and result against its Lean declaration, built by
+`leanblueprint pdf` / `leanblueprint web`) and a full one (`content-full.tex`,
+adding the rule inventories, the pseudocode and the proof bodies, built by
+`bash blueprint/build-full.sh`).

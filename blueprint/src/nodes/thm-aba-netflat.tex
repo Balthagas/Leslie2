@@ -1,7 +1,7 @@
 \begin{theorem}[Safety of the deployed protocol]
   \label{thm:aba-netflat}
   \lean{PLTS.ABA.flatSpec_spec}\lean{PLTS.ABA.netFlat_spec}\lean{PLTS.ABA.netFlat_safe}\lean{PLTS.ABA.netFlat_traces}\lean{PLTS.ABA.exploded_safe}\leanok
-  \uses{def:aba-procnet, def:aba-netadv, thm:aba-exploded-atd, thm:aba-substitution, thm:aba-flatspec-refines, thm:aba-coresim, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
+  \uses{def:aba-procnet, def:aba-netadv, thm:aba-exploded-atd, thm:aba-substitution, thm:aba-flatspec-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
   Let $P$ be parameters.
   Then $\operatorname{ATD}(\mathrm{netFlat}(P)) \subseteq \operatorname{ATD}(\mathrm{spec}(P))$, and every trace $t$ of positive probability under an achievable trace distribution of $\mathrm{netFlat}(P)$ satisfies Validity and Agreement.
   Such a $t$ also has positive probability under an achievable trace distribution of $\mathrm{flatSpec}(P)$.
@@ -10,9 +10,9 @@
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{thm:aba-exploded-atd, thm:aba-substitution, thm:aba-flatspec-refines, thm:aba-coresim, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
+  \uses{thm:aba-exploded-atd, thm:aba-substitution, thm:aba-flatspec-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
   Theorem~\ref{thm:aba-substitution} gives the third conclusion, $\operatorname{ATD}(\mathrm{netFlat}(P)) \subseteq \operatorname{ATD}(\mathrm{flatSpec}(P))$.
-  Theorem~\ref{thm:aba-flatspec-refines} and soundness (Theorem~\ref{thm:forward-sound}) applied to Theorem~\ref{thm:aba-coresim} carry that on through $\operatorname{ATD}(\mathrm{hybridSpec}(P))$ to $\operatorname{ATD}(\mathrm{spec}(P))$, the three inclusions chained by transitivity of set inclusion, which is the first conclusion.
+  Theorem~\ref{thm:aba-flatspec-spec} carries that on to $\operatorname{ATD}(\mathrm{spec}(P))$, the two inclusions chained by transitivity of set inclusion, which is the first conclusion.
   The trace-support bridge (Theorem~\ref{thm:trace-support}) transfers safety of the specification's trace supports (Theorem~\ref{thm:aba-spec-safe}) along that inclusion, which is the second.
   For the last, Theorem~\ref{thm:aba-exploded-atd} is an equality of the two sets of achievable trace distributions, so an achievable trace distribution of $\mathrm{exploded}(P)$ is one of $\mathrm{netFlat}(P)$ and the safety conclusion reads across.
 \end{proof}

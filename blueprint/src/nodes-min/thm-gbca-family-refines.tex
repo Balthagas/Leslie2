@@ -1,0 +1,11 @@
+\begin{theorem}[Family congruence and the graded-agreement family refinement]
+  \label{thm:gbca-family-refines}
+  \lean{PLTS.ForwardSimulation.family}\lean{PLTS.ABA.specSide}\lean{PLTS.ABA.RsubAll}\lean{PLTS.ABA.famSubSim}\lean{PLTS.ABA.famSubSimP}\leanok
+  \uses{thm:aba-subsim, def:aba-gbcasub, def:idle-family, lem:bridge}
+  Per-instance forward simulations lift to the $\mathbb{N}$-indexed families, and the lift makes the family of round subsystems forward-simulated by the family of round specifications: \leandecl{PLTS.ForwardSimulation.family}, \leandecl{PLTS.ABA.famSubSimP}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:aba-subsim, def:idle-family, lem:bridge}
+  See the Lean proofs of \leandecl{PLTS.ForwardSimulation.family} and \leandecl{PLTS.ABA.famSubSimP}.
+\end{proof}

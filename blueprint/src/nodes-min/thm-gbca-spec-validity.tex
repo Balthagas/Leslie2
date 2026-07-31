@@ -1,0 +1,11 @@
+\begin{theorem}[Validity of the GBCA specification, safety half]
+  \label{thm:gbca-spec-validity}
+  \lean{PLTS.ABA.GBCA.specInst_validity}\leanok
+  \uses{def:aba-subspecs, thm:trace-support}
+  On a trace of the GBCA specification instance whose every round-$r$ call carries $v$ unless its caller is corrupted somewhere along the trace, every round-$r$ return hands out $v$: \leandecl{PLTS.ABA.GBCA.specInst_validity}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-subspecs, thm:trace-support}
+  See the Lean proof of \leandecl{PLTS.ABA.GBCA.specInst_validity}.
+\end{proof}
