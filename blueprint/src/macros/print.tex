@@ -22,6 +22,8 @@
 % text mode. The two-argument form typesets its short display name alone.
 \newcommand{\leandecl}[1]{\texttt{\detokenize{#1}}}
 \newcommand{\leandeclnamed}[2]{\texttt{\detokenize{#1}}}
+% Pointer to a whole Lean source file, by slashed module path without extension.
+\newcommand{\leanmodule}[1]{\texttt{\detokenize{#1}}}
 % Make sure that arguments of \uses and \proves are real labels, by using invisible refs:
 % latex prints a warning if the label is not defined, but nothing is shown in the pdf file.
 % It uses LaTeX3 programming, this is why we use the expl3 package.
