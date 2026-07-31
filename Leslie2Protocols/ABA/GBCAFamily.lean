@@ -8,23 +8,20 @@ import Leslie2Protocols.ABA.GBCASim
 import Leslie2Protocols.Framework.FamilySim
 
 /-!
-# The GBCA family refinement
+# Broadcast compatibility of the GBCA instance refinement
 
-The per-instance GBCA refinement (`GBCA.implRefines`, `ABA/GBCASim.lean`) lifts
-to the ℕ-indexed instance families via the congruence
-`ForwardSimulation.family` (`Framework/FamilySim.lean`):
+`GBCA.instRel`, the per-instance relation of `GBCA.implRefines`
+(`ABA/GBCASim.lean`), is preserved by the synchronized corruption of both
+sides: the two `corrupt` functions share the guard `id ∉ F ∧ |F| < f` and
+`instRel` aligns the `F`s, so a `fail` broadcast leaves every instance related.
+This is the broadcast ingredient a family lifting of the refinement consumes,
+and it is proved directly rather than through `implRefines`, whose `fail` case
+only yields an existential match. Its consumer is the round subsystem's family
+lifting (`ABA/GBCASub.lean`).
 
-* `GBCA.implFailAct` / `GBCA.implFamily` — the implementation-side broadcast
-  transform and family, mirroring `GBCA.failAct` / `GBCA.specFamily`;
-* `GBCA.instRel_corrupt` — broadcast compatibility of the simulation relation:
-  the two `corrupt` functions share the guard `id ∉ F ∧ |F| < f`, and `instRel`
-  aligns the `F`s, so a synchronized corruption preserves the relation. This is
-  proved directly (not through `implRefines`, whose `fail` case only yields an
-  existential match);
-* `GBCA.familyRefines` — the headline: the implementation family
-  probabilistically forward-simulates the specification family along the Dirac
-  lift of the pointwise instance relation, by `ForwardSimulation.toProbabilistic`
-  on the lifted forward simulation (both families are LTS).
+`Framework/FamilySim.lean` is imported here for the downstream tree: the family
+congruence `ForwardSimulation.family` reaches `ABA/GBCASub.lean` and
+`ABA/FlatSpec.lean` along this file.
 -/
 
 namespace PLTS
@@ -32,22 +29,6 @@ namespace ABA
 namespace GBCA
 
 variable {P : Params}
-
-/-- The broadcast transform of the GBCA implementation family: corruption on
-`fail id`, identity on every other label (the concrete counterpart of
-`GBCA.failAct`). -/
-def implFailAct (P : Params) : Lab P.n → ImplState P.n → ImplState P.n
-  | .fail id, s => s.corrupt P id
-  | _, s => s
-
-/-- The ℕ-indexed family of GBCA implementation instances. -/
-noncomputable def implFamily (P : Params) :
-    System (ℕ → ImplState P.n) (Lab P.n) :=
-  System.family (implInst P) Lab.gbcaRound Lab.isFail (implFailAct P)
-
-/-- The GBCA implementation family is an LTS. -/
-theorem implFamily_isLTS (P : Params) : (implFamily P).IsLTS :=
-  System.family_isLTS (implInst_isLTS P) _ _ _
 
 /-! ### Broadcast compatibility of the simulation relation
 
@@ -98,32 +79,6 @@ theorem instRel_corrupt (P : Params) (r : ℕ) (id : Fin P.n)
         rw [corrupt_grade] at hg
         obtain ⟨i, hi⟩ := hR.gradeC_ev hg
         exact ⟨i, by rw [ImplState.corrupt_recvCount]; exact hi⟩ }
-
-/-- `instRel` is compatible with the family broadcast transforms: the `hglob`
-hypothesis of `ForwardSimulation.family` for the GBCA families (only `fail`
-labels are global). -/
-theorem instRel_failAct (P : Params) :
-    ∀ l : Lab P.n, Lab.isFail l → ∀ (r : ℕ) (x : ImplState P.n)
-      (y : SpecState P.n), instRel P r x y →
-      instRel P r (implFailAct P l x) (failAct P l y) := by
-  intro l hl r x y h
-  cases l
-  case fail id => exact instRel_corrupt P r id h
-  all_goals exact hl.elim
-
-/-! ### The family refinement -/
-
-/-- **The GBCA family refinement**: the ℕ-indexed implementation family
-refines the specification family — a probabilistic forward simulation of the
-implementation by the specification along the Dirac lift of the pointwise
-instance relation. -/
-theorem familyRefines (P : Params) :
-    ProbabilisticForwardSimulation (implFamily P) (specFamily P)
-      (diracRel fun s t => ∀ r, instRel P r (s r) (t r)) :=
-  ForwardSimulation.toProbabilistic (implFamily_isLTS P) (specFamily_isLTS P)
-    (fun r => instRel_init P r)
-    (ForwardSimulation.family Lab.gbcaRound Lab.isFail (implFailAct P)
-      (failAct P) (implRefines P) (instRel_failAct P))
 
 end GBCA
 end ABA

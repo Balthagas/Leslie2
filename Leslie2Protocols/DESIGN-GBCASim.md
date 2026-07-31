@@ -17,10 +17,10 @@ specInst P r : System (SpecState P.n) (Lab P.n)     -- graded-binding spec, D1/D
 target       : ForwardSimulation (implInst P r) (specInst P r) (instRel P r)
 ```
 
-Both systems are Dirac-transition LTSs; `GBCAFamily.lean` lifts the instance
-refinement to the ℕ-indexed families and to a probabilistic forward simulation
-via `ForwardSimulation.toProbabilistic`, exactly as for every other instance
-pair of the development.
+Both systems are Dirac-transition LTSs. The instance refinement reaches the
+ℕ-indexed families through the round subsystem (`ABA/GBCASub.lean`), whose
+family lifting takes its broadcast ingredient from
+`GBCAFamily.instRel_corrupt`.
 
 ### The implementation (D18): the six-level ladder
 
