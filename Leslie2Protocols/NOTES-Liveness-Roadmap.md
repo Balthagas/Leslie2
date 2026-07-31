@@ -67,7 +67,11 @@ over the trace distributions of the including system.
 **Leslie2 (this repo)** — probabilistic simulation, *complete*:
 - Weak probabilistic forward simulation with proven soundness AND transitivity
   (`Results.lean`; the ω-composition `weakTau_flatten` closed 2026-07-22).
-- The full ABA safety chain (`GBCA impl ⊑ spec`, substitution, the core simulation).
+- The full ABA safety chain, stated in deployment coordinates: the explosion of the
+  deployed protocol along its layer boundaries (exact in both directions), the
+  substitution of each round's graded-agreement subsystem by its specification
+  (`GBCA impl ⊑ spec` under one family congruence), the spec-side repartition, and the
+  core simulation.
 - `Leslie2Extra/Fairness`: fairness-marked PLTS + ranked **strong** probabilistic
   simulation, sound for surely-fair achievable trace distributions
   (`fairAchievableTraceDists_subset`, needs `ImageFinite` for a König lift). Proven.
@@ -126,7 +130,7 @@ unprovable; ideal-side fair weak divergence *genuinely fails*. Both protocols in
 prove liveness **directly** on the concrete system via `assumes_fair_wf` + WF1/leads-to
 chains (sorry-free), keeping simulation for safety only. ABA has the same corruption
 structure (Byzantine processes, adversarial delivery), so the same mismatch should be
-expected at the `hybridImpl ↔ ABA.spec` boundary.
+expected at the `netFlat ↔ ABA.spec` boundary.
 
 ## 4. Recommended shape of an ABA liveness effort
 
@@ -146,8 +150,11 @@ Ordered by expected value-for-effort:
 2. **The §6.3 port** (ambitious add-on): `FairWeakProbabilisticSimulation` — merge
    `WeakDivPreserving`'s stutter-ranking with `Leslie2Extra/Fairness`'s probabilistic
    descent/König machinery over Leslie2's weak simulation. Sound transfer of fair
-   trace-distribution inclusion would push the spec-level mass bound down to
-   `hybridImpl`.
+   trace-distribution inclusion would push the spec-level mass bound down the chain to
+   `netFlat`, which is where a fair-scheduling statement about this protocol belongs:
+   the three steps from the exploded presentation to `ABA.spec` are inclusions, and the
+   explosion itself is exact in both directions (`exploded_atd`, `ABA/Exploded.lean`), so
+   a mass bound reaching `exploded` is a mass bound on `netFlat`.
    Budget the corrupt-fairness mismatch as the primary risk: the fairness markings on
    both sides must be chosen so that ideal-side actions are fair only under honest
    enablement (state-dependent `fair_labels` — the witness already supports
@@ -254,8 +261,9 @@ the sub-protocol slot.
 - PLTS + adapters in Leslie: `Leslie_LTS/Framework/Probabilistic.lean:34-70`
 - Certificates: `Leslie/Prob/Liveness.lean` (`FairASTCertificate`, `sound` at :1719)
 - This repo's fairness line: `Leslie2Extra/Fairness/Simulation/{Defs,Soundness}.lean`
-- Corruption-blind deployed model and its correspondence with the analyzed hybrid:
-  `ABA/FlatNetwork.lean` (`netFlat_atd`, `netAdv`) — the presentation to state fair
+- Corruption-blind deployed model: `ABA/FlatNetwork.lean` (`netFlat`, `netAdv`), with its
+  re-cut along the layer boundaries and the exactness of that re-cut in
+  `ABA/Exploded.lean` (`exploded`, `exploded_atd`) — the presentation to state fair
   termination over if it is to be stated of the deployed system: the `fail` row belongs
   to the network adversary and is guarded by `k ∉ F ∧ |F| < f`, so `fail` is enabled
   exactly while budget remains and the marking of `fail` is read off that component's

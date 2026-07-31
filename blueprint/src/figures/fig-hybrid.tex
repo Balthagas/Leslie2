@@ -1,4 +1,5 @@
-% The hybrids (PLTS.ABA.hybridImpl / hybridSpec): wiring under abstract hiddenAPI.
+% The analysis-side composition (PLTS.ABA.hybridSpec): wiring under abstract hiddenAPI,
+% and the deflation from the deployment-shaped specification (PLTS.ABA.flatSpecDefl).
 \begin{tikzpicture}[
     >={Stealth[round]}, semithick,
     box/.style={draw, rounded corners, align=center, font=\footnotesize,
@@ -11,10 +12,11 @@
   \draw[dashed, rounded corners] (-0.7,-2.6) rectangle (10.9,2.5);
   \node[font=\footnotesize] at (1.9,2.15) {$\mathrm{abstract}\ \mathrm{hiddenAPI}$};
   % boxes
-  \node[box] (core) at (2.1,-0.2) {Core\\ (fixed)};
-  \node[box, double] (gbca) at (7.0,1.1)
-    {GBCA family\\ impl\,$\Leftrightarrow$\,spec\\ (swappable)};
-  \node[box] (wcc) at (7.0,-1.5) {WCC.Spec family\\ (fixed)};
+  \node[box] (core) at (2.1,-0.2) {$\mathrm{core}(P)$\\ the round loop};
+  \node[box] (gbca) at (7.0,1.1)
+    {$\mathrm{GBCA.specFamily}(P)$\\ one instance per round};
+  \node[box] (wcc) at (7.0,-1.5)
+    {$\mathrm{WCC.specFamily}(P)$\\ the coin oracle};
   % environment outside the frame
   \node[ext] (env) at (-2.9,-0.2) {environment};
   % internal handshakes, hidden to tau
@@ -32,4 +34,12 @@
     node[api, above, pos=0.6]{$\mathrm{callABA}$} (core.west |- core.north);
   \draw[->] (core.west) to[out=200, in=20]
     node[api, below, pos=0.4]{$\mathrm{retABA}/\mathrm{fail}$} (env);
+  % the deployment-shaped specification below, and the deflation onto this composition
+  \node[box, minimum width=5.4cm] (flat) at (5.1,-5.0)
+    {$\mathrm{flatSpec}(P)$: the round specifications,\\
+     the $n$ round loops, the ABA-side network,\\ the coin oracle};
+  \draw[->, dashed] (flat.north) -- (5.1,-2.6);
+  \node[lbl, right, align=left] at (5.25,-3.5)
+    {along $\mathrm{flatSpecDefl}$: the $n$ round-loop\\
+     nodes and the ABA-side network\\ assembled into one $\mathrm{CoreState}$};
 \end{tikzpicture}

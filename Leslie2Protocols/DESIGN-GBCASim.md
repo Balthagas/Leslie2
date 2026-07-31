@@ -596,10 +596,17 @@ process: the stage node `GBCA.ProcNodeN` keeps the write-once `sentSeal` slot in
 its `proc` record and carries its own `sealCount` over its inbox rows, the
 rendezvous rows `gsndSealBit`/`gsndSealBot` are the seal multicasts read off
 that node, and the three `retG` rows (and their `byzRetG` twins) read the seal
-level off it. The bridge to the global view is `deflStageN`, which assembles the
-round-`r` `ImplState` from the round-`r` slices of the nodes and the network
-adversary's `pool r`; the seal-level counts agree across it because a deflated
-`recv` row is the sender's row of the node that receives it.
+level off it. The bridge to the global view is `GSub.subDefl`
+(`ABA/GBCASub.lean`), which assembles the round-`r` `ImplState` from the round
+subsystem's pieces — the stage programs' records and inbox rows, and the round's
+own message fabric, which holds the per-sender pools and the corrupted set; the
+seal-level counts agree across it (`subDefl_sealCount`) because a deflated
+`recv` row is the sender's row of the program that receives it. That bridge is
+what lets `GSub.subSim` consume `implRefines` as it stands: the projection
+`sub_projects` matches every subsystem transition with the monolithic
+instance's, one step for one step, and this file's refinement answers it, its
+weak answer read back at the subsystem's interface — which is what licenses
+replacing a round's subsystem by the graded agreement specification.
 
 ## Risks and open points
 
@@ -634,9 +641,9 @@ adversary's `pool r`; the seal-level counts agree across it because a deflated
    stays in the wall via the `j ∈ F` disjunct) and in `sentVote` (write-once),
    which is all the simulation needs. Any per-process decomposition must
    therefore transport it along the state map like the other `proc`-field
-   predicates — in `FlatNetwork.lean` that is `deflStageN_proc` for the slot and
-   `deflStageN_F` for the corrupted set, the latter reading the network
-   adversary's `F`.
+   predicates — in `ABA/GBCASub.lean` that is `subDefl_proc` for the slot and
+   `subDefl_F` for the corrupted set, the latter reading the copy of the
+   corrupted set held by the round's own message fabric.
 6. **Vacuous-fill hazard in `deadCert_of_sealBot_quorum`.** The Case B branch
    needs the global classical split "some honest bit-voter exists"; its
    **no**-branch uses `bindBot_conf` on a *specific* honest `BIND` sender

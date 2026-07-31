@@ -48,10 +48,11 @@
   \node[ann, anchor=west] at (7.85,-1.5)
     {$\mathrm{callW}$, $\mathrm{retW}$,\\ $\mathrm{byzCallW}$, $\mathrm{byzRetW}$,\\
      $\mathrm{retWPub}$};
-  % the assembly it is equal to
-  \node[box] (impl) at (4.9,-5.2) {the assembly\\ $\mathrm{hybridImpl}(P)$};
+  % the presentation it is equal to
+  \node[box] (impl) at (4.9,-5.2)
+    {the layer-boundary cut\\ $\mathrm{exploded}(P)$};
   \draw[<->, dashed] (4.9,-3.9) --
-    node[lbl, right, align=left, pos=0.72]{$\operatorname{ATD}$ equal, no restriction,\\ along $\mathrm{deflNet}$} (impl.north);
+    node[lbl, right, align=left, pos=0.72]{$\operatorname{ATD}$ equal, no restriction,\\ along $\mathrm{regroup}$} (impl.north);
   % the rendezvous bus legend, drawn last so it masks the descending arrows
   \node[ann, fill=white] at (4.7,-0.8)
     {$\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$,
