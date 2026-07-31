@@ -5,6 +5,8 @@ shell.nix
 blueprint/lean_decls
 blueprint/print/
 blueprint/web/
+blueprint/print-min/
+blueprint/web-min/
 blueprint/src/*.aux
 blueprint/src/*.fdb_latexmk
 blueprint/src/*.fls

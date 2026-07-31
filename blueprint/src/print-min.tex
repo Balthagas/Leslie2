@@ -1,0 +1,37 @@
+% This file makes the printable version of the concise edition of the
+% blueprint. It shares macros, figures, and the formal nodes with the full
+% edition (print.tex); only the connective prose differs (content-min.tex).
+
+\documentclass[a4paper]{article}
+
+\usepackage{geometry}
+
+\usepackage{expl3}
+
+\usepackage{amssymb, amsthm, mathtools}
+\usepackage[unicode,colorlinks=true,linkcolor=blue,urlcolor=magenta, citecolor=blue]{hyperref}
+
+\usepackage[warnings-off={mathtools-colon,mathtools-overbracket}]{unicode-math}
+
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\usepackage{tikz}
+\usetikzlibrary{automata,positioning,arrows.meta,quotes,shapes.geometric}
+
+% Prefer a float at the top of a text page over a page of floats alone.
+\renewcommand{\floatpagefraction}{0.85}
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\textfraction}{0.1}
+
+\input{macros/common}
+\input{macros/print}
+
+\title{leslie2 (concise edition)}
+\author{Gaspard Reghem}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\input{content-min}
+\end{document}

@@ -1,0 +1,25 @@
+% This file makes the web version of the concise edition of the blueprint.
+% It shares macros, figures, and the formal nodes with the full edition
+% (web.tex); only the connective prose differs (content-min.tex).
+
+\documentclass{report}
+
+\usepackage{amssymb, amsthm, amsmath}
+\usepackage{hyperref}
+\usepackage[showmore, dep_graph]{blueprint}
+
+
+\input{macros/common}
+\input{macros/web}
+
+\home{https://sathiyavrs.github.io/Leslie2}
+\github{https://github.com/sathiyavrs/Leslie2}
+\dochome{https://sathiyavrs.github.io/Leslie2/docs}
+
+\title{leslie2 (concise edition)}
+\author{Gaspard Reghem}
+
+\begin{document}
+\maketitle
+\input{content-min}
+\end{document}

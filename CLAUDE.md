@@ -46,6 +46,24 @@ leanblueprint checkdecls # verify every \lean{} target exists (needs a completed
 leanblueprint serve      # serve blueprint/web/ at http://0.0.0.0:8000/
 ```
 
+#### Concise edition
+
+`blueprint/src/content-min.tex` is a second, much shorter edition of the same blueprint: it shares the formal nodes (`src/nodes/`), the figures (`src/figures/`) and the macros with the full edition and carries its own connective prose. It has its own roots, `src/web-min.tex` and `src/print-min.tex`, with its own plasTeX config `src/plastex-min.cfg`. Build it with
+
+```bash
+bash blueprint/build-min.sh   # both editions of the concise blueprint
+                              #   → blueprint/web-min/ and blueprint/print-min/print-min.pdf
+```
+
+or by hand, from `blueprint/src`:
+
+```bash
+plastex -c plastex-min.cfg web-min.tex             # → ../web-min/
+latexmk -output-directory=../print-min print-min.tex  # → ../print-min/print-min.pdf
+```
+
+Caveat: the min web build writes `blueprint/lean_decls`, the same path `leanblueprint web` writes, and it harvests only the declarations the concise edition names. `build-min.sh` saves and restores that file; if you run `plastex -c plastex-min.cfg` by hand, re-run the full `leanblueprint web` before `lake exe checkdecls blueprint/lean_decls`.
+
 Caveats: plasTeX 3.1 silently breaks on **Python 3.14** (packages fail to load, `\lean`/`\uses` fall back to default renderers, no dep graph, no `lean_decls`, no theorem badges), and `leanblueprint web` resolves `plastex` from PATH — so there must be exactly ONE pipx installation, on Python ≤ 3.13, exposing both apps: `pipx install leanblueprint --python /opt/homebrew/bin/python3.13 --include-deps` (uninstall any standalone `plastex` pipx venv first). The dependency graph needs no external `dot` binary (`pygraphviz` ships bundled Graphviz libraries). plasTeX caches the parse in `blueprint/src/web.paux` — after preamble/URL changes, `rm -rf blueprint/web blueprint/src/web.paux` before rebuilding.
 
 ## Code conventions
