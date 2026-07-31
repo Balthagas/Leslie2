@@ -11,6 +11,11 @@
 \usepackage[showmore, dep_graph]{blueprint}
 
 
+% plasTeX does not model the algorithm float; left unmodeled, the float's
+% \label attaches to the preceding environment and steals its anchor.
+% Declaring it as a numbered environment gives its labels a proper target.
+\newtheorem{algorithm}{Algorithm}
+
 \input{macros/common}
 \input{macros/web}
 
