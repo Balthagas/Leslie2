@@ -13,7 +13,7 @@
 
   The hard inclusion (\lean{PLTS.weakClosure_traceProb_superset}) turns an abstract
   scheduler $ws$ on $sys^w$ into a concrete scheduler on $sys$ with the same trace
-  distribution. Algorithm~\ref{alg:expand} is the unfolding: it maintains an
+  distribution. \algoref{alg:expand}{The expansion procedure} is the unfolding: it maintains an
   abstract execution $we$ on $sys^w$ and a concrete execution $e$ on $sys$; each
   outer iteration draws a weak transition $wt = (l, \mu)$ from $ws(we)$, takes a
   \emph{witness} scheduler realising it (\lean{PLTS.Realises}: run from
