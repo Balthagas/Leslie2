@@ -75,6 +75,30 @@ round-`r` instance (`ABA/GBCAImpl.lean`), split between the program that owns
 the record and the fabric that owns the pool. What the monolithic rule writes
 on the core slice — the round loop's phase, estimate and grade — appears
 nowhere here: that slice is a different component of the deployed system.
+
+## The replacement
+
+`subSim` is what licenses replacing the round subsystem by the graded
+agreement specification. It runs through the monolithic instance in two legs.
+
+The first leg is strong and functional. `subDefl` reads a subsystem state as a
+monolithic instance state — the programs' records and inboxes beside the
+fabric's pools and corrupted set are the instance's four fields under a
+different partition — and `sub_projects` says that every transition of the
+subsystem is a transition of the monolithic instance at the deflated state,
+one step for one step, with no stuttering: a joint call is the instance's
+call, a hidden multicast or delivery is the protocol rule or the delivery it
+carries, a fabric injection is the instance's Byzantine row.
+
+The second leg is the per-instance refinement `GBCA.implRefines`
+(`ABA/GBCASim.lean`), used as it stands. Its answer is a weak run of the
+specification over the shared alphabet `Lab n`, which is lifted to the
+subsystem's interface along `gPull`: the projection that reads a Byzantine
+call drive as a call, a Byzantine return drive as a return, and the two call
+loops as calls, which the specification takes on its input-enabledness row
+(D11). The lifted specification `liftedSpecG` — the specification read back
+along `gPull` — is the system that replaces the subsystem, and `gActSpec` is
+the broadcast corruption act it carries at that alphabet.
 -/
 
 namespace PLTS
@@ -99,6 +123,146 @@ theorem System.parallel_isLTS {S₁ S₂ L : Type} [Silent L] {sys₁ : System S
     exact ⟨(a', b), ABA.Net.prodPMF_pure_pure a' b⟩
   · obtain ⟨b', rfl⟩ := h₂ _ _ _ hb
     exact ⟨(a, b'), ABA.Net.prodPMF_pure_pure a b'⟩
+
+/-! ### Reading a system over a finer alphabet
+
+`System.mapIdle φ` (`ABA/FlatNetwork.lean`) reads a system over `L` as a system
+over `L'`: a label `l'` with `φ l' = some l` delegates to the `l`-transitions,
+and a label outside the image of `φ` idles. Three facts are needed below —
+determinacy passes through, and both weak transitions of the underlying system
+are carried along any *section* of `φ` that respects the silent label.
+
+A section is what makes the transport trivial on transitions: `φ (g x) = some x`
+turns every `x`-step into a `g x`-step of the read-back system, with no
+condition on which labels occur in the witness execution. The second hypothesis,
+`g x = τ ↔ x = τ`, is what makes it trivial on traces: the transported execution
+hides exactly the transitions the original hid, so its trace is the original
+trace relabelled by `g`. -/
+
+/-- **`mapIdle` preserves the LTS property**: a delegated label keeps the
+underlying system's distribution, an idle one is a Dirac by construction. -/
+theorem System.mapIdle_isLTS {S L L' : Type} (φ : L' → Option L)
+    {sys : System S L} (h : sys.IsLTS) : (sys.mapIdle φ).IsLTS := by
+  intro s l' μ hstep
+  rw [System.mapIdle_step] at hstep
+  rcases hstep with ⟨l, -, hs⟩ | ⟨-, rfl⟩
+  · exact h s l μ hs
+  · exact ⟨s, rfl⟩
+
+/-- Relabel the transitions of an alternating sequence, leaving its states
+untouched — the label-side companion of `AlterSeq.map`. -/
+def AlterSeq.mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L) :
+    AlterSeq S L' where
+  init := e.init
+  trans := e.trans.map (fun lq => (g lq.1, lq.2))
+
+/-- `AlterSeq.mapLab` preserves termination: it rewrites labels in place. -/
+@[simp] theorem AlterSeq.mapLab_trans_terminates_iff {S L L' : Type} (g : L → L')
+    (e : AlterSeq S L) : (e.mapLab g).trans.Terminates ↔ e.trans.Terminates :=
+  Stream'.Seq.terminates_map_iff
+
+/-- `AlterSeq.mapLab` leaves the states of the run alone. -/
+theorem AlterSeq.stateAt_mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L)
+    (n : ℕ) : (e.mapLab g).stateAt n = e.stateAt n := by
+  cases n with
+  | zero => rfl
+  | succ k =>
+    change ((e.trans.map fun lq => (g lq.1, lq.2)).get? k).map Prod.snd
+      = (e.trans.get? k).map Prod.snd
+    rw [Stream'.Seq.map_get?]
+    cases e.trans.get? k with
+    | none => rfl
+    | some lq => rfl
+
+/-- `AlterSeq.mapLab` leaves the end state of the run alone. -/
+theorem AlterSeq.endState_mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L)
+    (h : e.trans.Terminates) (h' : (e.mapLab g).trans.Terminates) :
+    (e.mapLab g).endState h' = e.endState h := by
+  have hterm_iff : ∀ n, (e.mapLab g).trans.TerminatedAt n ↔ e.trans.TerminatedAt n := by
+    intro n
+    change (e.trans.map fun lq => (g lq.1, lq.2)).get? n = none ↔ e.trans.get? n = none
+    rw [Stream'.Seq.map_get?]
+    cases e.trans.get? n <;> simp
+  have hfind : Nat.find h' = Nat.find h := by
+    apply le_antisymm
+    · exact Nat.find_le ((hterm_iff _).mpr (Nat.find_spec h))
+    · exact Nat.find_le ((hterm_iff _).mp (Nat.find_spec h'))
+  have h1 := AlterSeq.stateAt_find_eq_endState (e.mapLab g) h'
+  rw [hfind, AlterSeq.stateAt_mapLab, AlterSeq.stateAt_find_eq_endState e h] at h1
+  exact (Option.some.inj h1).symm
+
+/-- Transport a partial execution along a label map that turns every step of
+`sys` into a step of `sys'`. -/
+theorem is_partial_exec_mapLab {S L L' : Type} {sys : System S L} {sys' : System S L'}
+    (g : L → L') (hg : ∀ s l μ, sys.step s l μ → sys'.step s (g l) μ)
+    {e : AlterSeq S L} (hpe : is_partial_exec e sys) :
+    is_partial_exec (e.mapLab g) sys' := by
+  intro n l s' hn
+  rw [show (e.mapLab g).trans = e.trans.map (fun lq : L × S => (g lq.1, lq.2)) from rfl,
+    Stream'.Seq.map_get?] at hn
+  cases hq : e.trans.get? n with
+  | none => rw [hq] at hn; exact absurd hn (by simp)
+  | some lq =>
+    obtain ⟨l₀, x⟩ := lq
+    rw [hq] at hn
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hn
+    obtain ⟨rfl, rfl⟩ := hn
+    obtain ⟨sn, μ, hsn, hstep, hmem⟩ := hpe n l₀ x hq
+    exact ⟨sn, μ, by rw [AlterSeq.stateAt_mapLab]; exact hsn, hg sn l₀ μ hstep, hmem⟩
+
+/-- The trace of a relabelled execution is the relabelled trace, whenever the
+label map preserves and reflects the silent label: both sides drop exactly the
+same transitions. -/
+theorem System.trace_mapLab {S L L' : Type} [Silent L] [Silent L']
+    (sys' : System S L') (sys : System S L) (g : L → L')
+    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
+    (e : AlterSeq S L) : sys'.trace (e.mapLab g) = (sys.trace e).map g := by
+  have hp : (fun q : L' × S => ¬ (q.1 = (Silent.τ : L'))) ∘
+      (fun lq : L × S => (g lq.1, lq.2))
+      = fun lq : L × S => ¬ (lq.1 = (Silent.τ : L)) := by
+    funext lq
+    exact propext (not_congr (hgτ lq.1))
+  unfold System.trace
+  rw [show (e.mapLab g).trans = e.trans.map (fun lq : L × S => (g lq.1, lq.2)) from rfl,
+    Stream'.Seq.filter_map, hp, ← Stream'.Seq.map_comp, ← Stream'.Seq.map_comp]
+  rfl
+
+section MapIdleWeak
+
+variable {S L L' : Type} [Silent L] [Silent L'] {sys : System S L}
+  {φ : L' → Option L} {s s' : S}
+
+/-- **A silent weak run survives the read-back**: `q =ε=> q'` of `sys` is
+`q =ε=> q'` of `sys.mapIdle φ`, the witness execution relabelled along a
+section `g` of `φ`. -/
+theorem System.weakLSilent_mapIdle (g : L → L') (hsec : ∀ x, φ (g x) = some x)
+    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
+    (h : sys.weakLSilent s s') : (sys.mapIdle φ).weakLSilent s s' := by
+  obtain ⟨e, hterm, hpe, hinit, hend, htr⟩ := h
+  refine ⟨e.mapLab g, (AlterSeq.mapLab_trans_terminates_iff g e).mpr hterm,
+    is_partial_exec_mapLab g
+      (fun _ x _ hx => (System.mapIdle_step_some (hsec x) _).mpr hx) hpe,
+    hinit, ?_, ?_⟩
+  · rw [AlterSeq.endState_mapLab g e hterm]; exact hend
+  · rw [System.trace_mapLab _ sys g hgτ, htr, Stream'.Seq.map_nil]
+
+/-- **A labelled weak run survives the read-back**: `q =l=> q'` of `sys` is
+`q =l'=> q'` of `sys.mapIdle φ` at any label `l'` the section `g` puts over
+`l`. -/
+theorem System.weakLStep_mapIdle (g : L → L') (hsec : ∀ x, φ (g x) = some x)
+    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
+    {l : L} {l' : L'} (hgl : g l = l') (h : sys.weakLStep s l s') :
+    (sys.mapIdle φ).weakLStep s l' s' := by
+  obtain ⟨e, hterm, hpe, hinit, hend, htr⟩ := h
+  refine ⟨e.mapLab g, (AlterSeq.mapLab_trans_terminates_iff g e).mpr hterm,
+    is_partial_exec_mapLab g
+      (fun _ x _ hx => (System.mapIdle_step_some (hsec x) _).mpr hx) hpe,
+    hinit, ?_, ?_⟩
+  · rw [AlterSeq.endState_mapLab g e hterm]; exact hend
+  · rw [System.trace_mapLab _ sys g hgτ, htr, Stream'.Seq.map_cons,
+      Stream'.Seq.map_nil, hgl]
+
+end MapIdleWeak
 
 namespace ABA
 namespace GSub
@@ -962,6 +1126,703 @@ theorem sub_gdlv_dead (P : Params) (r r' : ℕ) (i j : Fin P.n) (m : GBCA.Msg)
     · cases hn
     · exact absurd hτ (by simp)
     · exact absurd hτ (by simp)
+
+/-! ### The specification read over the subsystem's interface
+
+The graded agreement specification speaks the shared alphabet `Lab n`; the
+subsystem speaks the extended alphabet `NLab n`, in which the three Byzantine
+drives and the call loop of round `r` are separate labels. `gPull` is the
+projection that identifies them with the specification labels they stand for:
+a drive of the call is a call, a drive of the return is a return, and the two
+call loops are calls, which the specification takes on its input-enabledness
+row. Every other extended label — the deployed network's rendezvous, the coin
+drives — is off the specification's interface and idles.
+
+The lifted specification `liftedSpecG` is the specification read back along
+`gPull`. It is what the subsystem is replaced by: the drive labels stay visible
+at this boundary, and their authorisation is the surrounding network's business
+(D11). -/
+
+/-- The projection of the extended alphabet onto the specification's alphabet.
+-/
+def gPull (n : ℕ) : NLab n → Option (Lab n)
+  | Sum.inl l => some l
+  | Sum.inr (.gcallLoop r id b) => some (.callG r id b)
+  | Sum.inr (.byzCallG r k b) => some (.callG r k b)
+  | Sum.inr (.byzCallGLoop r k b) => some (.callG r k b)
+  | Sum.inr (.byzRetG r k out) => some (.retG r k out)
+  | Sum.inr _ => none
+
+@[simp] theorem gPull_inl {n : ℕ} (l : Lab n) : gPull n (Sum.inl l) = some l := rfl
+
+@[simp] theorem gPull_gcallLoop {n : ℕ} (r : ℕ) (id : Fin n) (b : Bool) :
+    gPull n (Sum.inr (.gcallLoop r id b)) = some (.callG r id b) := rfl
+
+@[simp] theorem gPull_byzCallG {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
+    gPull n (Sum.inr (.byzCallG r k b)) = some (.callG r k b) := rfl
+
+@[simp] theorem gPull_byzCallGLoop {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
+    gPull n (Sum.inr (.byzCallGLoop r k b)) = some (.callG r k b) := rfl
+
+@[simp] theorem gPull_byzRetG {n : ℕ} (r : ℕ) (k : Fin n) (out : GbcaOut) :
+    gPull n (Sum.inr (.byzRetG r k out)) = some (.retG r k out) := rfl
+
+@[simp] theorem gPull_gsnd {n : ℕ} (r : ℕ) (j : Fin n) (m : GBCA.Msg) :
+    gPull n (Sum.inr (.gsnd r j m)) = none := rfl
+
+@[simp] theorem gPull_gdlv {n : ℕ} (r : ℕ) (i j : Fin n) (m : GBCA.Msg) :
+    gPull n (Sum.inr (.gdlv r i j m)) = none := rfl
+
+@[simp] theorem gPull_dsnd {n : ℕ} (j : Fin n) (b : Bool) :
+    gPull n (Sum.inr (.dsnd j b)) = none := rfl
+
+@[simp] theorem gPull_ddlv {n : ℕ} (i j : Fin n) (b : Bool) :
+    gPull n (Sum.inr (.ddlv i j b)) = none := rfl
+
+@[simp] theorem gPull_retWPub {n : ℕ} (r : ℕ) (id : Fin n) (c b : Bool) :
+    gPull n (Sum.inr (.retWPub r id c b)) = none := rfl
+
+@[simp] theorem gPull_byzCallW {n : ℕ} (r : ℕ) (k : Fin n) :
+    gPull n (Sum.inr (.byzCallW r k)) = none := rfl
+
+@[simp] theorem gPull_byzRetW {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
+    gPull n (Sum.inr (.byzRetW r k b)) = none := rfl
+
+/-- The silent label projects to the silent label. -/
+@[simp] theorem gPull_tau (n : ℕ) :
+    gPull n (Silent.τ : NLab n) = some (Silent.τ : Lab n) := rfl
+
+/-- Only the silent label projects to the silent label: a drive projects to a
+handshake port, and every other extended label idles. -/
+theorem gPull_eq_tau {n : ℕ} {l : NLab n} (h : gPull n l = some Lab.tau) :
+    l = Sum.inl Lab.tau := by
+  cases l with
+  | inl l₀ => rw [Option.some.inj h]
+  | inr e => cases e <;> simp at h
+
+/-- **The lifted specification**: the round-`r` graded agreement specification
+read over the subsystem's interface. -/
+noncomputable def liftedSpecG (P : Params) (r : ℕ) :
+    System (GBCA.SpecState P.n) (NLab P.n) :=
+  (GBCA.specInst P r).mapIdle (gPull P.n)
+
+@[simp] theorem liftedSpecG_init (P : Params) (r : ℕ) :
+    (liftedSpecG P r).init = GBCA.SpecState.initial P.n := rfl
+
+/-- The lifted specification is an LTS: the specification is, and reading it
+back adds only Dirac self-loops. -/
+theorem liftedSpecG_isLTS (P : Params) (r : ℕ) : (liftedSpecG P r).IsLTS :=
+  System.mapIdle_isLTS _ (GBCA.specInst_isLTS P r)
+
+/-! ### Weak runs of the lifted specification
+
+A weak run of the specification is read back along a section of `gPull`. The
+section sends every label to its own copy on the left, except the one label the
+subsystem's step projects from, which is sent to the interface label the
+subsystem actually took — this is what turns a specification `callG` run into
+the answer to a Byzantine call drive. -/
+
+/-- The section of `gPull` that answers the interface label `l` over the
+specification label `l₀`. -/
+def gSect {n : ℕ} (l₀ : Lab n) (l : NLab n) : Lab n → NLab n :=
+  fun x => if x = l₀ then l else Sum.inl x
+
+theorem gPull_gSect {n : ℕ} {l₀ : Lab n} {l : NLab n} (hl : gPull n l = some l₀)
+    (x : Lab n) : gPull n (gSect l₀ l x) = some x := by
+  unfold gSect
+  by_cases hx : x = l₀
+  · rw [if_pos hx, hl, hx]
+  · rw [if_neg hx, gPull_inl]
+
+theorem gSect_tau {n : ℕ} {l₀ : Lab n} {l : NLab n} (hl : gPull n l = some l₀)
+    (hl₀ : l₀ ≠ (Silent.τ : Lab n)) (x : Lab n) :
+    gSect l₀ l x = (Silent.τ : NLab n) ↔ x = (Silent.τ : Lab n) := by
+  unfold gSect
+  by_cases hx : x = l₀
+  · rw [if_pos hx, hx]
+    constructor
+    · intro hlτ
+      have h2 : some l₀ = some (Silent.τ : Lab n) := by rw [← hl, hlτ]; rfl
+      exact absurd (Option.some.inj h2) hl₀
+    · intro h; exact absurd h hl₀
+  · rw [if_neg hx]
+    simp [Lab.silent_eq]
+
+/-- A silent weak run of the specification is a silent weak run of the lifted
+specification. -/
+theorem weakLSilent_liftedSpecG (P : Params) (r : ℕ) {s s' : GBCA.SpecState P.n}
+    (h : (GBCA.specInst P r).weakLSilent s s') : (liftedSpecG P r).weakLSilent s s' :=
+  System.weakLSilent_mapIdle Sum.inl (fun _ => rfl) (fun _ => by simp) h
+
+/-- A labelled weak run of the specification is a weak run of the lifted
+specification at any interface label projecting to the same specification
+label. -/
+theorem weakLStep_liftedSpecG (P : Params) (r : ℕ) {s s' : GBCA.SpecState P.n}
+    {l₀ : Lab P.n} {l : NLab P.n} (hl₀ : l₀ ≠ (Silent.τ : Lab P.n))
+    (hl : gPull P.n l = some l₀)
+    (h : (GBCA.specInst P r).weakLStep s l₀ s') : (liftedSpecG P r).weakLStep s l s' :=
+  System.weakLStep_mapIdle (gSect l₀ l) (gPull_gSect hl) (gSect_tau hl hl₀)
+    (by simp [gSect]) h
+
+/-! ### The deflation map
+
+The subsystem's state and the monolithic instance's state hold the same data
+under a different partition: the programs hold the local records and the
+inboxes, the fabric holds the pools and the corrupted set, and the monolithic
+state holds all four as top-level fields. `subDefl` is that repartition, and
+every rule of the subsystem is a rule of the monolithic instance read through
+it. -/
+
+/-- **The state bijection**: the programs' records and inboxes beside the
+fabric's pools and corrupted set, read as one monolithic instance state. -/
+def subDefl (P : Params) (σ : GSubState P.n) : GBCA.ImplState P.n where
+  proc := fun j => (σ.1 j).proc
+  sent := σ.2.pool
+  recv := fun i => (σ.1 i).inbox
+  F := σ.2.F
+
+@[simp] theorem subDefl_proc (P : Params) (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n)
+    (w : GNetState P.n) (j : Fin P.n) :
+    (subDefl P (u, w)).proc j = (u j).proc := rfl
+
+@[simp] theorem subDefl_sent (P : Params) (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n)
+    (w : GNetState P.n) : (subDefl P (u, w)).sent = w.pool := rfl
+
+@[simp] theorem subDefl_recv (P : Params) (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n)
+    (w : GNetState P.n) (i : Fin P.n) : (subDefl P (u, w)).recv i = (u i).inbox := rfl
+
+@[simp] theorem subDefl_F (P : Params) (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n)
+    (w : GNetState P.n) : (subDefl P (u, w)).F = w.F := rfl
+
+@[simp] theorem subDefl_recvCount (P : Params)
+    (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (w : GNetState P.n) (j : Fin P.n)
+    (m : GBCA.Msg) : (subDefl P (u, w)).recvCount j m = (u j).recvCount m := rfl
+
+@[simp] theorem subDefl_echoCount (P : Params)
+    (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (w : GNetState P.n) (j : Fin P.n) :
+    (subDefl P (u, w)).echoCount j = (u j).echoCount := rfl
+
+@[simp] theorem subDefl_voteCount (P : Params)
+    (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (w : GNetState P.n) (j : Fin P.n) :
+    (subDefl P (u, w)).voteCount j = (u j).voteCount := rfl
+
+@[simp] theorem subDefl_bindCount (P : Params)
+    (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (w : GNetState P.n) (j : Fin P.n) :
+    (subDefl P (u, w)).bindCount j = (u j).bindCount := rfl
+
+@[simp] theorem subDefl_sealCount (P : Params)
+    (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (w : GNetState P.n) (j : Fin P.n) :
+    (subDefl P (u, w)).sealCount j = (u j).sealCount := rfl
+
+@[simp] theorem subDefl_bothValid (P : Params)
+    (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (w : GNetState P.n) (j : Fin P.n) :
+    (subDefl P (u, w)).bothValid P j ↔ (u j).bothValid P := Iff.rfl
+
+/-- The initial states correspond. -/
+@[simp] theorem subDefl_init (P : Params) (r : ℕ) :
+    subDefl P (sub P r).init = (GBCA.implInst P r).init := rfl
+
+/-- Componentwise equality of monolithic instance states. -/
+theorem implState_ext {n : ℕ} {s t : GBCA.ImplState n} (hp : s.proc = t.proc)
+    (hs : s.sent = t.sent) (hr : s.recv = t.recv) (hF : s.F = t.F) : s = t := by
+  obtain ⟨p₁, s₁, r₁, f₁⟩ := s
+  obtain ⟨p₂, s₂, r₂, f₂⟩ := t
+  simp only at hp hs hr hF
+  subst hp; subst hs; subst hr; subst hF
+  rfl
+
+section Frame
+
+variable {P : Params} {u x : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n} {w : GNetState P.n}
+
+/-- The programs' records after a write at `j`. -/
+theorem procFun_setP {j : Fin P.n} {pr : GBCA.ProcState}
+    (hj : x j = (u j).setP pr) (hne : ∀ i, i ≠ j → x i = u i) :
+    (fun i => (x i).proc) = Function.update (fun i => (u i).proc) j pr := by
+  funext i
+  by_cases hi : i = j
+  · subst hi; rw [hj, Function.update_self]; rfl
+  · rw [hne i hi, Function.update_of_ne hi]
+
+/-- A record write leaves the inboxes alone. -/
+theorem inboxFun_setP {j : Fin P.n} {pr : GBCA.ProcState}
+    (hj : x j = (u j).setP pr) (hne : ∀ i, i ≠ j → x i = u i) :
+    (fun i => (x i).inbox) = fun i => (u i).inbox := by
+  funext i
+  by_cases hi : i = j
+  · subst hi; rw [hj]; rfl
+  · rw [hne i hi]
+
+/-- A record write at one program, with the fabric untouched. -/
+theorem subDefl_setProc {j : Fin P.n} {pr : GBCA.ProcState}
+    (hj : x j = (u j).setP pr) (hne : ∀ i, i ≠ j → x i = u i) :
+    subDefl P (x, w) = (subDefl P (u, w)).setProc j pr :=
+  implState_ext (procFun_setP hj hne) rfl (inboxFun_setP hj hne) rfl
+
+/-- A record write at one program together with the fabric pooling the message
+that write multicasts. -/
+theorem subDefl_setProc_gpool {j : Fin P.n} {pr : GBCA.ProcState} {m : GBCA.Msg}
+    (hj : x j = (u j).setP pr) (hne : ∀ i, i ≠ j → x i = u i) :
+    subDefl P (x, w.gpool j m) = ((subDefl P (u, w)).setProc j pr).mcast j m :=
+  implState_ext (procFun_setP hj hne) rfl (inboxFun_setP hj hne) rfl
+
+/-- The programs stand still. -/
+theorem subDefl_idle (hall : ∀ i, x i = u i) : subDefl P (x, w) = subDefl P (u, w) :=
+  implState_ext (funext fun i => congrArg GBCA.ProcNodeN.proc (hall i)) rfl
+    (funext fun i => congrArg GBCA.ProcNodeN.inbox (hall i)) rfl
+
+/-- A delivery: the receiver files the message under its sender's row. -/
+theorem subDefl_deliver {i k : Fin P.n} {m : GBCA.Msg}
+    (hi : x i = (u i).deliverTo k m) (hne : ∀ i', i' ≠ i → x i' = u i') :
+    subDefl P (x, w) = (subDefl P (u, w)).recvMsg i k m := by
+  refine implState_ext (funext fun i' => ?_) rfl (funext fun i' => ?_) rfl
+  · change (x i').proc = (u i').proc
+    by_cases hi' : i' = i
+    · subst hi'; rw [hi]; rfl
+    · rw [hne i' hi']
+  · change (x i').inbox
+      = Function.update (fun i'' => (u i'').inbox) i
+        (Function.update ((u i).inbox) k (insert m ((u i).inbox k))) i'
+    by_cases hi' : i' = i
+    · subst hi'; rw [hi, Function.update_self]; rfl
+    · rw [hne i' hi', Function.update_of_ne hi']
+
+/-- A Byzantine injection: the fabric pools a message under a corrupted
+sender. -/
+theorem subDefl_gpool {k : Fin P.n} {m : GBCA.Msg} :
+    subDefl P (u, w.gpool k m) = (subDefl P (u, w)).mcast k m :=
+  implState_ext rfl rfl rfl rfl
+
+/-- Corruption commutes with the deflation: the two guards read the same `F`
+and write it the same way (D1). -/
+theorem subDefl_corrupt (k : Fin P.n) :
+    subDefl P (u, w.corrupt P k) = (subDefl P (u, w)).corrupt P k := by
+  unfold GNetState.corrupt GBCA.ImplState.corrupt
+  by_cases hc : k ∉ w.F ∧ w.F.card < P.f
+  · rw [if_pos hc, if_pos (by exact hc)]
+    exact implState_ext rfl rfl rfl rfl
+  · rw [if_neg hc, if_neg (by exact hc)]
+
+end Frame
+
+/-! ### Reading a subsystem transition backwards
+
+Two inversions of the composition, the counterparts of `subPre_event_step` /
+`subPre_lab_step` / `subPre_tau_net`: on a visible label of the internal
+alphabet every program and the fabric step together, and on the silent label
+only the fabric moves. -/
+
+/-- Diracs are equal only at equal states. -/
+theorem pure_inj {α : Type} {a b : α} (h : (PMF.pure a : PMF α) = PMF.pure b) :
+    a = b := by
+  have ha : a ∈ (PMF.pure b).support := by
+    rw [← h]; exact (PMF.mem_support_pure_iff a a).mpr rfl
+  exact (PMF.mem_support_pure_iff b a).mp ha
+
+/-- A visible transition of the programs beside the fabric: every program and
+the fabric step on the label, and the joint distribution is their Dirac
+product. -/
+theorem subPre_joint_inv {P : Params} {r : ℕ}
+    {u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n} {w : GNetState P.n} {L : GLab P.n}
+    {μ : PMF (GSubState P.n)} (hL : L ≠ (Silent.τ : GLab P.n))
+    (h : (subPre P r).step (u, w) L μ) :
+    ∃ (x : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (w' : GNetState P.n),
+      μ = PMF.pure (x, w') ∧ (∀ i, GProcStep P r i (u i) L (PMF.pure (x i))) ∧
+        GNetStep P r w L (PMF.pure w') := by
+  rw [subPre, System.parallel_step] at h
+  rcases h with ⟨-, μ₁, μ₂, hs, hn, rfl⟩ | ⟨hτ, -⟩ | ⟨hτ, -⟩
+  · obtain ⟨x, rfl, hall⟩ := syncG_inv hs
+    obtain ⟨w', rfl⟩ := gNetStep_dirac hn
+    exact ⟨x, w', ABA.Net.prodPMF_pure_pure _ _, hall, hn⟩
+  · exact absurd hτ hL
+  · exact absurd hτ hL
+
+/-- A silent transition of the programs beside the fabric is a fabric-local
+injection: no program has a `τ` row. -/
+theorem subPre_tau_inv {P : Params} {r : ℕ}
+    {u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n} {w : GNetState P.n}
+    {μ : PMF (GSubState P.n)}
+    (h : (subPre P r).step (u, w) (Sum.inl (Sum.inl Lab.tau)) μ) :
+    ∃ w' : GNetState P.n, μ = PMF.pure (u, w') ∧
+      GNetStep P r w (Sum.inl (Sum.inl Lab.tau)) (PMF.pure w') := by
+  rw [subPre, System.parallel_step] at h
+  rcases h with ⟨hτ, -⟩ | ⟨-, μ₁, hs, rfl⟩ | ⟨-, μ₂, hn, rfl⟩
+  · exact absurd rfl hτ
+  · exact absurd hs syncG_no_tau
+  · obtain ⟨w', rfl⟩ := gNetStep_dirac hn
+    exact ⟨w', ABA.Net.prodPMF_pure_pure _ _, hn⟩
+
+/-! ### The fabric's rules read off a round-tagged label
+
+The fabric has a row only for its own round: a handshake label of another round
+carries no transition of the subsystem at all. These readers therefore return
+the round equation together with the fabric's move. -/
+
+section NetRound
+
+variable {P : Params} {r : ℕ} {w : GNetState P.n} {μ : PMF (GNetState P.n)}
+
+theorem netG_callG_round {r' : ℕ} {id : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inl (.callG r' id b))) μ) :
+    r' = r ∧ μ = PMF.pure (w.gpool id (.input b)) := by
+  cases h; exact ⟨rfl, rfl⟩
+
+theorem netG_retG_round {r' : ℕ} {id : Fin P.n} {out : GbcaOut}
+    (h : GNetStep P r w (Sum.inl (Sum.inl (.retG r' id out))) μ) :
+    r' = r ∧ μ = PMF.pure w := by
+  cases h; exact ⟨rfl, rfl⟩
+
+theorem netG_gcallLoop_round {r' : ℕ} {id : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.gcallLoop r' id b))) μ) :
+    r' = r ∧ μ = PMF.pure w := by
+  cases h; exact ⟨rfl, rfl⟩
+
+theorem netG_byzCallG_round {r' : ℕ} {k : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.byzCallG r' k b))) μ) :
+    r' = r ∧ μ = PMF.pure (w.gpool k (.input b)) := by
+  cases h; exact ⟨rfl, rfl⟩
+
+theorem netG_byzCallGLoop_round {r' : ℕ} {k : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.byzCallGLoop r' k b))) μ) :
+    r' = r ∧ μ = PMF.pure w := by
+  cases h; exact ⟨rfl, rfl⟩
+
+theorem netG_byzRetG_round {r' : ℕ} {k : Fin P.n} {out : GbcaOut}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.byzRetG r' k out))) μ) :
+    r' = r ∧ μ = PMF.pure w := by
+  cases h; exact ⟨rfl, rfl⟩
+
+/-! The labels the fabric does not offer at all: the ABA API, the coin ports,
+corruption, and the deployed network's own rendezvous. -/
+
+theorem netG_callABA_dead {id : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inl (.callABA id b))) μ) : False := by cases h
+
+theorem netG_retABA_dead {id : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inl (.retABA id b))) μ) : False := by cases h
+
+theorem netG_callW_dead {r' : ℕ} {id : Fin P.n}
+    (h : GNetStep P r w (Sum.inl (Sum.inl (.callW r' id))) μ) : False := by cases h
+
+theorem netG_retW_dead {r' : ℕ} {id : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inl (.retW r' id b))) μ) : False := by cases h
+
+theorem netG_fail_dead {k : Fin P.n}
+    (h : GNetStep P r w (Sum.inl (Sum.inl (.fail k))) μ) : False := by cases h
+
+theorem netG_gsnd_dead {r' : ℕ} {j : Fin P.n} {m : GBCA.Msg}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.gsnd r' j m))) μ) : False := by cases h
+
+theorem netG_gdlv_dead {r' : ℕ} {i j : Fin P.n} {m : GBCA.Msg}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.gdlv r' i j m))) μ) : False := by cases h
+
+theorem netG_dsnd_dead {j : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.dsnd j b))) μ) : False := by cases h
+
+theorem netG_ddlv_dead {i j : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.ddlv i j b))) μ) : False := by cases h
+
+theorem netG_retWPub_dead {r' : ℕ} {id : Fin P.n} {c b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.retWPub r' id c b))) μ) : False := by cases h
+
+theorem netG_byzCallW_dead {r' : ℕ} {k : Fin P.n}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.byzCallW r' k))) μ) : False := by cases h
+
+theorem netG_byzRetW_dead {r' : ℕ} {k : Fin P.n} {b : Bool}
+    (h : GNetStep P r w (Sum.inl (Sum.inr (.byzRetW r' k b))) μ) : False := by cases h
+
+end NetRound
+
+/-! ### The subsystem projects onto the monolithic instance
+
+Every rule of the subsystem is one rule of the monolithic round-`r` instance
+read through `subDefl`, and the correspondence is strong — one step answers one
+step, at the specification label the interface label projects to, with no
+stuttering anywhere:
+
+| subsystem | monolithic instance |
+| --- | --- |
+| `callG` (caller writes, fabric pools) | `ImplStep.call` |
+| `gcallLoop`, `byzCallGLoop` | `ImplStep.callLoop` |
+| `byzCallG` (D11) | `ImplStep.call` |
+| `retG` / `byzRetG`, by grade | `ImplStep.retA` / `retB` / `retC` |
+| hidden `snd` rendezvous, by level | the eight protocol `τ` rules |
+| hidden `dlv` rendezvous | `ImplStep.deliver` |
+| fabric-local injection | `ImplStep.byz` |
+
+The two hidden rendezvous and the fabric's injection are silent on both sides,
+and `gPull` takes `τ` to `τ`. -/
+
+/-- **The strong projection lemma.** -/
+theorem sub_projects (P : Params) (r : ℕ) :
+    ∀ (σ : GSubState P.n) (l : NLab P.n) (μ : PMF (GSubState P.n)),
+      (sub P r).step σ l μ →
+      ∃ l₀, gPull P.n l = some l₀ ∧
+        (GBCA.implInst P r).step (subDefl P σ) l₀ (μ.map (subDefl P)) := by
+  rintro ⟨u, w⟩ l μ hstep
+  rcases (sub_step_iff P r (u, w) l μ).mp hstep with ⟨rfl, e, hev⟩ | hlab
+  · -- a hidden rendezvous: an internal step of the instance
+    obtain ⟨x, w', rfl, hall, hn⟩ := subPre_joint_inv (by simp) hev
+    refine ⟨Lab.tau, rfl, ?_⟩
+    rw [PMF.pure_map]
+    cases e with
+    | snd j m =>
+      have hfor : ∀ i, i ≠ j → x i = u i :=
+        fun i hi => pure_inj (stepG_snd_foreign (Ne.symm hi) (hall i))
+      have hw : w' = w.gpool j m := pure_inj (netG_snd hn)
+      subst hw
+      cases m with
+      | input b =>
+        obtain ⟨hin, hcnt, hsend, hx⟩ := stepG_snd_input_own (hall j)
+        rw [subDefl_setProc_gpool (pure_inj hx) hfor]
+        exact GBCA.ImplStep.relay _ j b hin hcnt hsend
+      | echo b =>
+        obtain ⟨hin, hcnt, hsend, hx⟩ := stepG_snd_echo_own (hall j)
+        rw [subDefl_setProc_gpool (pure_inj hx) hfor]
+        exact GBCA.ImplStep.echo _ j b hin hcnt hsend
+      | vote v =>
+        cases v with
+        | some b =>
+          obtain ⟨hin, hcnt, hsend, hx⟩ := stepG_snd_voteBit_own (hall j)
+          rw [subDefl_setProc_gpool (pure_inj hx) hfor]
+          exact GBCA.ImplStep.voteBit _ j b hin hcnt hsend
+        | none =>
+          obtain ⟨hin, hcnt, hval, hsend, hx⟩ := stepG_snd_voteBot_own (hall j)
+          rw [subDefl_setProc_gpool (pure_inj hx) hfor]
+          exact GBCA.ImplStep.voteBot _ j hin hcnt hval hsend
+      | bind v =>
+        cases v with
+        | some b =>
+          obtain ⟨hin, hcnt, hsend, hx⟩ := stepG_snd_bindBit_own (hall j)
+          rw [subDefl_setProc_gpool (pure_inj hx) hfor]
+          exact GBCA.ImplStep.bindBit _ j b hin hcnt hsend
+        | none =>
+          obtain ⟨hin, hcnt, hval, hsend, hx⟩ := stepG_snd_bindBot_own (hall j)
+          rw [subDefl_setProc_gpool (pure_inj hx) hfor]
+          exact GBCA.ImplStep.bindBot _ j hin hcnt hval hsend
+      | «seal» v =>
+        cases v with
+        | some b =>
+          obtain ⟨hin, hcnt, hsend, hx⟩ := stepG_snd_sealBit_own (hall j)
+          rw [subDefl_setProc_gpool (pure_inj hx) hfor]
+          exact GBCA.ImplStep.sealBit _ j b hin hcnt hsend
+        | none =>
+          obtain ⟨hin, hcnt, hval, hsend, hx⟩ := stepG_snd_sealBot_own (hall j)
+          rw [subDefl_setProc_gpool (pure_inj hx) hfor]
+          exact GBCA.ImplStep.sealBot _ j hin hcnt hval hsend
+    | dlv i j m =>
+      obtain ⟨hmem, hw⟩ := netG_dlv hn
+      have hw' : w' = w := pure_inj hw
+      subst hw'
+      have hfor : ∀ i', i' ≠ i → x i' = u i' :=
+        fun i' hi' => pure_inj (stepG_dlv_foreign (Ne.symm hi') (hall i'))
+      rw [subDefl_deliver (pure_inj (stepG_dlv_own (hall i))) hfor]
+      exact GBCA.ImplStep.deliver _ i j m hmem
+  · by_cases hlτ : l = Sum.inl Lab.tau
+    · -- the fabric's own injection
+      subst hlτ
+      obtain ⟨w', rfl, hn⟩ := subPre_tau_inv hlab
+      obtain ⟨k, m, hF, hw⟩ := netG_tau hn
+      have hw' : w' = w.gpool k m := pure_inj hw
+      subst hw'
+      refine ⟨Lab.tau, rfl, ?_⟩
+      rw [PMF.pure_map, subDefl_gpool]
+      exact GBCA.ImplStep.byz _ k m hF
+    · obtain ⟨x, w', rfl, hall, hn⟩ := subPre_joint_inv (by simpa using hlτ) hlab
+      cases l with
+      | inl l₀ =>
+        cases l₀ with
+        | tau => exact absurd rfl hlτ
+        | callABA id b => exact (netG_callABA_dead hn).elim
+        | retABA id b => exact (netG_retABA_dead hn).elim
+        | callW r' id => exact (netG_callW_dead hn).elim
+        | retW r' id b => exact (netG_retW_dead hn).elim
+        | fail k => exact (netG_fail_dead hn).elim
+        | callG r' id b =>
+          obtain ⟨rfl, hw⟩ := netG_callG_round hn
+          have hw' : w' = w.gpool id (.input b) := pure_inj hw
+          subst hw'
+          obtain ⟨hin, hx⟩ := stepG_callG_own (hall id)
+          have hfor : ∀ i, i ≠ id → x i = u i :=
+            fun i hi => pure_inj (stepG_callG_foreign (Ne.symm hi) (hall i))
+          refine ⟨_, rfl, ?_⟩
+          rw [PMF.pure_map, subDefl_setProc_gpool (pure_inj hx) hfor]
+          exact GBCA.ImplStep.call _ id b hin
+        | retG r' id out =>
+          obtain ⟨rfl, hw⟩ := netG_retG_round hn
+          have hw' : w' = w := pure_inj hw
+          subst hw'
+          have hfor : ∀ i, i ≠ id → x i = u i :=
+            fun i hi => pure_inj (stepG_retG_foreign (Ne.symm hi) (hall i))
+          refine ⟨_, rfl, ?_⟩
+          rw [PMF.pure_map]
+          cases out with
+          | A v =>
+            obtain ⟨hcnt, hret, hx⟩ := stepG_retG_A_own (hall id)
+            rw [subDefl_setProc (pure_inj hx) hfor]
+            exact GBCA.ImplStep.retA _ id v hcnt hret
+          | B v =>
+            obtain ⟨hcnt, honce, hbind, hval, hret, hx⟩ := stepG_retG_B_own (hall id)
+            rw [subDefl_setProc (pure_inj hx) hfor]
+            exact GBCA.ImplStep.retB _ id v hcnt honce hbind hval hret
+          | C =>
+            obtain ⟨hcnt, hval, hret, hx⟩ := stepG_retG_C_own (hall id)
+            rw [subDefl_setProc (pure_inj hx) hfor]
+            exact GBCA.ImplStep.retC _ id hcnt hval hret
+      | inr ev =>
+        cases ev with
+        | gsnd r' j m => exact (netG_gsnd_dead hn).elim
+        | gdlv r' i j m => exact (netG_gdlv_dead hn).elim
+        | dsnd j b => exact (netG_dsnd_dead hn).elim
+        | ddlv i j b => exact (netG_ddlv_dead hn).elim
+        | retWPub r' id c b => exact (netG_retWPub_dead hn).elim
+        | byzCallW r' k => exact (netG_byzCallW_dead hn).elim
+        | byzRetW r' k b => exact (netG_byzRetW_dead hn).elim
+        | gcallLoop r' id b =>
+          obtain ⟨rfl, hw⟩ := netG_gcallLoop_round hn
+          have hw' : w' = w := pure_inj hw
+          subst hw'
+          have hidle : ∀ i, x i = u i := fun i => pure_inj (stepG_gcallLoop (hall i))
+          refine ⟨_, rfl, ?_⟩
+          rw [PMF.pure_map, subDefl_idle hidle]
+          exact GBCA.ImplStep.callLoop _ id b
+        | byzCallG r' k b =>
+          obtain ⟨rfl, hw⟩ := netG_byzCallG_round hn
+          have hw' : w' = w.gpool k (.input b) := pure_inj hw
+          subst hw'
+          obtain ⟨hin, hx⟩ := stepG_byzCallG_own (hall k)
+          have hfor : ∀ i, i ≠ k → x i = u i :=
+            fun i hi => pure_inj (stepG_byzCallG_foreign (Ne.symm hi) (hall i))
+          refine ⟨_, rfl, ?_⟩
+          rw [PMF.pure_map, subDefl_setProc_gpool (pure_inj hx) hfor]
+          exact GBCA.ImplStep.call _ k b hin
+        | byzCallGLoop r' k b =>
+          obtain ⟨rfl, hw⟩ := netG_byzCallGLoop_round hn
+          have hw' : w' = w := pure_inj hw
+          subst hw'
+          have hidle : ∀ i, x i = u i :=
+            fun i => pure_inj (stepG_byzCallGLoop (hall i))
+          refine ⟨_, rfl, ?_⟩
+          rw [PMF.pure_map, subDefl_idle hidle]
+          exact GBCA.ImplStep.callLoop _ k b
+        | byzRetG r' k out =>
+          obtain ⟨rfl, hw⟩ := netG_byzRetG_round hn
+          have hw' : w' = w := pure_inj hw
+          subst hw'
+          have hfor : ∀ i, i ≠ k → x i = u i :=
+            fun i hi => pure_inj (stepG_byzRetG_foreign (Ne.symm hi) (hall i))
+          refine ⟨_, rfl, ?_⟩
+          rw [PMF.pure_map]
+          cases out with
+          | A v =>
+            obtain ⟨hcnt, hret, hx⟩ := stepG_byzRetG_A_own (hall k)
+            rw [subDefl_setProc (pure_inj hx) hfor]
+            exact GBCA.ImplStep.retA _ k v hcnt hret
+          | B v =>
+            obtain ⟨hcnt, honce, hbind, hval, hret, hx⟩ := stepG_byzRetG_B_own (hall k)
+            rw [subDefl_setProc (pure_inj hx) hfor]
+            exact GBCA.ImplStep.retB _ k v hcnt honce hbind hval hret
+          | C =>
+            obtain ⟨hcnt, hval, hret, hx⟩ := stepG_byzRetG_C_own (hall k)
+            rw [subDefl_setProc (pure_inj hx) hfor]
+            exact GBCA.ImplStep.retC _ k hcnt hval hret
+
+/-! ### The round subsystem is refined by the graded agreement specification
+
+The subsystem's answer to a step is the monolithic instance's answer, read
+through `subDefl` and then through the per-instance refinement
+(`GBCA.implRefines`, `ABA/GBCASim.lean`): the first leg is strong and
+functional, so nothing of that refinement is reproved here. The specification's
+weak answer is finally lifted to the subsystem's interface along a section of
+`gPull` — which is where a Byzantine drive is answered by the specification's
+own call or return row (D11). -/
+
+/-- **The simulation relation of the round subsystem**: the instance relation,
+read on the deflated state. -/
+def Rsub (P : Params) (r : ℕ) (σ : GSubState P.n) (s : GBCA.SpecState P.n) : Prop :=
+  GBCA.instRel P r (subDefl P σ) s
+
+/-- **The per-round subsystem simulation**: the round-`r` subsystem is forward
+simulated by the round-`r` graded agreement specification, read over the
+subsystem's interface. -/
+theorem subSim (P : Params) (r : ℕ) :
+    ForwardSimulation (sub P r) (liftedSpecG P r) (Rsub P r) := by
+  constructor
+  intro q₁ q₂ hR l μ hstep q₁' hq₁'
+  obtain ⟨l₀, hpull, himpl⟩ := sub_projects P r q₁ l μ hstep
+  have hmem : subDefl P q₁' ∈ (μ.map (subDefl P)).support := by
+    rw [PMF.mem_support_map_iff]
+    exact ⟨q₁', hq₁', rfl⟩
+  obtain ⟨s', hdis, hrel⟩ := (GBCA.implRefines P r).step (subDefl P q₁) q₂ hR l₀
+    (μ.map (subDefl P)) himpl (subDefl P q₁') hmem
+  refine ⟨s', ?_, hrel⟩
+  rcases hdis with ⟨hτ, hweak⟩ | ⟨hτ, hweak⟩
+  · exact Or.inl ⟨gPull_eq_tau (by rw [hpull, hτ]; rfl),
+      weakLSilent_liftedSpecG P r hweak⟩
+  · refine Or.inr ⟨?_, weakLStep_liftedSpecG P r hτ hpull hweak⟩
+    intro hl
+    refine hτ ?_
+    have h2 : gPull P.n (Silent.τ : NLab P.n) = some l₀ := by rw [← hl]; exact hpull
+    rw [gPull_tau] at h2
+    exact (Option.some.inj h2).symm
+
+/-! ### What the family lift will need
+
+The two side conditions of `ForwardSimulation.family` for the round-indexed
+family: the relation holds at the initial states, and it survives the broadcast
+corruption. Both are the monolithic instance's own facts read through
+`subDefl`, which commutes with corruption. -/
+
+/-- The broadcast corruption act on a specification state, over the extended
+alphabet: `GBCA.failAct` taken on the extended `fail` label. -/
+def gActSpec (P : Params) : NLab P.n → GBCA.SpecState P.n → GBCA.SpecState P.n
+  | Sum.inl (.fail k), s => s.corrupt P k
+  | _, s => s
+
+/-- The initial states of the subsystem and of its specification are
+related. -/
+theorem subSim_init (P : Params) (r : ℕ) :
+    Rsub P r (sub P r).init (GBCA.specInst P r).init := by
+  have h := GBCA.instRel_init P r
+  rw [← subDefl_init P r] at h
+  exact h
+
+/-- **Broadcast compatibility**: corruption preserves the subsystem relation.
+The fabric's corrupted set is the monolithic instance's, so the two guards
+`k ∉ F ∧ |F| < f` agree and the instance-level statement
+(`GBCA.instRel_corrupt`) applies verbatim (D1). -/
+theorem subSim_failAct (P : Params) :
+    ∀ l : NLab P.n, isFailN l → ∀ (r : ℕ) (σ : GSubState P.n)
+      (s : GBCA.SpecState P.n), Rsub P r σ s →
+      Rsub P r (gAct P l σ) (gActSpec P l s) := by
+  rintro l hl r ⟨u, w⟩ s hR
+  cases l with
+  | inr e => cases e <;> exact hl.elim
+  | inl l₀ =>
+    cases l₀ with
+    | fail k =>
+      have hs : subDefl P (gAct P (Sum.inl (Lab.fail k)) (u, w))
+          = (subDefl P (u, w)).corrupt P k := subDefl_corrupt k
+      have hc := GBCA.instRel_corrupt P r k hR
+      rw [← hs] at hc
+      exact hc
+    | tau => exact hl.elim
+    | callABA id b => exact hl.elim
+    | retABA id b => exact hl.elim
+    | callG r' id b => exact hl.elim
+    | retG r' id out => exact hl.elim
+    | callW r' id => exact hl.elim
+    | retW r' id b => exact hl.elim
+
+/-! ### Mechanical axiom firewall -/
+
+/-- info: 'PLTS.ABA.GSub.subSim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms subSim
+
+/-- info: 'PLTS.ABA.GSub.sub_projects' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms sub_projects
 
 end GSub
 end ABA
