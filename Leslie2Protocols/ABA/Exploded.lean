@@ -2317,13 +2317,6 @@ theorem exploded_atd (P : Params) :
   Set.Subset.antisymm (explodedSim P).achievableTraceDists_subset
     (explodedSimConverse P).achievableTraceDists_subset
 
-/-- **Safety of the exploded presentation**: every positive-probability trace
-of every achievable trace distribution satisfies Validity and Agreement. -/
-theorem exploded_safe (P : Params) :
-    ∀ D ∈ achievableTraceDists (exploded P), ∀ t, D t ≠ 0 →
-      ValidityTrace P t ∧ AgreementTrace t :=
-  fun D hD => netFlat_safe P D (by rw [exploded_atd]; exact hD)
-
 /-! ### Mechanical axiom firewall
 
 No headline may acquire a `sorryAx` dependence. -/
@@ -2339,10 +2332,6 @@ No headline may acquire a `sorryAx` dependence. -/
 /-- info: 'PLTS.ABA.explodedConverse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms explodedConverse
-
-/-- info: 'PLTS.ABA.exploded_safe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms exploded_safe
 
 end ABA
 end PLTS

@@ -7,11 +7,11 @@ Authors: Sathiya / Claude
 import Leslie2Protocols.ABA.Hybrid
 
 /-!
-# Non-vacuity witnesses for the ABA hybrids
+# Non-vacuity witnesses for the analysis-side composition
 
 Machine-checked evidence that the composed system `hybridSpec P` can actually
-execute a nontrivial prefix: the refinement theorem `ABA.substitution` about it
-is not vacuously true through an immediate deadlock.
+execute a nontrivial prefix: the core simulation `ABA.coreSim` about it is not
+vacuously true through an immediate deadlock.
 
 We fix the small parameter set `P4` (`n = 4`, `f = 1`, `ε = 1/2`) and exhibit a
 concrete **21-step run of `hybridSpec P4` that reaches a genuine `retABA`** — a
@@ -85,10 +85,6 @@ theorem map_apply_inj {α β : Type*} {f : α → β} (hf : Function.Injective f
 
 /-- The GBCA family state: all instances initial. -/
 def G0 : ℕ → GBCA.SpecState 4 := fun _ => GBCA.SpecState.initial 4
-
-/-- The GBCA *implementation* family state: all instances initial (for the
-`hybridImpl` witness). -/
-def GI0 : ℕ → GBCA.ImplState 4 := fun _ => GBCA.ImplState.initial 4
 
 /-- The WCC family state: all instances initial. -/
 def W0 : ℕ → WCC.SpecState 4 := fun _ => WCC.SpecState.initial 4
@@ -576,26 +572,6 @@ theorem step_retABA :
   · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
   · refine Or.inl ⟨by decide, PMF.pure Cfin, PMF.pure Wr2, ?_, ?_, ?_⟩
     · exact CoreStep.ret (P := P4) Cd2 (0 : Fin 4) true (by decide) (by decide) (by decide)
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
-
-/-! ### The implementation-side hybrid also starts -/
-
-/-- The initial hybrid-impl state is `(GI0, (C0, W0))`. -/
-theorem hybridImpl_init : (hybridImpl P4).init = (GI0, (C0, W0)) := rfl
-
-/-- `hybridImpl P4` executes the same first external input handshake: the GBCA
-implementation family idles on `callABA` exactly as its specification does, so
-non-vacuity holds on the implementation side too. -/
-theorem hybridImpl_step_callABA₀ :
-    (hybridImpl P4).step (GI0, (C0, W0)) (Lab.callABA (0 : Fin 4) true)
-      (PMF.pure (GI0, (C1, W0))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure GI0, PMF.pure (C1, W0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure C1, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.input (P := P4) C0 (0 : Fin 4) true rfl
     · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
     · rw [prodPMF_pure_pure]
   · rw [prodPMF_pure_pure]

@@ -10,22 +10,30 @@ import Leslie2Protocols.ABA.GBCAFamily
 import Leslie2Protocols.ABA.WCCSpec
 
 /-!
-# The ABA hybrids and the substitution step
+# The analysis-side composition
 
-The two composed systems of the case study and the substitution inclusion
-between them:
+The system the hand-built core simulation takes as its subject:
 
-* `hybridImpl` — `GBCA.implFamily ∥ (ABA.core ∥ WCC.specFamily)`, sub-protocol
-  API hidden. The "real" system (up to WCC being held at spec level).
-* `hybridSpec` — the same with `GBCA.implFamily` replaced by
-  `GBCA.specFamily`. The system the hand-built core simulation relates
-  to `ABA.spec`.
+* `context` — the ABA coordinator `core` alongside the spec-level WCC family:
+  the two factors the graded-agreement side is composed with, fixed once.
+* `hybridSpec` — `GBCA.specFamily ∥ context` with the sub-protocol API hidden.
+  Both sub-protocols are read at specification level, so the round loop's
+  environment is exactly the two oracles it calls — the graded-agreement
+  oracle and the common coin — and the composite speaks the shared alphabet
+  `Lab n`.
 
-GBCA sits in the **left** (refinable) slot of `System.parallel`, so the
-substitution is literally the composition of the three precongruence results:
-`GBCA.familyRefines` lifted by `parallel_right` (Result 3) under the fixed
-context, then by `abstract` (Result 5), then soundness (Result 1) yields the
-trace-distribution inclusion. No transitivity of simulations is involved.
+`CoreSim.lean` relates `hybridSpec` to the ABA specification `spec`; the
+deployed protocol reaches `hybridSpec` from the deployment-shaped
+specification by a repartition of state (`flatSpecSim`, `ABA/FlatSpec.lean`).
+Nothing here mentions the deployed coordinates: those are
+`ABA/FlatNetwork.lean`'s.
+
+The graded-agreement family sits in the **left** (refinable) slot of
+`System.parallel`, so a substitution under this fixed context is the
+composition of the precongruence results — `parallel_right` (Result 3) then
+`abstract` (Result 5) — with soundness (Result 1) turning the resulting
+simulation into a trace-distribution inclusion. No transitivity of simulations
+is involved.
 -/
 
 namespace PLTS
@@ -37,34 +45,12 @@ noncomputable def context (P : Params) :
     System (CoreState P.n × (ℕ → WCC.SpecState P.n)) (Lab P.n) :=
   (core P).parallel (WCC.specFamily P)
 
-/-- The implementation-side hybrid: GBCA at implementation level, WCC at spec
-level, sub-protocol API hidden. -/
-noncomputable def hybridImpl (P : Params) :
-    System ((ℕ → GBCA.ImplState P.n) × (CoreState P.n × (ℕ → WCC.SpecState P.n)))
-      (Lab P.n) :=
-  ((GBCA.implFamily P).parallel (context P)).abstract (Lab.hiddenAPI P.n)
-
-/-- The specification-side hybrid: GBCA replaced by its specification. -/
+/-- **The analysis-side composition**: the graded-agreement family at
+specification level beside the context, sub-protocol API hidden. -/
 noncomputable def hybridSpec (P : Params) :
     System ((ℕ → GBCA.SpecState P.n) × (CoreState P.n × (ℕ → WCC.SpecState P.n)))
       (Lab P.n) :=
   ((GBCA.specFamily P).parallel (context P)).abstract (Lab.hiddenAPI P.n)
-
-/-- **The substitution simulation** (blueprint `lem:ABASubst`, minus
-fairness): replacing `GBCA.implFamily` by `GBCA.specFamily` under the fixed
-context is a probabilistic forward simulation — precongruence for `parallel`
-(Result 3) and `abstract` (Result 5) applied to the GBCA family refinement. -/
-noncomputable def substSim (P : Params) :
-    ProbabilisticForwardSimulation (hybridImpl P) (hybridSpec P)
-      (parallelRel (diracRel (fun s t => ∀ r, GBCA.instRel P r (s r) (t r)))) :=
-  ((GBCA.familyRefines P).parallel_right (context P)).abstract (Lab.hiddenAPI P.n)
-
-/-- **The substitution inclusion**: every trace distribution achievable by
-the implementation-side hybrid is achievable by the spec-side hybrid
-(Result 1 applied to `substSim`). -/
-theorem substitution (P : Params) :
-    achievableTraceDists (hybridImpl P) ⊆ achievableTraceDists (hybridSpec P) :=
-  (substSim P).achievableTraceDists_subset
 
 end ABA
 end PLTS

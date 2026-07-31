@@ -5,7 +5,6 @@ Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.Exploded
-import Leslie2Protocols.ABA.Main
 
 /-!
 # Restriction along the left summand is a precongruence
@@ -1247,12 +1246,12 @@ theorem flatSpec_refines (P : Params) :
 
 /-! ### Headlines
 
-The deployment-shaped route to the ABA specification: substitute each round's
-graded-agreement subsystem by its specification at the deployed shape
+The route from the deployed protocol to the ABA specification: explode the
+deployed reading along its layer boundaries (`exploded_atd`), substitute each
+round's graded-agreement subsystem by its specification at the deployed shape
 (`substitutionX`), deflate the two ABA-side factors into the monolithic core
-(`flatSpec_refines`), then take the core simulation (`coreSim`). The route
-avoids the implementation-side hybrid entirely, and its safety headline is the
-same as `Net.netFlat_safe`'s. -/
+(`flatSpec_refines`), then take the core simulation (`coreSim`). Every step is
+a simulation between systems the deployed reading itself names. -/
 
 /-- **The deployment-shaped specification refines the ABA specification**: the
 deflation inclusion chained with the core simulation's soundness. -/
@@ -1260,20 +1259,39 @@ theorem flatSpec_spec (P : Params) :
     achievableTraceDists (flatSpec P) ⊆ achievableTraceDists (spec P) :=
   Set.Subset.trans (flatSpec_refines P) (coreSim P).achievableTraceDists_subset
 
-/-- **The deployed protocol refines the ABA specification, the
-deployment-shaped way**: substitution at the deployed shape, then the
-deflation, then the core simulation. -/
-theorem netFlat_spec' (P : Params) :
+/-- **The deployed protocol refines the ABA specification**: the substitution
+at the deployed shape, then the deflation, then the core simulation. -/
+theorem netFlat_spec (P : Params) :
     achievableTraceDists (netFlat P) ⊆ achievableTraceDists (spec P) :=
   Set.Subset.trans (netFlat_flatSpec P) (flatSpec_spec P)
 
-/-- **Safety of the deployed reading, the deployment-shaped way**: every
-positive-probability trace of every achievable trace distribution of the
-deployed protocol satisfies Validity and Agreement. -/
-theorem netFlat_safe' (P : Params) :
+/-- **Safety of the deployed reading**: every positive-probability trace of
+every achievable trace distribution of the `n` programs beside the network
+adversary and the coin oracle satisfies Validity and Agreement. The corruption
+budget is a guard of the network adversary's own `fail` row, so every deployed
+execution is in budget by construction and nothing is assumed of the
+traces. -/
+theorem netFlat_safe (P : Params) :
     ∀ D ∈ achievableTraceDists (netFlat P), ∀ t, D t ≠ 0 →
       ValidityTrace P t ∧ AgreementTrace t :=
-  safety_transfer (netFlat_spec' P) (spec_safe P)
+  safety_transfer (netFlat_spec P) (spec_safe P)
+
+/-- **Trace conservativity of the deployed reading**: every
+positive-probability trace of the deployed protocol has positive probability
+under an achievable trace distribution of the deployment-shaped
+specification. -/
+theorem netFlat_traces (P : Params) :
+    ∀ D ∈ achievableTraceDists (netFlat P), ∀ t, D t ≠ 0 →
+      ∃ D' ∈ achievableTraceDists (flatSpec P), D' t ≠ 0 :=
+  fun D hD _ ht => ⟨D, netFlat_flatSpec P hD, ht⟩
+
+/-- **Safety of the exploded presentation**: the exploded reading achieves
+exactly the trace distributions of the deployed one (`exploded_atd`), so it
+inherits the same guarantee. -/
+theorem exploded_safe (P : Params) :
+    ∀ D ∈ achievableTraceDists (exploded P), ∀ t, D t ≠ 0 →
+      ValidityTrace P t ∧ AgreementTrace t :=
+  fun D hD => netFlat_safe P D (by rw [exploded_atd]; exact hD)
 
 /-! ### Mechanical axiom firewall -/
 
@@ -1297,13 +1315,21 @@ theorem netFlat_safe' (P : Params) :
 #guard_msgs in
 #print axioms flatSpec_spec
 
-/-- info: 'PLTS.ABA.netFlat_spec'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'PLTS.ABA.netFlat_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms netFlat_spec'
+#print axioms netFlat_spec
 
-/-- info: 'PLTS.ABA.netFlat_safe'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'PLTS.ABA.netFlat_safe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms netFlat_safe'
+#print axioms netFlat_safe
+
+/-- info: 'PLTS.ABA.netFlat_traces' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms netFlat_traces
+
+/-- info: 'PLTS.ABA.exploded_safe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms exploded_safe
 
 end ABA
 
