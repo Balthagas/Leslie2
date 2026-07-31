@@ -1,0 +1,10 @@
+\begin{definition}[Achievable trace distributions]
+  \label{def:achievable}
+  \lean{PLTS.achievableTraceDists}\leanok
+  \uses{def:traceprob}
+  The set $\operatorname{ATD}(sys)$ of \emph{achievable trace distributions} of
+  $sys$ is the set of functions $\sigma \mapsto traceProb(pe, \sigma)$ obtained
+  from probabilistic executions $pe$ whose initial distribution is the Dirac
+  $\delta_{sys.init}$ (genuine runs from the designated start state). Two systems
+  are trace-distribution equivalent when these sets coincide.
+\end{definition}

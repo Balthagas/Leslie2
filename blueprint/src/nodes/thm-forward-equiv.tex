@@ -1,0 +1,29 @@
+\begin{theorem}[Forward simulation $=$ strong simulation into $\mathcal{D}(\cdot^w)$]
+  \label{thm:forward-equiv}
+  \lean{PLTS.probabilisticForwardSimulation_iff_strong_dist_weakClosure}\leanok
+  \uses{def:forwardsim, def:strongsim, def:dist, def:weakclosure, lem:bridge}
+  For any relation $R : State_C \to \operatorname{PMF} State_A \to \mathrm{Prop}$,
+  \[
+    \text{$R$ is a forward simulation of $sys_C$ by $sys_A$}
+    \iff
+    \text{$R$ is a strong simulation of $sys_C$ by $\mathcal{D}(sys_A^w)$.}
+  \]
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{lem:bridge}
+  Both notions carry the \emph{same} relation $R$: the state type of
+  $\mathcal{D}(sys_A^w)$ is $\operatorname{PMF} State_A$, exactly the type of the
+  forward simulation's abstract argument. On initial states, the forward
+  simulation's ``distribution supported on $sys_A.init$'' is forced to be the Dirac
+  $\delta_{sys_A.init}$, which is the initial state of $\mathcal{D}(sys_A^w)$; and
+  the internal vs.\ external case split coincides because $\tau$ is canonical. The
+  step clauses then match verbatim under the bridge (Lemma~\ref{lem:bridge}): a
+  forward step matches $s_C \xrightarrow{l} \mu_C$ by a weak transition
+  $\mu_A \Rightarrow (\omega \mathbin{\gg\!=} \mathrm{id})$, while a
+  $\mathcal{D}(sys_A^w)$ strong step matches it by a hyper-step
+  $\mu_A \xrightarrow{l} \omega$, i.e.\
+  $hyperStep\ sys_A^w\ \mu_A\ l\ (\omega \mathbin{\gg\!=}\mathrm{id})$ --- and these
+  are equivalent, with the \emph{same} coupling $\omega$ and the same
+  $\operatorname{PMFRel} R\ \mu_C\ \omega$ witnessing both.
+\end{proof}

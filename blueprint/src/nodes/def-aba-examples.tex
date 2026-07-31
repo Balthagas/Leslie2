@@ -1,0 +1,18 @@
+\begin{definition}[Non-vacuity]
+  \label{def:aba-examples}
+  \lean{PLTS.ABA.P4}\leanok
+  \uses{def:aba-hybrids}
+  Machine-checked witnesses (at $n = 4$, $f = 1$) that the analysis-side
+  composition executes.
+  A connected $21$-step positive-probability run of $\mathrm{hybridSpec}(P4)$
+  reaches $\mathrm{retABA}\,0\,\mathrm{true}$: three external inputs, three GBCA
+  handshakes, the quorum-gated binding, three A-returns, three coin calls, the
+  single $\varepsilon$-mass coin flip on the agreeing bit, three coin returns
+  each multicasting DECIDED, three deliveries, and the return.
+  Every step but the flip is Dirac, and the flip's chosen branch has mass
+  $\varepsilon > 0$.
+  A synchronised corruption broadcast is witnessed separately.
+  Membership of a decision trace in
+  $\mathrm{achievableTraceDists}(\mathrm{netFlat}\ P4)$ is not established; only
+  the step-level run is.
+\end{definition}

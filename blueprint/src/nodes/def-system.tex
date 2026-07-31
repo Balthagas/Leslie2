@@ -1,0 +1,9 @@
+\begin{definition}[Probabilistic labelled transition system]
+  \label{def:system}
+  \lean{PLTS.System}\leanok
+  A \emph{PLTS} over a state type $State$ and label type $Label$ is a designated
+  initial state $init : State$ together with a step relation
+  $step : State \to Label \to \operatorname{PMF} State \to \mathrm{Prop}$. We write
+  $s \xrightarrow{l} \mu$ for $step\ s\ l\ \mu$: from $s$, on label $l$, the system
+  may move to the probability distribution $\mu$ over successor states.
+\end{definition}

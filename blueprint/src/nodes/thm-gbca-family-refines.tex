@@ -1,0 +1,32 @@
+\begin{theorem}[Family congruence and the graded-agreement family refinement]
+  \label{thm:gbca-family-refines}
+  \lean{PLTS.ForwardSimulation.family}\lean{PLTS.ABA.specSide}\lean{PLTS.ABA.RsubAll}\lean{PLTS.ABA.famSubSim}\lean{PLTS.ABA.famSubSimP}\leanok
+  \uses{thm:aba-subsim, def:aba-gbcasub, def:idle-family, lem:bridge}
+  Per-instance forward simulations lift to the $\mathbb{N}$-indexed families
+  under the pointwise relation, broadcast labels being matched by the abstract
+  family's own broadcast under a corruption-compatibility lemma.
+  Applied to Theorem~\ref{thm:aba-subsim}, the lift says that the family
+  $\mathrm{gbcaSide}(P)$ of round subsystems is forward-simulated, round by
+  round, by the family $\mathrm{specSide}(P)$ of round specifications read over
+  the same interface.
+  Both families are LTS, so the LTS bridge turns this into a probabilistic
+  forward simulation, applied once, at family level.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:aba-subsim, def:idle-family, lem:bridge}
+  The two families are built by the same construction from the same ownership
+  map $\mathrm{gOwns}$, so they step in step: an owned or silent label moves the
+  one instance that owns it and is matched instance-wise by
+  Theorem~\ref{thm:aba-subsim}, and a label owned by no round leaves both
+  families in place.
+  A corruption broadcast is matched by the abstract family's own broadcast,
+  using the compatibility lemma of Theorem~\ref{thm:aba-subsim} at every
+  instance simultaneously.
+  Each round subsystem is an LTS, every rule of its two tables being Dirac, and
+  so is each lifted specification instance; a family of LTS instances is an LTS
+  by Definition~\ref{def:idle-family}.
+  The LTS bridge (Lemma~\ref{lem:bridge}) therefore applies once, at family
+  level, and yields a probabilistic forward simulation along the Dirac lift of
+  the pointwise relation.
+\end{proof}

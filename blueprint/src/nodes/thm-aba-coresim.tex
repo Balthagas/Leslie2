@@ -1,0 +1,22 @@
+\begin{theorem}[The core simulation]
+  \label{thm:aba-coresim}
+  \lean{PLTS.ABA.coreSim}\leanok
+  \uses{def:aba-hybrids, def:aba-spec}
+  The analysis-side composition is forward-simulated by the repaired ABA specification under the relation $Inv \wedge Abs$.
+  The abstraction $Abs$ pins the corrupted set $F$, the returns, and $coin = \bot$ — the twin never fires the coin rule — and is two-phase on the twin's $val$.
+  In phase 1, before the first return, the twin is unbound: its abstract calls equal the concrete write-once inputs and its ghost is synced.
+  In phase 2, after the first return, the board is clear and $bind = val = some\,v$ with $v$ certified by a concrete A-lock.
+  Every hidden row and every concrete coin flip is answered by a stutter under a constant coupling.
+  The only burst is $\mathrm{decide\_burst}$ at the first $\mathrm{retABA}$: within one weak step it binds, fills, decides, and returns.
+  The concrete invariant carries the cross-round Graded Agreement machinery (downward C-lock propagation, upward bind commitment).
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-hybrids, def:aba-spec, def:weakstep}
+  We check the relation $Inv \wedge Abs$ row by row, one step class at a time, verifying that $Inv$ is preserved at each.
+  Every hidden row and the coin flip are answered by an $Abs$-frame stutter: the twin holds still under a constant coupling, and since $Abs$ pins $coin = \bot$ the twin never fires the coin rule, so the probabilistic coin row couples to the stutter.
+  The first $\mathrm{retABA}$ is answered by the single $\mathrm{decide\_burst}$ weak step, which within one weak transition binds, fills the board, decides, and returns.
+  The bind is licensed by the $f{+}1$ input support carried in the invariant; the $n-f$ DECIDED tally behind the return is what a pigeonhole turns into a never-corrupted sender whose pooled bit certifies the $A$-lock.
+  A $\mathrm{fail}$ row is answered by the corruption broadcast.
+  The concrete invariant supplies the cross-round Graded Agreement machinery --- downward $C$-lock propagation and upward bind commitment --- that certifies the value bound at the burst.
+\end{proof}

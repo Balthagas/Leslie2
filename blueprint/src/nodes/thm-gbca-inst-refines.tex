@@ -1,0 +1,48 @@
+\begin{theorem}[GBCA instance refinement]
+  \label{thm:gbca-inst-refines}
+  \lean{PLTS.ABA.GBCA.implRefines}\leanok
+  \uses{def:aba-gbca-impl, def:aba-subspecs}
+  The GBCA implementation instance is forward-simulated, instance by instance, by the GBCA specification instance.
+  The relation reads the specification's $call$, $ret$ and $F$ off the implementation state and certifies its $dead$ and $grade$ by receipt patterns: a \emph{kill certificate} for every member of $dead$, and an $n{-}f$ SEAL quorum for each side of the grade latch.
+  Kills are fired on demand: a return met by a specification state whose $dead$ lacks the bit that return needs excluded is answered by the two-step weak burst $\mathrm{bindUnset};\mathrm{ret}$, and every return row --- $C$-returns included --- does the same case split on $dead$, however many returns preceded it.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-gbca-impl, def:aba-subspecs, def:forwardsim}
+  We exhibit an LTS forward simulation of the implementation instance by the specification instance and check it constructor by constructor.
+  The implementation state is the protocol's own data, so the specification's $call$, $ret$ and $F$ are read off it directly.
+  Its $dead$ and $grade$ are not stored by the protocol, and the relation carries receipt evidence for them instead.
+  A member $b$ of $dead$ is certified by a \emph{kill certificate}: either an $n{-}f$ $\mathrm{ECHO}\,(1-b)$ receipt quorum at some process, or an $n{-}f$ wall of processes each corrupted or committed by its write-once $\mathit{sentVote}$ to a payload other than $b$.
+  An $A$-side grade lock is certified by an $n{-}f$ $\mathrm{SEAL}\,v$ receipt quorum for some bit $v$, a $C$-side lock by an $n{-}f$ $\mathrm{SEAL}\,\bot$ quorum.
+  All of these are $F$-blind and monotone in the delivered sets, in the write-once send slots and in $F$, so they survive every implementation step and every $\mathrm{fail}$; the relation bounds $dead$ from above only, never from below.
+
+  Either kill certificate makes an $n{-}f$ $\mathrm{VOTE}\,b$ receipt quorum --- the sole gateway to grade-$\ge 1$ evidence for $b$ --- impossible forever.
+  For the first: any $\mathrm{VOTE}\,b$ quorum has an honest sender, whose own wait condition is an $n{-}f$ $\mathrm{ECHO}\,b$ quorum, and that quorum meets the certificate's $n{-}f$ $\mathrm{ECHO}\,(1-b)$ quorum in $(n-f)+(n-f)-n = n - 2f > f \ge |F|$ senders, hence in an honest one holding two $\mathrm{ECHO}$ payloads against the write-once $\mathit{sentEcho}$ field.
+  For the second: a later $n{-}f$ $\mathrm{VOTE}\,b$ quorum has all its honest members committed to $b$, so it meets the wall only inside $F$, giving $2(n-f) \le n + f$, that is $n \le 3f$.
+
+  Consider a return of $v$ met by a specification state with $1-v \notin dead$.
+  Its own guard yields the certificate.
+  Case (a)'s $n{-}f$ $\mathrm{SEAL}\,v$ quorum has an honest sender, whose $\mathrm{SEAL}\,v$ is backed by an $n{-}f$ $\mathrm{BIND}\,v$ quorum; case (b)'s $f{+}1$ $\mathrm{BIND}\,v$ receipts exceed $|F|$ directly.
+  Either way an honest $\mathrm{BIND}\,v$ sender appears, and its wait condition is an $n{-}f$ $\mathrm{VOTE}\,v$ receipt quorum.
+  That quorum both certifies $1-v$ dead --- its members are each corrupted or committed to $v$, so it is itself the wall --- and refutes any certificate for $v$, which is the specification guard $v \notin dead$.
+  Refining it to an $n{-}f$ $\mathrm{ECHO}\,v$ and then $\mathrm{INPUT}\,v$ receipt quorum supplies the first two guards of $\mathrm{bindUnset}\,(1-v)$: its honest senders each hold an input (D8), which is the quorum guard, and $n - f \ge f + 1$ makes the same count the $f{+}1$ $\mathrm{SuppOK}(v)$ count at the spared bit (D15).
+  The third guard, $dead = \emptyset$, is the two memberships together: the refutation gives $v \notin dead$, the case gives $1-v \notin dead$, and a subset of $\{0,1\}$ missing both bits is empty.
+  The return is then answered by the weak transition $\mathrm{bindUnset};\mathrm{retA}$, resp.\ $\mathrm{bindUnset};\mathrm{retB}$, whose leading $\tau$-step is absorbed by the $\tau$-closure of the weak step.
+  A return met by a state that already has $1-v \in dead$ is answered by a single specification return.
+
+  Graded agreement needs no argument of its own here: it is the specification's guard pair, discharged per row by the refutation above for $v \notin dead$ and by the case split for $1-v \in dead$.
+  A/C exclusivity is the quorum-intersection argument at the $\mathrm{SEAL}$ level, on the write-once $\mathit{sentSeal}$ field: an $n{-}f$ $\mathrm{SEAL}\,v$ quorum and an $n{-}f$ $\mathrm{SEAL}\,\bot$ quorum would meet in an honest process holding two $\mathrm{SEAL}$ payloads.
+  This discharges the grade guard of $\mathrm{retA}$ against the $C$-side certificate and that of $\mathrm{retC}$ against the $A$-side certificate.
+
+  A $C$-return names no bit, so its evidence certifies \emph{some} bit instead.
+  Its $n{-}f$ $\mathrm{SEAL}\,\bot$ quorum has an honest sender, backed by $n{-}f$ any-$\mathrm{BIND}$ receipts, hence an honest $\mathrm{BIND}$ sender $k$.
+  Split on whether any honest process ever voted a bit: if some honest $\mathrm{VOTE}\,b'$ exists, its $n{-}f$ $\mathrm{ECHO}\,b'$ quorum certifies $1-b'$; if none does, $k$ cannot have sent a bit $\mathrm{BIND}$, so it sent $\mathrm{BIND}\,\bot$ off $n{-}f$ any-$\mathrm{VOTE}$ receipts whose honest senders are all committed to $\bot$ --- a wall for both bits at once.
+  The kill is fired on that certified bit when $dead$ is still empty, and the specification's $|dead| \ge 1$ guard holds afterwards because insertion is nonempty; when $dead$ is already nonempty a single $\mathrm{retC}$ answers.
+  Which certified bit is picked never matters: a certified bit carries no return evidence in any extension, so no later row is obstructed by the choice.
+  The two $f{+}1$ supports come from the returner's own $|\mathit{Valid}| > 1$ evidence: the $n{-}f$ $\mathrm{INPUT}$ receipt quorum for each bit sits at the returner itself, and $n - f \ge f + 1$; the same evidence supplies the quorum guard of the kill.
+  The $B$-return's dissent guard is the same harvest at the opposite bit.
+  Each harvest passes through the invariant clause $input\_supp$: an honest multicast of $\langle\mathrm{INPUT},b\rangle$ is by a genuine holder of $b$, or already certifies $f{+}1$ distinct processes each a genuine holder of $b$ or corrupted.
+  The clause is inductive because the first honest relayer's $f{+}1$ $\mathrm{INPUT}\,b$ receipt senders are each corrupted or genuine holders, and the count is monotone under every step.
+  Transporting such a count to the specification side is one rewrite along $call = \mathit{input}$ and the aligned corrupted sets.
+  A corruption row is answered by the specification's own $\mathrm{fail}$, and every delivery, relay and protocol-send row by a specification stutter.
+\end{proof}

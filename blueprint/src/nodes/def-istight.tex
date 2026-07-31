@@ -1,0 +1,9 @@
+\begin{definition}[Tight execution]
+  \label{def:istight}
+  \lean{PLTS.System.IsTight}\leanok
+  \uses{def:exec}
+  A finite execution is \emph{tight} if it has no transitions, or its last
+  transition is external. Each trajectory has, for a given finite trace, a unique
+  tight prefix: the shortest prefix with that trace (ending right after its last
+  external transition).
+\end{definition}

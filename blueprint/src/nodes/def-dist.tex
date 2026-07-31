@@ -1,0 +1,10 @@
+\begin{definition}[Distribution-monad lift $\mathcal{D}(sys)$]
+  \label{def:dist}
+  \lean{PLTS.System.dist}\leanok
+  \uses{def:hyperstep}
+  The \emph{distribution-monad lift} $\mathcal{D}(sys)$ has state space
+  $\operatorname{PMF} State$, initial state $\delta_{sys.init}$, and steps
+  $\mu \xrightarrow{l} \omega$ (with $\omega : \operatorname{PMF}(\operatorname{PMF} State)$)
+  exactly when $hyperStep\ sys\ \mu\ l\ (\omega \mathbin{\gg\!=}\mathrm{id})$. It
+  packages ``a distribution over states'' as a single state.
+\end{definition}

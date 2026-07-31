@@ -1,0 +1,9 @@
+\begin{definition}[Silent weak transition]
+  \label{def:weaktau}
+  \lean{PLTS.weakTau}\leanok
+  \uses{def:system}
+  $weakTau\ sys\ \mu_0\ \mu$ holds when there is an internal-only scheduler that,
+  started from $\mu_0$, halts almost surely and whose distribution of final states
+  is $\mu$. Intuitively $\mu_0 \Rightarrow_\tau \mu$: run $\tau$-steps until
+  spontaneous termination, and $\mu$ records where you stop.
+\end{definition}

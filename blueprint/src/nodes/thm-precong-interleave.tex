@@ -1,0 +1,17 @@
+\begin{theorem}[Precongruence for interleaving]
+  \label{thm:precong-interleave}
+  \lean{PLTS.ProbabilisticForwardSimulation.interleave}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  If $sysA_i$ forward-simulates $sysC_i$ along $R_i$ for every index $i$, then
+  $\operatorname{interleave} sysA$ forward-simulates
+  $\operatorname{interleave} sysC$, along $\operatorname{interleaveRel} R$.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:process-algebra, lem:decomp, lem:mix}
+  A step of the interleaving moves exactly one component $i$. Answer it by the
+  weak transition $R_i$ supplies for that component and leave every other
+  component stuttering; the product coupling of the componentwise couplings
+  witnesses the lifted relation on the successors. The source-decomposition and
+  source-mixing lemmas supply the transition on a product of distributions.
+\end{proof}

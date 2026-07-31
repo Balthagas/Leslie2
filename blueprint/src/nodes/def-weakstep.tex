@@ -1,0 +1,8 @@
+\begin{definition}[External weak transition]
+  \label{def:weakstep}
+  \lean{PLTS.weakStep}\leanok
+  \uses{def:weaktau, def:hyperstep}
+  $weakStep\ sys\ \mu_0\ l\ \mu_f$ is a $\tau^\ast\!\cdot l\cdot\tau^\ast$ chain:
+  there exist $\mu, \mu'$ with $\mu_0 \Rightarrow_\tau \mu$, a hyper-step
+  $\mu \xrightarrow{l} \mu'$, and $\mu' \Rightarrow_\tau \mu_f$.
+\end{definition}

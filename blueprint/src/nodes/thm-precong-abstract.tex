@@ -1,0 +1,20 @@
+\begin{theorem}[Precongruence for abstraction]
+  \label{thm:precong-abstract}
+  \lean{PLTS.ProbabilisticForwardSimulation.abstract}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  If $sys_C$ is forward-simulated by $sys_A$ along $R$, then
+  $sys_C.\operatorname{abstract} L$ is forward-simulated by
+  $sys_A.\operatorname{abstract} L$ along the same relation $R$.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:process-algebra, def:weakstep}
+  The initial condition is unchanged, since abstraction does not touch initial
+  states. For the step condition, split on whether the concrete transition
+  carries a hidden label. If it does, the abstracted label is $\tau$, and the
+  abstract weak transition on the hidden label becomes an abstract weak
+  transition on $\tau$, since hiding maps every one of its segments to $\tau$.
+  If it does not, the label survives abstraction on both sides and the matching
+  weak transition transports segment by segment. Either way the coupling is the
+  one $R$ already provides.
+\end{proof}

@@ -1,0 +1,48 @@
+\begin{theorem}[The weak closure preserves trace distributions]
+  \label{thm:weakclosure-eq}
+  \lean{PLTS.weakClosure_traceProb_eq}\leanok
+  \uses{def:achievable, def:weakclosure}
+  $\operatorname{ATD}(sys) = \operatorname{ATD}(sys^w)$.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{lem:map}
+  The easy inclusion $\operatorname{ATD}(sys) \subseteq \operatorname{ATD}(sys^w)$
+  (\lean{PLTS.weakClosure_traceProb_subset}) is Lemma~\ref{lem:map} with $f = id$:
+  every strong $sys$-step is, in particular, a (degenerate) weak step of $sys^w$.
+
+  The hard inclusion (\lean{PLTS.weakClosure_traceProb_superset}) turns an abstract
+  scheduler $ws$ on $sys^w$ into a concrete scheduler on $sys$ with the same trace
+  distribution. Algorithm~\ref{alg:expand} is the unfolding: it maintains an
+  abstract execution $we$ on $sys^w$ and a concrete execution $e$ on $sys$; each
+  outer iteration draws a weak transition $wt = (l, \mu)$ from $ws(we)$, takes a
+  \emph{witness} scheduler realising it (\lean{PLTS.Realises}: run from
+  $\delta_{last(e)}$ it halts almost surely, its halting end-state distribution is
+  exactly $\mu$, and every halting trajectory has external trace $[l]$, or $[]$ when
+  $l = \tau$), runs that witness to produce the concrete segment
+  $e' = \tau^\ast\!\cdot l\cdot\tau^\ast$, and appends it. The control flow is
+  deterministic but the draws are random, so each reachable \emph{configuration}
+  $c$ is reached with a well-defined probability $reachProb(c)$
+  (\lean{PLTS.reachProb}); the induced memoryless concrete scheduler is
+  $expandSched\ ws$ (\lean{PLTS.expandSched}), whose next-move law at a concrete
+  history is the Bayesian posterior over the next inner draw given that history.
+
+  The fidelity equality \lean{PLTS.traceProb_expandSched_eq} is proved
+  configuration by configuration (for $\tau \ne []$; $\tau = []$ is $1 = 1$). Each
+  side reduces to a sum of $reachProb$:
+  \begin{itemize}
+    \item the abstract $traceProb$ collects the \emph{entry} configurations
+      $\{\,c \mid c.e'.trans = nil,\ IsTight(c.we),\ trace(c.we) = \tau\,\}$
+      (a fresh weak step has just committed);
+    \item the concrete $traceProb$ collects the \emph{arrival} configurations
+      $\{\,c \mid c.e'.trans \ne nil,\ IsTight(c.e),\ trace(c.e) = \tau\,\}$
+      (the concrete run has just emitted the external $l$).
+  \end{itemize}
+  These are the \emph{same} external weak step measured one moment apart: between an
+  arrival and its matching entry lies only the post-$l$ $\tau$-run and the outer
+  commit, which change $last(e)$ but not the external trace. Their $reachProb$
+  masses are \emph{equal} --- not merely $\le$ --- because the witness's post-$\tau$
+  run halts almost surely (the $\sum haltMass = 1$ clause of $Realises$), so no mass
+  leaks to divergence inside a witness run and $reachProb$ is conserved across the
+  post-$\tau$ sojourn. Hence the entry- and arrival-sums agree.
+\end{proof}

@@ -1,0 +1,49 @@
+\begin{definition}[The analysis-side composition]
+  \label{def:aba-hybrids}
+  \lean{PLTS.ABA.context}\lean{PLTS.ABA.hybridSpec}\leanok
+  \uses{def:aba-subspecs, def:aba-core, def:aba-labels, def:process-algebra, def:idle-family}
+  Fix the context
+  \[
+    \mathrm{context}(P) \;=\;
+      \mathrm{core}(P) \parallel \mathrm{WCC.specFamily}(P),
+  \]
+  the monolithic round loop of Definition~\ref{def:aba-core} beside the coin
+  oracle at specification level.
+  The analysis-side composition is
+  \[
+    \mathrm{hybridSpec}(P) \;=\; \mathrm{abstract}_H\bigl(
+      \mathrm{GBCA.specFamily}(P) \parallel \mathrm{context}(P) \bigr),
+  \]
+  with state space
+  \[
+    \bigl(\mathbb{N} \to \mathrm{GBCA.SpecState}\bigr) \times
+      \bigl(\mathrm{CoreState} \times
+        (\mathbb{N} \to \mathrm{WCC.SpecState})\bigr).
+  \]
+  Both sub-protocols are read at specification level, so the round loop's
+  environment is exactly the two oracles it calls.
+  Each of the three layers carries its own copy of the corrupted set, and each
+  applies the same budget-guarded transform to it on $\mathrm{fail}(k)$: insert
+  $k$ when $k \notin F$ and $|F| < f$, and change nothing otherwise (D1).
+
+  The hidden alphabet is the sub-protocol API,
+  \[
+    H \;=\; \{\, l \;:\; \mathrm{gbcaRound}(l) \ne \bot
+      \ \text{ or }\ \mathrm{wccRound}(l) \ne \bot \,\},
+  \]
+  which is exactly the set of labels
+  \[
+    \{\, \mathrm{callG}(r,i,b),\ \mathrm{retG}(r,i,g),\
+      \mathrm{callW}(r,i),\ \mathrm{retW}(r,i,c) \,\},
+  \]
+  where $r$ ranges over $\mathbb{N}$, $i$ over $[n]$, the bits $b$ and $c$ over
+  $\{0,1\}$, and $g$ over the graded outcomes
+  $\{A\,0, A\,1, B\,0, B\,1, C\}$.
+  Every one of these is mapped to $\tau$ by $\mathrm{abstract}_H$, and the same
+  set is hidden at the outer frame of $\mathrm{netFlat}(P)$,
+  $\mathrm{exploded}(P)$ and $\mathrm{flatSpec}(P)$.
+  What remains visible is $\tau$ together with the ABA interface and
+  corruption, namely $\mathrm{callABA}(i,b)$, $\mathrm{retABA}(i,b)$ and
+  $\mathrm{fail}(i)$.
+  Every system of the chain is therefore compared on the ABA interface alone.
+\end{definition}

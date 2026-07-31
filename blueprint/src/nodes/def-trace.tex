@@ -1,0 +1,9 @@
+\begin{definition}[Trace]
+  \label{def:trace}
+  \lean{PLTS.System.trace}\leanok
+  \uses{def:exec}
+  The trace of an execution $e$ is the sequence of labels obtained from $trans$ by
+  deleting every internal ($\tau$) transition and projecting to the label
+  component. Executions that differ only by trailing $\tau$-transitions have the
+  same trace.
+\end{definition}

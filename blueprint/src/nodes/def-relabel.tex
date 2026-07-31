@@ -1,0 +1,9 @@
+\begin{definition}[Extended alphabets and restriction]
+  \label{def:relabel}
+  \lean{PLTS.instSilentSum}\lean{PLTS.System.relabel}\lean{PLTS.System.relabel_isLTS}\lean{PLTS.System.abstract_isLTS}\leanok
+  A composition whose components rendezvous on labels the composite is not meant to expose is built over the extended alphabet $\mathrm{Label} \oplus \mathrm{Extra}$, with $\mathrm{Extra}$ carrying the auxiliary labels.
+  The silent label of the extended alphabet is $\mathrm{inl}\,\tau$, so every auxiliary label $\mathrm{inr}\,e$ is observable and hence hideable by $\mathrm{abstract}$.
+  Restriction along the left embedding, $\mathrm{relabel}(sys)$, keeps the state space and the initial state of $sys$ and retains exactly its $\mathrm{inl}$-labelled transitions.
+  Auxiliary transitions are discarded, so they must be abstracted to $\tau$ first if they are to survive.
+  Restriction discards transitions and not states, so it preserves the LTS property; abstraction preserves it as well, relabelling each transition and keeping its distribution.
+\end{definition}

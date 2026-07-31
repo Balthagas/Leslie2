@@ -1,0 +1,9 @@
+\begin{definition}[Weak closure $sys^w$]
+  \label{def:weakclosure}
+  \lean{PLTS.System.weakClosure}\leanok
+  \uses{def:weaktau, def:weakstep}
+  The \emph{weak closure} $sys^w$ has the same state space and initial state as
+  $sys$, but replaces its steps by weak transitions from a Dirac: for internal $l$,
+  $s \xrightarrow{l} \mu$ iff $weakTau\ sys\ \delta_s\ \mu$; for external $l$,
+  $s \xrightarrow{l} \mu$ iff $weakStep\ sys\ \delta_s\ l\ \mu$.
+\end{definition}

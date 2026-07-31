@@ -1,0 +1,8 @@
+\begin{definition}[Execution]
+  \label{def:exec}
+  \lean{PLTS.AlterSeq}\leanok
+  An \emph{execution} is an alternating sequence $e = \langle init, trans\rangle$:
+  an initial state followed by a possibly infinite sequence
+  $trans : \operatorname{Seq}(Label \times State)$ of $(label, next\ state)$ pairs.
+  Its \emph{trace} keeps only the external labels.
+\end{definition}

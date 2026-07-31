@@ -1,0 +1,24 @@
+\begin{lemma}[Functional strong matchings]
+  \label{def:strongfunctional}
+  \lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional}\lean{PLTS.ProbabilisticForwardSimulation.congr_rel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_diracRel}\lean{PLTS.ProbabilisticForwardSimulation.ofStrongFunctional_converse}\lean{PLTS.prodPMF_map_swap}\lean{PLTS.System.parallel_swap_step}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  Let $f : State_C \to State_A$ carry $sys_C.init$ to $sys_A.init$ and carry every transition $s \xrightarrow{l} \mu$ of $sys_C$ to the transition $f\,s \xrightarrow{l} \mu.\mathrm{map}\,f$ of $sys_A$ on the same label.
+  Then the graph of $f$, the relation $R\,s\,\nu \iff \nu = \delta_{f\,s}$, is a probabilistic forward simulation of $sys_C$ by $sys_A$.
+  Let $g : State_A \to State_C$ carry $sys_A.init$ to $sys_C.init$, and let every transition $g\,q \xrightarrow{l} \mu$ of $sys_C$ be $\mu = \nu.\mathrm{map}\,g$ for some transition $q \xrightarrow{l} \nu$ of $sys_A$.
+  Then the converse of the graph of $g$, the relation $R\,p\,\nu \iff \exists q,\ \nu = \delta_q \wedge p = g\,q$, is a probabilistic forward simulation of $sys_C$ by $sys_A$.
+  Neither system need be an LTS, and $g$ need be neither injective nor surjective; states outside its image are simply unrelated.
+  Either matching is restated along the Dirac lift $\operatorname{diracRel}$ by transport along a pointwise equivalence of relations, which is the shape the composed relations of the process algebra are built from.
+  The coordinate exchange $\mathrm{swap}(a,b) = (b,a)$ is such a matching between $sys_1 \parallel sys_2$ and $sys_2 \parallel sys_1$ in both directions.
+\end{lemma}
+
+\begin{proof}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  Take the graph of $f$ first.
+  The initial clause is the hypothesis $f(sys_C.init) = sys_A.init$, read as $\delta_{f(sys_C.init)}$ supported on $sys_A.init$.
+  For the step clause, the pushforward $\mu.\mathrm{map}\,f$ matches $\mu$ outcome by outcome, so the coupling is the pushforward of $\mu$ along $s \mapsto (s, \delta_{f\,s})$, and the abstract side answers with its single strong step, read as a weak transition.
+  Now take the converse of the graph of $g$.
+  A related pair is $(g\,q, \delta_q)$, and the hypothesis reflects the concrete step $g\,q \xrightarrow{l} \mu$ to an abstract step $q \xrightarrow{l} \nu$ with $\mu = \nu.\mathrm{map}\,g$.
+  The coupling is the pushforward of $\nu$ along $q' \mapsto (g\,q', \delta_{q'})$, whose first marginal is $\mu$ and whose support lies in the relation.
+  Transport along a pointwise equivalence of relations restates either matching along $\operatorname{diracRel}$.
+  For $\mathrm{swap}$ the step clause is that a product distribution pushed forward along $\mathrm{swap}$ is the product taken the other way round, which is exactly the step relation of $sys_2 \parallel sys_1$.
+\end{proof}

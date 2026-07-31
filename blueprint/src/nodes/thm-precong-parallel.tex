@@ -1,0 +1,21 @@
+\begin{theorem}[Precongruence for parallel composition]
+  \label{thm:precong-parallel}
+  \lean{PLTS.ProbabilisticForwardSimulation.parallel_right}\leanok
+  \uses{def:forwardsim, def:process-algebra}
+  If $sys_C$ is forward-simulated by $sys_A$ along $R$, then for every context
+  $sys_B$ the composition $sys_C \parallel sys_B$ is forward-simulated by
+  $sys_A \parallel sys_B$, along the pointwise lifted relation
+  $\operatorname{parallelRel} R$.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:process-algebra, lem:decomp, lem:mix, lem:bind}
+  Case on the three shapes of a composite step. A synchronised visible step is
+  answered by the abstract component's weak transition on the same label,
+  tensored with the context's own step on that label; a $\tau$-step of the
+  simulated component is answered by its weak transition, tensored with the
+  context held fixed; a $\tau$-step of the context is answered by the context
+  alone, the simulated side stuttering. Each case tensors a weak transition
+  with a fixed or matching factor, which is where the source-decomposition,
+  source-mixing and target-convexity lemmas are used.
+\end{proof}

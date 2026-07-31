@@ -1,0 +1,10 @@
+\begin{definition}[Trace probability]
+  \label{def:traceprob}
+  \lean{PLTS.System.traceProb}\leanok
+  \uses{def:probexec, def:trace, def:istight}
+  For a probabilistic execution $pe$ and a finite trace $\sigma$, the trace
+  probability $traceProb(pe, \sigma)$ is the sum of $probOf(e)$ over all tight
+  finite executions $e$ with trace $\sigma$. Tightness makes the summands
+  correspond to disjoint cylinders, so this is the standard trace-cone
+  probability: the chance that the run's external labels begin with $\sigma$.
+\end{definition}

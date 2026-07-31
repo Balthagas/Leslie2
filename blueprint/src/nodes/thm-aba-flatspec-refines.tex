@@ -1,0 +1,49 @@
+\begin{theorem}[The deflation onto the analysis-side composition]
+  \label{thm:aba-flatspec-refines}
+  \lean{PLTS.ABA.deflCoreA}\lean{PLTS.ABA.flatSpecDefl}\lean{PLTS.ABA.flatSpecForward}\lean{PLTS.ABA.flatSpecSim}\lean{PLTS.ABA.flatSpec_refines}\leanok
+  \uses{def:aba-flatspec, def:aba-hybrids, def:aba-core, def:strongfunctional, def:achievable, thm:forward-sound}
+  For all parameters $P$,
+  \[
+    \operatorname{ATD}(\mathrm{flatSpec}(P)) \;\subseteq\;
+    \operatorname{ATD}(\mathrm{hybridSpec}(P)).
+  \]
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-flatspec, def:aba-hybrids, def:strongfunctional, def:achievable, thm:forward-sound}
+  The two systems hold the same four layers under different partitions.
+  The round specifications and the coin oracle occupy the same coordinate on
+  both sides.
+  The two ABA-side factors are the monolithic $\mathrm{CoreState}$ of
+  Definition~\ref{def:aba-core} cut along the layer boundary, and the deflation
+  $\mathrm{flatSpecDefl}$ is the inverse cut: the round loops supply the control
+  records $procs$ and the receipt rows $decidedRecv$, the ABA-side network
+  supplies the sent pools $decidedSent$ and the corrupted set $F$.
+  It carries the initial state to the initial state.
+
+  Each row of $\mathrm{flatSpec}(P)$ writes one round-loop node and one network
+  slot, and read through the deflation the pair is the matching one-row update
+  of the monolithic state.
+  A quorum count over a round loop's own receipt rows is the monolithic count
+  at the deflated state, the receipt rows being the round loops'.
+  The guard $b \in dpool(id)$ on a return is the monolithic guard on
+  $decidedSent$.
+  The corrupted set is the network's on one side and the monolithic $F$ on the
+  other, and the two $\mathrm{corrupt}$ transforms share the guard
+  $k \notin F \wedge |F| < f$, so the $\mathrm{fail}$ rows correspond without a
+  side condition.
+  The hidden rendezvous of the deployment-shaped side --- the DECIDED relay and
+  delivery, the fused round advance, the call loop and the five drives --- are
+  each the monolithic row they assemble to, already relabelled to $\tau$ on
+  both sides; the two hiding frames of Definition~\ref{def:aba-flatspec} are
+  applied in the same order as the single frame of
+  Definition~\ref{def:aba-hybrids} together with the identification of the
+  rendezvous.
+  The coin resolution is the same pushforward of $\mathrm{wccPMF}$ on both
+  sides.
+
+  So $\mathrm{flatSpecDefl}$ commutes with steps, and
+  Lemma~\ref{def:strongfunctional} gives a probabilistic forward simulation
+  along its graph.
+  Soundness (Theorem~\ref{thm:forward-sound}) turns it into the inclusion.
+\end{proof}

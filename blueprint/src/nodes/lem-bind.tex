@@ -1,0 +1,17 @@
+\begin{lemma}[Target convexity]
+  \label{lem:bind}
+  \lean{PLTS.weakTau_bind, PLTS.weakStep_bind}\leanok
+  \uses{def:weaktau, def:weakstep}
+  A \emph{mixture of targets from a single point} is again a weak transition: if
+  $q : \operatorname{PMF}(\operatorname{PMF} State)$ satisfies
+  $weakTau\ sys\ \delta_s\ \sigma$ for every $\sigma \in \operatorname{supp} q$,
+  then $weakTau\ sys\ \delta_s\ (q \mathbin{\gg\!=} \mathrm{id})$; likewise for
+  $weakStep$.
+\end{lemma}
+
+\begin{proof}\leanok
+  The crux. Use a posterior-weighted mixing scheduler: from $\delta_s$ first draw a
+  target $\sigma \sim q$ and then run $\sigma$'s witness scheduler. Almost-sure
+  halting of each witness gives almost-sure halting of the mixture, and its halting
+  end-state distribution is $q \mathbin{\gg\!=} \mathrm{id}$.
+\end{proof}

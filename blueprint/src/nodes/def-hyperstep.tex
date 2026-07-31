@@ -1,0 +1,11 @@
+\begin{definition}[Hyper-step]
+  \label{def:hyperstep}
+  \lean{PLTS.hyperStep}\leanok
+  \uses{def:system}
+  $hyperStep\ sys\ \mu_{\mathrm{pre}}\ l\ \mu_{\mathrm{post}}$ holds when
+  $\mu_{\mathrm{post}}$ is a convex combination of one-step $l$-successors of the
+  points of $\mu_{\mathrm{pre}}$: there is $p : State \to \operatorname{PMF}(\operatorname{PMF} State)$
+  with $s \xrightarrow{l} \mu$ for every $s \in \operatorname{supp}\mu_{\mathrm{pre}}$
+  and $\mu \in \operatorname{supp}(p\,s)$, and
+  $\mu_{\mathrm{post}} = \mu_{\mathrm{pre}} \mathbin{\gg\!=} (s \mapsto (p\,s)\mathbin{\gg\!=}\mathrm{id})$.
+\end{definition}

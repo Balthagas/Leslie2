@@ -1,0 +1,18 @@
+\begin{theorem}[Safety of the ABA specification]
+  \label{thm:aba-spec-safe}
+  \lean{PLTS.ABA.spec_safe}\leanok
+  \uses{def:aba-spec, thm:trace-support}
+  Every trace in the support of every achievable trace distribution of the repaired specification satisfies Validity and Agreement.\lean{PLTS.ABA.ValidityTrace}\leanok\lean{PLTS.ABA.AgreementTrace}\leanok{}
+  Validity is the paper form: every return $\mathrm{retABA}\,id\,b$ at trace position $m$ is preceded by a call $\mathrm{callABA}\,id'\,b$ at some $k < m$ whose caller $id'$ is never corrupted anywhere along the trace.
+  Agreement is that any two returns carry the same bit.
+  Both predicates quantify over all returns, corrupted returners included, and are on that axis stronger than the contracts' correct-process phrasing.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-spec, thm:trace-support}
+  By Theorem~\ref{thm:trace-support} it suffices to prove the two predicates on the events of every genuine execution, which we do by induction over the ten rules with the invariants $\mathrm{SpecInv}$ and $\mathrm{ValInv}$.
+  For Agreement, $\mathrm{SpecInv}$ makes the decision value $val$ write-once: the unanimity rule can rewrite $val$ only to itself, since a $b$-quorum and a $(1-b)$-quorum would meet under $f < n - f$, and the rule-7 (D3) guard blocks the re-proposal that would otherwise flip it.
+  For Validity, $\mathrm{ValInv}$ carries provenance conjuncts tying each $bind$ and $val$ to an $f{+}1$ $F$-blind support, each member of which is either ghost-recorded as inputting the value or corrupted.
+  The at most $f$ ever-corrupted processes, obtained as a trace-level fold of the $\mathrm{failSet}$, leave one of the $f{+}1$ supporters a never-corrupted recorded caller by a budget pigeonhole.
+  Positionality of that caller, a call at some $k < m$, is read off the same label-history fold.
+\end{proof}

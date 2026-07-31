@@ -1,0 +1,9 @@
+\begin{lemma}[Source mixing]
+  \label{lem:mix}
+  \lean{PLTS.weakTau_of_pointwise, PLTS.weakStep_of_pointwise}\leanok
+  \uses{def:weaktau, def:weakstep}
+  The converse recombination: given per-point weak transitions
+  $weakTau\ sys\ \delta_s\ (\rho\,s)$ for $s \in \operatorname{supp}\mu$, a single
+  scheduler dispatching on the start state witnesses
+  $weakTau\ sys\ \mu\ (\mu \mathbin{\gg\!=} \rho)$; likewise for $weakStep$.
+\end{lemma}

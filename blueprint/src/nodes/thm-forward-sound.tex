@@ -1,0 +1,31 @@
+\begin{theorem}[Soundness of probabilistic forward simulation]
+  \label{thm:forward-sound}
+  \lean{PLTS.ProbabilisticForwardSimulation.achievableTraceDists_subset}\leanok
+  \uses{def:forwardsim, def:achievable, thm:forward-equiv, thm:strongsound,
+        thm:dist-eq, thm:weakclosure-eq}
+  If $sys_C$ is forward-simulated by $sys_A$ (along some
+  $R : State_C \to \operatorname{PMF} State_A \to \mathrm{Prop}$), then
+  \[
+    \operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A).
+  \]
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:forward-equiv, thm:strongsound, thm:dist-eq, thm:weakclosure-eq}
+  Chain the four building blocks. By Theorem~\ref{thm:forward-equiv} the forward
+  simulation $R$ is a strong simulation of $sys_C$ by $\mathcal{D}(sys_A^w)$, so
+  Theorem~\ref{thm:strongsound} gives
+  \[
+    \operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(\mathcal{D}(sys_A^w)).
+  \]
+  Theorem~\ref{thm:dist-eq}, applied to the system $sys_A^w$, gives
+  $\operatorname{ATD}(\mathcal{D}(sys_A^w)) = \operatorname{ATD}(sys_A^w)$, and
+  Theorem~\ref{thm:weakclosure-eq}, applied to $sys_A$, gives
+  $\operatorname{ATD}(sys_A^w) = \operatorname{ATD}(sys_A)$. Composing,
+  \[
+    \operatorname{ATD}(sys_C)
+      \subseteq \operatorname{ATD}(\mathcal{D}(sys_A^w))
+      = \operatorname{ATD}(sys_A^w)
+      = \operatorname{ATD}(sys_A). \qedhere
+  \]
+\end{proof}

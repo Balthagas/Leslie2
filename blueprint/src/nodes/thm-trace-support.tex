@@ -1,0 +1,16 @@
+\begin{theorem}[Trace-support bridge]
+  \label{thm:trace-support}
+  \lean{PLTS.exists_exec_of_traceProb_ne_zero}\lean{PLTS.is_exec_of_probOf_ne_zero}\lean{PLTS.safety_transfer}\leanok
+  A trace with positive trace probability under a Dirac-initialised
+  probabilistic execution is the trace of a genuine execution of the system,
+  with trace membership characterised by the execution's events; safety of
+  trace supports transfers along inclusion of achievable trace distributions.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:probexec, def:traceprob, def:exec, def:achievable}
+  Fix a Dirac-initialised probabilistic execution and a trace $t$ with positive trace probability.
+  Positive trace probability forces a positive-mass path, and reading its labels off that path yields a genuine execution of the system whose trace is $t$; trace membership is then characterised by that execution's events.
+  For the transfer, suppose $\operatorname{ATD}(sys_C) \subseteq \operatorname{ATD}(sys_A)$ and that every trace in the support of every achievable trace distribution of $sys_A$ is safe.
+  Each achievable trace distribution of $sys_C$ is one of $sys_A$, so its support is safe as well.
+\end{proof}

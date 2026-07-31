@@ -1,0 +1,19 @@
+\begin{definition}[Parameters and the coin]
+  \label{def:aba-params}
+  \lean{PLTS.ABA.Params}\lean{PLTS.ABA.Params.wccPMF}\leanok
+  The parameters: $n$ processes, at most $f$ corrupted with $3f < n$, coin
+  goodness $\varepsilon$, and coin failure probability $\failmass$, subject to
+  $2\varepsilon + \failmass \le 1$.
+  The Lean field carrying $\failmass$ is named $\delta$.
+  One distribution resolves both coins of the case study, that of rule~5 of
+  Transition System~1 and that of rule~3 of Transition System~3:
+  \[
+    \mathrm{wccPMF} \ =\ \varepsilon \cdot \delta(0) \ +\
+      \varepsilon \cdot \delta(1) \ +\
+      (1 - 2\varepsilon - \failmass) \cdot \delta(\top) \ +\
+      \failmass \cdot \delta(\dagger).
+  \]
+  The constraint $2\varepsilon + \failmass \le 1$ is what keeps the mass on
+  $\top$ non-negative, so that the four outcomes carry total mass one.
+  The outcome $\dagger$ is the resolution that delivers to no process (D17).
+\end{definition}

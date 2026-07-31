@@ -1,0 +1,15 @@
+\begin{lemma}[Source decomposition]
+  \label{lem:decomp}
+  \lean{PLTS.weakTau_exists_pointwise, PLTS.weakStep_exists_pointwise}\leanok
+  \uses{def:weaktau, def:weakstep}
+  A weak transition out of a distribution factors pointwise: if
+  $weakTau\ sys\ \mu\ \nu$ then there is
+  $\rho : State \to \operatorname{PMF} State$ with
+  $\nu = \mu \mathbin{\gg\!=} \rho$ and $weakTau\ sys\ \delta_s\ (\rho\,s)$ for every
+  $s \in \operatorname{supp}\mu$; likewise for $weakStep$.
+\end{lemma}
+
+\begin{proof}\leanok
+  Dispatch the single witness scheduler on the (observable) start state: run from
+  $\delta_s$ it defines $\rho\,s$, and averaging over $\mu$ recovers $\nu$.
+\end{proof}

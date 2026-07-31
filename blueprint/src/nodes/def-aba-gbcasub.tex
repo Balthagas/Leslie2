@@ -1,0 +1,81 @@
+\begin{definition}[The round subsystem]
+  \label{def:aba-gbcasub}
+  \lean{PLTS.ABA.GSub.GEvt}\lean{PLTS.ABA.GSub.GLab}\lean{PLTS.ABA.GSub.gEvents}\lean{PLTS.ABA.GSub.GProcStep}\lean{PLTS.ABA.GSub.gbcaProc}\lean{PLTS.ABA.GSub.GNetState}\lean{PLTS.ABA.GSub.GNetState.corrupt}\lean{PLTS.ABA.GSub.GNetStep}\lean{PLTS.ABA.GSub.gNet}\lean{PLTS.ABA.GSub.GSubState}\lean{PLTS.ABA.GSub.subPre}\lean{PLTS.ABA.GSub.sub}\lean{PLTS.ABA.GSub.gOwns}\lean{PLTS.ABA.GSub.gAct}\lean{PLTS.ABA.GSub.gbcaSide}\leanok
+  \uses{def:aba-procnet, def:aba-netadv, def:aba-gbca-vocab, def:relabel, def:syncproduct, def:idle-family, def:process-algebra}
+  One round of graded agreement, taken apart into the pieces that run it: $n$
+  local stage programs beside that round's own message fabric.
+
+  The local program $\mathrm{gbcaProc}(P,r,j)$ holds one stage node
+  $\mathrm{ProcNodeN}(n)$ of Definition~\ref{def:aba-procnet}: process $j$'s
+  stage record for round $r$ and its inbox rows, indexed by sender.
+  It holds no corrupted set, no corruption flag and no record of what it has
+  multicast.
+  Its twenty-five rows are the stage-visible half of the rows of
+  Definition~\ref{def:aba-procnet} that touch round $r$: the call, the eight
+  multicasts of the message ladder, the delivery, the three graded returns,
+  the five Byzantine drive rows, and the rows on which the record does not
+  move, either because another process is named or because the call is one
+  against an already-opened record.
+  The round loop is not here.
+  A call writes the stage record alone, and a return sets that record's
+  $returned$ flag alone.
+
+  The round's message fabric $\mathrm{gNet}(P,r)$ holds the per-sender pools
+  $pool(j)$ of the stage messages $j$ has multicast in this round (D5) and the
+  corrupted set $F$.
+  Its nine rows are the network half of the same rules: pooling on a multicast,
+  the membership guard $m \in pool(j)$ on a delivery, the pooling of the
+  $\langle\mathrm{INPUT},b\rangle$ that a call multicasts, the Byzantine
+  injection $\mathrm{byzG}$, and the rows on which nothing is sent.
+  Corruption is not a row of either table: it is the act the family of
+  Definition~\ref{def:idle-family} applies to every round's fabric at once,
+  inserting $k$ into $F$ when $k \notin F$ and $|F| < f$ (D1).
+
+  The two rendezvous of one round are the multicast $\mathrm{snd}(j,m)$ and the
+  delivery $\mathrm{dlv}(i,j,m)$, which make up the alphabet
+  $\mathrm{GEvt}(n)$.
+  They carry no round tag: the round is the identity of the instance they
+  belong to.
+  The subsystem is
+  \[
+    \mathrm{subPre}(P,r) \;=\;
+      \bigl(\mathrm{syncProduct}_{j \in [n]}\ \mathrm{gbcaProc}(P,r,j)\bigr)
+        \parallel \mathrm{gNet}(P,r),
+  \]
+  \[
+    \mathrm{sub}(P,r) \;=\; \mathrm{relabel}\bigl(
+      \mathrm{abstract}_{\mathrm{GEvt}(n)}(\mathrm{subPre}(P,r))\bigr),
+  \]
+  over the subsystem-internal alphabet
+  $\mathrm{GLab}(n) = \mathrm{NLab}(n) \oplus \mathrm{GEvt}(n)$ and then over
+  $\mathrm{NLab}(n)$.
+  The two rendezvous are hidden before anything outside the subsystem sees it,
+  so the interface of $\mathrm{sub}(P,r)$ is the round's ports and nothing
+  else: $\mathrm{callG}(r,\cdot,\cdot)$, $\mathrm{retG}(r,\cdot,\cdot)$,
+  $\mathrm{gcallLoop}(r,\cdot,\cdot)$ and the three Byzantine
+  graded-agreement drives of round $r$.
+  The stage multicast $\mathrm{gsnd}$ and the stage delivery $\mathrm{gdlv}$ of
+  Definition~\ref{def:aba-procnet} are labels no component of the subsystem
+  offers, so they carry no transition of it.
+
+  A Byzantine drive is split between two components (D11).
+  The subsystem carries its effect and not its authorisation: a driven call
+  opens the stage record and pools its $\langle\mathrm{INPUT},b\rangle$ under no
+  $k \in F$ guard, and a driven return sets $returned$ on the same SEAL-level
+  evidence an honest return needs.
+  A drive label therefore stays visible at this boundary, and the guard
+  $k \in F$ is read outside.
+
+  The graded-agreement side of the deployed protocol is the
+  $\mathbb{N}$-indexed family
+  \[
+    \mathrm{gbcaSide}(P) \;=\;
+      \mathrm{family}\bigl(\mathrm{sub}(P,\cdot),\ \mathrm{gOwns},\
+        \mathrm{fail},\ \mathrm{gAct}(P)\bigr),
+  \]
+  where $\mathrm{gOwns}$ sends each of the six interface label classes to its
+  round tag and every other label of $\mathrm{NLab}(n)$ to no round.
+  A round-tagged label moves its round alone, $\tau$ moves one round, and
+  $\mathrm{fail}(k)$ is the broadcast that keeps every round's copy of the
+  corrupted set in lockstep.
+\end{definition}

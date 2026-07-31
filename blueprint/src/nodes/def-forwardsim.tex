@@ -1,0 +1,15 @@
+\begin{definition}[Probabilistic forward simulation]
+  \label{def:forwardsim}
+  \lean{PLTS.ProbabilisticForwardSimulation}\leanok
+  \uses{def:weaktau, def:weakstep, def:pmfrel}
+  Probabilistic forward simulation is due to Segala~\cite{Segala95}.
+  Here $R : State_C \to \operatorname{PMF} State_A \to \mathrm{Prop}$ relates each
+  concrete state to a \emph{distribution} over abstract states. The initial
+  concrete state is related to some distribution supported on $sys_A.init$, and
+  from an $R$-related pair $(s_C, \mu_A)$ every concrete step
+  $s_C \xrightarrow{l} \mu_C$ is matched by a weak transition
+  $\mu_A \Rightarrow (\omega \mathbin{\gg\!=}\mathrm{id})$
+  ($weakTau$ for internal $l$, $weakStep$ for external $l$), where
+  $\omega : \operatorname{PMF}(\operatorname{PMF} State_A)$ couples $\mu_C$ with
+  $R$-related abstract distributions, i.e. $\operatorname{PMFRel} R\ \mu_C\ \omega$.
+\end{definition}

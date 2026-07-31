@@ -1,0 +1,22 @@
+\begin{definition}[The deployment-shaped specification]
+  \label{def:aba-flatspec}
+  \lean{PLTS.ABA.FlatSpecState}\lean{PLTS.ABA.flatSpecPre}\lean{PLTS.ABA.flatSpec}\leanok
+  \uses{def:aba-exploded, def:aba-gbcasub, def:aba-subspecs, def:idle-family, def:relabel, def:process-algebra}
+  The exploded system with its graded-agreement factor replaced by the family
+  $\mathrm{specSide}(P)$ of round specifications, the other three factors and
+  the whole pipeline unchanged:
+  \[
+    \mathrm{flatSpecPre}(P) \;=\;
+      \mathrm{specSide}(P) \parallel \bigl(\mathrm{syncProduct}_{j}\ \mathrm{coreProcN}(P,j)
+        \parallel (\mathrm{aNet}(P) \parallel \mathrm{wccLift}(P))\bigr),
+  \]
+  \[
+    \mathrm{flatSpec}(P) \;=\; \mathrm{abstract}_H\Bigl(\mathrm{relabel}\bigl(
+      \mathrm{abstract}_{\mathrm{netEvtLabels}}(\mathrm{flatSpecPre}(P))\bigr)\Bigr).
+  \]
+  Its state space is that of $\mathrm{exploded}(P)$ with the first factor
+  replaced by $\mathbb{N} \to \mathrm{GBCA.SpecState}$.
+  The system is in deployment coordinates: the round loops are $n$ programs,
+  the DECIDED layer and the corrupted set are the ABA-side network's, and only
+  the graded-agreement rounds are read at specification level.
+\end{definition}

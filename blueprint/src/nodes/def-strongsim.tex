@@ -1,0 +1,10 @@
+\begin{definition}[Strong probabilistic simulation]
+  \label{def:strongsim}
+  \lean{PLTS.StrongProbabilisticSimulation}\leanok
+  \uses{def:system, def:pmfrel}
+  $R : State_C \to State_A \to \mathrm{Prop}$ is a \emph{strong} simulation of
+  $sys_C$ by $sys_A$ when $R\ sys_C.init\ sys_A.init$, and every concrete step
+  $s_C \xrightarrow{l} \mu_C$ from an $R$-related pair $(s_C, s_A)$ is matched by a
+  single strong abstract step $s_A \xrightarrow{l} \mu_A$ (same label, no
+  stuttering) with $\operatorname{PMFRel} R\ \mu_C\ \mu_A$.
+\end{definition}
