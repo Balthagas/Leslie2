@@ -7,6 +7,11 @@ blueprint/print/
 blueprint/web/
 blueprint/print-min/
 blueprint/web-min/
+
+# Blueprint output staged into the Jekyll site for deployment
+home_page/blueprint/
+home_page/blueprint-min/
+home_page/blueprint.pdf
 blueprint/src/*.aux
 blueprint/src/*.fdb_latexmk
 blueprint/src/*.fls

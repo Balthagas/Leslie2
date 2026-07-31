@@ -169,4 +169,7 @@ statement-level picture; descend into Layer 3 and Layer 5 only when you want
 the proofs. For liveness context (deliberately out
 of scope here) see `../NOTES-Liveness-Roadmap.md`; for how the encoding stands
 against the source blueprint and ABDY22 beyond the D-registry above, see
-`../NOTES-Fidelity.md`.
+`../NOTES-Fidelity.md`. The prose account of this case study is the ABA chapter
+of the repository's own blueprint (`../../blueprint/src/`), which carries it in
+two editions over one set of formal nodes: the full one (`content.tex`, with the
+rule inventories and the pseudocode) and a concise one (`content-min.tex`).

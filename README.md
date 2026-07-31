@@ -145,8 +145,11 @@ off in CI (warnings show locally but do not fail the build).
 
 ## Blueprint & conventions
 
-The mathematical write-up is a Lean blueprint under `blueprint/src/`
-(`content.tex` is the content; `web.tex` / `print.tex` are the entry points). It
+The mathematical write-up is a Lean blueprint under `blueprint/src/`, in two
+editions over the same formal nodes (`nodes/`): the full one (`content.tex`,
+entry points `web.tex` / `print.tex`), built by `leanblueprint pdf` /
+`leanblueprint web`, and a concise one (`content-min.tex`, entry points
+`web-min.tex` / `print-min.tex`), built by `bash blueprint/build-min.sh`. It
 cross-links to Lean declarations by their **fully-qualified name** (e.g.
 `PLTS.dist_traceProb_eq`), which this reorganization leaves unchanged — every
 declaration still lives in `namespace PLTS`, so only file locations moved. The
