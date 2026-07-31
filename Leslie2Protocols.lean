@@ -5,6 +5,7 @@ import Leslie2Protocols.ABA.CoreSimRel
 import Leslie2Protocols.ABA.Examples
 import Leslie2Protocols.ABA.Exploded
 import Leslie2Protocols.ABA.FlatNetwork
+import Leslie2Protocols.ABA.FlatSpec
 import Leslie2Protocols.ABA.GBCAFamily
 import Leslie2Protocols.ABA.GBCAImpl
 import Leslie2Protocols.ABA.GBCASafety
