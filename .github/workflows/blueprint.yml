@@ -101,10 +101,14 @@ jobs:
       # checkdecls run against the full edition's lean_decls is the only check
       # those declarations get. It must run while lean_decls still holds the full
       # harvest, i.e. before the docgen-action step overwrites it.
+      # check-lean-prose covers what checkdecls cannot: the objects the prose sets
+      # as \mathrm{...} are not harvested declarations, so a rename leaves its old
+      # name in the prose without failing anything.
       - name: Check the full edition's declarations and node sync
         run: |
           lake exe checkdecls blueprint/lean_decls
           python3 blueprint/check-node-sync.py
+          python3 blueprint/check-lean-prose.py
 
       - name: Compile blueprint and documentation
         uses: leanprover-community/docgen-action@deed0cdc44dd8e5de07a300773eb751d33e32fc8 # 2025-10-26
