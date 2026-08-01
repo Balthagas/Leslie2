@@ -2,7 +2,7 @@
 
 Companion design document to the Lean proof in `ABA/GBCASim.lean` (relation,
 invariant, burst lemmas, per-row simulation), against the implementation shape
-in `ABA/GBCAImpl.lean` (deviation D18: the full six-level message ladder of
+in `ABA/GBCAImpl.lean` (deviation D18: the full five-level message ladder of
 ABDY22's Algorithm 6) and the specification shape in `ABA/GBCASpec.lean`
 (deviation D19: the exclusion set `dead : Finset Bool` in place of a bound
 value). The refinement paragraphs of `blueprint/src/content.tex` — the kill
@@ -22,7 +22,7 @@ Both systems are Dirac-transition LTSs. The instance refinement reaches the
 family lifting takes its broadcast ingredient from
 `GBCAFamily.instRel_corrupt`.
 
-### The implementation (D18): the six-level ladder
+### The implementation (D18): the five-level ladder
 
 The implementation transcribes ABDY22's Algorithm 6. The message type is
 

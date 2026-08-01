@@ -65,7 +65,7 @@ broadcasts `fail` to every round at once.
   `returned` flag on the same evidence an honest return needs. The guard
   belongs to the network that surrounds the subsystem, where it applies to
   the drive label that stays visible at this boundary.
-* **D18 (the six-level ladder).** The send rows are the six levels
+* **D18 (the five-level ladder).** The send rows are the five levels
   `INPUT / ECHO / VOTE / BIND / SEAL` and the three graded returns of the
   cited algorithm, not the four-round compression.
 

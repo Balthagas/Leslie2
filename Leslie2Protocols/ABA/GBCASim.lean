@@ -11,7 +11,7 @@ import Leslie2Protocols.Framework.FamilySim
 # The per-instance GBCA refinement
 
 The round-`r` implementation instance (`GBCA.implInst`, ABDY22 Algorithm 6 —
-the full six-level ladder, D18) forward-simulates the round-`r` specification
+the full five-level ladder, D18) forward-simulates the round-`r` specification
 instance (`GBCA.specInst`, the exclusion-set specification, D19):
 `GBCA.implRefines`.
 

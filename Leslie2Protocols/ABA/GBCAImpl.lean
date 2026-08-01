@@ -39,7 +39,7 @@ behaviour are modelled by nondeterministic `τ`-transitions.
 
 ## Why the cited algorithm and not the blueprint's `alg:GBCA` (D18)
 
-* **D18 (the six-level ladder).** This is a deviation from the source
+* **D18 (the five-level ladder).** This is a deviation from the source
   blueprint's `alg:GBCA`, which presents a **4-round compression** of
   Algorithm 6: the `echo5` round is elided, the decide conditions read one level
   down, and the grade-1 evidence is `f + 1` `VOTE v` where Algorithm 6 has
@@ -97,7 +97,7 @@ namespace PLTS
 namespace ABA
 namespace GBCA
 
-/-- The six-level message ladder of Algorithm 6. `VOTE`, `BIND` and `SEAL` may
+/-- The five-level message ladder of Algorithm 6. `VOTE`, `BIND` and `SEAL` may
 carry the non-bit payload `⊥` (`none`). -/
 inductive Msg : Type
   /-- `⟨INPUT, b⟩`. -/
@@ -561,7 +561,7 @@ theorem exists_honest_recv₂ {P : Params} {s : ImplState P.n} (hF : s.F.card �
 end ImplState
 
 /-- The step relation of the round-`r` GBCA implementation instance
-(ABDY22 Algorithm 6, the full six-level ladder). All transitions are Dirac. -/
+(ABDY22 Algorithm 6, the full five-level ladder). All transitions are Dirac. -/
 inductive ImplStep (P : Params) (r : ℕ) :
     ImplState P.n → Lab P.n → PMF (ImplState P.n) → Prop
   /-- The environment call arrives: record the input and multicast

@@ -85,7 +85,7 @@ composition, so the composite `deployedGroup` speaks exactly `Lab n`.
   DECIDED layer admits equivocation.
 * **D17 (δ-mass failure outcome).** Inherited from the coin oracle: a failed
   resolution enables no return.
-* **D18 (the six-level ladder).** The stage rules are the six levels
+* **D18 (the five-level ladder).** The stage rules are the five levels
   `INPUT / ECHO / VOTE / BIND / SEAL` and the three graded returns of the
   cited algorithm, not the four-round compression.
 
