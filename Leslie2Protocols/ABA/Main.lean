@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
+import Leslie2Protocols.ABA.CoreSim
 import Leslie2Protocols.ABA.LayeredSpec
 
 /-!
@@ -22,7 +23,7 @@ whose traces satisfy Validity and Agreement (`spec_safe`, `SpecSafety.lean`).
 
 ## The chain
 
-Four probabilistic forward simulations carry the deployed protocol to the
+Three probabilistic forward simulations carry the deployed protocol to the
 specification:
 
 1. `layeredSim` (`Layered.lean`) — re-cut the deployed state so that a
@@ -34,13 +35,14 @@ specification:
    subsystem by its specification, the other three factors untouched: the
    family substitution carried by four congruences (`parallel_right`,
    `abstract`, `relabel`, `abstract`).
-3. `layeredSpecSim` (`LayeredSpec.lean`) — repartition the two ABA-side factors into
-   the monolithic coordinator state, reaching `hybridSpec`.
-4. `coreSim` (`CoreSim.lean`) — the hand-built simulation of the coordinator
-   against the specification.
+3. `coreSim` (`CoreSim.lean`) — the hand-built simulation of the
+   deployment-shaped specification against the ABA specification, read in the
+   layered coordinates: the round specifications, the `n` round loops, the
+   ABA-side network and the coin oracle, each still a factor of the state the
+   relation is defined on.
 
-`refines` chains the soundness inclusions of the four (Result 1) by
-`Set.Subset.trans`; `simComposed` composes the four simulations themselves by
+`refines` chains the soundness inclusions of the three (Result 1) by
+`Set.Subset.trans`; `simComposed` composes the three simulations themselves by
 `ProbabilisticForwardSimulation.trans` (Result 2). The two routes are
 independent — the inclusion never invokes transitivity of simulation.
 
@@ -74,18 +76,17 @@ open Net Layer
 
 Cut the deployed reading along its layer boundaries (`layered_atd`), substitute
 each round's graded-agreement subsystem by its specification at the deployed
-shape (`substitution`), deflate the two ABA-side factors into the monolithic
-core (`layeredSpec_refines`), then take the core simulation (`coreSim`). Every
-step is a simulation between systems the deployed reading itself names. -/
+shape (`substitution`), then take the core simulation (`coreSim`). Every step
+is a simulation between systems the deployed reading itself names. -/
 
 /-- **The deployment-shaped specification refines the ABA specification**: the
-deflation inclusion chained with the core simulation's soundness. -/
+soundness of the core simulation. -/
 theorem layeredSpec_spec (P : Params) :
     achievableTraceDists (layeredSpec P) ⊆ achievableTraceDists (spec P) :=
-  Set.Subset.trans (layeredSpec_refines P) (coreSim P).achievableTraceDists_subset
+  (coreSim P).achievableTraceDists_subset
 
 /-- **The deployed protocol refines the ABA specification**: the substitution
-at the deployed shape, then the deflation, then the core simulation. -/
+at the deployed shape, then the core simulation. -/
 theorem deployed_spec (P : Params) :
     achievableTraceDists (deployed P) ⊆ achievableTraceDists (spec P) :=
   Set.Subset.trans (deployed_layeredSpec P) (layeredSpec_spec P)
@@ -138,17 +139,15 @@ theorem main (P : Params) :
       ValidityTrace P t ∧ AgreementTrace t :=
   safety_transfer (refines P) (spec_safe P)
 
-/-- **The composed simulation** `deployed ⊑ ABA.spec`: the four simulations of
+/-- **The composed simulation** `deployed ⊑ ABA.spec`: the three simulations of
 the chain joined by Result 2 (`ProbabilisticForwardSimulation.trans`), along
-the composite of their four relations — the graph of the regrouping, the
-pointwise round substitution, the graph of the spec-side repartition, and the
-core relation. -/
+the composite of their three relations — the graph of the regrouping, the
+pointwise round substitution, and the core relation. -/
 noncomputable def simComposed (P : Params) :
     ProbabilisticForwardSimulation (deployed P) (spec P)
       (compRel (fun s ν => ν = PMF.pure (regroup s))
-        (compRel (parallelRel (diracRel (RsubAll P)))
-          (compRel (fun s ν => ν = PMF.pure (layeredSpecDefl P s)) (coreRel P)))) :=
-  (layeredSim P).trans ((substSim P).trans ((layeredSpecSim P).trans (coreSim P)))
+        (compRel (parallelRel (diracRel (RsubAll P))) (coreRel P))) :=
+  (layeredSim P).trans ((substSim P).trans (coreSim P))
 
 /-! ### Mechanical axiom firewall
 
@@ -166,10 +165,6 @@ a `sorryAx` dependence. -/
 /-- info: 'PLTS.ABA.deployed_layeredSpec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms deployed_layeredSpec
-
-/-- info: 'PLTS.ABA.layeredSpec_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms layeredSpec_refines
 
 /-- info: 'PLTS.ABA.layeredSpec_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

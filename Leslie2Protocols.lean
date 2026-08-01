@@ -13,7 +13,6 @@ import Leslie2Protocols.ABA.GBCASafety
 import Leslie2Protocols.ABA.GBCASim
 import Leslie2Protocols.ABA.GBCASpec
 import Leslie2Protocols.ABA.GBCASub
-import Leslie2Protocols.ABA.Hybrid
 import Leslie2Protocols.ABA.Labels
 import Leslie2Protocols.ABA.Layered
 import Leslie2Protocols.ABA.LayeredSpec

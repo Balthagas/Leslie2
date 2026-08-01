@@ -4,555 +4,616 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Hybrid
-import Leslie2Protocols.Framework.SyncProduct
+import Leslie2Protocols.ABA.LayeredSpec
+import Leslie2Protocols.ABA.CoreView
 
 /-!
-# Non-vacuity witnesses for the analysis-side composition
+# Non-vacuity witnesses for the deployment-shaped specification
 
-Machine-checked evidence that the composed system `hybridSpec P` can actually
+Machine-checked evidence that the composed system `layeredSpec P` can actually
 execute a nontrivial prefix: the core simulation `ABA.coreSim` about it is not
 vacuously true through an immediate deadlock.
 
 We fix the small parameter set `P4` (`n = 4`, `f = 1`, `ε = 1/2`) and exhibit a
-concrete **21-step run of `hybridSpec P4` that reaches a genuine `retABA`** — a
+concrete **21-step run of `layeredSpec P4` that reaches a genuine `retABA`** — a
 complete decision — starting from its initial state:
 
 * `step_callABA₀/₁/₂` — three external input handshakes (`callABA`, *visible*:
-  Core takes its `input` constructor, both instance families idle);
-* `step_callG₀/₁/₂` — three GBCA calls (`callG 0`, *hidden* to `τ`: Core emits,
-  the GBCA round-`0` instance takes its owned `call`, WCC idles);
-* `step_bindUnset` — the GBCA `bindUnset` internal transition killing the bit
-  `false` (a family `τ`, `n − f` quorum met at `n = 4, f = 1` by the three
-  callers of `true`, interleaved in `parallel`);
-* `step_retG₀/₁/₂` — the three GBCA `A`-return handshakes (`retG 0`, *hidden*),
-  the first locking the round grade to the `A`-side;
+  the addressed round loop takes its `input` row, the other three idle, and the
+  round specifications, the ABA-side network and the coin oracle idle);
+* `step_callG₀/₁/₂` — three graded-agreement calls (`callG 0`, *hidden* to `τ`:
+  the caller's round loop hands over its estimate and the round-`0`
+  specification takes its owned `call`);
+* `step_bindUnset` — the round-`0` specification's `bindUnset` internal
+  transition killing the bit `false` (a family `τ`, `n − f` quorum met at
+  `n = 4, f = 1` by the three callers of `true`);
+* `step_retG₀/₁/₂` — the three graded-agreement `A`-return handshakes
+  (`retG 0`, *hidden*), the first locking the round grade to the `A`-side;
 * `step_callW₀/₁/₂` — the three coin-call handshakes (`callW 0`, *hidden*);
 * `step_flip` + `step_flip_mass` — the coin `flip`, the run's **single
   probabilistic step**: the successor lands on the `bit true` branch (the one
   agreeing with the bound value) with mass exactly `ε = 1/2 > 0`;
-* `step_retW₀/₁/₂` — the three coin-return handshakes (`retW 0`, *hidden*); each
-  fires the fused round advance (deviation D10) that multicasts
-  `⟨DECIDED, true⟩`, giving three distinct DECIDED-true senders;
+* `step_retW₀/₁/₂` — the three coin returns, each a rendezvous on `retWPub`
+  (*hidden*): the round loop's fused round advance (deviation D10) joined with
+  the network's publication of `⟨DECIDED, true⟩`, giving three distinct
+  DECIDED-true senders;
 * `step_deliver₀/₁/₂` — the adversary delivers all three receipts to process `0`
-  (Core internal `τ`), meeting the `n − f = 3` return quorum;
+  (a rendezvous on `ddlv`, *hidden*), meeting the `n − f = 3` return quorum;
 * `step_retABA` — process `0` fires `retABA 0 true`: the decision.
 
-Plus `step_fail` — a `fail` broadcast synchronising all three components.
+Plus `step_fail` — a `fail` broadcast synchronising all four factors.
 
 Because every step but the flip is a Dirac and the flip's chosen branch has mass
 `ε > 0`, the whole path is a positive-probability execution: a product of Diracs
 times one `ε` factor. Every guard on these closed numeric states discharges by
-`decide`/`rfl`/`simp`; the Dirac successor distributions collapse through
+`decide`/`rfl`; the Dirac successor distributions collapse through
 `prodPMF_pure_pure` and `PMF.pure_map`, and the flip's branch mass through
 `prodPMF_pure_left_apply` and `map_apply_inj`.
+
+The ABA-side factors are named through the view of `ABA/CoreView.lean`: a state
+of the run is a triple — the round specifications, one `ABAState` holding the
+round loops beside the ABA-side network, and the coin oracle — assembled into
+the four-factor state by `st`.
 -/
 
 namespace PLTS
 namespace ABA
+
+open Net Layer
 
 /-- A concrete parameter set: four processes, corruption budget one, and a
 never-failing `ε = 1/2` coin, so that each bit outcome carries positive mass
 (`ε = 1/2`) and the witnessed `flip` can take the `bit true` branch.
 `2 * ε + δ ≤ 1` holds with equality (`2 * (1/2) + 0 = 1`); the adversarial `⊤`
 outcome and the failure outcome then both have mass `0`. -/
-noncomputable def P4 : Params := ⟨4, 1, by omega, 1 / 2, 0, by
+noncomputable abbrev P4 : Params := ⟨4, 1, by omega, 1 / 2, 0, by
   rw [add_zero, one_div, ENNReal.mul_inv_cancel] <;> simp⟩
+
+/-! ### Assembling and moving the four factors -/
+
+/-- A state of the deployment-shaped specification, assembled from the round
+specifications, the ABA-side pair and the coin oracle. -/
+def st (G : ℕ → GBCA.SpecState 4) (s : ABAState P4) (o : ℕ → WCC.SpecState 4) :
+    LayeredSpecState P4 := (G, s.1, s.2, o)
+
+/-- The round loops on a label one of them owns: the addressed loop takes its
+row, the others stand still, and the group's successor is the pointwise
+update. -/
+theorem coreLoops_at {C : ∀ _ : Fin 4, CoreNodeN 4} (id : Fin 4) {L : NLab 4}
+    {c' : CoreNodeN 4} (hown : CoreProcStepN P4 id (C id) L (PMF.pure c'))
+    (hidle : ∀ j, j ≠ id → CoreProcStepN P4 j (C j) L (PMF.pure (C j))) (i : Fin 4) :
+    CoreProcStepN P4 i (C i) L (PMF.pure (Function.update C id c' i)) := by
+  by_cases h : i = id
+  · subst h; rw [Function.update_self]; exact hown
+  · rw [Function.update_of_ne h]; exact hidle i h
+
+/-- The coin oracle's idle row on a shared label that is neither `τ`, nor one
+of its own handshakes, nor `fail`. -/
+theorem wccIdle (o : ℕ → WCC.SpecState 4) {l : Lab 4} (hl : l ≠ Lab.tau)
+    (hr : Lab.wccRound l = none) (hf : ¬ Lab.isFail l) :
+    (wccLift P4).step o (Sum.inl l) (PMF.pure o) :=
+  (System.mapIdle_step_some (wccPull_inl l) (PMF.pure o)).mpr
+    (wccFamilyN_idle P4 o hl hr hf)
 
 /-! ### Named states of the run -/
 
-/-- The GBCA family state: all instances initial. -/
+/-- The round specifications: every round initial. -/
 def G0 : ℕ → GBCA.SpecState 4 := fun _ => GBCA.SpecState.initial 4
 
-/-- The WCC family state: all instances initial. -/
+/-- The coin oracle: every round initial. -/
 def W0 : ℕ → WCC.SpecState 4 := fun _ => WCC.SpecState.initial 4
 
-/-- The Core state: initial. -/
-def C0 : CoreState 4 := CoreState.initial 4
+/-- The ABA-side state: every round loop idle, nothing multicast, nobody
+corrupted. -/
+noncomputable def S0 : ABAState P4 := ABAState.initial P4
 
-/-- Core update performed by a `callABA id true` input: enter round `0`, ready
-to call GBCA. -/
-def cInput (id : Fin 4) (s : CoreState 4) : CoreState 4 :=
+/-- The ABA-side update of a `callABA id true` input: enter round `0`, ready to
+call the graded agreement. -/
+noncomputable def sInput (id : Fin 4) (s : ABAState P4) : ABAState P4 :=
   s.setProc id { s.procs id with
     input := some true, est := some true, round := 0, phase := .toCallG }
 
-/-- Core update performed by a `callG r id` emit: advance to `awaitG`. -/
-def cCallG (id : Fin 4) (s : CoreState 4) : CoreState 4 :=
+/-- The ABA-side update of a `callG r id` emit: advance to `awaitG`. -/
+noncomputable def sCallG (id : Fin 4) (s : ABAState P4) : ABAState P4 :=
   s.setProc id { s.procs id with phase := .awaitG }
 
-/-- GBCA-family update performed by a round-`0` `call id true`: record the input
-in the round-`0` instance. -/
+/-- The ABA-side update of a round-`0` graded-agreement `A true` return: adopt
+the estimate, record the grade, head for the coin. -/
+noncomputable def sRetG (id : Fin 4) (s : ABAState P4) : ABAState P4 :=
+  s.setProc id { s.procs id with
+    est := some true, lastGrade := some (.A true), phase := .toCallW }
+
+/-- The ABA-side update of a `callW r id` emit: advance to `awaitW`. -/
+noncomputable def sCallW (id : Fin 4) (s : ABAState P4) : ABAState P4 :=
+  s.setProc id { s.procs id with phase := .awaitW }
+
+/-- The round-`0` specification update of a `call id true`: record the input. -/
 def gCall (id : Fin 4) (s : ℕ → GBCA.SpecState 4) : ℕ → GBCA.SpecState 4 :=
   Function.update s 0 { s 0 with call := Function.update (s 0).call id (some true) }
 
-/-- Core states after the three inputs. -/
-def C1 : CoreState 4 := cInput 0 C0
-def C2 : CoreState 4 := cInput 1 C1
-def C3 : CoreState 4 := cInput 2 C2
+/-- The round-`0` specification update of an `A true` return by `id`: lock the
+grade to the `A`-side and record the return. -/
+def gRetA (id : Fin 4) (s : ℕ → GBCA.SpecState 4) : ℕ → GBCA.SpecState 4 :=
+  Function.update s 0 { s 0 with grade := some true, ret := Function.update (s 0).ret id true }
 
-/-- GBCA-family states after the three round-`0` calls. -/
+/-- The round-`0` coin update of a `call id`: record `id` as a caller. -/
+def wCall (id : Fin 4) (s : ℕ → WCC.SpecState 4) : ℕ → WCC.SpecState 4 :=
+  Function.update s 0 { s 0 with called := Function.update (s 0).called id true }
+
+/-- The round-`0` coin update of the `flip` landing on `bit true`. -/
+def wFlip (s : ℕ → WCC.SpecState 4) : ℕ → WCC.SpecState 4 :=
+  Function.update s 0 { s 0 with val := .bit true }
+
+/-- The round-`0` coin update of a `ret id true`. -/
+def wRet (id : Fin 4) (s : ℕ → WCC.SpecState 4) : ℕ → WCC.SpecState 4 :=
+  Function.update s 0 { s 0 with ret := Function.update (s 0).ret id true }
+
+/-- ABA-side states after the three inputs. -/
+noncomputable def S1 : ABAState P4 := sInput 0 S0
+noncomputable def S2 : ABAState P4 := sInput 1 S1
+noncomputable def S3 : ABAState P4 := sInput 2 S2
+
+/-- Round specifications after the three round-`0` calls. -/
 def G1 : ℕ → GBCA.SpecState 4 := gCall 0 G0
 def G2 : ℕ → GBCA.SpecState 4 := gCall 1 G1
 def G3 : ℕ → GBCA.SpecState 4 := gCall 2 G2
 
-/-- Core states after the three round-`0` calls. -/
-def Cc1 : CoreState 4 := cCallG 0 C3
-def Cc2 : CoreState 4 := cCallG 1 Cc1
-def Cc3 : CoreState 4 := cCallG 2 Cc2
+/-- ABA-side states after the three round-`0` calls. -/
+noncomputable def Sc1 : ABAState P4 := sCallG 0 S3
+noncomputable def Sc2 : ABAState P4 := sCallG 1 Sc1
+noncomputable def Sc3 : ABAState P4 := sCallG 2 Sc2
 
-/-- GBCA-family state after `bindUnset` kills the round-`0` bit `false`,
+/-- Round specifications after `bindUnset` kills the round-`0` bit `false`,
 sparing `true`. -/
 def Gb : ℕ → GBCA.SpecState 4 := Function.update G3 0 { G3 0 with dead := {false} }
 
-/-- GBCA-family state after process `0`'s round-`0` `A`-return. -/
-def Gr : ℕ → GBCA.SpecState 4 :=
-  Function.update Gb 0
-    { Gb 0 with grade := some true, ret := Function.update (Gb 0).ret 0 true }
-
-/-- Core state after process `0`'s round-`0` GBCA return. -/
-def Cr : CoreState 4 :=
-  Cc3.setProc 0
-    { Cc3.procs 0 with est := some true, lastGrade := some (.A true), phase := .toCallW }
-
-/-! #### Continuation states: rounds `1,2` return, all call the coin, it
-flips to `bit true`, all return, DECIDED gossip carries `0` to a decision. -/
-
-/-- A further round-`0` GBCA `A`-return by process `id` (grade already locked
-`some true` by process `0`'s return). -/
-def gRetA (id : Fin 4) (s : ℕ → GBCA.SpecState 4) : ℕ → GBCA.SpecState 4 :=
-  Function.update s 0 { s 0 with grade := some true, ret := Function.update (s 0).ret id true }
-
-/-- Core update by process `id`'s round-`0` GBCA return (adopt estimate `true`,
-head for the coin). -/
-def cRetG (id : Fin 4) (s : CoreState 4) : CoreState 4 :=
-  s.setProc id { s.procs id with est := some true, lastGrade := some (.A true), phase := .toCallW }
-
-/-- Core update by a `callW r id` emit: advance to `awaitW`. -/
-def cCallW (id : Fin 4) (s : CoreState 4) : CoreState 4 :=
-  s.setProc id { s.procs id with phase := .awaitW }
-
-/-- WCC-family update by a round-`0` `call id`: record `id` as a caller. -/
-def wCall (id : Fin 4) (s : ℕ → WCC.SpecState 4) : ℕ → WCC.SpecState 4 :=
-  Function.update s 0 { s 0 with called := Function.update (s 0).called id true }
-
-/-- WCC-family update by the round-`0` coin `flip` landing on `bit true`. -/
-def wFlip (s : ℕ → WCC.SpecState 4) : ℕ → WCC.SpecState 4 :=
-  Function.update s 0 { s 0 with val := .bit true }
-
-/-- WCC-family update by a round-`0` `ret id true`. -/
-def wRet (id : Fin 4) (s : ℕ → WCC.SpecState 4) : ℕ → WCC.SpecState 4 :=
-  Function.update s 0 { s 0 with ret := Function.update (s 0).ret id true }
-
-/-- GBCA family after processes `1,2` also `A`-return round `0`. -/
+/-- Round specifications after the three round-`0` `A`-returns. -/
+def Gr : ℕ → GBCA.SpecState 4 := gRetA 0 Gb
 def Ga1 : ℕ → GBCA.SpecState 4 := gRetA 1 Gr
 def Ga2 : ℕ → GBCA.SpecState 4 := gRetA 2 Ga1
 
-/-- Core after processes `1,2` return round `0`'s GBCA. -/
-def Cq1 : CoreState 4 := cRetG 1 Cr
-def Cq2 : CoreState 4 := cRetG 2 Cq1
+/-- ABA-side states after the three round-`0` graded-agreement returns. -/
+noncomputable def Sr : ABAState P4 := sRetG 0 Sc3
+noncomputable def Sq1 : ABAState P4 := sRetG 1 Sr
+noncomputable def Sq2 : ABAState P4 := sRetG 2 Sq1
 
-/-- Core after all three processes call the coin. -/
-def Cw0 : CoreState 4 := cCallW 0 Cq2
-def Cw1 : CoreState 4 := cCallW 1 Cw0
-def Cw2 : CoreState 4 := cCallW 2 Cw1
+/-- ABA-side states after all three processes call the coin. -/
+noncomputable def Sw0 : ABAState P4 := sCallW 0 Sq2
+noncomputable def Sw1 : ABAState P4 := sCallW 1 Sw0
+noncomputable def Sw2 : ABAState P4 := sCallW 2 Sw1
 
-/-- WCC family after all three processes call the coin. -/
+/-- The coin oracle after all three processes call the coin. -/
 def Wc0 : ℕ → WCC.SpecState 4 := wCall 0 W0
 def Wc1 : ℕ → WCC.SpecState 4 := wCall 1 Wc0
 def Wc2 : ℕ → WCC.SpecState 4 := wCall 2 Wc1
 
-/-- WCC family after the coin flips to `bit true`. -/
+/-- The coin oracle after the coin flips to `bit true`. -/
 def Wfl : ℕ → WCC.SpecState 4 := wFlip Wc2
 
-/-- WCC family after all three processes receive the coin. -/
+/-- The coin oracle after all three processes receive the coin. -/
 def Wr0 : ℕ → WCC.SpecState 4 := wRet 0 Wfl
 def Wr1 : ℕ → WCC.SpecState 4 := wRet 1 Wr0
 def Wr2 : ℕ → WCC.SpecState 4 := wRet 2 Wr1
 
-/-- Core after all three return the coin (each multicasts `⟨DECIDED, true⟩` via
-the fused `stepRound`, having held an `A true` grade). -/
-def Cs0 : CoreState 4 := Cw2.stepRound 0 true
-def Cs1 : CoreState 4 := Cs0.stepRound 1 true
-def Cs2 : CoreState 4 := Cs1.stepRound 2 true
+/-- ABA-side states after the three coin returns; each is the fused round
+advance (deviation D10), which multicasts `⟨DECIDED, true⟩` on the `A true`
+grade the round carried. -/
+noncomputable def Ss0 : ABAState P4 := Sw2.stepRound 0 true
+noncomputable def Ss1 : ABAState P4 := Ss0.stepRound 1 true
+noncomputable def Ss2 : ABAState P4 := Ss1.stepRound 2 true
 
-/-- Core after the adversary delivers all three `⟨DECIDED, true⟩` to process 0. -/
-def Cd0 : CoreState 4 := Cs2.deliverDecided 0 0 true
-def Cd1 : CoreState 4 := Cd0.deliverDecided 0 1 true
-def Cd2 : CoreState 4 := Cd1.deliverDecided 0 2 true
+/-- ABA-side states after the adversary delivers all three `⟨DECIDED, true⟩` to
+process `0`. -/
+noncomputable def Sd0 : ABAState P4 := Ss2.deliverDecided 0 0 true
+noncomputable def Sd1 : ABAState P4 := Sd0.deliverDecided 0 1 true
+noncomputable def Sd2 : ABAState P4 := Sd1.deliverDecided 0 2 true
 
-/-- Core after process `0` fires `retABA 0 true`. -/
-def Cfin : CoreState 4 := Cd2.setProc 0 { Cd2.procs 0 with returned := true }
+/-- The ABA-side state after process `0` fires `retABA 0 true`. -/
+noncomputable def Sfin : ABAState P4 := Sd2.setProc 0 { Sd2.procs 0 with returned := true }
 
-/-- The three components after a synchronised `fail 0` broadcast. -/
+/-- The four factors after a synchronised `fail 0` broadcast. -/
 noncomputable def Gf : ℕ → GBCA.SpecState 4 := fun r => (G0 r).corrupt P4 (0 : Fin 4)
 noncomputable def Wf : ℕ → WCC.SpecState 4 := fun r => (W0 r).corrupt P4 (0 : Fin 4)
-noncomputable def Cf : CoreState 4 := C0.corrupt P4 (0 : Fin 4)
+noncomputable def Sf : ABAState P4 := ABAState.corrupt P4 (0 : Fin 4) S0
 
-/-- The initial hybrid state is `(G0, (C0, W0))`. -/
-theorem hybridSpec_init : (hybridSpec P4).init = (G0, (C0, W0)) := rfl
+/-- The initial deployment-shaped state is `(G0, S0, W0)`. -/
+theorem layeredSpec_init : (layeredSpec P4).init = st G0 S0 W0 := rfl
 
 /-! ### Step 1–3: the external input handshakes (`callABA`, visible) -/
 
-/-- First input: process `0` receives `callABA 0 true`. Visible label; Core
-takes `input`, both families idle. -/
+/-- First input: process `0` receives `callABA 0 true`. Visible label; process
+`0`'s round loop takes `input`, the other three and the remaining factors
+idle. -/
 theorem step_callABA₀ :
-    (hybridSpec P4).step (G0, (C0, W0)) (Lab.callABA (0 : Fin 4) true)
-      (PMF.pure (G0, (C1, W0))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure G0, PMF.pure (C1, W0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure C1, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.input (P := P4) C0 (0 : Fin 4) true rfl
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st G0 S0 W0) (Lab.callABA (0 : Fin 4) true)
+      (PMF.pure (st G0 S1 W0)) := by
+  refine layeredSpec_vis P4 (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S0.1) (A := S0.2) (o := W0)
+    (L := Sum.inl (Lab.callABA (0 : Fin 4) true)) (by simp)
+    (specSide_idle P4 G0 (by simp) rfl not_false)
+    (coreLoops_at 0 (CoreProcStepN.input (P := P4) (S0.1 0) true rfl)
+      (fun j hj => CoreProcStepN.callABAIdle (P := P4) (S0.1 j) 0 true (Ne.symm hj)))
+    (ANetStep.callABAIdle (P := P4) S0.2 0 true)
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-- Second input: process `1`. -/
 theorem step_callABA₁ :
-    (hybridSpec P4).step (G0, (C1, W0)) (Lab.callABA (1 : Fin 4) true)
-      (PMF.pure (G0, (C2, W0))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure G0, PMF.pure (C2, W0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure C2, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.input (P := P4) C1 (1 : Fin 4) true rfl
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st G0 S1 W0) (Lab.callABA (1 : Fin 4) true)
+      (PMF.pure (st G0 S2 W0)) := by
+  refine layeredSpec_vis P4 (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S1.1) (A := S1.2) (o := W0)
+    (L := Sum.inl (Lab.callABA (1 : Fin 4) true)) (by simp)
+    (specSide_idle P4 G0 (by simp) rfl not_false)
+    (coreLoops_at 1 (CoreProcStepN.input (P := P4) (S1.1 1) true (by decide))
+      (fun j hj => CoreProcStepN.callABAIdle (P := P4) (S1.1 j) 1 true (Ne.symm hj)))
+    (ANetStep.callABAIdle (P := P4) S1.2 1 true)
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-- Third input: process `2`. -/
 theorem step_callABA₂ :
-    (hybridSpec P4).step (G0, (C2, W0)) (Lab.callABA (2 : Fin 4) true)
-      (PMF.pure (G0, (C3, W0))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure G0, PMF.pure (C3, W0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure C3, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.input (P := P4) C2 (2 : Fin 4) true rfl
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st G0 S2 W0) (Lab.callABA (2 : Fin 4) true)
+      (PMF.pure (st G0 S3 W0)) := by
+  refine layeredSpec_vis P4 (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S2.1) (A := S2.2) (o := W0)
+    (L := Sum.inl (Lab.callABA (2 : Fin 4) true)) (by simp)
+    (specSide_idle P4 G0 (by simp) rfl not_false)
+    (coreLoops_at 2 (CoreProcStepN.input (P := P4) (S2.1 2) true (by decide))
+      (fun j hj => CoreProcStepN.callABAIdle (P := P4) (S2.1 j) 2 true (Ne.symm hj)))
+    (ANetStep.callABAIdle (P := P4) S2.2 2 true)
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-! ### Step 4: first hidden GBCA call (`callG 0`, hidden to `τ`) -/
+/-! ### Steps 4–6: the graded-agreement calls (`callG 0`, hidden to `τ`) -/
 
-/-- First GBCA call: Core emits `callG 0 0 true`, the GBCA round-`0` instance
-takes its owned `call`, WCC idles; the whole handshake is hidden to `τ`. -/
+/-- First graded-agreement call: process `0`'s round loop hands over its
+estimate and the round-`0` specification takes its owned `call`. -/
 theorem step_callG₀ :
-    (hybridSpec P4).step (G0, (C3, W0)) Lab.tau
-      (PMF.pure (G1, (Cc1, W0))) := by
-  refine Or.inl ⟨rfl, Lab.callG 0 (0 : Fin 4) true, by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure G1, PMF.pure (Cc1, W0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inl ⟨0, rfl, _,
-      GBCA.Step.call (P := P4) (r := 0) (G0 0) (0 : Fin 4) true rfl, by rw [PMF.pure_map]; rfl⟩)
-  · refine Or.inl ⟨by decide, PMF.pure Cc1, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.callG (P := P4) C3 0 (0 : Fin 4) true rfl rfl rfl
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st G0 S3 W0) Lab.tau (PMF.pure (st G1 Sc1 W0)) := by
+  refine layeredSpec_hidden P4 (l := Lab.callG 0 (0 : Fin 4) true) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S3.1) (A := S3.2) (o := W0)
+    (L := Sum.inl (Lab.callG 0 (0 : Fin 4) true)) (by simp)
+    (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G0 0) 0 true rfl))
+    (coreLoops_at 0 (CoreProcStepN.callG (P := P4) (S3.1 0) 0 true (by decide) (by decide)
+        (by decide))
+      (fun j hj => CoreProcStepN.callGIdle (P := P4) (S3.1 j) 0 0 true (Ne.symm hj)))
+    (ANetStep.callGIdle (P := P4) S3.2 0 0 true)
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-- Second GBCA call: process `1`. -/
+/-- Second graded-agreement call: process `1`. -/
 theorem step_callG₁ :
-    (hybridSpec P4).step (G1, (Cc1, W0)) Lab.tau
-      (PMF.pure (G2, (Cc2, W0))) := by
-  refine Or.inl ⟨rfl, Lab.callG 0 (1 : Fin 4) true, by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure G2, PMF.pure (Cc2, W0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inl ⟨0, rfl, _,
-      GBCA.Step.call (P := P4) (r := 0) (G1 0) (1 : Fin 4) true rfl, by rw [PMF.pure_map]; rfl⟩)
-  · refine Or.inl ⟨by decide, PMF.pure Cc2, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.callG (P := P4) Cc1 0 (1 : Fin 4) true rfl rfl rfl
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st G1 Sc1 W0) Lab.tau (PMF.pure (st G2 Sc2 W0)) := by
+  refine layeredSpec_hidden P4 (l := Lab.callG 0 (1 : Fin 4) true) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := G1) (C := Sc1.1) (A := Sc1.2) (o := W0)
+    (L := Sum.inl (Lab.callG 0 (1 : Fin 4) true)) (by simp)
+    (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G1 0) 1 true (by decide)))
+    (coreLoops_at 1 (CoreProcStepN.callG (P := P4) (Sc1.1 1) 0 true (by decide) (by decide)
+        (by decide))
+      (fun j hj => CoreProcStepN.callGIdle (P := P4) (Sc1.1 j) 0 1 true (Ne.symm hj)))
+    (ANetStep.callGIdle (P := P4) Sc1.2 0 1 true)
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-- Third GBCA call: process `2`. Now the round-`0` instance holds three inputs. -/
+/-- Third graded-agreement call: process `2`. The round-`0` specification now
+holds three inputs. -/
 theorem step_callG₂ :
-    (hybridSpec P4).step (G2, (Cc2, W0)) Lab.tau
-      (PMF.pure (G3, (Cc3, W0))) := by
-  refine Or.inl ⟨rfl, Lab.callG 0 (2 : Fin 4) true, by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure G3, PMF.pure (Cc3, W0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inl ⟨0, rfl, _,
-      GBCA.Step.call (P := P4) (r := 0) (G2 0) (2 : Fin 4) true rfl, by rw [PMF.pure_map]; rfl⟩)
-  · refine Or.inl ⟨by decide, PMF.pure Cc3, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.callG (P := P4) Cc2 0 (2 : Fin 4) true rfl rfl rfl
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st G2 Sc2 W0) Lab.tau (PMF.pure (st G3 Sc3 W0)) := by
+  refine layeredSpec_hidden P4 (l := Lab.callG 0 (2 : Fin 4) true) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := G2) (C := Sc2.1) (A := Sc2.2) (o := W0)
+    (L := Sum.inl (Lab.callG 0 (2 : Fin 4) true)) (by simp)
+    (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G2 0) 2 true (by decide)))
+    (coreLoops_at 2 (CoreProcStepN.callG (P := P4) (Sc2.1 2) 0 true (by decide) (by decide)
+        (by decide))
+      (fun j hj => CoreProcStepN.callGIdle (P := P4) (Sc2.1 j) 0 2 true (Ne.symm hj)))
+    (ANetStep.callGIdle (P := P4) Sc2.2 0 2 true)
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-! ### Step 7: the GBCA `bindUnset` internal transition (family `τ`, interleaved) -/
+/-! ### Step 7: the `bindUnset` internal transition of the round-`0`
+specification (family `τ`, interleaved) -/
 
-/-- With three of four processes having called, the round-`0` GBCA quorum
-`n − f = 3` is met, so `bindUnset` kills the bit `false` (the three callers of
-`true` supply the `f + 1` support for the surviving bit). This is a family `τ`,
-interleaved on the GBCA side while the context holds. -/
+/-- With three of four processes having called, the round-`0` quorum `n − f = 3`
+is met, so `bindUnset` kills the bit `false` (the three callers of `true` supply
+the `f + 1` support for the surviving bit). This is a family `τ`, interleaved on
+the specification side while the other three factors hold. -/
 theorem step_bindUnset :
-    (hybridSpec P4).step (G3, (Cc3, W0)) Lab.tau
-      (PMF.pure (Gb, (Cc3, W0))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inr (Or.inl ⟨rfl, PMF.pure Gb, ?_, ?_⟩)
-  · refine Or.inl ⟨rfl, 0, _, ?_, by rw [PMF.pure_map]; rfl⟩
-    exact GBCA.Step.bindUnset (P := P4) (r := 0) (G3 0) false
-      (by unfold GBCA.SpecState.quorum; decide) (by decide) (by decide)
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st G3 Sc3 W0) Lab.tau (PMF.pure (st Gb Sc3 W0)) := by
+  refine layeredSpec_vis P4 (by simp) ?_
+  exact layeredSpecPre_tau_spec P4 (specSide_tau P4
+    (GBCA.Step.bindUnset (P := P4) (r := 0) (G3 0) false
+      (by unfold GBCA.SpecState.quorum; decide) (by decide) (by decide)))
 
-/-! ### Step 8: process `0`'s hidden GBCA `A`-return (`retG 0`, hidden to `τ`) -/
+/-! ### Steps 8–10: the three graded-agreement `A`-returns (`retG 0`, hidden) -/
 
-/-- Process `0` takes an `A`-return of the bound value `true`: the GBCA instance
-locks the grade and records the return, Core adopts the estimate and heads for
-the coin. Hidden to `τ`. -/
+/-- Process `0` takes an `A`-return of the bound value `true`: the round-`0`
+specification locks the grade and records the return, the round loop adopts the
+estimate and heads for the coin. -/
 theorem step_retG₀ :
-    (hybridSpec P4).step (Gb, (Cc3, W0)) Lab.tau
-      (PMF.pure (Gr, (Cr, W0))) := by
-  refine Or.inl ⟨rfl, Lab.retG 0 (0 : Fin 4) (.A true), by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Gr, PMF.pure (Cr, W0), ?_, ?_, ?_⟩
-  · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
-    exact GBCA.Step.retA (P := P4) (r := 0) (Gb 0) (0 : Fin 4) true (by decide) (by decide)
-      (Or.inl rfl) rfl
-  · refine Or.inl ⟨by decide, PMF.pure Cr, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.retG (P := P4) Cc3 0 (0 : Fin 4) (.A true) rfl rfl
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Gb Sc3 W0) Lab.tau (PMF.pure (st Gr Sr W0)) := by
+  refine layeredSpec_hidden P4 (l := Lab.retG 0 (0 : Fin 4) (.A true)) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Gb) (C := Sc3.1) (A := Sc3.2) (o := W0)
+    (L := Sum.inl (Lab.retG 0 (0 : Fin 4) (.A true))) (by simp)
+    (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Gb 0) 0 true
+      (by decide) (by decide) (Or.inl rfl) rfl))
+    (coreLoops_at 0 (CoreProcStepN.retG (P := P4) (Sc3.1 0) 0 (.A true) (by decide) (by decide))
+      (fun j hj => CoreProcStepN.retGIdle (P := P4) (Sc3.1 j) 0 0 (.A true) (Ne.symm hj)))
+    (ANetStep.retGIdle (P := P4) Sc3.2 0 0 (.A true))
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-! ### A `fail` broadcast: all three components corrupt in sync -/
-
-/-- Corruption of process `0`: the visible `fail 0` synchronises every
-component, each applying its `corrupt` transform (the GBCA/WCC families by
-global broadcast, Core by its `fail` constructor). -/
-theorem step_fail :
-    (hybridSpec P4).step (G0, (C0, W0)) (Lab.fail (0 : Fin 4))
-      (PMF.pure (Gf, (Cf, Wf))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Gf, PMF.pure (Cf, Wf), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inl ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure Cf, PMF.pure Wf, ?_, ?_, ?_⟩
-    · exact CoreStep.fail (P := P4) C0 (0 : Fin 4)
-    · exact Or.inr (Or.inr (Or.inl ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
-
-/-! ### Steps 9–10: processes `1,2` also `A`-return round `0` (hidden `retG`) -/
-
-/-- Process `1`'s round-`0` GBCA `A`-return. -/
+/-- Process `1`'s round-`0` `A`-return. -/
 theorem step_retG₁ :
-    (hybridSpec P4).step (Gr, (Cr, W0)) Lab.tau
-      (PMF.pure (Ga1, (Cq1, W0))) := by
-  refine Or.inl ⟨rfl, Lab.retG 0 (1 : Fin 4) (.A true), by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga1, PMF.pure (Cq1, W0), ?_, ?_, ?_⟩
-  · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
-    exact GBCA.Step.retA (P := P4) (r := 0) (Gr 0) (1 : Fin 4) true (by decide) (by decide)
-      (Or.inr rfl) (by decide)
-  · refine Or.inl ⟨by decide, PMF.pure Cq1, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.retG (P := P4) Cr 0 (1 : Fin 4) (.A true) (by decide) (by decide)
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Gr Sr W0) Lab.tau (PMF.pure (st Ga1 Sq1 W0)) := by
+  refine layeredSpec_hidden P4 (l := Lab.retG 0 (1 : Fin 4) (.A true)) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Gr) (C := Sr.1) (A := Sr.2) (o := W0)
+    (L := Sum.inl (Lab.retG 0 (1 : Fin 4) (.A true))) (by simp)
+    (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Gr 0) 1 true
+      (by decide) (by decide) (Or.inr rfl) (by decide)))
+    (coreLoops_at 1 (CoreProcStepN.retG (P := P4) (Sr.1 1) 0 (.A true) (by decide) (by decide))
+      (fun j hj => CoreProcStepN.retGIdle (P := P4) (Sr.1 j) 0 1 (.A true) (Ne.symm hj)))
+    (ANetStep.retGIdle (P := P4) Sr.2 0 1 (.A true))
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-- Process `2`'s round-`0` GBCA `A`-return. -/
+/-- Process `2`'s round-`0` `A`-return. -/
 theorem step_retG₂ :
-    (hybridSpec P4).step (Ga1, (Cq1, W0)) Lab.tau
-      (PMF.pure (Ga2, (Cq2, W0))) := by
-  refine Or.inl ⟨rfl, Lab.retG 0 (2 : Fin 4) (.A true), by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cq2, W0), ?_, ?_, ?_⟩
-  · refine Or.inr (Or.inl ⟨0, rfl, _, ?_, by rw [PMF.pure_map]; rfl⟩)
-    exact GBCA.Step.retA (P := P4) (r := 0) (Ga1 0) (2 : Fin 4) true (by decide) (by decide)
-      (Or.inr rfl) (by decide)
-  · refine Or.inl ⟨by decide, PMF.pure Cq2, PMF.pure W0, ?_, ?_, ?_⟩
-    · exact CoreStep.retG (P := P4) Cq1 0 (2 : Fin 4) (.A true) (by decide) (by decide)
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Ga1 Sq1 W0) Lab.tau (PMF.pure (st Ga2 Sq2 W0)) := by
+  refine layeredSpec_hidden P4 (l := Lab.retG 0 (2 : Fin 4) (.A true)) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga1) (C := Sq1.1) (A := Sq1.2) (o := W0)
+    (L := Sum.inl (Lab.retG 0 (2 : Fin 4) (.A true))) (by simp)
+    (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Ga1 0) 2 true
+      (by decide) (by decide) (Or.inr rfl) (by decide)))
+    (coreLoops_at 2 (CoreProcStepN.retG (P := P4) (Sq1.1 2) 0 (.A true) (by decide) (by decide))
+      (fun j hj => CoreProcStepN.retGIdle (P := P4) (Sq1.1 j) 0 2 (.A true) (Ne.symm hj)))
+    (ANetStep.retGIdle (P := P4) Sq1.2 0 2 (.A true))
+    (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-! ### Steps 11–13: all three call the coin (hidden `callW` handshakes) -/
 
-/-- Process `0` calls the round-`0` coin (`callW`, hidden). -/
+/-- Process `0` calls the round-`0` coin. -/
 theorem step_callW₀ :
-    (hybridSpec P4).step (Ga2, (Cq2, W0)) Lab.tau
-      (PMF.pure (Ga2, (Cw0, Wc0))) := by
-  refine Or.inl ⟨rfl, Lab.callW 0 (0 : Fin 4), by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cw0, Wc0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure Cw0, PMF.pure Wc0, ?_, ?_, ?_⟩
-    · exact CoreStep.callW (P := P4) Cq2 0 (0 : Fin 4) (by decide) (by decide)
-    · exact Or.inr (Or.inl ⟨0, rfl, _,
-        WCC.Step.call (P := P4) (r := 0) (W0 0) (0 : Fin 4) (by decide),
-        by rw [PMF.pure_map]; rfl⟩)
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Ga2 Sq2 W0) Lab.tau (PMF.pure (st Ga2 Sw0 Wc0)) := by
+  refine layeredSpec_hidden P4 (l := Lab.callW 0 (0 : Fin 4)) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sq2.1) (A := Sq2.2) (o := W0)
+    (L := Sum.inl (Lab.callW 0 (0 : Fin 4))) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 0 (CoreProcStepN.callW (P := P4) (Sq2.1 0) 0 (by decide) (by decide))
+      (fun j hj => CoreProcStepN.callWIdle (P := P4) (Sq2.1 j) 0 0 (Ne.symm hj)))
+    (ANetStep.callWIdle (P := P4) Sq2.2 0 0)
+    ((System.mapIdle_step_some (wccPull_inl (Lab.callW 0 (0 : Fin 4))) _).mpr
+      (wccFamily_owned P4 W0 rfl (WCC.Step.call (P := P4) (r := 0) (W0 0) 0 (by decide))))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-- Process `1` calls the round-`0` coin. -/
 theorem step_callW₁ :
-    (hybridSpec P4).step (Ga2, (Cw0, Wc0)) Lab.tau
-      (PMF.pure (Ga2, (Cw1, Wc1))) := by
-  refine Or.inl ⟨rfl, Lab.callW 0 (1 : Fin 4), by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cw1, Wc1), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure Cw1, PMF.pure Wc1, ?_, ?_, ?_⟩
-    · exact CoreStep.callW (P := P4) Cw0 0 (1 : Fin 4) (by decide) (by decide)
-    · exact Or.inr (Or.inl ⟨0, rfl, _,
-        WCC.Step.call (P := P4) (r := 0) (Wc0 0) (1 : Fin 4) (by decide),
-        by rw [PMF.pure_map]; rfl⟩)
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Ga2 Sw0 Wc0) Lab.tau (PMF.pure (st Ga2 Sw1 Wc1)) := by
+  refine layeredSpec_hidden P4 (l := Lab.callW 0 (1 : Fin 4)) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sw0.1) (A := Sw0.2) (o := Wc0)
+    (L := Sum.inl (Lab.callW 0 (1 : Fin 4))) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 1 (CoreProcStepN.callW (P := P4) (Sw0.1 1) 0 (by decide) (by decide))
+      (fun j hj => CoreProcStepN.callWIdle (P := P4) (Sw0.1 j) 0 1 (Ne.symm hj)))
+    (ANetStep.callWIdle (P := P4) Sw0.2 0 1)
+    ((System.mapIdle_step_some (wccPull_inl (Lab.callW 0 (1 : Fin 4))) _).mpr
+      (wccFamily_owned P4 Wc0 rfl (WCC.Step.call (P := P4) (r := 0) (Wc0 0) 1 (by decide))))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-- Process `2` calls the round-`0` coin; now three callers meet the `> f`
+/-- Process `2` calls the round-`0` coin; three callers now meet the `> f`
 resolution threshold. -/
 theorem step_callW₂ :
-    (hybridSpec P4).step (Ga2, (Cw1, Wc1)) Lab.tau
-      (PMF.pure (Ga2, (Cw2, Wc2))) := by
-  refine Or.inl ⟨rfl, Lab.callW 0 (2 : Fin 4), by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cw2, Wc2), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure Cw2, PMF.pure Wc2, ?_, ?_, ?_⟩
-    · exact CoreStep.callW (P := P4) Cw1 0 (2 : Fin 4) (by decide) (by decide)
-    · exact Or.inr (Or.inl ⟨0, rfl, _,
-        WCC.Step.call (P := P4) (r := 0) (Wc1 0) (2 : Fin 4) (by decide),
-        by rw [PMF.pure_map]; rfl⟩)
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Ga2 Sw1 Wc1) Lab.tau (PMF.pure (st Ga2 Sw2 Wc2)) := by
+  refine layeredSpec_hidden P4 (l := Lab.callW 0 (2 : Fin 4)) (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sw1.1) (A := Sw1.2) (o := Wc1)
+    (L := Sum.inl (Lab.callW 0 (2 : Fin 4))) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 2 (CoreProcStepN.callW (P := P4) (Sw1.1 2) 0 (by decide) (by decide))
+      (fun j hj => CoreProcStepN.callWIdle (P := P4) (Sw1.1 j) 0 2 (Ne.symm hj)))
+    (ANetStep.callWIdle (P := P4) Sw1.2 0 2)
+    ((System.mapIdle_step_some (wccPull_inl (Lab.callW 0 (2 : Fin 4))) _).mpr
+      (wccFamily_owned P4 Wc1 rfl (WCC.Step.call (P := P4) (r := 0) (Wc1 0) 2 (by decide))))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-! ### Step 14: the coin `flip` (the run's single probabilistic step) -/
 
-/-- The WCC round-`0` family distribution produced by the coin `flip`: the
-`wccPMF` outcome resolves instance `0`'s `val`. -/
+/-- The coin distribution produced by the `flip`: the `wccPMF` outcome resolves
+round `0`'s `val`. -/
 noncomputable def flipWr : PMF (ℕ → WCC.SpecState 4) :=
   (P4.wccPMF.map (fun o => { Wc2 0 with val := o.toTVal })).map
     (Function.update Wc2 0)
 
-/-- The full hybrid successor distribution of the coin flip: the two idle
-components stay put (Dirac), the WCC family resolves the coin. -/
-noncomputable def flipμ :
-    PMF ((ℕ → GBCA.SpecState 4) × (CoreState 4 × (ℕ → WCC.SpecState 4))) :=
-  prodPMF (PMF.pure Ga2) (prodPMF (PMF.pure Cw2) flipWr)
+/-- The successor distribution of the coin flip: the three other factors stay
+put (Dirac), the coin oracle resolves. -/
+noncomputable def flipμ : PMF (LayeredSpecState P4) :=
+  prodPMF (PMF.pure Ga2) (prodPMF (PMF.pure Sw2.1) (prodPMF (PMF.pure Sw2.2) flipWr))
 
-/-- The coin `flip` is a legal hidden (`τ`) transition of the composed system:
-GBCA and Core idle, the WCC round-`0` instance resolves `val` by `wccPMF`
-(threshold met by the three callers). -/
-theorem step_flip :
-    (hybridSpec P4).step (Ga2, (Cw2, Wc2)) Lab.tau flipμ := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure Cw2) flipWr, ?_, rfl⟩)
-  refine Or.inr (Or.inr ⟨rfl, flipWr, ?_, rfl⟩)
-  refine Or.inl ⟨rfl, 0,
-    P4.wccPMF.map (fun o => { Wc2 0 with val := o.toTVal }), ?_, rfl⟩
-  exact WCC.Step.flip (P := P4) (r := 0) (Wc2 0)
-    (by unfold WCC.SpecState.threshold; decide) (by decide)
+/-- The coin `flip` is a legal silent transition of the composed system: the
+round-`0` coin resolves `val` by `wccPMF` (threshold met by the three callers),
+the other three factors interleave. -/
+theorem step_flip : (layeredSpec P4).step (st Ga2 Sw2 Wc2) Lab.tau flipμ := by
+  refine layeredSpec_vis P4 (by simp) ?_
+  exact layeredSpecPre_tau_wcc P4 (wccFamily_tau P4 Wc2
+    (WCC.Step.flip (P := P4) (r := 0) (Wc2 0)
+      (by unfold WCC.SpecState.threshold; decide) (by decide)))
 
 /-- The flip lands on the `bit true` branch — the outcome that agrees with the
 bound value — with mass exactly `ε = 1/2 > 0`. This is the run's single
 `ε` factor; every other step is Dirac, so the whole path has positive
 probability. -/
-theorem step_flip_mass : flipμ (Ga2, (Cw2, Wfl)) = P4.ε := by
+theorem step_flip_mass : flipμ (st Ga2 Sw2 Wfl) = P4.ε := by
   have hup : Function.Injective (Function.update Wc2 0) := by
     intro a b h; have h0 := congrFun h 0; simpa using h0
   have hg : Function.Injective
       (fun o : CoinOutcome => ({ Wc2 0 with val := o.toTVal } : WCC.SpecState 4)) :=
     fun _ _ h => CoinOutcome.toTVal_injective (congrArg (·.val) h)
-  unfold flipμ flipWr
-  rw [prodPMF_pure_left_apply, prodPMF_pure_left_apply,
-    show (Wfl : ℕ → WCC.SpecState 4)
+  change prodPMF (PMF.pure Ga2) (prodPMF (PMF.pure Sw2.1) (prodPMF (PMF.pure Sw2.2) flipWr))
+      (Ga2, Sw2.1, Sw2.2, Wfl) = P4.ε
+  rw [prodPMF_pure_left_apply, prodPMF_pure_left_apply, prodPMF_pure_left_apply]
+  unfold flipWr
+  rw [show (Wfl : ℕ → WCC.SpecState 4)
       = Function.update Wc2 0 { Wc2 0 with val := TVal.bit true } from rfl,
     map_apply_inj hup,
     show ({ Wc2 0 with val := TVal.bit true } : WCC.SpecState 4)
       = (fun o => { Wc2 0 with val := o.toTVal }) (CoinOutcome.bit true) from rfl,
     map_apply_inj hg, Params.wccPMF_apply_bit]
 
-/-! ### Steps 15–17: all three receive the coin (`retW`); each multicasts
-`⟨DECIDED, true⟩` via the fused round advance (deviation D10). -/
+/-! ### Steps 15–17: the three coin returns, each a `retWPub` rendezvous of the
+round loop's fused round advance (deviation D10) with the network's publication
+of `⟨DECIDED, true⟩`. -/
 
 /-- Process `0` receives the coin and multicasts `⟨DECIDED, true⟩`. -/
 theorem step_retW₀ :
-    (hybridSpec P4).step (Ga2, (Cw2, Wfl)) Lab.tau
-      (PMF.pure (Ga2, (Cs0, Wr0))) := by
-  refine Or.inl ⟨rfl, Lab.retW 0 (0 : Fin 4) true, by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cs0, Wr0), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure Cs0, PMF.pure Wr0, ?_, ?_, ?_⟩
-    · exact CoreStep.retW (P := P4) Cw2 0 (0 : Fin 4) true (by decide) (by decide)
-    · exact Or.inr (Or.inl ⟨0, rfl, _,
-        WCC.Step.ret (P := P4) (r := 0) (Wfl 0) (0 : Fin 4) true (Or.inr (by decide)) (by decide),
-        by rw [PMF.pure_map]; rfl⟩)
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Ga2 Sw2 Wfl) Lab.tau (PMF.pure (st Ga2 Ss0 Wr0)) := by
+  refine layeredSpec_rendezvous P4 (e := .retWPub 0 (0 : Fin 4) true true) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sw2.1) (A := Sw2.2) (o := Wfl)
+    (L := Sum.inr (.retWPub 0 (0 : Fin 4) true true)) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 0 (CoreProcStepN.retWPub (P := P4) (Sw2.1 0) 0 true true (by decide)
+        (by decide) (by decide))
+      (fun j hj => CoreProcStepN.retWPubIdle (P := P4) (Sw2.1 j) 0 0 true true (Ne.symm hj)))
+    (ANetStep.retWPub (P := P4) Sw2.2 0 0 true true)
+    ((System.mapIdle_step_some (wccPull_retWPub 0 (0 : Fin 4) true true) _).mpr
+      (wccFamily_owned P4 Wfl rfl
+        (WCC.Step.ret (P := P4) (r := 0) (Wfl 0) 0 true (Or.inr (by decide)) (by decide))))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-- Process `1` receives the coin and multicasts `⟨DECIDED, true⟩`. -/
 theorem step_retW₁ :
-    (hybridSpec P4).step (Ga2, (Cs0, Wr0)) Lab.tau
-      (PMF.pure (Ga2, (Cs1, Wr1))) := by
-  refine Or.inl ⟨rfl, Lab.retW 0 (1 : Fin 4) true, by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cs1, Wr1), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure Cs1, PMF.pure Wr1, ?_, ?_, ?_⟩
-    · exact CoreStep.retW (P := P4) Cs0 0 (1 : Fin 4) true (by decide) (by decide)
-    · exact Or.inr (Or.inl ⟨0, rfl, _,
-        WCC.Step.ret (P := P4) (r := 0) (Wr0 0) (1 : Fin 4) true (Or.inr (by decide)) (by decide),
-        by rw [PMF.pure_map]; rfl⟩)
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Ga2 Ss0 Wr0) Lab.tau (PMF.pure (st Ga2 Ss1 Wr1)) := by
+  refine layeredSpec_rendezvous P4 (e := .retWPub 0 (1 : Fin 4) true true) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Ss0.1) (A := Ss0.2) (o := Wr0)
+    (L := Sum.inr (.retWPub 0 (1 : Fin 4) true true)) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 1 (CoreProcStepN.retWPub (P := P4) (Ss0.1 1) 0 true true (by decide)
+        (by decide) (by decide))
+      (fun j hj => CoreProcStepN.retWPubIdle (P := P4) (Ss0.1 j) 0 1 true true (Ne.symm hj)))
+    (ANetStep.retWPub (P := P4) Ss0.2 0 1 true true)
+    ((System.mapIdle_step_some (wccPull_retWPub 0 (1 : Fin 4) true true) _).mpr
+      (wccFamily_owned P4 Wr0 rfl
+        (WCC.Step.ret (P := P4) (r := 0) (Wr0 0) 1 true (Or.inr (by decide)) (by decide))))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-- Process `2` receives the coin and multicasts `⟨DECIDED, true⟩`; now three
-distinct senders hold `⟨DECIDED, true⟩`. -/
+/-- Process `2` receives the coin and multicasts `⟨DECIDED, true⟩`; three
+distinct senders now hold `⟨DECIDED, true⟩`. -/
 theorem step_retW₂ :
-    (hybridSpec P4).step (Ga2, (Cs1, Wr1)) Lab.tau
-      (PMF.pure (Ga2, (Cs2, Wr2))) := by
-  refine Or.inl ⟨rfl, Lab.retW 0 (2 : Fin 4) true, by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cs2, Wr2), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure Cs2, PMF.pure Wr2, ?_, ?_, ?_⟩
-    · exact CoreStep.retW (P := P4) Cs1 0 (2 : Fin 4) true (by decide) (by decide)
-    · exact Or.inr (Or.inl ⟨0, rfl, _,
-        WCC.Step.ret (P := P4) (r := 0) (Wr1 0) (2 : Fin 4) true (Or.inr (by decide)) (by decide),
-        by rw [PMF.pure_map]; rfl⟩)
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Ga2 Ss1 Wr1) Lab.tau (PMF.pure (st Ga2 Ss2 Wr2)) := by
+  refine layeredSpec_rendezvous P4 (e := .retWPub 0 (2 : Fin 4) true true) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Ss1.1) (A := Ss1.2) (o := Wr1)
+    (L := Sum.inr (.retWPub 0 (2 : Fin 4) true true)) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 2 (CoreProcStepN.retWPub (P := P4) (Ss1.1 2) 0 true true (by decide)
+        (by decide) (by decide))
+      (fun j hj => CoreProcStepN.retWPubIdle (P := P4) (Ss1.1 j) 0 2 true true (Ne.symm hj)))
+    (ANetStep.retWPub (P := P4) Ss1.2 0 2 true true)
+    ((System.mapIdle_step_some (wccPull_retWPub 0 (2 : Fin 4) true true) _).mpr
+      (wccFamily_owned P4 Wr1 rfl
+        (WCC.Step.ret (P := P4) (r := 0) (Wr1 0) 2 true (Or.inr (by decide)) (by decide))))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-! ### Steps 18–20: the adversary delivers the three `⟨DECIDED, true⟩` to
-process `0` (Core internal `τ`). -/
+process `0` (a `ddlv` rendezvous of the receiving round loop with the
+network). -/
 
 /-- Deliver process `0`'s own `⟨DECIDED, true⟩`. -/
 theorem step_deliver₀ :
-    (hybridSpec P4).step (Ga2, (Cs2, Wr2)) Lab.tau
-      (PMF.pure (Ga2, (Cd0, Wr2))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inr (Or.inr ⟨rfl, PMF.pure (Cd0, Wr2), ?_, by rw [prodPMF_pure_pure]⟩)
-  refine Or.inr (Or.inl ⟨rfl, PMF.pure Cd0, ?_, by rw [prodPMF_pure_pure]⟩)
-  exact CoreStep.deliver (P := P4) Cs2 (0 : Fin 4) (0 : Fin 4) true (by decide) (by decide)
+    (layeredSpec P4).step (st Ga2 Ss2 Wr2) Lab.tau (PMF.pure (st Ga2 Sd0 Wr2)) := by
+  refine layeredSpec_rendezvous P4 (e := .ddlv (0 : Fin 4) (0 : Fin 4) true) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Ss2.1) (A := Ss2.2) (o := Wr2)
+    (L := Sum.inr (.ddlv (0 : Fin 4) (0 : Fin 4) true)) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Ss2.1 0) 0 true (by decide))
+      (fun j hj => CoreProcStepN.ddlvIdle (P := P4) (Ss2.1 j) 0 0 true (Ne.symm hj)))
+    (ANetStep.ddlv (P := P4) Ss2.2 0 0 true (by decide))
+    ((System.mapIdle_step_none (wccPull_ddlv (0 : Fin 4) (0 : Fin 4) true) _).mpr rfl)
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-- Deliver process `1`'s `⟨DECIDED, true⟩` to process `0`. -/
 theorem step_deliver₁ :
-    (hybridSpec P4).step (Ga2, (Cd0, Wr2)) Lab.tau
-      (PMF.pure (Ga2, (Cd1, Wr2))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inr (Or.inr ⟨rfl, PMF.pure (Cd1, Wr2), ?_, by rw [prodPMF_pure_pure]⟩)
-  refine Or.inr (Or.inl ⟨rfl, PMF.pure Cd1, ?_, by rw [prodPMF_pure_pure]⟩)
-  exact CoreStep.deliver (P := P4) Cd0 (0 : Fin 4) (1 : Fin 4) true (by decide) (by decide)
+    (layeredSpec P4).step (st Ga2 Sd0 Wr2) Lab.tau (PMF.pure (st Ga2 Sd1 Wr2)) := by
+  refine layeredSpec_rendezvous P4 (e := .ddlv (0 : Fin 4) (1 : Fin 4) true) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sd0.1) (A := Sd0.2) (o := Wr2)
+    (L := Sum.inr (.ddlv (0 : Fin 4) (1 : Fin 4) true)) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Sd0.1 0) 1 true (by decide))
+      (fun j hj => CoreProcStepN.ddlvIdle (P := P4) (Sd0.1 j) 0 1 true (Ne.symm hj)))
+    (ANetStep.ddlv (P := P4) Sd0.2 0 1 true (by decide))
+    ((System.mapIdle_step_none (wccPull_ddlv (0 : Fin 4) (1 : Fin 4) true) _).mpr rfl)
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
-/-- Deliver process `2`'s `⟨DECIDED, true⟩` to process `0`; now `0` has the
-`n − f = 3` distinct senders it needs. -/
+/-- Deliver process `2`'s `⟨DECIDED, true⟩` to process `0`; process `0` now has
+the `n − f = 3` distinct senders it needs. -/
 theorem step_deliver₂ :
-    (hybridSpec P4).step (Ga2, (Cd1, Wr2)) Lab.tau
-      (PMF.pure (Ga2, (Cd2, Wr2))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inr (Or.inr ⟨rfl, PMF.pure (Cd2, Wr2), ?_, by rw [prodPMF_pure_pure]⟩)
-  refine Or.inr (Or.inl ⟨rfl, PMF.pure Cd2, ?_, by rw [prodPMF_pure_pure]⟩)
-  exact CoreStep.deliver (P := P4) Cd1 (0 : Fin 4) (2 : Fin 4) true (by decide) (by decide)
+    (layeredSpec P4).step (st Ga2 Sd1 Wr2) Lab.tau (PMF.pure (st Ga2 Sd2 Wr2)) := by
+  refine layeredSpec_rendezvous P4 (e := .ddlv (0 : Fin 4) (2 : Fin 4) true) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sd1.1) (A := Sd1.2) (o := Wr2)
+    (L := Sum.inr (.ddlv (0 : Fin 4) (2 : Fin 4) true)) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Sd1.1 0) 2 true (by decide))
+      (fun j hj => CoreProcStepN.ddlvIdle (P := P4) (Sd1.1 j) 0 2 true (Ne.symm hj)))
+    (ANetStep.ddlv (P := P4) Sd1.2 0 2 true (by decide))
+    ((System.mapIdle_step_none (wccPull_ddlv (0 : Fin 4) (2 : Fin 4) true) _).mpr rfl)
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 /-! ### Step 21: the decision (`retABA 0 true`, visible) -/
 
-/-- Process `0` returns `true`: it has multicast `⟨DECIDED, true⟩` and holds
-`n − f = 3` distinct DECIDED-true receipts, so the return quorum is met. The
-whole 21-step run — every step a Dirac except the single `ε`-mass coin flip —
-carries positive probability and ends in a genuine `retABA`. -/
+/-- Process `0` returns `true`: it has multicast `⟨DECIDED, true⟩` — the
+network's conjunct — and holds `n − f = 3` distinct DECIDED-true receipts — the
+round loop's. The whole 21-step run, every step a Dirac except the single
+`ε`-mass coin flip, carries positive probability and ends in a genuine
+`retABA`. -/
 theorem step_retABA :
-    (hybridSpec P4).step (Ga2, (Cd2, Wr2)) (Lab.retABA (0 : Fin 4) true)
-      (PMF.pure (Ga2, (Cfin, Wr2))) := by
-  refine Or.inr ⟨by simp, ?_⟩
-  refine Or.inl ⟨by decide, PMF.pure Ga2, PMF.pure (Cfin, Wr2), ?_, ?_, ?_⟩
-  · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-  · refine Or.inl ⟨by decide, PMF.pure Cfin, PMF.pure Wr2, ?_, ?_, ?_⟩
-    · exact CoreStep.ret (P := P4) Cd2 (0 : Fin 4) true (by decide) (by decide) (by decide)
-    · exact Or.inr (Or.inr (Or.inr ⟨by decide, rfl, by simp [Lab.isFail], rfl⟩))
-    · rw [prodPMF_pure_pure]
-  · rw [prodPMF_pure_pure]
+    (layeredSpec P4).step (st Ga2 Sd2 Wr2) (Lab.retABA (0 : Fin 4) true)
+      (PMF.pure (st Ga2 Sfin Wr2)) := by
+  refine layeredSpec_vis P4 (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sd2.1) (A := Sd2.2) (o := Wr2)
+    (L := Sum.inl (Lab.retABA (0 : Fin 4) true)) (by simp)
+    (specSide_idle P4 Ga2 (by simp) rfl not_false)
+    (coreLoops_at 0 (CoreProcStepN.ret (P := P4) (Sd2.1 0) true (by decide) (by decide))
+      (fun j hj => CoreProcStepN.retABAIdle (P := P4) (Sd2.1 j) 0 true (Ne.symm hj)))
+    (ANetStep.retABA (P := P4) Sd2.2 0 true (by decide))
+    (wccIdle Wr2 (by simp) rfl (by simp [Lab.isFail]))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
+
+/-! ### A `fail` broadcast: all four factors corrupt in sync -/
+
+/-- Corruption of process `0`: the visible `fail 0` synchronises every factor —
+the round specifications and the coin oracle by global broadcast, the ABA-side
+network by its own `fail` row, which carries the budget guard, and the round
+loops by standing still (deviation D1). -/
+theorem step_fail :
+    (layeredSpec P4).step (st G0 S0 W0) (Lab.fail (0 : Fin 4))
+      (PMF.pure (st Gf Sf Wf)) := by
+  refine layeredSpec_vis P4 (by simp) ?_
+  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S0.1) (A := S0.2) (o := W0)
+    (L := Sum.inl (Lab.fail (0 : Fin 4))) (by simp)
+    (specSide_fail P4 G0 0)
+    (fun i => CoreProcStepN.failIdle (P := P4) (S0.1 i) 0)
+    (ANetStep.fail (P := P4) S0.2 0)
+    ((System.mapIdle_step_some (wccPull_inl (Lab.fail (0 : Fin 4))) _).mpr
+      (wccFamily_fail P4 W0 0))
+  rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
+  exact h
 
 end ABA
 end PLTS
