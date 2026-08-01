@@ -78,8 +78,12 @@ pseudocode (`n − f`).
   `bind*`, `seal*`) require the process to have received its input
   (`input ≠ none`): the algorithm's handlers only run inside a called instance.
 
-The state is exactly the protocol's own data: the per-process local states,
-the network, and the corrupted set. The three return transitions are cases
+The state is exactly the protocol's own data, held in two boxes: each process
+keeps its own local state beside the messages delivered to it, and the round's
+message fabric keeps the per-sender pools and the corrupted set. `ImplState` is
+their pair, so the network is a factor of the state and not a field of it — a
+weaker fabric is a different second factor and leaves the rest of the round
+alone. The three return transitions are cases
 (1), (2), (3) of Algorithm 6's lines 23–29 and read nothing beyond the receipts
 those cases name — case (1) an `n − f` `SEAL v` quorum, case (2) an `n − f`
 any-`SEAL` quorum containing `SEAL v` together with `f + 1` `BIND v`s and
@@ -140,7 +144,7 @@ def ProcState.initial : ProcState where
 /-! ### The two boxes of a round
 
 The data of one round sits in two records. Each process holds its own protocol
-state together with the messages delivered to it, and nothing else -- there is
+state together with the messages delivered to it, and nothing else — there is
 no record there of what it has multicast. The round's message fabric holds the
 per-sender pools and the corrupted set. The instance's state below is their
 pair, so every field of the algorithm is a field of one box or the other.
@@ -152,7 +156,7 @@ programs (`ABA/GBCASub.lean`). -/
 delivered to it, indexed by sender. There is no record of what it has sent —
 the sender's pool lives in the network. -/
 structure ProcNodeN (n : ℕ) : Type where
-  /-- The process's local record — the monolithic `proc j`. -/
+  /-- The process's own protocol state. -/
   proc : ProcState
   /-- `inbox k` — the messages from sender `k` delivered here. -/
   inbox : Fin n → Finset Msg
@@ -257,29 +261,59 @@ end GSub
 
 namespace GBCA
 
-/-- The state of one GBCA implementation instance: the local states, the
-set-based network (D5) and the corrupted set. -/
-structure ImplState (n : ℕ) : Type where
-  /-- Per-process local states. -/
-  proc : Fin n → ProcState
-  /-- `sent j` — the messages process `j` has multicast. -/
-  sent : Fin n → Finset Msg
-  /-- `recv i j` — the messages from sender `j` delivered to receiver `i`. -/
-  recv : Fin n → Fin n → Finset Msg
-  /-- The corrupted set (local copy, kept in lockstep by `fail` broadcast). -/
-  F : Finset (Fin n)
-  deriving DecidableEq
+/-- **The state of one GBCA implementation instance**: the `n` stage records
+beside the round's message fabric. -/
+abbrev ImplState (n : ℕ) : Type := (∀ _ : Fin n, ProcNodeN n) × GSub.GNetState n
 
 namespace ImplState
 
 variable {n : ℕ}
 
+/-- Per-process local states. -/
+def proc (s : ImplState n) : Fin n → ProcState := fun j => (s.1 j).proc
+
+/-- `sent j` — the messages process `j` has multicast (D5). -/
+def sent (s : ImplState n) : Fin n → Finset Msg := s.2.pool
+
+/-- `recv i j` — the messages from sender `j` delivered to receiver `i`. -/
+def recv (s : ImplState n) : Fin n → Fin n → Finset Msg := fun i => (s.1 i).inbox
+
+/-- The corrupted set (the fabric's, kept in lockstep by `fail` broadcast). -/
+def F (s : ImplState n) : Finset (Fin n) := s.2.F
+
+@[simp] theorem proc_apply (u : ∀ _ : Fin n, ProcNodeN n) (w : GSub.GNetState n)
+    (j : Fin n) : proc (u, w) j = (u j).proc := rfl
+@[simp] theorem sent_apply (u : ∀ _ : Fin n, ProcNodeN n) (w : GSub.GNetState n) :
+    sent (u, w) = w.pool := rfl
+@[simp] theorem recv_apply (u : ∀ _ : Fin n, ProcNodeN n) (w : GSub.GNetState n)
+    (i : Fin n) : recv (u, w) i = (u i).inbox := rfl
+@[simp] theorem F_apply (u : ∀ _ : Fin n, ProcNodeN n) (w : GSub.GNetState n) :
+    F (u, w) = w.F := rfl
+
+/-- Dot notation resolves against `ImplState`, so the rule table and the
+refinement read the pair in the four names the algorithm uses. -/
+example (s : ImplState n) (i j : Fin n) : s.recv i j = (s.1 i).inbox j := rfl
+
 /-- The initial implementation state. -/
-def initial (n : ℕ) : ImplState n where
-  proc := fun _ => ProcState.initial
-  sent := fun _ => ∅
-  recv := fun _ _ => ∅
-  F := ∅
+def initial (n : ℕ) : ImplState n :=
+  (fun _ => ProcNodeN.initial n, GSub.GNetState.initial n)
+
+/-! The two factors' own initial states project componentwise, so unfolding
+`initial` leaves no residue. -/
+
+@[simp] theorem _root_.PLTS.ABA.GBCA.ProcNodeN.initial_proc (n : ℕ) :
+    (ProcNodeN.initial n).proc = ProcState.initial := rfl
+@[simp] theorem _root_.PLTS.ABA.GBCA.ProcNodeN.initial_inbox (n : ℕ) (k : Fin n) :
+    (ProcNodeN.initial n).inbox k = ∅ := rfl
+@[simp] theorem _root_.PLTS.ABA.GSub.GNetState.initial_pool (n : ℕ) (j : Fin n) :
+    (GSub.GNetState.initial n).pool j = ∅ := rfl
+@[simp] theorem _root_.PLTS.ABA.GSub.GNetState.initial_F (n : ℕ) :
+    (GSub.GNetState.initial n).F = ∅ := rfl
+
+@[simp] theorem initial_proc (j : Fin n) : (initial n).proc j = ProcState.initial := rfl
+@[simp] theorem initial_sent (j : Fin n) : (initial n).sent j = ∅ := rfl
+@[simp] theorem initial_recv (i j : Fin n) : (initial n).recv i j = ∅ := rfl
+@[simp] theorem initial_F : (initial n).F = ∅ := rfl
 
 /-- The number of distinct senders from which `i` has received `m`. -/
 def recvCount (s : ImplState n) (i : Fin n) (m : Msg) : ℕ :=
@@ -317,26 +351,53 @@ theorem bothValid_le {P : Params} {s : ImplState P.n} {i : Fin P.n}
 
 /-- Update the local state of process `j`. -/
 def setProc (s : ImplState n) (j : Fin n) (p : ProcState) : ImplState n :=
-  { s with proc := Function.update s.proc j p }
+  (Function.update s.1 j ((s.1 j).setP p), s.2)
 
 @[simp] theorem setProc_sent (s : ImplState n) (j : Fin n) (p : ProcState) :
     (s.setProc j p).sent = s.sent := rfl
-@[simp] theorem setProc_recv (s : ImplState n) (j : Fin n) (p : ProcState) :
-    (s.setProc j p).recv = s.recv := rfl
 @[simp] theorem setProc_F (s : ImplState n) (j : Fin n) (p : ProcState) :
     (s.setProc j p).F = s.F := rfl
 
+@[simp] theorem setProc_recv (s : ImplState n) (j : Fin n) (p : ProcState) :
+    (s.setProc j p).recv = s.recv := by
+  funext i
+  by_cases hi : i = j
+  · subst hi; simp [setProc, recv, ProcNodeN.setP]
+  · simp [setProc, recv, Function.update_of_ne hi]
+
 @[simp] theorem setProc_proc_self (s : ImplState n) (j : Fin n) (p : ProcState) :
     (s.setProc j p).proc j = p := by
-  simp [setProc]
+  simp [setProc, proc, ProcNodeN.setP]
 
 theorem setProc_proc_ne (s : ImplState n) (j : Fin n) (p : ProcState)
     {k : Fin n} (h : k ≠ j) : (s.setProc j p).proc k = s.proc k := by
-  simp [setProc, Function.update_of_ne h]
+  simp [setProc, proc, Function.update_of_ne h]
 
-/-- Process `j` multicasts `m`: add it to `j`'s sent pool. -/
+/-! A record write leaves every reading of the delivered sets alone. -/
+
+@[simp] theorem setProc_recvCount (s : ImplState n) (j : Fin n) (p : ProcState)
+    (i : Fin n) (m : Msg) : (s.setProc j p).recvCount i m = s.recvCount i m := by
+  simp [recvCount, setProc_recv]
+@[simp] theorem setProc_echoCount (s : ImplState n) (j : Fin n) (p : ProcState)
+    (i : Fin n) : (s.setProc j p).echoCount i = s.echoCount i := by
+  simp [echoCount, setProc_recv]
+@[simp] theorem setProc_voteCount (s : ImplState n) (j : Fin n) (p : ProcState)
+    (i : Fin n) : (s.setProc j p).voteCount i = s.voteCount i := by
+  simp [voteCount, setProc_recv]
+@[simp] theorem setProc_bindCount (s : ImplState n) (j : Fin n) (p : ProcState)
+    (i : Fin n) : (s.setProc j p).bindCount i = s.bindCount i := by
+  simp [bindCount, setProc_recv]
+@[simp] theorem setProc_sealCount (s : ImplState n) (j : Fin n) (p : ProcState)
+    (i : Fin n) : (s.setProc j p).sealCount i = s.sealCount i := by
+  simp [sealCount, setProc_recv]
+@[simp] theorem setProc_bothValid {P : Params} (s : ImplState P.n) (j : Fin P.n)
+    (p : ProcState) (i : Fin P.n) :
+    (s.setProc j p).bothValid P i ↔ s.bothValid P i := by
+  simp [bothValid]
+
+/-- Process `j` multicasts `m`: the fabric pools it under `j`. -/
 def mcast (s : ImplState n) (j : Fin n) (m : Msg) : ImplState n :=
-  { s with sent := Function.update s.sent j (insert m (s.sent j)) }
+  (s.1, s.2.gpool j m)
 
 @[simp] theorem mcast_proc (s : ImplState n) (j : Fin n) (m : Msg) :
     (s.mcast j m).proc = s.proc := rfl
@@ -345,51 +406,68 @@ def mcast (s : ImplState n) (j : Fin n) (m : Msg) : ImplState n :=
 @[simp] theorem mcast_F (s : ImplState n) (j : Fin n) (m : Msg) :
     (s.mcast j m).F = s.F := rfl
 
+/-! A multicast is the fabric's write alone, so no reading of the delivered
+sets moves. -/
+
+@[simp] theorem mcast_recvCount (s : ImplState n) (j : Fin n) (m : Msg)
+    (i : Fin n) (m' : Msg) : (s.mcast j m).recvCount i m' = s.recvCount i m' := rfl
+@[simp] theorem mcast_echoCount (s : ImplState n) (j : Fin n) (m : Msg) (i : Fin n) :
+    (s.mcast j m).echoCount i = s.echoCount i := rfl
+@[simp] theorem mcast_voteCount (s : ImplState n) (j : Fin n) (m : Msg) (i : Fin n) :
+    (s.mcast j m).voteCount i = s.voteCount i := rfl
+@[simp] theorem mcast_bindCount (s : ImplState n) (j : Fin n) (m : Msg) (i : Fin n) :
+    (s.mcast j m).bindCount i = s.bindCount i := rfl
+@[simp] theorem mcast_sealCount (s : ImplState n) (j : Fin n) (m : Msg) (i : Fin n) :
+    (s.mcast j m).sealCount i = s.sealCount i := rfl
+@[simp] theorem mcast_bothValid {P : Params} (s : ImplState P.n) (j : Fin P.n)
+    (m : Msg) (i : Fin P.n) : (s.mcast j m).bothValid P i ↔ s.bothValid P i := Iff.rfl
+
 /-- Membership in a sent pool after a multicast. -/
 theorem mem_mcast_sent {s : ImplState n} {j : Fin n} {m : Msg} {k : Fin n} {m' : Msg} :
     m' ∈ (s.mcast j m).sent k ↔ (k = j ∧ m' = m) ∨ m' ∈ s.sent k := by
-  change m' ∈ Function.update s.sent j (insert m (s.sent j)) k ↔ _
-  by_cases hk : k = j
-  · subst hk
-    rw [Function.update_self, Finset.mem_insert]
-    simp
-  · rw [Function.update_of_ne hk]
-    simp [hk]
+  change m' ∈ (s.2.gpool j m).pool k ↔ (k = j ∧ m' = m) ∨ m' ∈ s.2.pool k
+  exact GSub.GNetState.mem_gpool
 
 theorem sent_subset_mcast (s : ImplState n) (j : Fin n) (m : Msg) (k : Fin n) :
     s.sent k ⊆ (s.mcast j m).sent k :=
   fun _ h => mem_mcast_sent.mpr (Or.inr h)
 
-/-- The adversary delivers `m` from sender `j` to receiver `i`. -/
+/-- The adversary delivers `m` from sender `j` to receiver `i`: the receiver's
+stage record files it under `j`'s row. -/
 def recvMsg (s : ImplState n) (i j : Fin n) (m : Msg) : ImplState n :=
-  { s with recv :=
-      Function.update s.recv i (Function.update (s.recv i) j (insert m (s.recv i j))) }
+  (Function.update s.1 i ((s.1 i).deliverTo j m), s.2)
 
-@[simp] theorem recvMsg_proc (s : ImplState n) (i j : Fin n) (m : Msg) :
-    (s.recvMsg i j m).proc = s.proc := rfl
 @[simp] theorem recvMsg_sent (s : ImplState n) (i j : Fin n) (m : Msg) :
     (s.recvMsg i j m).sent = s.sent := rfl
 @[simp] theorem recvMsg_F (s : ImplState n) (i j : Fin n) (m : Msg) :
     (s.recvMsg i j m).F = s.F := rfl
+
+@[simp] theorem recvMsg_proc (s : ImplState n) (i j : Fin n) (m : Msg) :
+    (s.recvMsg i j m).proc = s.proc := by
+  funext k
+  by_cases hk : k = i
+  · subst hk; simp [recvMsg, proc, ProcNodeN.deliverTo]
+  · simp [recvMsg, proc, Function.update_of_ne hk]
 
 /-- Membership in a delivered set after a delivery. -/
 theorem mem_recvMsg_recv {s : ImplState n} {i j : Fin n} {m : Msg}
     {i' j' : Fin n} {m' : Msg} :
     m' ∈ (s.recvMsg i j m).recv i' j' ↔
       (i' = i ∧ j' = j ∧ m' = m) ∨ m' ∈ s.recv i' j' := by
-  change m' ∈ Function.update s.recv i
-      (Function.update (s.recv i) j (insert m (s.recv i j))) i' j' ↔ _
   by_cases hi : i' = i
   · subst hi
+    change m' ∈ (Function.update s.1 i' ((s.1 i').deliverTo j m) i').inbox j' ↔ _
     rw [Function.update_self]
+    change m' ∈ Function.update ((s.1 i').inbox) j (insert m ((s.1 i').inbox j)) j' ↔ _
     by_cases hj : j' = j
     · subst hj
       rw [Function.update_self, Finset.mem_insert]
-      simp
+      simp [recv]
     · rw [Function.update_of_ne hj]
-      simp [hj]
-  · rw [Function.update_of_ne hi]
-    simp [hi]
+      simp [hj, recv]
+  · change m' ∈ (Function.update s.1 i ((s.1 i).deliverTo j m) i').inbox j' ↔ _
+    rw [Function.update_of_ne hi]
+    simp [hi, recv]
 
 /-- Deliveries only grow the receiver counts. -/
 theorem recvCount_le_recvMsg (s : ImplState n) (i j : Fin n) (m : Msg)
@@ -399,37 +477,42 @@ theorem recvCount_le_recvMsg (s : ImplState n) (i j : Fin n) (m : Msg)
   rw [Finset.mem_filter] at hk ⊢
   exact ⟨hk.1, mem_recvMsg_recv.mpr (Or.inr hk.2)⟩
 
-/-- Corruption (deviation D1): total, Dirac, in lockstep with the spec's. -/
+/-- Corruption (deviation D1): total, Dirac, in lockstep with the spec's, and
+the fabric's own row — the stage records are corruption-blind. -/
 def corrupt (P : Params) (id : Fin P.n) (s : ImplState P.n) : ImplState P.n :=
-  if id ∉ s.F ∧ s.F.card < P.f then { s with F := insert id s.F } else s
+  (s.1, GSub.GNetState.corrupt P id s.2)
 
 @[simp] theorem corrupt_proc {P : Params} (s : ImplState P.n) (id : Fin P.n) :
-    (s.corrupt P id).proc = s.proc := by
-  unfold corrupt; split <;> rfl
-@[simp] theorem corrupt_sent {P : Params} (s : ImplState P.n) (id : Fin P.n) :
-    (s.corrupt P id).sent = s.sent := by
-  unfold corrupt; split <;> rfl
+    (s.corrupt P id).proc = s.proc := rfl
 @[simp] theorem corrupt_recv {P : Params} (s : ImplState P.n) (id : Fin P.n) :
-    (s.corrupt P id).recv = s.recv := by
-  unfold corrupt; split <;> rfl
+    (s.corrupt P id).recv = s.recv := rfl
 @[simp] theorem corrupt_recvCount {P : Params} (s : ImplState P.n) (id : Fin P.n)
     (i : Fin P.n) (m : Msg) :
-    (s.corrupt P id).recvCount i m = s.recvCount i m := by
-  unfold corrupt; split <;> rfl
+    (s.corrupt P id).recvCount i m = s.recvCount i m := rfl
+@[simp] theorem corrupt_sent {P : Params} (s : ImplState P.n) (id : Fin P.n) :
+    (s.corrupt P id).sent = s.sent := by
+  unfold corrupt sent GSub.GNetState.corrupt; split <;> rfl
+
+/-- The corrupted set after a corruption. `F` is the one field corruption
+writes, and the budget guard sits in the fabric, so the reading is stated here
+rather than reached by unfolding. Not a simp lemma: it introduces an `ite`. -/
+theorem corrupt_F {P : Params} (s : ImplState P.n) (id : Fin P.n) :
+    (s.corrupt P id).F = if id ∉ s.F ∧ s.F.card < P.f then insert id s.F else s.F := by
+  unfold corrupt F GSub.GNetState.corrupt
+  split_ifs <;> rfl
 
 theorem corrupt_F_subset {P : Params} (s : ImplState P.n) (id : Fin P.n) :
     s.F ⊆ (s.corrupt P id).F := by
-  unfold corrupt
+  rw [corrupt_F]
   split
   · exact Finset.subset_insert _ _
   · exact Finset.Subset.refl _
 
 theorem corrupt_card_le {P : Params} (s : ImplState P.n) (id : Fin P.n)
     (hF : s.F.card ≤ P.f) : (s.corrupt P id).F.card ≤ P.f := by
-  unfold corrupt
+  rw [corrupt_F]
   split
   · next hc =>
-    change (insert id s.F).card ≤ P.f
     have h2 := hc.2
     have h3 := Finset.card_insert_le id s.F
     omega

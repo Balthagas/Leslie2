@@ -39,7 +39,8 @@ The spec-side corruption projections (`corrupt_call`/`corrupt_ret`/`corrupt_dead
 private theorem corrupt_F_lockstep {t : SpecState P.n} {s : ImplState P.n}
     (hF : t.F = s.F) (id : Fin P.n) :
     (t.corrupt P id).F = (s.corrupt P id).F := by
-  unfold SpecState.corrupt ImplState.corrupt
+  rw [ImplState.corrupt_F]
+  unfold SpecState.corrupt
   by_cases hc : id ∉ s.F ∧ s.F.card < P.f
   · rw [if_pos (by rw [hF]; exact hc), if_pos hc]
     simp [hF]

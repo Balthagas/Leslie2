@@ -346,7 +346,7 @@ noncomputable def aNet (P : Params) : System (ANetState P.n) (NLab P.n) where
 /-- The state of the layered system: the round subsystems, the round loops,
 the ABA-side network and the coin oracle. -/
 abbrev LayeredState (P : Params) : Type :=
-  (ℕ → GSub.GSubState P.n) ×
+  (ℕ → GBCA.ImplState P.n) ×
     ((∀ _ : Fin P.n, CoreNodeN P.n) × (ANetState P.n × (ℕ → WCC.SpecState P.n)))
 
 /-- The four factors side by side, over the extended alphabet. -/
@@ -405,7 +405,7 @@ set. The coin oracle occupies the same slot on both sides. -/
 
 /-- The graded-agreement side of the regrouping. -/
 def regG {n : ℕ} (u : ∀ _ : Fin n, ABANodeN n) (w : NetState n) :
-    ℕ → GSub.GSubState n :=
+    ℕ → GBCA.ImplState n :=
   fun r => (fun j => (u j).2 r, ⟨w.pool r, w.F⟩)
 
 /-- The round-loop side of the regrouping. -/
@@ -530,7 +530,7 @@ theorem syncCore_no_tau {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
 
 /-- Build a joint transition of the four factors on a visible label, the
 oracle's successor left arbitrary. -/
-theorem layeredPre_vis_step (P : Params) {G G' : ℕ → GSub.GSubState P.n}
+theorem layeredPre_vis_step (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
     {C C' : ∀ _ : Fin P.n, CoreNodeN P.n} {A A' : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)} {L : NLab P.n}
     (hL : L ≠ Silent.τ)
@@ -550,7 +550,7 @@ theorem layeredPre_vis_step (P : Params) {G G' : ℕ → GSub.GSubState P.n}
 
 /-- Build a silent transition of the four factors from a graded-agreement-side
 one. -/
-theorem layeredPre_tau_gbca (P : Params) {G G' : ℕ → GSub.GSubState P.n}
+theorem layeredPre_tau_gbca (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n}
     (hG : (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure G')) :
@@ -561,7 +561,7 @@ theorem layeredPre_tau_gbca (P : Params) {G G' : ℕ → GSub.GSubState P.n}
 
 /-- Build a silent transition of the four factors from an ABA-side network
 injection. -/
-theorem layeredPre_tau_aNet (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem layeredPre_tau_aNet (P : Params) {G : ℕ → GBCA.ImplState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A A' : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n}
     (hA : ANetStep P A (Sum.inl Lab.tau) (PMF.pure A')) :
@@ -577,7 +577,7 @@ theorem layeredPre_tau_aNet (P : Params) {G : ℕ → GSub.GSubState P.n}
 
 /-- Build a silent transition of the four factors from the coin resolution —
 the one transition of the composite that is not Dirac. -/
-theorem layeredPre_tau_wcc (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem layeredPre_tau_wcc (P : Params) {G : ℕ → GBCA.ImplState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)}
     (hW : (WCC.specFamily P).step o Lab.tau ω) :
@@ -592,11 +592,11 @@ theorem layeredPre_tau_wcc (P : Params) {G : ℕ → GSub.GSubState P.n}
 
 /-- A visible transition of the four factors: all of them move together, and
 only the oracle's successor can fail to be a Dirac. -/
-theorem layeredPre_vis_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem layeredPre_vis_inv (P : Params) {G : ℕ → GBCA.ImplState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n} {L : NLab P.n} (hL : L ≠ Silent.τ)
     {μ : PMF (LayeredState P)} (h : (layeredPre P).step (G, C, A, o) L μ) :
-    ∃ (G' : ℕ → GSub.GSubState P.n) (C' : ∀ _ : Fin P.n, CoreNodeN P.n)
+    ∃ (G' : ℕ → GBCA.ImplState P.n) (C' : ∀ _ : Fin P.n, CoreNodeN P.n)
       (A' : ANetState P.n) (ω : PMF (ℕ → WCC.SpecState P.n)),
       (GSub.gbcaSide P).step G L (PMF.pure G') ∧
       (∀ i, CoreProcStepN P i (C i) L (PMF.pure (C' i))) ∧
@@ -622,7 +622,7 @@ theorem layeredPre_vis_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
 /-- A silent transition of the four factors: no round loop has a `τ` row, so it
 is the graded-agreement side's, the ABA-side network's own injection, or the
 coin resolution. -/
-theorem layeredPre_tau_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem layeredPre_tau_inv (P : Params) {G : ℕ → GBCA.ImplState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n} {μ : PMF (LayeredState P)}
     (h : (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) μ) :
@@ -1181,7 +1181,7 @@ variable {n : ℕ}
 @[simp] theorem isFailN_fail (k : Fin n) :
     GSub.isFailN (Sum.inl (Lab.fail k) : NLab n) := trivial
 
-theorem gAct_fail {P : Params} (k : Fin P.n) (s : GSub.GSubState P.n) :
+theorem gAct_fail {P : Params} (k : Fin P.n) (s : GBCA.ImplState P.n) :
     GSub.gAct P (Sum.inl (Lab.fail k)) s = (s.1, s.2.corrupt P k) := rfl
 
 end GOwns
@@ -1192,15 +1192,15 @@ The family routes a round-tagged label to its round, takes `τ` at any round,
 broadcasts `fail`, and idles on everything else. -/
 
 /-- The round-`r` subsystem moves on a label it owns. -/
-theorem gbcaSide_owned (P : Params) (G : ℕ → GSub.GSubState P.n) (r : ℕ)
-    {L : NLab P.n} (hL : GSub.gOwns L = some r) {X : GSub.GSubState P.n}
+theorem gbcaSide_owned (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
+    {L : NLab P.n} (hL : GSub.gOwns L = some r) {X : GBCA.ImplState P.n}
     (h : (GSub.sub P r).step (G r) L (PMF.pure X)) :
     (GSub.gbcaSide P).step G L (PMF.pure (Function.update G r X)) := by
   rw [GSub.gbcaSide, System.family_step_iff]
   exact Or.inr (Or.inl ⟨r, hL, PMF.pure X, h, by rw [PMF.pure_map]⟩)
 
 /-- An owned label whose subsystem stands still. -/
-theorem gbcaSide_owned_id (P : Params) (G : ℕ → GSub.GSubState P.n) (r : ℕ)
+theorem gbcaSide_owned_id (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
     {L : NLab P.n} (hL : GSub.gOwns L = some r)
     (h : (GSub.sub P r).step (G r) L (PMF.pure (G r))) :
     (GSub.gbcaSide P).step G L (PMF.pure G) := by
@@ -1208,31 +1208,31 @@ theorem gbcaSide_owned_id (P : Params) (G : ℕ → GSub.GSubState P.n) (r : ℕ
   rwa [Function.update_eq_self] at hstep
 
 /-- The round-`r` subsystem takes one of its own silent rules. -/
-theorem gbcaSide_tau (P : Params) (G : ℕ → GSub.GSubState P.n) (r : ℕ)
-    {X : GSub.GSubState P.n}
+theorem gbcaSide_tau (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
+    {X : GBCA.ImplState P.n}
     (h : (GSub.sub P r).step (G r) (Sum.inl Lab.tau) (PMF.pure X)) :
     (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure (Function.update G r X)) := by
   rw [GSub.gbcaSide, System.family_step_iff]
   exact Or.inl ⟨rfl, r, PMF.pure X, h, by rw [PMF.pure_map]⟩
 
 /-- A label no round owns and no broadcast: the family idles. -/
-theorem gbcaSide_idle (P : Params) (G : ℕ → GSub.GSubState P.n) {L : NLab P.n}
+theorem gbcaSide_idle (P : Params) (G : ℕ → GBCA.ImplState P.n) {L : NLab P.n}
     (hτ : L ≠ Silent.τ) (hown : GSub.gOwns L = none) (hf : ¬ GSub.isFailN L) :
     (GSub.gbcaSide P).step G L (PMF.pure G) := by
   rw [GSub.gbcaSide, System.family_step_iff]
   exact Or.inr (Or.inr (Or.inr ⟨hτ, hown, hf, rfl⟩))
 
 /-- Corruption is broadcast to every round's fabric. -/
-theorem gbcaSide_fail (P : Params) (G : ℕ → GSub.GSubState P.n) (k : Fin P.n) :
+theorem gbcaSide_fail (P : Params) (G : ℕ → GBCA.ImplState P.n) (k : Fin P.n) :
     (GSub.gbcaSide P).step G (Sum.inl (Lab.fail k))
       (PMF.pure (fun r => GSub.gAct P (Sum.inl (Lab.fail k)) (G r))) := by
   rw [GSub.gbcaSide, System.family_step_iff]
   exact Or.inr (Or.inr (Or.inl ⟨by simp, rfl, trivial, rfl⟩))
 
 /-- An owned label is answered by its round alone. -/
-theorem gbcaSide_owned_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem gbcaSide_owned_inv (P : Params) {G : ℕ → GBCA.ImplState P.n}
     {L : NLab P.n} {r : ℕ} (hL : GSub.gOwns L = some r) (hτ : L ≠ Silent.τ)
-    {μ : PMF (ℕ → GSub.GSubState P.n)} (h : (GSub.gbcaSide P).step G L μ) :
+    {μ : PMF (ℕ → GBCA.ImplState P.n)} (h : (GSub.gbcaSide P).step G L μ) :
     ∃ X, (GSub.sub P r).step (G r) L (PMF.pure X) ∧
       μ = PMF.pure (Function.update G r X) := by
   rw [GSub.gbcaSide, System.family_step_iff] at h
@@ -1245,9 +1245,9 @@ theorem gbcaSide_owned_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
   · rw [hL] at hown; exact absurd hown (by simp)
 
 /-- The family idles on a label no round owns and no broadcast. -/
-theorem gbcaSide_idle_inv (P : Params) {G : ℕ → GSub.GSubState P.n} {L : NLab P.n}
+theorem gbcaSide_idle_inv (P : Params) {G : ℕ → GBCA.ImplState P.n} {L : NLab P.n}
     (hτ : L ≠ Silent.τ) (hown : GSub.gOwns L = none) (hf : ¬ GSub.isFailN L)
-    {μ : PMF (ℕ → GSub.GSubState P.n)} (h : (GSub.gbcaSide P).step G L μ) :
+    {μ : PMF (ℕ → GBCA.ImplState P.n)} (h : (GSub.gbcaSide P).step G L μ) :
     μ = PMF.pure G := by
   rw [GSub.gbcaSide, System.family_step_iff] at h
   rcases h with ⟨habs, -⟩ | ⟨r, hr, -⟩ | ⟨-, -, hglob, -⟩ | ⟨-, -, -, rfl⟩
@@ -1257,8 +1257,8 @@ theorem gbcaSide_idle_inv (P : Params) {G : ℕ → GSub.GSubState P.n} {L : NLa
   · rfl
 
 /-- Corruption is broadcast to every round. -/
-theorem gbcaSide_fail_inv (P : Params) {G : ℕ → GSub.GSubState P.n} (k : Fin P.n)
-    {μ : PMF (ℕ → GSub.GSubState P.n)}
+theorem gbcaSide_fail_inv (P : Params) {G : ℕ → GBCA.ImplState P.n} (k : Fin P.n)
+    {μ : PMF (ℕ → GBCA.ImplState P.n)}
     (h : (GSub.gbcaSide P).step G (Sum.inl (Lab.fail k)) μ) :
     μ = PMF.pure (fun r => GSub.gAct P (Sum.inl (Lab.fail k)) (G r)) := by
   rw [GSub.gbcaSide, System.family_step_iff] at h
@@ -1269,10 +1269,10 @@ theorem gbcaSide_fail_inv (P : Params) {G : ℕ → GSub.GSubState P.n} (k : Fin
   · exact absurd trivial hglob
 
 /-- A silent transition of the family is one round's own silent rule. -/
-theorem gbcaSide_tau_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
-    {μ : PMF (ℕ → GSub.GSubState P.n)}
+theorem gbcaSide_tau_inv (P : Params) {G : ℕ → GBCA.ImplState P.n}
+    {μ : PMF (ℕ → GBCA.ImplState P.n)}
     (h : (GSub.gbcaSide P).step G (Sum.inl Lab.tau) μ) :
-    ∃ (r : ℕ) (X : GSub.GSubState P.n),
+    ∃ (r : ℕ) (X : GBCA.ImplState P.n),
       (GSub.sub P r).step (G r) (Sum.inl Lab.tau) (PMF.pure X) ∧
       μ = PMF.pure (Function.update G r X) := by
   rw [GSub.gbcaSide, System.family_step_iff] at h
@@ -1336,7 +1336,7 @@ theorem layeredGroup_of_tau (P : Params) {q : LayeredState P} {μ : PMF (Layered
 rendezvous internally and the other three factors are frozen. -/
 theorem layeredGroup_of_gEvent (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} (r : ℕ)
-    {X : GSub.GSubState P.n}
+    {X : GBCA.ImplState P.n}
     (hs : (GSub.sub P r).step (regG u w r) (Sum.inl Lab.tau) (PMF.pure X)) :
     (layeredGroup P).step (regG u w, regC u, regA w, o) Lab.tau
       (PMF.pure (Function.update (regG u w) r X, regC u, regA w, o)) :=
@@ -1790,7 +1790,7 @@ theorem deployedPre_vis_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
 the fabric move together. -/
 theorem sub_vis_inv (P : Params) (r : ℕ) {U : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n}
     {W : GSub.GNetState P.n} {L : NLab P.n} (hL : L ≠ Sum.inl Lab.tau)
-    {μ : PMF (GSub.GSubState P.n)} (h : (GSub.sub P r).step (U, W) L μ) :
+    {μ : PMF (GBCA.ImplState P.n)} (h : (GSub.sub P r).step (U, W) L μ) :
     ∃ (X : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (W' : GSub.GNetState P.n),
       μ = PMF.pure (X, W') ∧
       (∀ i, GSub.GProcStep P r i (U i) (Sum.inl L) (PMF.pure (X i))) ∧
@@ -1803,7 +1803,7 @@ theorem sub_vis_inv (P : Params) (r : ℕ) {U : ∀ _ : Fin P.n, GBCA.ProcNodeN 
 /-- A silent transition of the round-`r` subsystem: a hidden rendezvous of the
 stage programs with the fabric, or the fabric's own injection. -/
 theorem sub_tau_inv (P : Params) (r : ℕ) {U : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n}
-    {W : GSub.GNetState P.n} {μ : PMF (GSub.GSubState P.n)}
+    {W : GSub.GNetState P.n} {μ : PMF (GBCA.ImplState P.n)}
     (h : (GSub.sub P r).step (U, W) (Sum.inl Lab.tau) μ) :
     (∃ (e : GSub.GEvt P.n) (X : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n)
         (W' : GSub.GNetState P.n), μ = PMF.pure (X, W') ∧

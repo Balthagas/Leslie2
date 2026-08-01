@@ -341,12 +341,13 @@ private theorem Inv.send {s : ImplState P.n} (hI : Inv P s) {j : Fin P.n}
     ?_, ?_⟩
   · -- recv_sub
     intro i' j' m' hm'
+    rw [ImplState.mcast_recv, ImplState.setProc_recv] at hm'
     exact ImplState.sent_subset_mcast _ _ _ _ (hI.recv_sub i' j' m' hm')
   · -- echo_conf
     intro j' b hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
-    · exact hEchoC b heq.symm
-    · exact hI.echo_conf j' b hF hold
+    · simpa using hEchoC b heq.symm
+    · simpa using hI.echo_conf j' b hF hold
   · -- echo_once
     intro j' b hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
@@ -379,8 +380,8 @@ private theorem Inv.send {s : ImplState P.n} (hI : Inv P s) {j : Fin P.n}
   · -- vote_conf
     intro j' b hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
-    · exact hVoteC b heq.symm
-    · exact hI.vote_conf j' b hF hold
+    · simpa using hVoteC b heq.symm
+    · simpa using hI.vote_conf j' b hF hold
   · -- vote_once
     intro j' w hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
@@ -420,13 +421,13 @@ private theorem Inv.send {s : ImplState P.n} (hI : Inv P s) {j : Fin P.n}
   · -- bind_conf
     intro j' b hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
-    · exact hBindC b heq.symm
-    · exact hI.bind_conf j' b hF hold
+    · simpa using hBindC b heq.symm
+    · simpa using hI.bind_conf j' b hF hold
   · -- bindBot_conf
     intro j' hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
-    · exact hBindBotC heq.symm
-    · exact hI.bindBot_conf j' hF hold
+    · simpa using hBindBotC heq.symm
+    · simpa using hI.bindBot_conf j' hF hold
   · -- seal_input
     intro j' w hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, _⟩ | hold
@@ -459,13 +460,13 @@ private theorem Inv.send {s : ImplState P.n} (hI : Inv P s) {j : Fin P.n}
   · -- seal_conf
     intro j' b hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
-    · exact hSealC b heq.symm
-    · exact hI.seal_conf j' b hF hold
+    · simpa using hSealC b heq.symm
+    · simpa using hI.seal_conf j' b hF hold
   · -- sealBot_conf
     intro j' hF hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
-    · exact hSealBotC heq.symm
-    · exact hI.sealBot_conf j' hF hold
+    · simpa using hSealBotC heq.symm
+    · simpa using hI.sealBot_conf j' hF hold
   · -- input_orig
     intro b G hFG hGc j' hjG hm'
     rcases ImplState.mem_mcast_sent.mp hm' with ⟨rfl, heq⟩ | hold
@@ -548,9 +549,10 @@ private theorem Inv.setProc_frame {s : ImplState P.n} (hI : Inv P s)
     by_cases hk : k = id
     · subst hk; rw [ImplState.setProc_proc_self, h5]
     · rw [ImplState.setProc_proc_ne _ _ _ hk]
-  refine ⟨hI.F_card, hI.recv_sub, hI.echo_conf, ?_, ?_, hI.vote_conf, ?_, ?_,
-    hI.bind_conf, hI.bindBot_conf, ?_, ?_, hI.seal_conf, hI.sealBot_conf,
-    ?_, ?_, ?_⟩
+  refine ⟨hI.F_card, by simpa using hI.recv_sub, by simpa using hI.echo_conf, ?_, ?_,
+    by simpa using hI.vote_conf, ?_, ?_, by simpa using hI.bind_conf,
+    by simpa using hI.bindBot_conf, ?_, ?_, by simpa using hI.seal_conf,
+    by simpa using hI.sealBot_conf, ?_, ?_, ?_⟩
   · intro j' b hF hm'
     rw [hech j']
     exact hI.echo_once j' b hF hm'
@@ -609,9 +611,11 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
   | deliver i j m hsent =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
-    refine ⟨hI.F_card, ?_, ?_, hI.echo_once, hI.vote_input, ?_, hI.vote_once,
-      hI.bind_once, ?_, ?_, hI.seal_input, hI.seal_once, ?_, ?_, hI.input_orig,
-      hI.input_supp, hI.input_called⟩
+    refine ⟨hI.F_card, ?_, ?_, by simpa using hI.echo_once,
+      by simpa using hI.vote_input, ?_, by simpa using hI.vote_once,
+      by simpa using hI.bind_once, ?_, ?_, by simpa using hI.seal_input,
+      by simpa using hI.seal_once, ?_, ?_, by simpa using hI.input_orig,
+      by simpa [ImplSupp] using hI.input_supp, by simpa using hI.input_called⟩
     · intro i' j' m' hm'
       rcases ImplState.mem_recvMsg_recv.mp hm' with ⟨rfl, rfl, rfl⟩ | hold
       · exact hsent
@@ -948,7 +952,7 @@ private theorem deadCert_send {s : ImplState P.n} {j : Fin P.n} {p : ProcState}
     {m : Msg} (hvote : ∀ w, (s.proc j).sentVote = some w → p.sentVote = some w)
     {b : Bool} (h : DeadCert P s b) :
     DeadCert P ((s.setProc j p).mcast j m) b :=
-  DeadCert.mono (s := s) (fun _ _ _ hm => hm)
+  DeadCert.mono (s := s) (fun _ _ _ hm => by simpa using hm)
     (fun k w hk => by
       by_cases hkj : k = j
       · subst hkj
@@ -962,7 +966,7 @@ private theorem deadCert_send {s : ImplState P.n} {j : Fin P.n} {p : ProcState}
 private theorem deadCert_ret {s : ImplState P.n} {id : Fin P.n} {b : Bool}
     (h : DeadCert P s b) :
     DeadCert P (s.setProc id { s.proc id with returned := true }) b :=
-  DeadCert.mono (s := s) (fun _ _ _ hm => hm)
+  DeadCert.mono (s := s) (fun _ _ _ hm => by simpa using hm)
     (fun k w hk => by
       by_cases hkj : k = id
       · subst hkj
@@ -1309,7 +1313,8 @@ theorem killThenRetC_burst {r : ℕ} {t : SpecState P.n} {id : Fin P.n} {b : Boo
 private theorem implSpec_corrupt_F_eq {t : SpecState P.n} {s : ImplState P.n}
     (hF : t.F = s.F) (id : Fin P.n) :
     (t.corrupt P id).F = (s.corrupt P id).F := by
-  unfold SpecState.corrupt ImplState.corrupt
+  rw [ImplState.corrupt_F]
+  unfold SpecState.corrupt
   by_cases hc : id ∉ s.F ∧ s.F.card < P.f
   · rw [if_pos (by rw [hF]; exact hc), if_pos hc]
     simp [hF]
@@ -1333,7 +1338,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       Or.inr ⟨by simp, System.weakLStep_of_step (by simp)
         (Step.call q2 id b (by rw [hRR.call_eq]; exact h))⟩,
       hI', ?_, ?_, hRR.F_eq, ?_,
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       change Function.update q2.call id (some b) k = _
       by_cases hk : k = id
@@ -1359,11 +1364,11 @@ theorem implRefines (P : Params) (r : ℕ) :
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     refine ⟨q2, Or.inl ⟨rfl, System.weakLSilent_refl _ q2⟩,
-      hI', hRR.call_eq, hRR.ret_eq, hRR.F_eq, ?_, ?_, ?_⟩
+      hI', by simpa using hRR.call_eq, by simpa using hRR.ret_eq, hRR.F_eq, ?_, ?_, ?_⟩
     · intro b hb
       exact DeadCert.mono (s := q1)
         (fun i' j' m' hm' => ImplState.mem_recvMsg_recv.mpr (Or.inr hm'))
-        (fun k w hk => hk) (Finset.Subset.refl _) (hRR.dead_cert b hb)
+        (fun k w hk => by simpa using hk) (Finset.Subset.refl _) (hRR.dead_cert b hb)
     · intro hg
       obtain ⟨v0, i0, hi0⟩ := hRR.gradeA_ev hg
       exact ⟨v0, i0, le_trans hi0 (ImplState.recvCount_le_recvMsg q1 i j m i0 _)⟩
@@ -1377,7 +1382,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       hI', ?_, ?_, hRR.F_eq,
       fun b' hb' => deadCert_send (by intro w hw; exact hw)
         (hRR.dead_cert b' hb'),
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       by_cases hk : k = j
       · subst hk
@@ -1397,7 +1402,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       hI', ?_, ?_, hRR.F_eq,
       fun b' hb' => deadCert_send (by intro w hw; exact hw)
         (hRR.dead_cert b' hb'),
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       by_cases hk : k = j
       · subst hk
@@ -1418,7 +1423,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       fun b' hb' => deadCert_send
         (by intro w hw; rw [hsend] at hw; simp at hw)
         (hRR.dead_cert b' hb'),
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       by_cases hk : k = j
       · subst hk
@@ -1439,7 +1444,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       fun b' hb' => deadCert_send
         (by intro w hw; rw [hsend] at hw; simp at hw)
         (hRR.dead_cert b' hb'),
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       by_cases hk : k = j
       · subst hk
@@ -1459,7 +1464,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       hI', ?_, ?_, hRR.F_eq,
       fun b' hb' => deadCert_send (by intro w hw; exact hw)
         (hRR.dead_cert b' hb'),
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       by_cases hk : k = j
       · subst hk
@@ -1479,7 +1484,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       hI', ?_, ?_, hRR.F_eq,
       fun b' hb' => deadCert_send (by intro w hw; exact hw)
         (hRR.dead_cert b' hb'),
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       by_cases hk : k = j
       · subst hk
@@ -1499,7 +1504,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       hI', ?_, ?_, hRR.F_eq,
       fun b' hb' => deadCert_send (by intro w hw; exact hw)
         (hRR.dead_cert b' hb'),
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       by_cases hk : k = j
       · subst hk
@@ -1519,7 +1524,7 @@ theorem implRefines (P : Params) (r : ℕ) :
       hI', ?_, ?_, hRR.F_eq,
       fun b' hb' => deadCert_send (by intro w hw; exact hw)
         (hRR.dead_cert b' hb'),
-      hRR.gradeA_ev, hRR.gradeC_ev⟩
+      by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
     · intro k
       by_cases hk : k = j
       · subst hk
@@ -1563,7 +1568,7 @@ theorem implRefines (P : Params) (r : ℕ) :
           (Step.retA q2 id v hlive hdead hgr hret)⟩,
         hI', ?_, ?_, hRR.F_eq,
         fun b hb => deadCert_ret (hRR.dead_cert b hb),
-        fun _ => ⟨v, id, hcnt⟩,
+        fun _ => ⟨v, id, by simpa using hcnt⟩,
         fun hgf => absurd hgf (by simp)⟩
       · intro k'
         by_cases hk : k' = id
@@ -1586,7 +1591,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         Or.inr ⟨by simp,
           killThenRetA_burst hq hw hlive (dead_empty_of_both hlive hdead) hgr hret⟩,
         hI', ?_, ?_, hRR.F_eq, ?_,
-        fun _ => ⟨v, id, hcnt⟩,
+        fun _ => ⟨v, id, by simpa using hcnt⟩,
         fun hgf => absurd hgf (by simp)⟩
       · intro k'
         by_cases hk : k' = id
@@ -1624,7 +1629,7 @@ theorem implRefines (P : Params) (r : ℕ) :
           (Step.retB q2 id v hlive hdead hd hret)⟩,
         hI', ?_, ?_, hRR.F_eq,
         fun b hb => deadCert_ret (hRR.dead_cert b hb),
-        hRR.gradeA_ev, hRR.gradeC_ev⟩
+        by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
       · intro k'
         by_cases hk : k' = id
         · subst hk
@@ -1645,7 +1650,7 @@ theorem implRefines (P : Params) (r : ℕ) :
                         ret := Function.update q2.ret id true },
         Or.inr ⟨by simp,
           killThenRetB_burst hq hw hlive (dead_empty_of_both hlive hdead) hd hret⟩,
-        hI', ?_, ?_, hRR.F_eq, ?_, hRR.gradeA_ev, hRR.gradeC_ev⟩
+        hI', ?_, ?_, hRR.F_eq, ?_, by simpa using hRR.gradeA_ev, by simpa using hRR.gradeC_ev⟩
       · intro k'
         by_cases hk : k' = id
         · subst hk
@@ -1697,7 +1702,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         Or.inr ⟨by simp, killThenRetC_burst hq hw hde hwT hwF hgr hret⟩,
         hI', ?_, ?_, hRR.F_eq, ?_,
         fun hgt => absurd hgt (by simp),
-        fun _ => ⟨id, hcnt⟩⟩
+        fun _ => ⟨id, by simpa using hcnt⟩⟩
       · intro k'
         by_cases hk : k' = id
         · subst hk
@@ -1726,7 +1731,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         hI', ?_, ?_, hRR.F_eq,
         fun b hb => deadCert_ret (hRR.dead_cert b hb),
         fun hgt => absurd hgt (by simp),
-        fun _ => ⟨id, hcnt⟩⟩
+        fun _ => ⟨id, by simpa using hcnt⟩⟩
       · intro k'
         by_cases hk : k' = id
         · subst hk

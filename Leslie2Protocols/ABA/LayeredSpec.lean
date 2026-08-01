@@ -87,7 +87,7 @@ noncomputable def layeredSpec (P : Params) : System (LayeredSpecState P) (Lab P.
 
 /-- The pointwise round relation: every round's subsystem state is related to
 that round's specification state. -/
-def RsubAll (P : Params) (s : ℕ → GSub.GSubState P.n)
+def RsubAll (P : Params) (s : ℕ → GBCA.ImplState P.n)
     (t : ℕ → GBCA.SpecState P.n) : Prop :=
   ∀ r, GSub.Rsub P r (s r) (t r)
 
