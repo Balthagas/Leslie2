@@ -4,6 +4,7 @@ import Leslie2Protocols.ABA.CoreSimAbs
 import Leslie2Protocols.ABA.CoreSimBurst
 import Leslie2Protocols.ABA.CoreSimInv
 import Leslie2Protocols.ABA.CoreSimRel
+import Leslie2Protocols.ABA.CoreView
 import Leslie2Protocols.ABA.Deployed
 import Leslie2Protocols.ABA.Examples
 import Leslie2Protocols.ABA.GBCAFamily
