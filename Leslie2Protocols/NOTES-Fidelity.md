@@ -18,8 +18,9 @@ source blueprint; where the source blueprint departs from ABDY22 the encoding in
 the departure, with the single exception of §1.
 
 **The D-registry is elsewhere.** The catalogued deviations — D1, D3–D5, D8–D19, D12
-refined to D12′ — are cited at the point of use in the ABA module docstrings, summarised
-in `ABA/README.md`, and listed in the blueprint chapter (the Deviations paragraph of `blueprint/src/content.tex`).
+refined to D12′ — are cited at the point of use in the ABA module docstrings and glossed
+one by one in the blueprint chapter (the Deviations paragraph of
+`blueprint/src/content.tex`), which is the registry of record.
 
 ## 1. Where the encoding follows ABDY22 against the source blueprint
 
@@ -75,19 +76,18 @@ receiving `echo4` messages from `2t + 1` parties" where the pseudocode's lines 1
 
 **"Received once."** The wait case (b) of Algorithm 6 requires that "⟨echo5, b⟩ has been
 received once". `ImplStep.retB` reads this as *from at least one sender*: `honce : ∃ k,
-Msg.seal (some v) ∈ s.recv id k` (`GBCAImpl.lean:467`), not as a cardinality constraint
-of exactly one receipt. The hypothesis is a genuine part of the rule, carried through the
-deployed rendering (`Deployed.lean:415`, the `retG_B` row of the corruption-blind
-program, and `:610`, its Byzantine-drive twin), but no proof
+Msg.seal (some v) ∈ s.recv id k`, not as a cardinality constraint of exactly one
+receipt. The hypothesis is a genuine part of the rule, carried through the deployed
+rendering by `ABAProcStepN.retG_B` and its Byzantine-drive twin
+`ABAProcStepN.byzRetG_B`, but no proof
 consumes it: the refinement's `retB` rows bind it and leave it unused, discharging the
 `B`-return's specification-side guards from the `f + 1` `BIND v` receipts and `hval`
 instead. Either reading supports the same theorems.
 
 **Terminating `return` as state.** The pseudocode's `return` ends the process; the
-encoding renders that as a fire-once flag — `ProcState.returned` (`GBCAImpl.lean:127`),
-guarded at all three GBCA returns (`GBCAImpl.lean:458`, `:470`, `:478`), and
-`ProcCore.returned` (`Core.lean:145`), guarded at `CoreProcStepN.ret`
-(`ABA/Layered.lean:113`). The
+encoding renders that as a fire-once flag — `ProcState.returned`, guarded by the `hr`
+hypothesis of all three GBCA returns `ImplStep.retA`, `retB` and `retC`, and
+`ProcCore.returned`, guarded at `CoreProcStepN.ret`. The
 guard has no surface counterpart in Algorithm 1 or Algorithm 2, which name no such
 variable; the control-flow fact it expresses does. (At specification level it is no
 interpretation: TS 1 and TS 2 carry `ret[id] = ⊥` guards of their own.)
@@ -97,19 +97,17 @@ interpretation: TS 1 and TS 2 carry `ret[id] = ⊥` guards of their own.)
 The source pseudocode has no explicit network: sends and receipts are primitive. The
 encoding's set-based authenticated model is D5 and the DECIDED pools are D12′; what
 belongs here is the asymmetry *between* the two networks. `CoreProcStepN.ddlvRecv`
-carries a freshness guard `hr : b ∉ c.decIn k` (`ABA/Layered.lean:171`); `ImplStep.deliver`
-carries no counterpart, its only hypothesis being soundness `h : m ∈ s.sent j`
-(`GBCAImpl.lean:378`). Both are sound for the same reason — receipt sets are `Finset`s
+carries a freshness guard `hr : b ∉ c.decIn k`; `ImplStep.deliver` carries no
+counterpart, its only hypothesis being soundness `h : m ∈ s.sent j`. Both are sound for the same reason — receipt sets are `Finset`s
 and re-delivery is `insert` into a set, so the guard removes redundant transitions
 rather than reachable states — and the asymmetry reappears exactly in the deployed
 rendering, where each delivery is a rendezvous whose two halves are held by different
 components. Soundness is the network adversary's conjunct on both layers: `NetStep.gdlv`
-requires `h : m ∈ s.pool r j` (`Deployed.lean:664`) and `NetStep.ddlv` requires
-`h : b ∈ s.dpool j` (`:672`), neither consuming the pooled message. Freshness is the
-receiver's, and only at the DECIDED layer: `ABAProcStepN.ddlvRecv` carries
-`hr : b ∉ c.decIn k` (`Deployed.lean:550`) while `ABAProcStepN.gdlvRecv` carries no
-hypothesis at all (`:529`), filing the message under the sender's inbox row
-unconditionally.
+requires `h : m ∈ s.pool r j` and `NetStep.ddlv` requires `h : b ∈ s.dpool j`, neither
+consuming the pooled message. Freshness is the receiver's, and only at the DECIDED
+layer: `ABAProcStepN.ddlvRecv` carries `hr : b ∉ c.decIn k` while
+`ABAProcStepN.gdlvRecv` carries no hypothesis at all, filing the message under the
+sender's inbox row unconditionally.
 
 ## 4. Source defects the encoding does not reproduce
 
@@ -130,14 +128,17 @@ unconditionally.
 - **The Graded Agreement clause is ill-typed** as stated: "if two correct processes
   return `(b, X)` and `(b′, X′)` then `b = 0 ⟹ b′ ≠ 1` and `X = A ⟹ X′ ≠ ⊥`" (p. 6),
   with `⊥` in a grade slot ranging over `{A, B, C}`. It reads as grade `C`, and is
-  realized as the `grade` latch's `A`/`C` exclusivity (`GBCASpec.lean:181`, `:195`).
+  realized as the `grade` latch's `A`/`C` exclusivity, the `hg` guards of
+  `SpecStep.retA` and `SpecStep.retC`.
 - **TS 1's `Initial` clause names an undeclared field** `out` (source p. 18), absent
-  from the same system's `State` line. It is omitted (`Spec.lean:58`).
+  from the same system's `State` line. It is omitted, and `Spec.lean`'s module
+  docstring records the omission.
 
 ## 5. Scope boundaries
 
-Beyond D4 — the WCC `guess` label and state field (`Labels.lean:33`, `WCCSpec.lean:21`),
-which exist solely for Unpredictability, inexpressible once the guess is dropped.
+Beyond D4 — the WCC `guess` label and state field, whose omission `Labels.lean` and
+`WCCSpec.lean` both record in their module docstrings — they exist solely for
+Unpredictability, inexpressible once the guess is dropped.
 
 - **Per-transition fairness markings.** Every transition system in the source carries
   the line "all transitions are fair except those labelled by fail and the call loops"
@@ -148,21 +149,20 @@ which exist solely for Unpredictability, inexpressible once the guess is dropped
   chain is declared omniscient there (Definitions 11–15, Specifications 1–3, pp. 6–7),
   which the encoding's unrestricted schedulers match; belief has no counterpart.
 - **Termination.** ABA's ε-sure Termination, GBCA's Termination and WCC's ε′-sure
-  Termination (pp. 6–7) are unclaimed — `ABA.main` (`Main.lean:137`) is Validity ∧
+  Termination (pp. 6–7) are unclaimed — `ABA.main` is Validity ∧
   Agreement. See `NOTES-Liveness-Roadmap.md`.
 
 One divergence runs in the safe direction. The source's Validity restricts to correct
 processes ("if a correct process returns `b` then a correct process had `b` as input",
-p. 6), where `ValidityTrace` (`SpecSafety.lean:95`) is returner-unconditional — every
-return, corrupted returners included, is witnessed by a preceding `callABA` from a
-`NeverCorrupted` caller — and `AgreementTrace` (`SpecSafety.lean:101`) is stronger on
-the same axis. `ABA.spec`'s return rule does not inspect `F`, so the stronger statement
-is what `spec_safe` (`SpecSafety.lean:855`) proves.
+p. 6), where `ValidityTrace` is returner-unconditional — every return, corrupted
+returners included, is witnessed by a preceding `callABA` from a `NeverCorrupted`
+caller — and `AgreementTrace` is stronger on the same axis. `ABA.spec`'s return rule
+does not inspect `F`, so the stronger statement is what `spec_safe` proves.
 
 ## 6. Adjacent open items
 
 Neither is a fidelity gap; both sit under Future work in `ABA/README.md`.
-**Achievability** — `Examples.lean` carries the non-vacuity run on `layeredSpec`, the
+**Achievability** — `NonVacuity.lean` carries the non-vacuity run on `layeredSpec`, the
 deployment-shaped specification the core simulation takes as its subject, and a
 machine-checked positive-mass trace for `deployed`, the deployed system `main` is about,
 is outstanding.

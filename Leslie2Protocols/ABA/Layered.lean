@@ -49,7 +49,7 @@ corrupted set are `aNet`'s.
 ## The authorisation relocation (D11)
 
 `Net.NetStep` carries the `k ∈ F` guard of every Byzantine drive. The round
-subsystem deliberately drops it (`GBCASub.lean`, D11): a drive label stays
+subsystem deliberately drops it (`GBCASubsystem.lean`, D11): a drive label stays
 visible at the subsystem boundary and is authorised outside. Here `aNet` is
 that outside, and it carries the guard on its own copy of the corrupted set.
 Since every copy of the corrupted set on either side is the network
