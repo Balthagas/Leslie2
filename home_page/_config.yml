@@ -20,7 +20,7 @@
 
 title: leslie2
 #email: your-email@example.com
-description: by Gaspard Reghem
+description: Probabilistic labelled transition systems and a verified asynchronous Byzantine agreement, in Lean 4
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "https://sathiyavrs.github.io/Leslie2" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username:
