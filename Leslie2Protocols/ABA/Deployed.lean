@@ -74,8 +74,8 @@ composition, so the composite `deployedGroup` speaks exactly `Lab n`.
 * **D11 (Byzantine handshake drives).** A corrupted process may drive its
   sub-protocol handshakes arbitrarily. Each drive is a rendezvous label of
   its own, authorised by the network's `k ∈ F` guard: the process contributes
-  only the instance-side content the monolithic rule has (a stage record
-  write, or nothing), never a round-loop write.
+  only the instance-side content the round instance's rule has (a stage
+  record write, or nothing), never a round-loop write.
 * **D12′ (per-process DECIDED pools, equivocation-capable).** The DECIDED
   layer is the pool family `dpool j` beside the per-node receipt rows
   `decIn k`. The relay's write-once condition is a condition on the pool, so

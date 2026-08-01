@@ -202,7 +202,8 @@ The dashed vertical is Theorem~\ref{thm:aba-layered-atd}, along the graph of $\m
 
 The graded-agreement layer is the one sub-protocol carried to implementation level, and its messages form a five-level ladder.
 The depth of the ladder is what the grade-$1$ evidence buys (D18): $f{+}1$ $\mathrm{BIND}\,v$ receipts exceed the corruption budget, so an honest sender stands behind every grade-$1$ output, and that sender's own wait condition is the $n{-}f$ $\mathrm{VOTE}\,v$ quorum the binding argument of~\cite{ABDY22} counts.
-The definition below regroups the layer as one per-round PLTS over the whole system state, which is the form Theorem~\ref{thm:gbca-inst-refines} is proved against; its guards are local although its state is global, and Definitions~\ref{def:aba-procnet} and~\ref{def:aba-netadv} are where each of them is written against one node.
+The definition below reads the layer as one per-round PLTS, which is the form Theorem~\ref{thm:gbca-inst-refines} is proved against.
+Its state is the pair of the $n$ stage records and the round's own message fabric, so the network is a factor of it and not a field, and its guards read that pair through four accessors; Definitions~\ref{def:aba-procnet} and~\ref{def:aba-netadv} are where each guard is written against one node.
 See \leanmodule{Leslie2Protocols/ABA/GBCAImpl}.
 
 \input{nodes-min/def-aba-gbca-impl}

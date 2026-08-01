@@ -451,15 +451,18 @@ The two subsections after this one give the same two layers a second time, as
 rule inventories in which a guard is read against the line of pseudocode it
 transcribes.
 Each inventory enters the argument at a named point.
-The graded-agreement inventory is one automaton whose state is the whole
-system, and it is what one round of the deployed protocol projects onto, which
-is how the refinement proved of it transports
+Each is one automaton read on the pair of factors that hold its layer's
+state.
+The graded-agreement inventory is read on the $n$ stage records beside the
+round's message fabric, which is the state one round of the deployed protocol
+runs on, and that is how the refinement proved of it transports
 (Theorem~\ref{thm:aba-subsim}).
-The round-loop inventory is read on the pair of factors that hold the round
-loop's state, which is the state the core simulation's relation is defined on
+The round-loop inventory is read on the round-loop nodes beside the DECIDED
+network, which is the state the core simulation's relation is defined on
 (Theorem~\ref{thm:aba-layeredspec-spec}).
-The forms name one system in each case, and the choice between them fixes only
-which state a rule is written to read.
+In both cases the network is a factor of the state and not a field of a record,
+so a rule of the inventory and a rule of the composition are written against the
+same object.
 
 Algorithm~\ref{alg:gbca-impl} is the graded-agreement stage of one process and
 Algorithm~\ref{alg:aba-core} the round loop that calls it, with one stage
@@ -672,16 +675,28 @@ The local state of one process is the record $\mathrm{ProcState}$, \leandecl{PLT
   \item $\mathit{returned}$ --- whether this process has returned from the
     instance.
 \end{itemize}
-The state of the instance is the record $\mathrm{ImplState}$, \leandecl{PLTS.ABA.GBCA.ImplState}, with fields
+The state of the instance is not a record of its own.
+It is the pair
+\[
+  \mathrm{ImplState}(n) \;=\;
+    \bigl([n] \to \mathrm{ProcNodeN}(n)\bigr) \times \mathrm{GNetState}(n),
+\]
+\leandecl{PLTS.ABA.GBCA.ImplState}: the $n$ stage records of
+Definition~\ref{def:aba-procnet}, each holding one process's $\mathrm{ProcState}$
+beside the messages delivered to it, and the round's message fabric of
+Definition~\ref{def:aba-gbcasub}, holding the per-sender pools and the corrupted
+set.
+The rules below are written in four accessors on that pair.
 \begin{itemize}
-  \item $\mathit{proc} : [n] \to \mathrm{ProcState}$ --- the local states.
-  \item $\mathit{sent} : [n] \to \mathcal{P}(\mathrm{Msg})$ --- $\mathit{sent}(j)$
-    is the set of messages $j$ has multicast (D5).
+  \item $\mathit{proc} : [n] \to \mathrm{ProcState}$ --- the local states, read
+    off the stage records.
+  \item $\mathit{sent} : [n] \to \mathcal{P}(\mathrm{Msg})$ --- the fabric's
+    pools: $\mathit{sent}(j)$ is the set of messages $j$ has multicast (D5).
   \item $\mathit{recv} : [n] \times [n] \to \mathcal{P}(\mathrm{Msg})$ ---
     $\mathit{recv}(i,j)$ is the set of $j$'s messages the adversary has delivered
-    to $i$ (D5).
-  \item $F$ --- the corrupted set, held in lockstep with the other components by
-    the $\mathrm{fail}$ broadcast.
+    to $i$, read off $i$'s own stage record (D5).
+  \item $F$ --- the fabric's corrupted set, held in lockstep with the other
+    components by the $\mathrm{fail}$ broadcast.
 \end{itemize}
 Multicasts are idempotent and thresholds count distinct senders, so message
 duplication and point-to-point scheduling are absorbed into the set model (D5).
@@ -823,16 +838,18 @@ The $dead$ and $grade$ fields of Transition System~2 are abstractions of these
 receipt patterns and belong to the specification alone;
 Theorem~\ref{thm:gbca-inst-refines} supplies them from the receipts.
 
-The inventory above is monolithic.
-It is a single automaton whose state is the whole system, so its rules may read
-fields of processes other than the one they move: \leandeclnamed{deliver}{PLTS.ABA.GBCA.ImplStep.deliver} inspects the
-sender's message pool and the receiver's row in one guard.
-That the guards are nevertheless local is a property of the rules and not of
-the state shape, and Definitions~\ref{def:aba-procnet}
-and~\ref{def:aba-netadv} are where each of them is written against one node:
-\leandeclnamed{deliver}{PLTS.ABA.GBCA.ImplStep.deliver} splits into the two halves of a $\mathrm{gdlv}$ rendezvous,
-the network adversary supplying the pool guard $m \in pool(r,j)$ and the
-receiver performing the row update.
+The inventory above is one rule table, and the composition of
+Definition~\ref{def:aba-gbcasub} is $n$ programs beside a fabric.
+They are two presentations of the same round on the same state, and each rule of
+the table is a rule of the composition with its participants named.
+A rule that touches two boxes is a rendezvous:
+\leandeclnamed{deliver}{PLTS.ABA.GBCA.ImplStep.deliver} reads the fabric's pool
+in its guard and writes the receiver's row, so it splits into the two halves of a
+$\mathrm{gdlv}$ rendezvous, the fabric supplying the guard $m \in
+\mathit{sent}(j)$ and the receiver performing the row update.
+No rule reads a second process, and
+Definitions~\ref{def:aba-procnet} and~\ref{def:aba-netadv} are where each guard
+is written against one node.
 
 \subsection{The round loop}
 
@@ -1057,9 +1074,8 @@ the GBCA family rules that pair out; the round loop alone guarantees only that
 each process returns at most once, by the flag its return rule sets.
 }
 
-The round-loop inventory is not monolithic, and that is the difference from the
-one above.
-Every guard in the table is read at one component: the counts of
+The round-loop inventory is read on a pair of factors, as the one above is,
+and every guard in the table is read at one component: the counts of
 \leandeclnamed{dsndRelay}{PLTS.ABA.Layer.CoreProcStepN.dsndRelay} and \leandeclnamed{ret}{PLTS.ABA.Layer.CoreProcStepN.ret} range over one receiver's own rows, and the
 soundness guard $b \in dpool(j)$ that licenses a delivery is the network's,
 split from the freshness guard $b \notin decIn(i)$ and the write at the

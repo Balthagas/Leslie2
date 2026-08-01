@@ -124,7 +124,7 @@ theorem layered_safe (P : Params) :
 /-- **Trace-distribution refinement** (blueprint `thm:aba-main`, safety
 fragment): every trace distribution achievable by the deployed protocol is
 achievable by the ABA specification. The layering and the substitution give
-the first inclusion, the repartition and the core simulation the second. -/
+the first inclusion, the core simulation the second. -/
 theorem refines (P : Params) :
     achievableTraceDists (deployed P) ⊆ achievableTraceDists (spec P) :=
   Set.Subset.trans (deployed_layeredSpec P) (layeredSpec_spec P)
