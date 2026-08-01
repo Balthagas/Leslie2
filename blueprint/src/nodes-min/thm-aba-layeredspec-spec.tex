@@ -1,11 +1,11 @@
 \begin{theorem}[The deployment-shaped specification refines the ABA specification]
   \label{thm:aba-layeredspec-spec}
-  \lean{PLTS.ABA.context}\lean{PLTS.ABA.hybridSpec}\lean{PLTS.ABA.deflCore}\lean{PLTS.ABA.layeredSpecDefl}\lean{PLTS.ABA.layeredSpecForward}\lean{PLTS.ABA.layeredSpecSim}\lean{PLTS.ABA.layeredSpec_refines}\lean{PLTS.ABA.coreSim}\leanok
-  \uses{def:aba-layeredspec, def:aba-spec, def:aba-core, def:aba-subspecs, def:aba-labels, def:process-algebra, def:idle-family, def:strongfunctional, def:achievable, thm:forward-sound}
+  \lean{PLTS.ABA.LayeredSpecState}\lean{PLTS.ABA.Inv}\lean{PLTS.ABA.Abs}\lean{PLTS.ABA.coreR}\lean{PLTS.ABA.coreRel}\lean{PLTS.ABA.coreSim}\lean{PLTS.ABA.layeredSpec_spec}\leanok
+  \uses{def:aba-layeredspec, def:aba-spec, def:aba-core, def:aba-subspecs, def:aba-labels, def:process-algebra, def:idle-family, def:forwardsim, def:weakstep, def:pmfrel, def:achievable, thm:forward-sound}
   The deployment-shaped specification refines the ABA specification, $\operatorname{ATD}(\mathrm{layeredSpec}(P)) \subseteq \operatorname{ATD}(\mathrm{spec}(P))$: \leandecl{PLTS.ABA.layeredSpec_spec}.
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-layeredspec, def:aba-spec, def:strongfunctional, def:weakstep, def:achievable, thm:forward-sound}
-  The proof re-coordinates the layered round loop into the monolithic composition \leandecl{PLTS.ABA.hybridSpec} and applies the core simulation there; see the Lean proofs of \leandecl{PLTS.ABA.layeredSpec_refines} and \leandecl{PLTS.ABA.coreSim}.
+  \uses{def:aba-layeredspec, def:aba-spec, def:aba-core, def:aba-subspecs, def:aba-labels, def:process-algebra, def:idle-family, def:forwardsim, def:weakstep, def:pmfrel, def:achievable, thm:forward-sound}
+  One hand-built probabilistic forward simulation, \leandecl{PLTS.ABA.coreSim}, along the relation \leandecl{PLTS.ABA.coreRel} on the state of $\mathrm{layeredSpec}(P)$ itself, then soundness (Theorem~\ref{thm:forward-sound}).
 \end{proof}

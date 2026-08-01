@@ -4,13 +4,13 @@
   \uses{thm:aba-deployed, thm:aba-layered-atd, thm:aba-substitution, thm:aba-layeredspec-spec, thm:aba-spec-safe}
   Every trace distribution achievable by the deployed protocol is achievable by the ABA specification, and hence every positive-probability trace of the deployed protocol satisfies Validity and Agreement.
   The steps of the chain enter as inclusions chained by transitivity of set inclusion; transitivity of probabilistic forward simulation is not used.
-  The composed simulation is additionally provided, along the composite of the four relations: the graph of the regrouping, the pointwise round substitution, the graph of the deflation, and the core relation.\lean{PLTS.ABA.simComposed}
+  The composed simulation is additionally provided, along the composite of the three relations: the graph of the regrouping, the pointwise round substitution, and the core relation.\lean{PLTS.ABA.simComposed}
   \leandeclnamed{refines}{PLTS.ABA.refines}, \leandeclnamed{main}{PLTS.ABA.main} and \leandeclnamed{simComposed}{PLTS.ABA.simComposed} are machine-checked axiom-clean, documented by pinned axiom guards.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{thm:aba-deployed, thm:aba-substitution, thm:aba-layeredspec-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, thm:forward-trans}
   The two conclusions are those of Theorem~\ref{thm:aba-deployed}.
-  For the composed simulation, apply transitivity of probabilistic forward simulation (Theorem~\ref{thm:forward-trans}) to the four simulations themselves rather than to their soundness inclusions.
+  For the composed simulation, apply transitivity of probabilistic forward simulation (Theorem~\ref{thm:forward-trans}) to the three simulations themselves rather than to their soundness inclusions.
   The two routes are independent, the inclusion never invoking transitivity of simulation, so the headline does not rest on it.
 \end{proof}

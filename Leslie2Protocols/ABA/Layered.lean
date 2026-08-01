@@ -82,7 +82,7 @@ namespace Layer
 
 /-! ### The round-loop program of one process
 
-The core-slice half of every row of `Net.ABAProcStepN`. A row whose monolithic
+The core-slice half of every row of `Net.ABAProcStepN`. A row whose fused
 counterpart writes only a stage record leaves no row here: the six multicast
 levels and the delivery are now internal to a round subsystem, and the three
 Byzantine graded-agreement drives change no round-loop data, which is why they
@@ -399,7 +399,7 @@ theorem coreProcStepN_no_tau {P : Params} {j : Fin P.n} {c : CoreNodeN P.n}
 A deployed state is re-partitioned into an layered one. The round-`r`
 subsystem takes its stage records from the nodes' round-`r` stage slices and
 its pools from the network's round-`r` pools; the round loops take the nodes'
-coordinator slices; the ABA-side network takes the DECIDED pools; and every
+round-loop slices; the ABA-side network takes the DECIDED pools; and every
 copy of the corrupted set on the layered side is the network adversary's one
 set. The coin oracle occupies the same slot on both sides. -/
 

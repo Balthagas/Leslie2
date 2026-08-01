@@ -1,9 +1,16 @@
-\begin{definition}[The ABA core]
+\begin{definition}[The ABA-side state]
   \label{def:aba-core}
-  \lean{PLTS.ABA.core}\leanok
-  \uses{def:aba-labels, def:aba-core-vocab}
-  The round loop regrouped as one PLTS over the whole system state $\mathrm{CoreState}$, the analysis form of \algoref{alg:aba-core}{the ABA implementation}.
-  Each process runs the five-phase handshake cycle of Definition~\ref{def:aba-core-vocab}, carrying an estimate adopted from the round's graded outcome or, when that outcome leaves it unset, from the round's coin; the bookkeeping between the coin return and the next call is fused into the $\mathrm{retW}$ step (D10), which multicasts $\langle\mathrm{DECIDED},b\rangle$ when the round's grade was $A\,b$.
-  A DECIDED gossip layer pools the multicasts per process (D12$'$), relays on $f{+}1$ distinct receipts, and gates $\mathrm{retABA}\,id\,b$ on $n - f$ distinct senders of $b$ together with $b$ in $id$'s own sent pool; corrupted processes additionally carry Byzantine call- and return-driver rules at each handshake (D11).
-  Full rule table: \leandecl{PLTS.ABA.core}.
+  \lean{PLTS.ABA.ABAState}\lean{PLTS.ABA.ABAState.procs}\lean{PLTS.ABA.ABAState.decidedSent}\lean{PLTS.ABA.ABAState.decidedRecv}\lean{PLTS.ABA.ABAState.F}\lean{PLTS.ABA.ABAState.decidedCount}\lean{PLTS.ABA.ABAState.setProc}\lean{PLTS.ABA.ABAState.stepRound}\lean{PLTS.ABA.ABAState.sendDecided}\lean{PLTS.ABA.ABAState.deliverDecided}\lean{PLTS.ABA.ABAState.corrupt}\leanok
+  \uses{def:aba-labels, def:aba-core-vocab, def:aba-procnet, def:aba-layered}
+  The round loop is carried by two factors, and $\mathrm{ABAState}$ reads them as one object:
+  \[
+    \mathrm{ABAState}(P) \;=\;
+      \bigl([n] \to \mathrm{CoreNodeN}(n)\bigr) \times \mathrm{ANetState}(n),
+  \]
+  the round-loop node of each process --- the control record of Definition~\ref{def:aba-core-vocab} together with its DECIDED receipt rows --- beside the ABA-side network of Definition~\ref{def:aba-layered}, which holds the DECIDED pools and the corrupted set with its budget.
+  Four accessors gather what the two factors hold apart.
+  $\mathrm{procs}$ reads a process's control record and $\mathrm{decidedRecv}$ its receipt rows, both at that process's node; $\mathrm{decidedSent}$ reads the multicast pools and $F$ the corrupted set, both at the network.
+  Read through them, $\mathrm{decidedCount}\,i\,b$ is the number of distinct senders whose $\langle\mathrm{DECIDED},b\rangle$ has been delivered to $i$, which is the count the return guard reads, and the operations $\mathrm{setProc}$, $\mathrm{stepRound}$, $\mathrm{sendDecided}$, $\mathrm{deliverDecided}$ and $\mathrm{corrupt}$ name the effects of the rules below.
+  An accessor is a projection of one factor, so nothing of the two factors is identified: the object is a reading of the pair and not a coarser state.
+  Full record: \leandecl{PLTS.ABA.ABAState}.
 \end{definition}

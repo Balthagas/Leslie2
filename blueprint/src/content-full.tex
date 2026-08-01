@@ -275,9 +275,8 @@ Substitution needs the layer it replaces to be a component, so the first step
 of the argument re-cuts that system along its layer boundaries, which is a
 change of partition and not of system
 (Theorem~\ref{thm:aba-layered-atd}).
-The substitution then runs in those coordinates, and one further repartition
-puts the result in the shape the hand-built core simulation is written
-against.
+The substitution then runs in those coordinates, and the hand-built core
+simulation runs in them too.
 
 \paragraph{Object names.}
 Transition System~1 is the ABA specification, Transition System~2 the GBCA
@@ -449,15 +448,15 @@ the form they run in: the pseudocode of one process, then the automaton of one
 process, every guard of which reads that process's own node, and then the
 adversary that holds the rest.
 The two subsections after this one give the same two layers a second time, as
-rule inventories over the whole system state, in which a guard is read against
-the line of pseudocode it transcribes.
-Each of those inventories is one automaton where the programs are $n$, and each
-enters the argument at a named point.
-The graded-agreement inventory is what one round of the deployed protocol
-projects onto, which is how the refinement proved of it transports
+rule inventories in which a guard is read against the line of pseudocode it
+transcribes.
+Each inventory enters the argument at a named point.
+The graded-agreement inventory is one automaton whose state is the whole
+system, and it is what one round of the deployed protocol projects onto, which
+is how the refinement proved of it transports
 (Theorem~\ref{thm:aba-subsim}).
-The round-loop inventory is a factor of the composition the core simulation is
-written against, reached from the deployed shape by a repartition of state
+The round-loop inventory is read on the pair of factors that hold the round
+loop's state, which is the state the core simulation's relation is defined on
 (Theorem~\ref{thm:aba-layeredspec-spec}).
 The forms name one system in each case, and the choice between them fixes only
 which state a rule is written to read.
@@ -839,19 +838,24 @@ receiver performing the row update.
 
 \input{nodes/def-aba-core}
 
-The idle self-loop of a process carries \leandeclnamed{inputLoop}{PLTS.ABA.CoreStep.inputLoop} together with the Byzantine driver rules \leandeclnamed{callGByz}{PLTS.ABA.CoreStep.callGByz}, \leandeclnamed{retGByz}{PLTS.ABA.CoreStep.retGByz}, \leandeclnamed{callWByz}{PLTS.ABA.CoreStep.callWByz} and \leandeclnamed{retWByz}{PLTS.ABA.CoreStep.retWByz}, which fire at any phase for $id \in F$ and change no state (D11).
-The step \leandeclnamed{retG}{PLTS.ABA.CoreStep.retG} sets $est$ to the grade, and \leandeclnamed{retW}{PLTS.ABA.CoreStep.retW} increments the round, adopts the coin when $est = \bot$, and multicasts $\langle\mathrm{DECIDED},b\rangle$ on an $A$-grade return (D10).
-The DECIDED pool layer is three $\tau$-loops, round-agnostic because the pools carry no round index: \leandeclnamed{deliver}{PLTS.ABA.CoreStep.deliver}, by which the adversary moves a sender's pooled $\langle\mathrm{DECIDED},b\rangle$ to a receiver; \leandeclnamed{echo}{PLTS.ABA.CoreStep.echo}, the multicast on $f{+}1$ distinct receipts; and \leandeclnamed{byzDecided}{PLTS.ABA.CoreStep.byzDecided}, by which $id \in F$ pools either bit (D12$'$).
-The exit \texttt{retABA}\,$id\,b$ fires once $n-f$ distinct senders of $b$ have been delivered to $id$ and $b$ is in $id$'s own sent pool.
+The idle self-loop of a process carries \leandeclnamed{inputLoop}{PLTS.ABA.Layer.CoreProcStepN.inputLoop} together with the four rows on which every round loop stands while a Byzantine drive moves stage or coin content, \leandeclnamed{byzCallGIdle}{PLTS.ABA.Layer.CoreProcStepN.byzCallGIdle}, \leandeclnamed{byzRetGIdle}{PLTS.ABA.Layer.CoreProcStepN.byzRetGIdle}, \leandeclnamed{byzCallWIdle}{PLTS.ABA.Layer.CoreProcStepN.byzCallWIdle} and \leandeclnamed{byzRetWIdle}{PLTS.ABA.Layer.CoreProcStepN.byzRetWIdle}; the guard $k \in F$ that authorises such a drive is the network's, at \leandeclnamed{byzCallG}{PLTS.ABA.Layer.ANetStep.byzCallG}, \leandeclnamed{byzRetG}{PLTS.ABA.Layer.ANetStep.byzRetG}, \leandeclnamed{byzCallW}{PLTS.ABA.Layer.ANetStep.byzCallW} and \leandeclnamed{byzRetW}{PLTS.ABA.Layer.ANetStep.byzRetW} (D11).
+The step \leandeclnamed{retG}{PLTS.ABA.Layer.CoreProcStepN.retG} sets $est$ to the grade.
+The coin return has two rows.
+The step \leandeclnamed{retW}{PLTS.ABA.Layer.CoreProcStepN.retW} increments the round and adopts the coin when $est = \bot$; the step \leandeclnamed{retWPub}{PLTS.ABA.Layer.CoreProcStepN.retWPub} does the same on an $A$-grade return and multicasts $\langle\mathrm{DECIDED},b\rangle$, the pool insert being the network's half of that rendezvous, \leandeclnamed{retWPub}{PLTS.ABA.Layer.ANetStep.retWPub} (D10).
+The DECIDED pool layer is round-agnostic, the pools carrying no round index.
+A delivery pairs the network's authenticity guard \leandeclnamed{ddlv}{PLTS.ABA.Layer.ANetStep.ddlv} with the receiver's write \leandeclnamed{ddlvRecv}{PLTS.ABA.Layer.CoreProcStepN.ddlvRecv}; a relay pairs the sender's $f{+}1$ receipt count \leandeclnamed{dsndRelay}{PLTS.ABA.Layer.CoreProcStepN.dsndRelay} with the network's write-once insert \leandeclnamed{dsnd}{PLTS.ABA.Layer.ANetStep.dsnd}; and \leandeclnamed{byzD}{PLTS.ABA.Layer.ANetStep.byzD} is the network's own $\tau$-loop, by which $id \in F$ pools either bit (D12$'$).
+The exit \texttt{retABA}\,$id\,b$ fires once $n-f$ distinct senders of $b$ have been delivered to $id$, the count read at \leandeclnamed{ret}{PLTS.ABA.Layer.CoreProcStepN.ret}, and $b$ lies in $id$'s own sent pool, read at \leandeclnamed{retABA}{PLTS.ABA.Layer.ANetStep.retABA}.
 
-\blueprintfig{fig-core-phases}{The ABA core \leandecl{PLTS.ABA.core}: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pool layer gating $\mathrm{retABA}$.}
+\blueprintfig{fig-core-phases}{The round loop \leandecl{PLTS.ABA.Layer.coreProcN}: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pool layer gating $\mathrm{retABA}$.}
 
-The Lean encoding of Algorithm~\ref{alg:aba-core} is the system
-$\mathrm{ABA.core}$, an LTS over the same label alphabet.
-It is the round-loop control component only.
+The Lean encoding of Algorithm~\ref{alg:aba-core} is the round-loop program
+$\mathrm{coreProcN}(P,j)$ of each process together with the ABA-side network
+$\mathrm{aNet}(P)$, both read over the extended alphabet $\mathrm{NLab}(n)$ of
+Definition~\ref{def:aba-procnet}.
+It is the round-loop control layer only.
 The two sub-protocols are separate systems, and the $\mathrm{callG}$,
-$\mathrm{retG}$, $\mathrm{callW}$, $\mathrm{retW}$ steps of the core are pure
-handshakes on the API labels.
+$\mathrm{retG}$, $\mathrm{callW}$, $\mathrm{retW}$ steps of the round loop are
+pure handshakes on the API labels.
 Every rule is Dirac, so again the table needs no distribution column.
 
 Each process carries a handshake phase, an element of
@@ -880,18 +884,22 @@ The per-process record $\mathrm{ProcCore}$, \leandecl{PLTS.ABA.ProcCore}, has fi
   \item $\mathit{returned}$ --- whether $\mathrm{retABA}$ has fired at this
     process.
 \end{itemize}
-The global record $\mathrm{CoreState}$, \leandecl{PLTS.ABA.CoreState}, has fields
+The state a rule of the layer moves is $\mathrm{ABAState}(P)$,
+\leandecl{PLTS.ABA.ABAState}, read by the four accessors
 \begin{itemize}
-  \item $\mathit{procs} : [n] \to \mathrm{ProcCore}$ --- the control states.
+  \item $\mathit{procs} : [n] \to \mathrm{ProcCore}$ --- the control records,
+    each at its own process's round-loop node.
+  \item $\mathit{decidedRecv} : [n] \times [n] \to \mathcal{P}(\{0,1\})$ ---
+    $\mathit{decidedRecv}(i,j)$ is the set of $j$'s payloads delivered to $i$,
+    held at $i$'s own node (D12$'$).
   \item $\mathit{decidedSent} : [n] \to \mathcal{P}(\{0,1\})$ ---
     $\mathit{decidedSent}_j$ is the set of $\mathrm{DECIDED}$ payloads $j$ has
-    multicast (D12$'$).
-  \item $\mathit{decidedRecv} : [n] \times [n] \to \mathcal{P}(\{0,1\})$ ---
-    $\mathit{decidedRecv}(i,j)$ is the set of $j$'s payloads delivered to $i$
-    (D12$'$).
-  \item $F$ --- the corrupted set, held in lockstep by the $\mathrm{fail}$
-    broadcast.
+    multicast, held at the network (D12$'$).
+  \item $F$ --- the corrupted set, held at the network and kept in lockstep
+    with the other layers by the $\mathrm{fail}$ broadcast.
 \end{itemize}
+The first two are process-local and the last two are the network's, which is
+what makes a process blind to its own sends and to corruption.
 The pools are per process rather than per bit, so a corrupted process may hold
 both payloads at once and deliver them selectively (D12$'$).
 Write
@@ -905,6 +913,11 @@ $\mathrm{est}(C) = \bot$ for the estimate a graded outcome dictates.
 In the table $\mathrm{DEC}\,b$ abbreviates $\langle\mathrm{DECIDED}, b\rangle$,
 ``mcast'' abbreviates the insertion of a payload into the sender's
 $\mathit{decidedSent}$ pool, and a dash marks an unguarded rule.
+A row is a rule of a round loop, a rule of the ABA-side network, or a
+rendezvous of one of each; where a row has two halves the table names both, and
+a guard is annotated with the component that reads it.
+A label of the extended alphabet is written with the $\to\tau$ the composition
+applies to it.
 
 \begin{center}
 \footnotesize
@@ -913,88 +926,109 @@ $\mathit{decidedSent}$ pool, and a dash marks an unguarded rule.
 \hline
 Rule & Label & Guard & Effect \\
 \hline
-\leandeclnamed{input}{PLTS.ABA.CoreStep.input} & $\mathrm{callABA}(i,b)$ & $\mathit{input}_i$ unset
+\leandeclnamed{input}{PLTS.ABA.Layer.CoreProcStepN.input} & $\mathrm{callABA}(i,b)$ & $\mathit{input}_i$ unset
   & $\mathit{input}_i, \mathit{est}_i \gets b$; \\
  & & & $\mathit{round}_i \gets 0$ (D9); \\
  & & & $\mathit{phase}_i \gets \mathrm{toCallG}$ \\
 \hline
-\leandeclnamed{inputLoop}{PLTS.ABA.CoreStep.inputLoop} & $\mathrm{callABA}(i,b)$ & ---
+\leandeclnamed{inputLoop}{PLTS.ABA.Layer.CoreProcStepN.inputLoop} & $\mathrm{callABA}(i,b)$ & ---
   & identity (self-loop) \\
 \hline
-\leandeclnamed{callG}{PLTS.ABA.CoreStep.callG} & $\mathrm{callG}(r,i,b)$
+\leandeclnamed{callG}{PLTS.ABA.Layer.CoreProcStepN.callG} & $\mathrm{callG}(r,i,b)$
   & $\mathit{phase}_i = \mathrm{toCallG}$, $\mathit{round}_i = r$,
   & $\mathit{phase}_i \gets \mathrm{awaitG}$ \\
  & & $\mathit{est}_i = b$ & \\
 \hline
-\leandeclnamed{callGByz}{PLTS.ABA.CoreStep.callGByz} & $\mathrm{callG}(r,i,b)$ & $i \in F$
-  & identity (D11) \\
-\hline
-\leandeclnamed{retG}{PLTS.ABA.CoreStep.retG} & $\mathrm{retG}(r,i,g)$
+\leandeclnamed{retG}{PLTS.ABA.Layer.CoreProcStepN.retG} & $\mathrm{retG}(r,i,g)$
   & $\mathit{phase}_i = \mathrm{awaitG}$, $\mathit{round}_i = r$
   & $\mathit{est}_i \gets \mathrm{est}(g)$; \\
  & & & $\mathit{lastGrade}_i \gets g$; \\
  & & & $\mathit{phase}_i \gets \mathrm{toCallW}$ \\
 \hline
-\leandeclnamed{retGByz}{PLTS.ABA.CoreStep.retGByz} & $\mathrm{retG}(r,i,g)$ & $i \in F$
-  & identity (D11) \\
-\hline
-\leandeclnamed{callW}{PLTS.ABA.CoreStep.callW} & $\mathrm{callW}(r,i)$
+\leandeclnamed{callW}{PLTS.ABA.Layer.CoreProcStepN.callW} & $\mathrm{callW}(r,i)$
   & $\mathit{phase}_i = \mathrm{toCallW}$, $\mathit{round}_i = r$
   & $\mathit{phase}_i \gets \mathrm{awaitW}$ \\
 \hline
-\leandeclnamed{callWByz}{PLTS.ABA.CoreStep.callWByz} & $\mathrm{callW}(r,i)$ & $i \in F$
-  & identity (D11) \\
-\hline
-\leandeclnamed{retW}{PLTS.ABA.CoreStep.retW} & $\mathrm{retW}(r,i,c)$
-  & $\mathit{phase}_i = \mathrm{awaitW}$, $\mathit{round}_i = r$
+\leandeclnamed{retW}{PLTS.ABA.Layer.CoreProcStepN.retW} & $\mathrm{retW}(r,i,c)$
+  & $\mathit{phase}_i = \mathrm{awaitW}$, $\mathit{round}_i = r$,
   & $\mathit{est}_i \gets c$ if $\mathit{est}_i = \bot$; \\
- & & & mcast $\mathrm{DEC}\,b$ at $i$ if \\
- & & & $\mathit{lastGrade}_i = A\,b$ (D10); \\
- & & & clear $\mathit{lastGrade}_i$; \\
+ & & $\mathit{lastGrade}_i$ not an $A$
+  & clear $\mathit{lastGrade}_i$; \\
  & & & $\mathit{round}_i \gets r + 1$; \\
  & & & $\mathit{phase}_i \gets \mathrm{toCallG}$ \\
 \hline
-\leandeclnamed{retWByz}{PLTS.ABA.CoreStep.retWByz} & $\mathrm{retW}(r,i,c)$ & $i \in F$
-  & identity (D11) \\
+\leandeclnamed{retWPub}{PLTS.ABA.Layer.CoreProcStepN.retWPub}, & $\mathrm{retWPub}(r,i,c,b)$
+  & $\mathit{phase}_i = \mathrm{awaitW}$, $\mathit{round}_i = r$,
+  & the effect of $\mathrm{retW}$, and \\
+\leandeclnamed{retWPub}{PLTS.ABA.Layer.ANetStep.retWPub} & \quad $\to\tau$
+  & $\mathit{lastGrade}_i = A\,b$ (round loop)
+  & mcast $\mathrm{DEC}\,b$ at $i$ (D10) \\
 \hline
-\leandeclnamed{deliver}{PLTS.ABA.CoreStep.deliver} & $\tau$
-  & $b \in \mathit{decidedSent}_j$,
+\leandeclnamed{byzCallG}{PLTS.ABA.Layer.ANetStep.byzCallG}, & $\mathrm{byzCallG}(r,i,b)$
+  & $i \in F$ (network)
+  & no round-loop data (D11) \\
+\leandeclnamed{byzCallGIdle}{PLTS.ABA.Layer.CoreProcStepN.byzCallGIdle} & \quad $\to\tau$ & & \\
+\hline
+\leandeclnamed{byzRetG}{PLTS.ABA.Layer.ANetStep.byzRetG}, & $\mathrm{byzRetG}(r,i,g)$
+  & $i \in F$ (network)
+  & no round-loop data (D11) \\
+\leandeclnamed{byzRetGIdle}{PLTS.ABA.Layer.CoreProcStepN.byzRetGIdle} & \quad $\to\tau$ & & \\
+\hline
+\leandeclnamed{byzCallW}{PLTS.ABA.Layer.ANetStep.byzCallW}, & $\mathrm{byzCallW}(r,i)$
+  & $i \in F$ (network)
+  & no round-loop data (D11) \\
+\leandeclnamed{byzCallWIdle}{PLTS.ABA.Layer.CoreProcStepN.byzCallWIdle} & \quad $\to\tau$ & & \\
+\hline
+\leandeclnamed{byzRetW}{PLTS.ABA.Layer.ANetStep.byzRetW}, & $\mathrm{byzRetW}(r,i,c)$
+  & $i \in F$ (network)
+  & no round-loop data (D11) \\
+\leandeclnamed{byzRetWIdle}{PLTS.ABA.Layer.CoreProcStepN.byzRetWIdle} & \quad $\to\tau$ & & \\
+\hline
+\leandeclnamed{ddlv}{PLTS.ABA.Layer.ANetStep.ddlv}, & $\mathrm{ddlv}(i,j,b)$
+  & $b \in \mathit{decidedSent}_j$ (network),
   & add $b$ to $\mathit{decidedRecv}(i,j)$ \\
- & & $b \notin \mathit{decidedRecv}(i,j)$ & (D12$'$) \\
+\leandeclnamed{ddlvRecv}{PLTS.ABA.Layer.CoreProcStepN.ddlvRecv} & \quad $\to\tau$
+  & $b \notin \mathit{decidedRecv}(i,j)$ (receiver) & (D12$'$) \\
 \hline
-\leandeclnamed{echo}{PLTS.ABA.CoreStep.echo} & $\tau$
-  & $\#_i(b) \ge f{+}1$, $b \notin \mathit{decidedSent}_i$
+\leandeclnamed{dsndRelay}{PLTS.ABA.Layer.CoreProcStepN.dsndRelay}, & $\mathrm{dsnd}(i,b)$
+  & $\#_i(b) \ge f{+}1$ (sender),
   & mcast $\mathrm{DEC}\,b$ at $i$ \\
+\leandeclnamed{dsnd}{PLTS.ABA.Layer.ANetStep.dsnd} & \quad $\to\tau$
+  & $b \notin \mathit{decidedSent}_i$ (network) & \\
 \hline
-\leandeclnamed{byzDecided}{PLTS.ABA.CoreStep.byzDecided} & $\tau$ & $i \in F$
+\leandeclnamed{byzD}{PLTS.ABA.Layer.ANetStep.byzD} & $\tau$ & $i \in F$
   & mcast $\mathrm{DEC}\,b$ at $i$ (D12$'$) \\
 \hline
-\leandeclnamed{ret}{PLTS.ABA.CoreStep.ret} & $\mathrm{retABA}(i,b)$
-  & $\#_i(b) \ge n{-}f$, $b \in \mathit{decidedSent}_i$,
+\leandeclnamed{ret}{PLTS.ABA.Layer.CoreProcStepN.ret}, & $\mathrm{retABA}(i,b)$
+  & $\#_i(b) \ge n{-}f$, $\mathit{returned}_i$ false
   & mark $i$ returned \\
- & & $\mathit{returned}_i$ false & \\
+\leandeclnamed{retABA}{PLTS.ABA.Layer.ANetStep.retABA} & & \quad (returner),
+  $b \in \mathit{decidedSent}_i$ (network) & \\
 \hline
-\leandeclnamed{fail}{PLTS.ABA.CoreStep.fail} & $\mathrm{fail}(i)$ & ---
+\leandeclnamed{fail}{PLTS.ABA.Layer.ANetStep.fail} & $\mathrm{fail}(i)$ & ---
   & $F \gets F \cup \{i\}$ if $i \notin F$ \\
  & & & and $|F| < f$; else identity \\
 \hline
 \end{tabular}
 \end{center}
 
-Only the five Byzantine driver rules test membership of $F$; the other ten
-rules apply to corrupted and honest processes alike.
-The return rule \leandeclnamed{ret}{PLTS.ABA.CoreStep.ret} is the notable case:
+Only the four Byzantine drives test membership of $F$, and each of them tests
+it at the network; no rule of a round loop names corruption at all, so the
+remaining rules apply to corrupted and honest processes alike.
+The return row is the notable case:
 a corrupted process must pass the same $n - f$ quorum guard, exactly as in the
 specification.
-The corruption rule \leandeclnamed{fail}{PLTS.ABA.CoreStep.fail} is a synchronisation of every component of the
-composition, each keeping its own copy of $F$.
-The $\mathrm{est}$-update of \leandeclnamed{retW}{PLTS.ABA.CoreStep.retW} is Algorithm~\ref{alg:aba-core}'s
+The corruption rule \leandeclnamed{fail}{PLTS.ABA.Layer.ANetStep.fail} is a synchronisation of every component of the
+composition, each keeping its own copy of $F$; the round loops' half is
+\leandeclnamed{failIdle}{PLTS.ABA.Layer.CoreProcStepN.failIdle}, corruption being no business of theirs.
+The $\mathrm{est}$-update of \leandeclnamed{retW}{PLTS.ABA.Layer.CoreProcStepN.retW} is Algorithm~\ref{alg:aba-core}'s
 branch \textbf{if} $b = \bot$ \textbf{then} $b \gets c$, and the conditional
-multicast is its branch \textbf{elif} $g = A$; the two are fused with the round
+multicast is its branch \textbf{elif} $g = A$; the branch is taken by choosing
+between the two coin-return rows, and the multicast is fused with the round
 advance into one Dirac step (D10).
-The \leandeclnamed{echo}{PLTS.ABA.CoreStep.echo} guard is payload-specific, matching
+The relay guard of \leandeclnamed{dsndRelay}{PLTS.ABA.Layer.CoreProcStepN.dsndRelay} and \leandeclnamed{dsnd}{PLTS.ABA.Layer.ANetStep.dsnd} is payload-specific, matching
 Algorithm~\ref{alg:aba-core}'s clause ``having not sent it'': a pool already
-holding the other payload does not block the echo of $b$.
+holding the other payload does not block the relay of $b$.
 
 \dynamics{The round loop}{%
 Each process runs a five-phase cycle: idle, ready to call the round's GBCA,
@@ -1016,21 +1050,23 @@ would need two sender sets of that size, and any two such sets meet in more
 than $f$ processes, hence in an honest one.
 The own-multicast clause makes every return the endpoint of a diffusion its
 own holder joined.
-That an honest process never pools both payloads is not a property of the core
-in isolation --- nothing in its rules forbids two $A$-grades of opposite bits in
-different rounds --- but of the composition, where Graded Agreement on the GBCA
-family rules that pair out; the core alone guarantees only that each process
-returns at most once, by the flag its return rule sets.
+That an honest process never pools both payloads is not a property of the round
+loop in isolation --- nothing in its rules forbids two $A$-grades of opposite
+bits in different rounds --- but of the composition, where Graded Agreement on
+the GBCA family rules that pair out; the round loop alone guarantees only that
+each process returns at most once, by the flag its return rule sets.
 }
 
-The round-loop inventory is monolithic in the same sense.
-Its \leandeclnamed{deliver}{PLTS.ABA.CoreStep.deliver} rule reads a sender's DECIDED pool and a receiver's row in
-one guard, and the counts of \leandeclnamed{echo}{PLTS.ABA.CoreStep.echo} and \leandeclnamed{ret}{PLTS.ABA.CoreStep.ret} range over one
-receiver's rows.
+The round-loop inventory is not monolithic, and that is the difference from the
+one above.
+Every guard in the table is read at one component: the counts of
+\leandeclnamed{dsndRelay}{PLTS.ABA.Layer.CoreProcStepN.dsndRelay} and \leandeclnamed{ret}{PLTS.ABA.Layer.CoreProcStepN.ret} range over one receiver's own rows, and the
+soundness guard $b \in dpool(j)$ that licenses a delivery is the network's,
+split from the freshness guard $b \notin decIn(i)$ and the write at the
+receiver.
 Definitions~\ref{def:aba-procnet} and~\ref{def:aba-netadv} write the same rules
-against one node, the $\mathrm{ddlv}$ rendezvous splitting the soundness guard
-$b \in dpool(j)$ at the network adversary from the freshness guard
-$b \notin decIn(j)$ and the write at the receiver.
+one layer down, where the round loop shares a node with the stage records and
+the DECIDED pools share a component with the stage pools.
 
 \subsection{The ABA specification and its safety}
 
@@ -1625,27 +1661,20 @@ property woven through it.
 
 \subsection{From the deployment-shaped specification to the ABA specification}
 
-The simulation onto the ABA specification is hand-built, and it is written
-against the monolithic round loop rather than against $n$ round-loop programs
-beside a network.
-The proof therefore repartitions state first, carrying the deployment-shaped
-specification onto a monolithic composition, and runs the simulation from
-there.
-Assembling $n$ nodes and a network into one record loses the distinction
-between states that differ only in how the same data is distributed, which is
-why the repartition is an inclusion and not an equality.
+The simulation onto the ABA specification is hand-built, and it is written in
+the deployment-shaped specification's own coordinates.
+Its relation is defined on the state of $\mathrm{layeredSpec}(P)$ itself, where
+the round specifications, the $n$ round loops, the ABA-side network and the
+coin oracle are four factors; the two ABA-side factors are read through the
+accessors of Definition~\ref{def:aba-core}, so no change of system precedes the
+simulation and every guard the relation quotes is a guard of a named component.
 
 \input{nodes/thm-aba-layeredspec-spec}
 
-\blueprintfig{fig-hybrid}{The waypoint of the proof, $\mathrm{hybridSpec}(P)$, \leandecl{PLTS.ABA.hybridSpec}: the GBCA specification family, the monolithic round loop and the WCC specification family under $\mathrm{abstract}\,\mathrm{hiddenAPI}$.
-One illustrated rendezvous $\mathrm{callG}\,r\,id\,b$: the round loop emits it, instance $r$ steps on it, and every other instance idles.
-The $\mathrm{abstract}\,\mathrm{hiddenAPI}$ frame turns the GBCA and WCC handshake alphabet into $\tau$; the visible API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ leaves the frame.
-The dashed vertical is the repartition leg of Theorem~\ref{thm:aba-layeredspec-spec}: the deployment-shaped specification $\mathrm{layeredSpec}(P)$ reaches this composition along the graph of $\mathrm{layeredSpecDefl}$, which assembles the $n$ round-loop nodes and the ABA-side network into the one $\mathrm{CoreState}$ and leaves the round specifications and the coin oracle where they are.}
-
-\blueprintfig{fig-coresim}{The simulation leg of Theorem~\ref{thm:aba-layeredspec-spec} out of that waypoint, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
+\blueprintfig{fig-coresim}{The simulation of Theorem~\ref{thm:aba-layeredspec-spec}, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
 
 \dynamics{What the simulation buys}{%
-The abstract twin of a state of that composition is lazy.
+The abstract twin of a state of the deployment-shaped specification is lazy.
 Every hidden row is answered by a stutter: the handshakes, the internal steps
 of the sub-protocol specifications, and the delivery and echo of DECIDED all
 leave the twin where it was.
@@ -1674,13 +1703,11 @@ Three steps separate the deployed protocol from the ABA specification:
 where (1) is the regrouping of Theorem~\ref{thm:aba-layered-atd}, exact in
 both directions; (2) the substitution of
 Theorem~\ref{thm:aba-substitution}; and (3) the refinement of
-Theorem~\ref{thm:aba-layeredspec-spec}, itself a repartition of state followed by
-the core simulation.
+Theorem~\ref{thm:aba-layeredspec-spec}, the hand-built core simulation.
 The subject of the chain is the system as deployed.
-No step of it leaves the deployed vocabulary for the sake of the argument: (1)
-and (2) are read in deployment coordinates throughout, and only the proof of
-(3) leaves deployment coordinates, for the composition the hand-built
-simulation is written against.
+No step of it leaves the deployed vocabulary for the sake of the argument, and
+neither does the proof of any step: all three are read in deployment
+coordinates throughout, the relation of (3) included.
 
 \input{nodes/thm-aba-deployed}
 
@@ -1695,12 +1722,13 @@ it, and no theorem assumes it of a trace.
 \subsection{Non-vacuity}
 
 A refinement statement is compatible with a system that does nothing, so the
-chain is accompanied by machine-checked witnesses that the composition the
-proof of Theorem~\ref{thm:aba-layeredspec-spec} passes through executes and
-reaches a return.
+chain is accompanied by machine-checked witnesses that the deployment-shaped
+specification of Definition~\ref{def:aba-layeredspec}, the system
+Theorem~\ref{thm:aba-layeredspec-spec} is proved of, executes and reaches a
+return.
 Membership of a decision trace in
 $\operatorname{ATD}(\mathrm{deployed}\ P4)$ is not established; the
-witnesses are about that composition alone.
+witnesses are about that system alone.
 
 \input{nodes/def-aba-examples}
 

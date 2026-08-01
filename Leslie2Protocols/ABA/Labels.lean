@@ -10,7 +10,7 @@ import Leslie2Protocols.ABA.Params
 /-!
 # The shared label alphabet of the ABA development
 
-Every system of the case study — `ABA.Core`, `ABA.Spec`, the `GBCA` instance
+Every system of the case study — the round loops, `ABA.Spec`, the `GBCA` instance
 families and the `WCC` spec family — lives over the single label type
 `ABA.Lab n`. Sub-protocol API labels are tagged with their round `r : ℕ`
 (the source blueprint's Algorithm 1 uses countably many `GBCA_r` / `WCC_r`
@@ -23,13 +23,13 @@ self-loops on labels that are not their business (added by the `withIdle` /
 blueprint's sync-set composition `∥_S`: the genuine participants of a label
 handshake while everyone else no-ops in place.
 
-* `callG/retG r id …`, `callW/retW r id …` — handshakes between `ABA.Core` and
-  the round-`r` instance of the respective family. A `retG` label names the
+* `callG/retG r id …`, `callW/retW r id …` — handshakes between a round loop
+  and the round-`r` instance of the respective family. A `retG` label names the
   round, the process being answered and the graded outcome it receives.
 * `fail id` — corruption; a genuine synchronisation of **all** components
   (each keeps its own copy of the corrupted set `F`, updated in lockstep).
 * `hiddenAPI` — the sub-protocol API labels, hidden (sent to `τ`) in the
-  hybrids via `System.abstract`.
+  composed systems via `System.abstract`.
 
 The WCC `guess` label of the blueprint is omitted: it exists solely for the
 Unpredictability property, which is out of scope here.

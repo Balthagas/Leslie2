@@ -213,11 +213,12 @@ See \leanmodule{Leslie2Protocols/ABA/GBCAImpl}.
 
 The round loop is the core algorithm of ABA, and it is the layer that calls the other two.
 Its external return is gated on an $n-f$ DECIDED quorum, and that count is what excludes disagreement: two returns of different bits would need two sender sets of size $n-f$, and any two such sets meet in an honest process.
-See \leanmodule{Leslie2Protocols/ABA/Core}.
+Its rules are written against one process's own node in Definition~\ref{def:aba-procnet}, and the state below is what those rules move, read across the two factors that hold it.
+See \leanmodule{Leslie2Protocols/ABA/Core} and \leanmodule{Leslie2Protocols/ABA/CoreView}.
 
 \input{nodes-min/def-aba-core}
 
-\blueprintfig{fig-core-phases}{The ABA core \leandecl{PLTS.ABA.core}: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pool layer gating $\mathrm{retABA}$.}
+\blueprintfig{fig-core-phases}{The round loop \leandecl{PLTS.ABA.Layer.coreProcN}: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pool layer gating $\mathrm{retABA}$.}
 
 \subsection{The ABA specification and its safety}
 
@@ -299,17 +300,14 @@ See \leanmodule{Leslie2Protocols/Framework/FamilySim} and \leanmodule{Leslie2Pro
 
 \subsection{From the deployment-shaped specification to the ABA specification}
 
-The proof repartitions state onto a monolithic composition and runs a hand-built simulation from there.
-Assembling $n$ nodes and a network into one record loses the distinction between states that differ only in how the same data is distributed, which is why the repartition is an inclusion and not an equality.
+The proof is one hand-built simulation, run in the deployment-shaped specification's own coordinates.
+The round specifications, the $n$ round loops, the ABA-side network and the coin oracle are each a factor of the system, and each is a factor of the state the simulation relation is defined on.
 The simulation's abstract twin is lazy and two-phase (D16), deferring the decision to a single weak step under the first visible return, which is what a forward simulation permits and a strong one does not.
-See \leanmodule{Leslie2Protocols/ABA/Hybrid} and \leanmodule{Leslie2Protocols/ABA/CoreSim}.
+See \leanmodule{Leslie2Protocols/ABA/CoreView} and \leanmodule{Leslie2Protocols/ABA/CoreSim}.
 
 \input{nodes-min/thm-aba-layeredspec-spec}
 
-\blueprintfig{fig-hybrid}{The waypoint of the proof, \leandecl{PLTS.ABA.hybridSpec}: the GBCA specification family, the monolithic round loop and the WCC specification family under $\mathrm{abstract}\,\mathrm{hiddenAPI}$.
-The dashed vertical is the repartition leg of Theorem~\ref{thm:aba-layeredspec-spec}, along the graph of $\mathrm{layeredSpecDefl}$, which assembles the $n$ round-loop nodes and the ABA-side network into the one $\mathrm{CoreState}$ and leaves the round specifications and the coin oracle where they are.}
-
-\blueprintfig{fig-coresim}{The simulation leg of Theorem~\ref{thm:aba-layeredspec-spec} out of that waypoint, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
+\blueprintfig{fig-coresim}{The simulation of Theorem~\ref{thm:aba-layeredspec-spec}, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
 
 \subsection{The main theorems}
 
@@ -320,7 +318,7 @@ Three steps separate the deployed protocol from the ABA specification:
   \;\overset{\text{(2)}}{\sqsubseteq}\; \mathrm{layeredSpec}(P)
   \;\overset{\text{(3)}}{\sqsubseteq}\; \mathrm{spec}(P),
 \]
-where (1) is the regrouping of Theorem~\ref{thm:aba-layered-atd}, exact in both directions; (2) the substitution of Theorem~\ref{thm:aba-substitution}; and (3) the refinement of Theorem~\ref{thm:aba-layeredspec-spec}, whose proof repartitions state onto the monolithic composition and applies the core simulation there.
+where (1) is the regrouping of Theorem~\ref{thm:aba-layered-atd}, exact in both directions; (2) the substitution of Theorem~\ref{thm:aba-substitution}; and (3) the refinement of Theorem~\ref{thm:aba-layeredspec-spec}, whose proof is the hand-built core simulation, read in the coordinates of $\mathrm{layeredSpec}(P)$.
 Safety then transfers by Theorem~\ref{thm:trace-support}, with no hypothesis on the trace beyond positive probability, and both properties are stated on all returns, corrupted returners included.
 The chain is assembled in \leanmodule{Leslie2Protocols/ABA/Main}.
 
@@ -330,8 +328,8 @@ The chain is assembled in \leanmodule{Leslie2Protocols/ABA/Main}.
 \subsection{Non-vacuity}
 
 A refinement statement is compatible with a system that does nothing.
-The chain is therefore accompanied by machine-checked witnesses that the composition the proof of Theorem~\ref{thm:aba-layeredspec-spec} passes through executes and reaches a return at $n = 4$ and $f = 1$, on a connected run of positive probability that exercises the one probabilistic transition on the way, and that the $\mathrm{fail}$ label is live in that composition rather than merely declared.
-Membership of a decision trace in the achievable trace distributions of the deployed protocol is not established; the witnesses are about that composition alone.
+The chain is therefore accompanied by machine-checked witnesses that the deployment-shaped specification of Definition~\ref{def:aba-layeredspec}, the system Theorem~\ref{thm:aba-layeredspec-spec} is proved of, executes and reaches a return at $n = 4$ and $f = 1$, on a connected run of positive probability that exercises the one probabilistic transition on the way, and that the $\mathrm{fail}$ label is live in it rather than merely declared.
+Membership of a decision trace in the achievable trace distributions of the deployed protocol is not established; the witnesses are about that system alone.
 See \leanmodule{Leslie2Protocols/ABA/Examples}.
 
 \input{nodes-min/def-aba-examples}

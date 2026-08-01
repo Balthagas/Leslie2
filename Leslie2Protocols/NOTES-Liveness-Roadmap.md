@@ -70,8 +70,8 @@ over the trace distributions of the including system.
 - The full ABA safety chain, stated in deployment coordinates: the cut of the
   deployed protocol along its layer boundaries (exact in both directions), the
   substitution of each round's graded-agreement subsystem by its specification
-  (`GBCA impl ⊑ spec` under one family congruence), the spec-side repartition, and the
-  core simulation.
+  (`GBCA impl ⊑ spec` under one family congruence), and the core simulation of the
+  deployment-shaped specification against the ABA specification.
 - `Leslie2Extra/Fairness`: fairness-marked PLTS + ranked **strong** probabilistic
   simulation, sound for surely-fair achievable trace distributions
   (`fairAchievableTraceDists_subset`, needs `ImageFinite` for a König lift). Proven.
@@ -152,7 +152,7 @@ Ordered by expected value-for-effort:
    descent/König machinery over Leslie2's weak simulation. Sound transfer of fair
    trace-distribution inclusion would push the spec-level mass bound down the chain to
    `deployed`, which is where a fair-scheduling statement about this protocol belongs:
-   the three steps from the layered presentation to `ABA.spec` are inclusions, and the
+   the two steps from the layered presentation to `ABA.spec` are inclusions, and the
    layering itself is exact in both directions (`layered_atd`, `ABA/Layered.lean`), so
    a mass bound reaching `layered` is a mass bound on `deployed`.
    Budget the corrupt-fairness mismatch as the primary risk: the fairness markings on

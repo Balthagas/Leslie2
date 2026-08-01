@@ -1,4 +1,4 @@
-# Design — the core simulation `hybridSpec ⊑ ABA.spec` (`coreSim`)
+# Design — the core simulation `layeredSpec ⊑ ABA.spec` (`coreSim`)
 
 Companion design document to the Lean proof in `ABA/CoreSimRel.lean` (relation +
 invariant), `ABA/CoreSimInv.lean` (step inversion and invariant preservation),
@@ -12,19 +12,26 @@ equivocation).
 ## Systems
 
 ```
-context    := ABA.core ∥ WCC.specFamily                (∥ = full-sync System.parallel)
-hybridSpec := (GBCA.specFamily ∥ context).abstract hiddenAPI
-target     : ProbabilisticForwardSimulation hybridSpec (ABA.spec P) coreRel
+layeredSpecPre := specSide ∥ (syncProduct coreProcN ∥ (aNet ∥ wccLift))
+layeredSpec    := ((layeredSpecPre.abstract netEvtLabels).relabel).abstract hiddenAPI
+target         : ProbabilisticForwardSimulation layeredSpec (ABA.spec P) coreRel
 ```
 
-`ABA.core` needs no `withIdle` padding — it participates genuinely in every label
-class (τ interleaves inside `parallel` by itself); corrupted-process handshakes are
-covered by the dedicated `…Byz` constructors (D11). See `Core.lean`'s module
-docstring for the 15-constructor table and deviations D9–D12′ (0-based rounds, fused
-DECIDED-send in `retW`/`stepRound`, per-process DECIDED pools — see § D12′ below).
+The four factors are the round specifications, the `n` round loops, the ABA-side
+network and the coin oracle, and they speak the extended alphabet of the deployed
+reading; the rendezvous labels are hidden, the result is read back over `Lab n`, and
+the sub-protocol API is hidden in turn (`LayeredSpec.lean`). Corrupted-process
+handshakes are covered by the Byzantine drives, authorised by `k ∈ F` at `aNet`
+(D11). See `Core.lean`'s module docstring for the per-process algorithm and
+deviations D9–D12′ (0-based rounds, the fused DECIDED-send in `retWPub`/`stepRound`,
+per-process DECIDED pools — see § D12′ below).
 
-Concrete state: `(g, (c, w))` with `g : ℕ → GBCA.SpecState`, `c : ABA.CoreState`,
-`w : ℕ → WCC.SpecState`. Abstract state: `a : ABA.SpecState`.
+Concrete state: `(g, (C, (A, w)))` with `g : ℕ → GBCA.SpecState`,
+`C : ∀ j, CoreNodeN`, `A : ANetState`, `w : ℕ → WCC.SpecState`. The two ABA-side
+factors are read as one object `c : ABAState := (C, A)` through the accessors of
+`CoreView.lean` — `procs`, `decidedSent`, `decidedRecv`, `F` — and every clause below
+names them, so the relation reads the layered state with no change of system.
+Abstract state: `a : ABA.SpecState`.
 
 ## The relation: the ultra-lazy two-phase twin (deviation D16)
 
@@ -132,8 +139,9 @@ certificate form needs no reachability argument of its own.
 
 ## Row dispositions
 
-Concrete steps are read through the step-inversion lemma for
-`((A ∥ (B ∥ C)).abstract H).step`; each class is one row of `CoreSim.lean`.
+Concrete steps are read through the Stage-A inversion lemmas of `CoreSimInv.lean`,
+which take a `layeredSpec` transition back through the two hiding layers to the rows of
+its four factors; each class is one row of `CoreSim.lean`.
 
 | concrete row | label | abstract answer |
 |---|---|---|
@@ -222,7 +230,7 @@ recorded input is a genuine prior `callABA`.
 
 The blueprint's TS 2 certifies its binding step by a *single* honest witness
 (`∃ id ∉ F, call id = b`), and `B`/`C` dissent by a single honest dissenter — the same
-singular-witness provenance loss one level down, and `hybridSpec` built on it provably
+singular-witness provenance loss one level down, and `layeredSpec` built on it provably
 violates Validity (§ Why this shape). ABDY22's implementation carries the `f + 1` via
 Valid-set relay thresholds; TS 2 abstracts it to one witness.
 
@@ -301,11 +309,13 @@ state; every return row runs the same decidable case split on `dead`.
 
 D12 models DECIDED gossip as a single per-process slot, which cannot send `DECIDED 0`
 to X and `DECIDED 1` to Y — an under-approximation inconsistent with the GBCA layer's
-equivocating D5 sent-pool. D12′ mirrors D5 at the DECIDED layer (`Core.lean`):
-`decidedSent : Fin n → Finset Bool` and `decidedRecv : Fin n → Fin n → Finset Bool`
-(pools that only grow); `sendDecided` inserts, `deliver` is per (receiver, sender, bit)
-with soundness `b ∈ decidedSent j` and an at-most-once `b ∉ decidedRecv i j` guard;
-`byzDecided` is guarded *only* by `id ∈ F`. Honest pools stay at card ≤ 1 in reachable
+equivocating D5 sent-pool. D12′ mirrors D5 at the DECIDED layer: the network's
+`dpool` and the round-loop nodes' receipt rows, read through the view (`CoreView.lean`)
+as `decidedSent : Fin n → Finset Bool` and
+`decidedRecv : Fin n → Fin n → Finset Bool`, pools that only grow. `sendDecided`
+inserts; delivery is the `ddlv` rendezvous, per (receiver, sender, bit), with soundness
+`b ∈ decidedSent j` on the network's half and an at-most-once `b ∉ decidedRecv i j`
+guard on the receiver's; `byzD` is guarded *only* by `k ∈ F`. Honest pools stay at card ≤ 1 in reachable
 states (A-grade certificates pin one bit), but no card invariant is needed. The invariant
 rewiring (`CoreSimRel.lean`): `recv_sound` becomes per-bit and *honesty-free*
 (`b ∈ decidedRecv i j → b ∈ decidedSent j`, preserved by pure monotonicity, since sent

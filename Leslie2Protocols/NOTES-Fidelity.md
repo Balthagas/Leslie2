@@ -86,7 +86,8 @@ instead. Either reading supports the same theorems.
 **Terminating `return` as state.** The pseudocode's `return` ends the process; the
 encoding renders that as a fire-once flag — `ProcState.returned` (`GBCAImpl.lean:127`),
 guarded at all three GBCA returns (`GBCAImpl.lean:458`, `:470`, `:478`), and
-`ProcCore.returned` (`Core.lean:135`), guarded at `CoreStep.ret` (`Core.lean:474`). The
+`ProcCore.returned` (`Core.lean:145`), guarded at `CoreProcStepN.ret`
+(`ABA/Layered.lean:113`). The
 guard has no surface counterpart in Algorithm 1 or Algorithm 2, which name no such
 variable; the control-flow fact it expresses does. (At specification level it is no
 interpretation: TS 1 and TS 2 carry `ret[id] = ⊥` guards of their own.)
@@ -95,8 +96,8 @@ interpretation: TS 1 and TS 2 carry `ret[id] = ⊥` guards of their own.)
 
 The source pseudocode has no explicit network: sends and receipts are primitive. The
 encoding's set-based authenticated model is D5 and the DECIDED pools are D12′; what
-belongs here is the asymmetry *between* the two networks. `CoreStep.deliver` carries a
-freshness guard `hr : b ∉ s.decidedRecv i j` (`Core.lean:454`); `ImplStep.deliver`
+belongs here is the asymmetry *between* the two networks. `CoreProcStepN.ddlvRecv`
+carries a freshness guard `hr : b ∉ c.decIn k` (`ABA/Layered.lean:171`); `ImplStep.deliver`
 carries no counterpart, its only hypothesis being soundness `h : m ∈ s.sent j`
 (`GBCAImpl.lean:378`). Both are sound for the same reason — receipt sets are `Finset`s
 and re-delivery is `insert` into a set, so the guard removes redundant transitions
@@ -118,7 +119,7 @@ unconditionally.
   `decide` witness at `Spec.lean:247–250` — the support guard failing on inputs
   `1,0,0,0` at `n = 4, f = 1`.
 - **TS 2's singular binding witness** (`∃ id ∉ F, call[id] = b`, source p. 19) loses
-  provenance one level down, and `hybridSpec` over it violates Validity; the
+  provenance one level down, and `layeredSpec` over it violates Validity; the
   deterministic trace is in `GBCASpec.lean`'s docstring (the D14 entry, lines 65–75).
   Both TS 1 defects and this one are annotated in the source blueprint's TeX
   (`Leslie/blueprint/src/sections/Specification.tex`, red notes at the affected
@@ -147,7 +148,7 @@ which exist solely for Unpredictability, inexpressible once the guess is dropped
   chain is declared omniscient there (Definitions 11–15, Specifications 1–3, pp. 6–7),
   which the encoding's unrestricted schedulers match; belief has no counterpart.
 - **Termination.** ABA's ε-sure Termination, GBCA's Termination and WCC's ε′-sure
-  Termination (pp. 6–7) are unclaimed — `ABA.main` (`Main.lean:86`) is Validity ∧
+  Termination (pp. 6–7) are unclaimed — `ABA.main` (`Main.lean:137`) is Validity ∧
   Agreement. See `NOTES-Liveness-Roadmap.md`.
 
 One divergence runs in the safe direction. The source's Validity restricts to correct
@@ -161,8 +162,9 @@ is what `spec_safe` (`SpecSafety.lean:855`) proves.
 ## 6. Adjacent open items
 
 Neither is a fidelity gap; both sit under Future work in `ABA/README.md`.
-**Achievability** — `Examples.lean` carries the non-vacuity run on `hybridSpec`, the
-analysis-side composition the core simulation takes as its subject, and a machine-checked
-positive-mass trace for `deployed`, the deployed system `main` is about, is outstanding.
+**Achievability** — `Examples.lean` carries the non-vacuity run on `layeredSpec`, the
+deployment-shaped specification the core simulation takes as its subject, and a
+machine-checked positive-mass trace for `deployed`, the deployed system `main` is about,
+is outstanding.
 **`ValidityTrace` witness strengthening** — the witness clause accepts any preceding
 `callABA id' b`, where the proof yields a stronger ghost-backed one.

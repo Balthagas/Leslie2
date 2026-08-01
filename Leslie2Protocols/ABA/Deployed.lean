@@ -20,7 +20,7 @@ code and nothing else, beside two boxes that are not processes — the network
 adversary and the coin oracle.
 
 A process node is exactly the data the program of that process may read: the
-round-loop record of the coordinator, one graded-agreement stage record per
+its round-loop record, one graded-agreement stage record per
 round, and the messages that have been delivered to it. It holds no copy of
 the corrupted set, no corruption flag, and no record of what it has sent. A
 program is therefore *corruption-blind*: no guard of its rule table can ask
@@ -202,8 +202,8 @@ def recvDec (q : CoreNodeN n) (k : Fin n) (b : Bool) : CoreNodeN n :=
 
 /-- The round advance on receiving the coin `c`: adopt the coin if the
 estimate is `⊥`, clear the grade, open the next round. The `⟨DECIDED, b⟩`
-publication that the monolithic round advance fuses in (D10) is the network's
-half of the joint step. -/
+publication the advance carries on an `A` grade (D10) is the network's half of
+the joint step, so no row of it appears here. -/
 def stepRound (q : CoreNodeN n) (c : Bool) : CoreNodeN n :=
   q.setProc
     { q.proc with

@@ -71,7 +71,7 @@ to hand out its complement or hands out nothing at all.
   likewise by a single honest dissenter. That singular witness is the same
   provenance loss as the pre-D13 top-level spec, one level down: the witness may
   be corrupted later in the trace, after which nothing attributes the outcome to
-  a never-corrupted input — and `hybridSpec` built on this TS 2 provably violates
+  a never-corrupted input — and `layeredSpec` built on this TS 2 provably violates
   the papers' Validity (deterministic witness at `n = 4, f = 1`, inputs
   `1,0,0,0`: bind at `1` off the sole `1`-holder, `retB`-adopt everywhere,
   round-1 unanimity decides `1`, `fail 0`, `retABA 1 1` — never-corrupted
@@ -156,8 +156,8 @@ end SpecState
 
 `SpecState.corrupt` writes `F` and nothing else, so every other projection
 passes through it untouched. These four `@[simp]` lemmas are the canonical
-statements of that fact; the refinement, safety and hybrid files all read them
-from here rather than reproving them locally. -/
+statements of that fact; the refinement, safety and core-simulation files all
+read them from here rather than reproving them locally. -/
 
 @[simp] theorem corrupt_call (P : Params) (s : SpecState P.n) (id : Fin P.n) :
     (s.corrupt P id).call = s.call := by

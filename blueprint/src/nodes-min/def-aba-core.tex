@@ -1,6 +1,6 @@
-\begin{definition}[The ABA core]
+\begin{definition}[The ABA-side state]
   \label{def:aba-core}
-  \lean{PLTS.ABA.core}\leanok
-  \uses{def:aba-labels, def:aba-core-vocab}
-  The round loop regrouped as one PLTS over the whole system state, running the five-phase handshake cycle and gating the external return on an $n-f$ DECIDED quorum: \leandecl{PLTS.ABA.core}.
+  \lean{PLTS.ABA.ABAState}\lean{PLTS.ABA.ABAState.procs}\lean{PLTS.ABA.ABAState.decidedSent}\lean{PLTS.ABA.ABAState.decidedRecv}\lean{PLTS.ABA.ABAState.F}\lean{PLTS.ABA.ABAState.decidedCount}\lean{PLTS.ABA.ABAState.setProc}\lean{PLTS.ABA.ABAState.stepRound}\lean{PLTS.ABA.ABAState.sendDecided}\lean{PLTS.ABA.ABAState.deliverDecided}\lean{PLTS.ABA.ABAState.corrupt}\leanok
+  \uses{def:aba-labels, def:aba-core-vocab, def:aba-procnet, def:aba-layered}
+  The $n$ round-loop nodes beside the ABA-side network, read as one object by four accessors that gather the control records, the DECIDED receipts, the multicast pools and the corrupted set the two factors hold apart: \leandecl{PLTS.ABA.ABAState}.
 \end{definition}
