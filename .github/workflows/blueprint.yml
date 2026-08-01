@@ -5,6 +5,12 @@ on:
     branches:
       - main   # the branch this repo actually develops and pushes on
       - master # the remote's historical default branch
+  # A manual run builds the libraries, both blueprint editions and the
+  # declaration checks, but it does NOT publish: every deployment step inside
+  # the docgen-action below (API documentation, the Jekyll build, the Pages
+  # artifact upload and the deployment itself) is gated on
+  # `github.event_name == 'push'`, so a dispatched run reports success while
+  # skipping all four. Publish by pushing to a branch listed above.
   workflow_dispatch:        # Allow manual triggering of the workflow from the GitHub Actions interface
 
 # Cancel previous runs if a new commit is pushed to the same PR or branch
