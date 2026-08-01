@@ -69,13 +69,16 @@ jobs:
         with:
           python-version: '3.13'
 
-      # Graphviz is a build dependency of pygraphviz, which the dependency-graph
-      # plugin imports. Without it the plugin chain degrades instead of failing:
-      # the page renders, but with no Lean cross-links and an empty graph.
+      # plasTeX locates blueprint.sty through `kpsewhich`, so it needs a TeX
+      # installation even though it renders HTML and compiles nothing. Without
+      # one it degrades instead of failing: the pages render, the exit code is
+      # zero, and the blueprint package never loads, which costs every Lean
+      # cross-link and leaves the dependency graph empty. Graphviz is the build
+      # dependency of pygraphviz, which the dependency-graph plugin imports.
       - name: Install leanblueprint (pulls plasTeX and its three plugins)
         run: |
           sudo apt-get update
-          sudo apt-get install -y graphviz libgraphviz-dev
+          sudo apt-get install -y texlive-base graphviz libgraphviz-dev
           pip install leanblueprint
 
       # Ordering constraint: this step MUST run before "Compile blueprint and
@@ -87,6 +90,7 @@ jobs:
       # container, so the full PDF is deliberately not built in CI.
       - name: Build full blueprint edition and stage it for deployment
         run: |
+          kpsewhich --version | head -1
           cd blueprint/src && plastex -c plastex-full.cfg web-full.tex && cd ../..
           python3 blueprint/check-web-build.py blueprint/web-full
           mkdir -p home_page/blueprint-full
