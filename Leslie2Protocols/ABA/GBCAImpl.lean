@@ -150,7 +150,7 @@ per-sender pools and the corrupted set. The instance's state below is their
 pair, so every field of the algorithm is a field of one box or the other.
 
 The fabric carries the name of the subsystem that composes it beside the
-programs (`ABA/GBCASub.lean`). -/
+programs (`ABA/GBCASubsystem.lean`). -/
 
 /-- The stage record of one process: its own local state and the messages
 delivered to it, indexed by sender. There is no record of what it has sent —

@@ -1,7 +1,7 @@
 # Liveness roadmap: ABA fair termination and the `Leslie_LTS_Liveness` machinery
 
 Technical memo (2026-07-22). Context: the ABA safety stack in this repo is complete and
-axiom-clean (`ABA/Main.lean`); liveness (termination) is deliberately out of scope so far.
+axiom-clean (`ABA/Results.lean`); liveness (termination) is deliberately out of scope so far.
 This note records what ABA liveness would require, what already exists in the sibling
 repo `Leslie` (branch `Leslie_LTS_Liveness`), and how the pieces fit. All file:line
 references into `Leslie` are as of that branch's current HEAD.

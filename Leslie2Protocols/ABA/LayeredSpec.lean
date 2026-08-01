@@ -12,7 +12,7 @@ import Leslie2Protocols.ABA.Layered
 The link of the refinement chain that replaces each round's graded-agreement
 subsystem by its specification, and the row-by-row reading of the system that
 results. The headlines that chain this with the earlier links are in
-`ABA/Main.lean`.
+`ABA/Results.lean`.
 
 `layeredSpec` is the deployed system with each round's graded-agreement subsystem
 replaced by that round's specification, read at the deployed shape. The
@@ -29,7 +29,7 @@ a joint transition of the four factors into its component rows and the
 construction of one from them, and the three routes a labelled transition takes
 through the two hiding layers. The core simulation of `ABA/CoreSim.lean` runs
 from `layeredSpec` on this vocabulary, and the non-vacuity witnesses of
-`ABA/Examples.lean` are built with it; `ABA/Main.lean` chains the simulation
+`ABA/NonVacuity.lean` are built with it; `ABA/Results.lean` chains the simulation
 with the substitution and, through `safety_transfer`, reads off the deployed
 protocol's Validity and Agreement guarantee.
 -/

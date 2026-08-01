@@ -18,7 +18,7 @@ target       : ForwardSimulation (implInst P r) (specInst P r) (instRel P r)
 ```
 
 Both systems are Dirac-transition LTSs. The instance refinement reaches the
-ℕ-indexed families through the round subsystem (`ABA/GBCASub.lean`), whose
+ℕ-indexed families through the round subsystem (`ABA/GBCASubsystem.lean`), whose
 family lifting takes its broadcast ingredient from
 `GBCAFamily.instRel_corrupt`.
 
@@ -602,7 +602,7 @@ level off it. No bridge is needed to the global view: the round-`r` `ImplState`
 beside the round's message fabric, which holds the per-sender pools and the
 corrupted set — and `ImplState.sealCount` reads the receiving program's inbox
 rows directly. So `GSub.subSim` consumes `implRefines` as it stands: the
-projection `sub_projects` (`ABA/GBCASub.lean`) matches every subsystem
+projection `sub_projects` (`ABA/GBCASubsystem.lean`) matches every subsystem
 transition with the instance's at that same state, one step for one step, and
 this file's refinement answers it, its weak answer read back at the subsystem's
 interface — which is what licenses replacing a round's subsystem by the graded

@@ -277,7 +277,7 @@ A return whose bit the specification has not yet excluded is a burst, mapping to
 A sub-protocol may be exchanged for its specification where it is a component of a composition, and the deployed protocol does not present the graded-agreement layer as one.
 This subsection re-cuts the same system so that a layer boundary is a component boundary, the cut being decided by which factor owns the round's message fabric, and it proves the re-cut exact in both directions.
 Exactness matters and an inclusion would not do: the chain is read as a statement about the deployed system, so the first step has to leave the deployed behaviour untouched rather than over-approximate it.
-See \leanmodule{Leslie2Protocols/ABA/GBCASub} and \leanmodule{Leslie2Protocols/ABA/Layered}.
+See \leanmodule{Leslie2Protocols/ABA/GBCASubsystem} and \leanmodule{Leslie2Protocols/ABA/Layered}.
 
 \input{nodes-min/def-aba-gbcasub}
 \input{nodes-min/thm-aba-subsim}
@@ -321,7 +321,7 @@ Three steps separate the deployed protocol from the ABA specification:
 \]
 where (1) is the regrouping of Theorem~\ref{thm:aba-layered-atd}, exact in both directions; (2) the substitution of Theorem~\ref{thm:aba-substitution}; and (3) the refinement of Theorem~\ref{thm:aba-layeredspec-spec}, whose proof is the hand-built core simulation, read in the coordinates of $\mathrm{layeredSpec}(P)$.
 Safety then transfers by Theorem~\ref{thm:trace-support}, with no hypothesis on the trace beyond positive probability, and both properties are stated on all returns, corrupted returners included.
-The chain is assembled in \leanmodule{Leslie2Protocols/ABA/Main}.
+The chain is assembled in \leanmodule{Leslie2Protocols/ABA/Results}.
 
 \input{nodes-min/thm-aba-deployed}
 \input{nodes-min/thm-aba-main}
@@ -331,9 +331,9 @@ The chain is assembled in \leanmodule{Leslie2Protocols/ABA/Main}.
 A refinement statement is compatible with a system that does nothing.
 The chain is therefore accompanied by machine-checked witnesses that the deployment-shaped specification of Definition~\ref{def:aba-layeredspec}, the system Theorem~\ref{thm:aba-layeredspec-spec} is proved of, executes and reaches a return at $n = 4$ and $f = 1$, on a connected run of positive probability that exercises the one probabilistic transition on the way, and that the $\mathrm{fail}$ label is live in it rather than merely declared.
 Membership of a decision trace in the achievable trace distributions of the deployed protocol is not established; the witnesses are about that system alone.
-See \leanmodule{Leslie2Protocols/ABA/Examples}.
+See \leanmodule{Leslie2Protocols/ABA/NonVacuity}.
 
-\input{nodes-min/def-aba-examples}
+\input{nodes-min/def-aba-nonvacuity}
 
 \begin{thebibliography}{LeslieBP}
 

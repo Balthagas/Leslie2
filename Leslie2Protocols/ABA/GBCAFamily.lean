@@ -17,10 +17,10 @@ sides: the two `corrupt` functions share the guard `id ∉ F ∧ |F| < f` and
 This is the broadcast ingredient a family lifting of the refinement consumes,
 and it is proved directly rather than through `implRefines`, whose `fail` case
 only yields an existential match. Its consumer is the round subsystem's family
-lifting (`ABA/GBCASub.lean`).
+lifting (`ABA/GBCASubsystem.lean`).
 
 `Framework/FamilySim.lean` is imported here for the downstream tree: the family
-congruence `ForwardSimulation.family` reaches `ABA/GBCASub.lean` and
+congruence `ForwardSimulation.family` reaches `ABA/GBCASubsystem.lean` and
 `ABA/LayeredSpec.lean` along this file.
 -/
 

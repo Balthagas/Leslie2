@@ -111,52 +111,6 @@ there in `ABA/LayeredSpec.lean`.
 namespace PLTS
 namespace ABA
 
-/-! ### The corruption-blind records -/
-
-/-- The round-loop record of one process: its own control record and the
-DECIDED payloads delivered to it, indexed by sender. There is no record of
-what it has multicast — the DECIDED pools live in the network. -/
-structure CoreNodeN (n : ℕ) : Type where
-  /-- The process's own control record. -/
-  proc : ProcCore n
-  /-- The DECIDED payloads delivered to this process, indexed by sender. -/
-  decIn : Fin n → Finset Bool
-  deriving DecidableEq
-
-namespace CoreNodeN
-
-variable {n : ℕ}
-
-/-- The initial round-loop record: idle control record, no receipts. -/
-def initial (n : ℕ) : CoreNodeN n where
-  proc := ProcCore.initial n
-  decIn := fun _ => ∅
-
-/-- The number of distinct senders whose `⟨DECIDED, b⟩` this process holds. -/
-def decidedCount (q : CoreNodeN n) (b : Bool) : ℕ :=
-  (Finset.univ.filter (fun k => b ∈ q.decIn k)).card
-
-/-- Update the control record. -/
-def setProc (q : CoreNodeN n) (p : ProcCore n) : CoreNodeN n := { q with proc := p }
-
-/-- Record a delivered `⟨DECIDED, b⟩` from sender `k`. -/
-def recvDec (q : CoreNodeN n) (k : Fin n) (b : Bool) : CoreNodeN n :=
-  { q with decIn := Function.update q.decIn k (insert b (q.decIn k)) }
-
-/-- The round advance on receiving the coin `c`: adopt the coin if the
-estimate is `⊥`, clear the grade, open the next round. The `⟨DECIDED, b⟩`
-publication the advance carries on an `A` grade (D10) is the network's half of
-the joint step, so no row of it appears here. -/
-def stepRound (q : CoreNodeN n) (c : Bool) : CoreNodeN n :=
-  q.setProc
-    { q.proc with
-      est := some (q.proc.est.getD c),
-      lastGrade := none,
-      round := q.proc.round + 1,
-      phase := .toCallG }
-
-end CoreNodeN
-
 namespace Net
 
 /-! ### The auxiliary alphabet -/

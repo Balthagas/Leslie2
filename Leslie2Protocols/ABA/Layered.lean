@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.GBCASub
+import Leslie2Protocols.ABA.GBCASubsystem
 import Leslie2.Results
 
 /-!
