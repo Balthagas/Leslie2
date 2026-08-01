@@ -69,8 +69,14 @@ jobs:
         with:
           python-version: '3.13'
 
+      # Graphviz is a build dependency of pygraphviz, which the dependency-graph
+      # plugin imports. Without it the plugin chain degrades instead of failing:
+      # the page renders, but with no Lean cross-links and an empty graph.
       - name: Install leanblueprint (pulls plasTeX and its three plugins)
-        run: pip install leanblueprint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz libgraphviz-dev
+          pip install leanblueprint
 
       # Ordering constraint: this step MUST run before "Compile blueprint and
       # documentation" below. It overwrites blueprint/lean_decls with the full
@@ -82,6 +88,7 @@ jobs:
       - name: Build full blueprint edition and stage it for deployment
         run: |
           cd blueprint/src && plastex -c plastex-full.cfg web-full.tex && cd ../..
+          python3 blueprint/check-web-build.py blueprint/web-full
           mkdir -p home_page/blueprint-full
           cp -r blueprint/web-full/. home_page/blueprint-full/
 
