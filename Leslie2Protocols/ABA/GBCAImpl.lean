@@ -137,6 +137,126 @@ def ProcState.initial : ProcState where
   sentSeal := none
   returned := false
 
+/-! ### The two boxes of a round
+
+The data of one round sits in two records. Each process holds its own protocol
+state together with the messages delivered to it, and nothing else -- there is
+no record there of what it has multicast. The round's message fabric holds the
+per-sender pools and the corrupted set. The instance's state below is their
+pair, so every field of the algorithm is a field of one box or the other.
+
+The fabric carries the name of the subsystem that composes it beside the
+programs (`ABA/GBCASub.lean`). -/
+
+/-- The stage record of one process: its own local state and the messages
+delivered to it, indexed by sender. There is no record of what it has sent —
+the sender's pool lives in the network. -/
+structure ProcNodeN (n : ℕ) : Type where
+  /-- The process's local record — the monolithic `proc j`. -/
+  proc : ProcState
+  /-- `inbox k` — the messages from sender `k` delivered here. -/
+  inbox : Fin n → Finset Msg
+  deriving DecidableEq
+
+namespace ProcNodeN
+
+variable {n : ℕ}
+
+/-- The initial stage record: nothing received, nothing done. -/
+def initial (n : ℕ) : ProcNodeN n where
+  proc := ProcState.initial
+  inbox := fun _ => ∅
+
+/-- The number of distinct senders from which this process has received `m`. -/
+def recvCount (p : ProcNodeN n) (m : Msg) : ℕ :=
+  (Finset.univ.filter (fun k => m ∈ p.inbox k)).card
+
+/-- The number of distinct senders of some received `ECHO`. -/
+def echoCount (p : ProcNodeN n) : ℕ :=
+  (Finset.univ.filter (fun k => ∃ b, Msg.echo b ∈ p.inbox k)).card
+
+/-- The number of distinct senders of some received `VOTE`. -/
+def voteCount (p : ProcNodeN n) : ℕ :=
+  (Finset.univ.filter (fun k => ∃ v, Msg.vote v ∈ p.inbox k)).card
+
+/-- The number of distinct senders of some received `BIND`. -/
+def bindCount (p : ProcNodeN n) : ℕ :=
+  (Finset.univ.filter (fun k => ∃ v, Msg.bind v ∈ p.inbox k)).card
+
+/-- The number of distinct senders of some received `SEAL`. -/
+def sealCount (p : ProcNodeN n) : ℕ :=
+  (Finset.univ.filter (fun k => ∃ v, Msg.seal v ∈ p.inbox k)).card
+
+/-- Both bits are backed by an `n − f` `INPUT` quorum among the delivered
+messages. -/
+def bothValid (P : Params) (p : ProcNodeN P.n) : Prop :=
+  P.n - P.f ≤ p.recvCount (.input true) ∧ P.n - P.f ≤ p.recvCount (.input false)
+
+/-- Overwrite the local record. -/
+def setP (p : ProcNodeN n) (pr : ProcState) : ProcNodeN n := { p with proc := pr }
+
+/-- File `m` under the inbox row of sender `k`. -/
+def deliverTo (p : ProcNodeN n) (k : Fin n) (m : Msg) : ProcNodeN n :=
+  { p with inbox := Function.update p.inbox k (insert m (p.inbox k)) }
+
+end ProcNodeN
+
+end GBCA
+
+namespace GSub
+
+/-- The state of the round's message fabric: the per-sender pools and the
+corrupted set. -/
+structure GNetState (n : ℕ) : Type where
+  /-- `pool j` — the messages process `j` has multicast in this round (D5). -/
+  pool : Fin n → Finset GBCA.Msg
+  /-- The corrupted set. -/
+  F : Finset (Fin n)
+  deriving DecidableEq
+
+namespace GNetState
+
+variable {n : ℕ}
+
+/-- The initial fabric: nothing multicast, nobody corrupted. -/
+def initial (n : ℕ) : GNetState n where
+  pool := fun _ => ∅
+  F := ∅
+
+/-- Pool `m` under sender `j` (D5). -/
+def gpool (w : GNetState n) (j : Fin n) (m : GBCA.Msg) : GNetState n :=
+  { w with pool := Function.update w.pool j (insert m (w.pool j)) }
+
+/-- Corruption (deviation D1): total, Dirac, budget-guarded. It is not a row
+of any rule table — the family applies it to every round's fabric at once. -/
+def corrupt (P : Params) (id : Fin P.n) (w : GNetState P.n) : GNetState P.n :=
+  if id ∉ w.F ∧ w.F.card < P.f then { w with F := insert id w.F } else w
+
+@[simp] theorem gpool_F (w : GNetState n) (j : Fin n) (m : GBCA.Msg) :
+    (w.gpool j m).F = w.F := rfl
+
+@[simp] theorem corrupt_pool {P : Params} (w : GNetState P.n) (id : Fin P.n) :
+    (w.corrupt P id).pool = w.pool := by
+  unfold corrupt; split <;> rfl
+
+/-- Membership in a pool after a multicast. -/
+theorem mem_gpool {w : GNetState n} {j : Fin n} {m : GBCA.Msg} {k : Fin n}
+    {m' : GBCA.Msg} :
+    m' ∈ (w.gpool j m).pool k ↔ (k = j ∧ m' = m) ∨ m' ∈ w.pool k := by
+  change m' ∈ Function.update w.pool j (insert m (w.pool j)) k ↔ _
+  by_cases hk : k = j
+  · subst hk
+    rw [Function.update_self, Finset.mem_insert]
+    simp
+  · rw [Function.update_of_ne hk]
+    simp [hk]
+
+end GNetState
+
+end GSub
+
+namespace GBCA
+
 /-- The state of one GBCA implementation instance: the local states, the
 set-based network (D5) and the corrupted set. -/
 structure ImplState (n : ℕ) : Type where

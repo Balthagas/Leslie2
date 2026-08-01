@@ -313,55 +313,9 @@ inductive GProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
 The one box of the subsystem that holds what no program may see: the per-sender
 pools and the corrupted set. It participates in every send by pooling the
 message and in every delivery by checking that the message is pooled, and it
-is where a corrupted sender's injections enter (D5). -/
-
-/-- The state of the round's message fabric: the per-sender pools and the
-corrupted set. -/
-structure GNetState (n : ℕ) : Type where
-  /-- `pool j` — the messages process `j` has multicast in this round (D5). -/
-  pool : Fin n → Finset GBCA.Msg
-  /-- The corrupted set. -/
-  F : Finset (Fin n)
-  deriving DecidableEq
-
-namespace GNetState
-
-variable {n : ℕ}
-
-/-- The initial fabric: nothing multicast, nobody corrupted. -/
-def initial (n : ℕ) : GNetState n where
-  pool := fun _ => ∅
-  F := ∅
-
-/-- Pool `m` under sender `j` (D5). -/
-def gpool (w : GNetState n) (j : Fin n) (m : GBCA.Msg) : GNetState n :=
-  { w with pool := Function.update w.pool j (insert m (w.pool j)) }
-
-/-- Corruption (deviation D1): total, Dirac, budget-guarded. It is not a row
-of any rule table — the family applies it to every round's fabric at once. -/
-def corrupt (P : Params) (id : Fin P.n) (w : GNetState P.n) : GNetState P.n :=
-  if id ∉ w.F ∧ w.F.card < P.f then { w with F := insert id w.F } else w
-
-@[simp] theorem gpool_F (w : GNetState n) (j : Fin n) (m : GBCA.Msg) :
-    (w.gpool j m).F = w.F := rfl
-
-@[simp] theorem corrupt_pool {P : Params} (w : GNetState P.n) (id : Fin P.n) :
-    (w.corrupt P id).pool = w.pool := by
-  unfold corrupt; split <;> rfl
-
-/-- Membership in a pool after a multicast. -/
-theorem mem_gpool {w : GNetState n} {j : Fin n} {m : GBCA.Msg} {k : Fin n}
-    {m' : GBCA.Msg} :
-    m' ∈ (w.gpool j m).pool k ↔ (k = j ∧ m' = m) ∨ m' ∈ w.pool k := by
-  change m' ∈ Function.update w.pool j (insert m (w.pool j)) k ↔ _
-  by_cases hk : k = j
-  · subst hk
-    rw [Function.update_self, Finset.mem_insert]
-    simp
-  · rw [Function.update_of_ne hk]
-    simp [hk]
-
-end GNetState
+is where a corrupted sender's injections enter (D5). Its state record
+`GNetState` stands beside the stage record in `ABA/GBCAImpl.lean`, the two of
+them being the factors of a round's state; what follows is its rule table. -/
 
 /-- The step relation of the round's message fabric. All transitions are
 Dirac. -/

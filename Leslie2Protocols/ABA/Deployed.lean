@@ -113,63 +113,6 @@ namespace ABA
 
 /-! ### The corruption-blind records -/
 
-namespace GBCA
-
-/-- The stage record of one process: its own local state and the messages
-delivered to it, indexed by sender. There is no record of what it has sent —
-the sender's pool lives in the network. -/
-structure ProcNodeN (n : ℕ) : Type where
-  /-- The process's local record — the monolithic `proc j`. -/
-  proc : ProcState
-  /-- `inbox k` — the messages from sender `k` delivered here. -/
-  inbox : Fin n → Finset Msg
-  deriving DecidableEq
-
-namespace ProcNodeN
-
-variable {n : ℕ}
-
-/-- The initial stage record: nothing received, nothing done. -/
-def initial (n : ℕ) : ProcNodeN n where
-  proc := ProcState.initial
-  inbox := fun _ => ∅
-
-/-- The number of distinct senders from which this process has received `m`. -/
-def recvCount (p : ProcNodeN n) (m : Msg) : ℕ :=
-  (Finset.univ.filter (fun k => m ∈ p.inbox k)).card
-
-/-- The number of distinct senders of some received `ECHO`. -/
-def echoCount (p : ProcNodeN n) : ℕ :=
-  (Finset.univ.filter (fun k => ∃ b, Msg.echo b ∈ p.inbox k)).card
-
-/-- The number of distinct senders of some received `VOTE`. -/
-def voteCount (p : ProcNodeN n) : ℕ :=
-  (Finset.univ.filter (fun k => ∃ v, Msg.vote v ∈ p.inbox k)).card
-
-/-- The number of distinct senders of some received `BIND`. -/
-def bindCount (p : ProcNodeN n) : ℕ :=
-  (Finset.univ.filter (fun k => ∃ v, Msg.bind v ∈ p.inbox k)).card
-
-/-- The number of distinct senders of some received `SEAL`. -/
-def sealCount (p : ProcNodeN n) : ℕ :=
-  (Finset.univ.filter (fun k => ∃ v, Msg.seal v ∈ p.inbox k)).card
-
-/-- Both bits are backed by an `n − f` `INPUT` quorum among the delivered
-messages. -/
-def bothValid (P : Params) (p : ProcNodeN P.n) : Prop :=
-  P.n - P.f ≤ p.recvCount (.input true) ∧ P.n - P.f ≤ p.recvCount (.input false)
-
-/-- Overwrite the local record. -/
-def setP (p : ProcNodeN n) (pr : ProcState) : ProcNodeN n := { p with proc := pr }
-
-/-- File `m` under the inbox row of sender `k`. -/
-def deliverTo (p : ProcNodeN n) (k : Fin n) (m : Msg) : ProcNodeN n :=
-  { p with inbox := Function.update p.inbox k (insert m (p.inbox k)) }
-
-end ProcNodeN
-
-end GBCA
-
 /-- The round-loop record of one process: its own control record and the
 DECIDED payloads delivered to it, indexed by sender. There is no record of
 what it has multicast — the DECIDED pools live in the network. -/
