@@ -50,13 +50,20 @@ build on the simulation framework directly.
 
 ## Project layout
 
-The project is split into **two Lake libraries**:
+The project is split into **three Lake libraries**:
 
-- **`Leslie2`** — the **core** (default `lake build` target): the five
-  essential results and everything they depend on. Self-contained.
+- **`Leslie2`** — the **core**: the five essential results and everything
+  they depend on. Self-contained.
+- **`Leslie2Protocols`** — the **protocol case studies**, currently the
+  asynchronous Byzantine agreement development. Imports the core; nothing
+  in the core imports it.
 - **`Leslie2Extra`** — **opt-in exploratory work** built *on top of* the
   core (it imports the core; nothing in the core imports it). Built with
   `lake build Leslie2Extra`.
+
+The core and the protocols are the default `lake build` targets, and the
+API documentation is generated for exactly those, so the blueprint's links
+into the documentation resolve.
 
 ### Core — `Leslie2/`
 
@@ -132,7 +139,7 @@ The toolchain is pinned in `lean-toolchain` and the Mathlib revision in
 
 ```bash
 lake exe cache get                    # fetch the Mathlib build cache (first time)
-lake build                            # build the core library (default target)
+lake build                            # build the default targets (core + protocols)
 lake build Leslie2Extra               # build the opt-in extras (fairness + measure)
 lake build Leslie2.Systems.System     # build a single module
 lake exe mk_all --check               # check each library root re-exports its files (CI)

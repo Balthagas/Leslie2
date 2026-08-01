@@ -1,7 +1,10 @@
 name = "Leslie2"
 version = "0.1.0"
 keywords = ["math"]
-defaultTargets = ["Leslie2"]
+# The default targets are also what gets API documentation: the docs build
+# generates one `:docs` facet per default target, and the blueprint links into
+# those pages, so a library the blueprint cites must be listed here.
+defaultTargets = ["Leslie2", "Leslie2Protocols"]
 
 [leanOptions]
 pp.unicode.fun = true # pretty-prints `fun a ↦ b`
@@ -33,8 +36,9 @@ name = "Leslie2"
 [[lean_lib]]
 name = "Leslie2Extra"
 
-# Opt-in library for the protocol case studies (the ABA development following
-# the "Verifying ABA with Leslie" blueprint). Builds on top of the core; not a
-# default target. Build it explicitly with `lake build Leslie2Protocols`.
+# The protocol case studies (the ABA development following the "Verifying ABA
+# with Leslie" blueprint). Builds on top of the core, and is a default target
+# so that `lake build` covers it and the docs build documents the declarations
+# the blueprint links to.
 [[lean_lib]]
 name = "Leslie2Protocols"
