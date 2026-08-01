@@ -9,7 +9,7 @@ environment's \\label, its \\lean declaration lists, its \\leanok marks and its
 graph and the declaration harvest are built from. Bodies differ by design and
 are not compared: a min body cites declarations with \\leandecl instead.
 
-Usage: python3 blueprint/check-node-sync.py
+Usage: python3 scripts/check-node-sync.py
 Exits 0 and prints "N/N in sync" when every pair agrees, else lists the drifts
 and exits 1.
 """
@@ -17,9 +17,9 @@ import os
 import re
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-FAT = os.path.join(HERE, 'src', 'nodes')
-MIN = os.path.join(HERE, 'src', 'nodes-min')
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FAT = os.path.join(REPO, 'blueprint', 'src', 'nodes')
+MIN = os.path.join(REPO, 'blueprint', 'src', 'nodes-min')
 
 ENV_OPEN = re.compile(
     r'\s*\\begin\{(definition|theorem|lemma|proposition|corollary|proof)\}')

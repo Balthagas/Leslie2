@@ -92,7 +92,7 @@ jobs:
         run: |
           kpsewhich --version | head -1
           cd blueprint/src && plastex -c plastex-full.cfg web-full.tex && cd ../..
-          python3 blueprint/check-web-build.py blueprint/web-full
+          python3 scripts/check-web-build.py blueprint/web-full
           mkdir -p home_page/blueprint-full
           cp -r blueprint/web-full/. home_page/blueprint-full/
 
@@ -107,8 +107,8 @@ jobs:
       - name: Check the full edition's declarations and node sync
         run: |
           lake exe checkdecls blueprint/lean_decls
-          python3 blueprint/check-node-sync.py
-          python3 blueprint/check-lean-prose.py
+          python3 scripts/check-node-sync.py
+          python3 scripts/check-lean-prose.py
 
       - name: Compile blueprint and documentation
         uses: leanprover-community/docgen-action@deed0cdc44dd8e5de07a300773eb751d33e32fc8 # 2025-10-26

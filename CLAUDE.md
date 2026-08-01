@@ -64,7 +64,7 @@ latexmk -output-directory=../print-full print-full.tex  # → ../print-full/prin
 
 Caveat: the full web build writes `blueprint/lean_decls`, the same path `leanblueprint web` writes, and the two editions harvest different declaration sets. `build-full.sh` saves and restores that file; if you run `plastex -c plastex-full.cfg` by hand, re-run `leanblueprint web` before `lake exe checkdecls blueprint/lean_decls`.
 
-The two node directories must agree on their formal frontmatter (`\label`, `\lean`, `\leanok`, `\uses`) — that is what the dependency graph and the declaration harvest are built from. `python3 blueprint/check-node-sync.py` checks every pair and prints `N/N in sync`; only the bodies are allowed to differ.
+The two node directories must agree on their formal frontmatter (`\label`, `\lean`, `\leanok`, `\uses`) — that is what the dependency graph and the declaration harvest are built from. `python3 scripts/check-node-sync.py` checks every pair and prints `N/N in sync`; only the bodies are allowed to differ.
 
 Caveats: plasTeX 3.1 silently breaks on **Python 3.14** (packages fail to load, `\lean`/`\uses` fall back to default renderers, no dep graph, no `lean_decls`, no theorem badges), and `leanblueprint web` resolves `plastex` from PATH — so there must be exactly ONE pipx installation, on Python ≤ 3.13, exposing both apps: `pipx install leanblueprint --python /opt/homebrew/bin/python3.13 --include-deps` (uninstall any standalone `plastex` pipx venv first). The dependency graph needs no external `dot` binary (`pygraphviz` ships bundled Graphviz libraries). plasTeX caches the parse in `blueprint/src/web.paux` — after preamble/URL changes, `rm -rf blueprint/web blueprint/src/web.paux` before rebuilding.
 

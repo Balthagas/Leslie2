@@ -10,7 +10,7 @@ listed below as notation.
 
 Run from the repository root::
 
-    python3 blueprint/check-lean-prose.py
+    python3 scripts/check-lean-prose.py
 """
 
 import re
