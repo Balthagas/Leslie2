@@ -1,5 +1,5 @@
 % The analysis-side composition (PLTS.ABA.hybridSpec): wiring under abstract hiddenAPI,
-% and the deflation from the deployment-shaped specification (PLTS.ABA.flatSpecDefl).
+% and the deflation from the deployment-shaped specification (PLTS.ABA.layeredSpecDefl).
 \begin{tikzpicture}[
     >={Stealth[round]}, semithick,
     box/.style={draw, rounded corners, align=center, font=\footnotesize,
@@ -36,10 +36,10 @@
     node[api, below, pos=0.4]{$\mathrm{retABA}/\mathrm{fail}$} (env);
   % the deployment-shaped specification below, and the deflation onto this composition
   \node[box, minimum width=5.4cm] (flat) at (5.1,-5.0)
-    {$\mathrm{flatSpec}(P)$: the round specifications,\\
+    {$\mathrm{layeredSpec}(P)$: the round specifications,\\
      the $n$ round loops, the ABA-side network,\\ the coin oracle};
   \draw[->, dashed] (flat.north) -- (5.1,-2.6);
   \node[lbl, right, align=left] at (5.25,-3.5)
-    {along $\mathrm{flatSpecDefl}$: the $n$ round-loop\\
+    {along $\mathrm{layeredSpecDefl}$: the $n$ round-loop\\
      nodes and the ABA-side network\\ assembled into one $\mathrm{CoreState}$};
 \end{tikzpicture}

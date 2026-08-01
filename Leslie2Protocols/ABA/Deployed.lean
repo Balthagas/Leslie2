@@ -48,7 +48,7 @@ label leaves it idle.
 `NetEvt n` is the auxiliary rendezvous alphabet the shared alphabet `Lab n`
 cannot name — the two networks, the Byzantine drives, and the branches of a
 handshake that the shared label does not distinguish. It is hidden by the
-composition, so the composite `netGroup` speaks exactly `Lab n`.
+composition, so the composite `deployedGroup` speaks exactly `Lab n`.
 
 ## Model and deviations
 
@@ -94,18 +94,18 @@ composition, so the composite `netGroup` speaks exactly `Lab n`.
 `ABAProcN P j` is the program of process `j`; the programs are composed under
 full synchronisation (`System.syncProduct`) and set beside `netAdv P` and the
 lifted oracle. Hiding `NetEvt` and reading the result back over `Lab n` gives
-`netGroup P`; hiding the sub-protocol API gives `netFlat P`.
+`deployedGroup P`; hiding the sub-protocol API gives `deployed P`.
 
 ## What this file supplies
 
-`netFlat` is the subject of the refinement chain, and this file is where its
+`deployed` is the subject of the refinement chain, and this file is where its
 transition relation is pinned down: the rule tables of the process programs,
 of the network adversary and of the coin pullback, the composition pipeline,
 and the inversion lemmas that read a composite transition back into the rows
-its components contributed. `ABA/Exploded.lean` re-cuts the same system along
+its components contributed. `ABA/Layered.lean` re-cuts the same system along
 its layer boundaries and shows the two presentations achieve exactly the same
-trace distributions (`exploded_atd`); the chain to `ABA.spec` continues from
-there in `ABA/FlatSpec.lean`.
+trace distributions (`layered_atd`); the chain to `ABA.spec` continues from
+there in `ABA/LayeredSpec.lean`.
 -/
 
 namespace PLTS
@@ -306,11 +306,6 @@ def corrupt (P : Params) (id : Fin P.n) (s : NetState P.n) : NetState P.n :=
   if id ∉ s.F ∧ s.F.card < P.f then { s with F := insert id s.F } else s
 
 end NetState
-
-end Net
-
-
-namespace Net
 
 /-! ### The rule table
 
@@ -601,11 +596,6 @@ inductive ABAProcStepN (P : Params) (j : Fin P.n) :
       (r : ℕ) (k : Fin P.n) (b : Bool) :
       ABAProcStepN P j (c, g) (Sum.inr (.byzRetW r k b)) (PMF.pure (c, g))
 
-end Net
-
-
-namespace Net
-
 /-! ### The network adversary
 
 The one box that holds what no process may see: the pools, the corrupted set
@@ -776,23 +766,23 @@ noncomputable def wccLift (P : Params) : System (ℕ → WCC.SpecState P.n) (NLa
 
 /-- The three factors side by side, over the extended alphabet: the
 synchronised process group, the network adversary and the lifted oracle. -/
-noncomputable def netPre (P : Params) :
+noncomputable def deployedPre (P : Params) :
     System ((∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n)))
       (NLab P.n) :=
   (System.syncProduct (ABAProcN P)).parallel ((netAdv P).parallel (wccLift P))
 
 /-- **The deployed group**: the rendezvous alphabet hidden, the result read
 back over `Lab n`. -/
-noncomputable def netGroup (P : Params) :
+noncomputable def deployedGroup (P : Params) :
     System ((∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n)))
       (Lab P.n) :=
-  ((netPre P).abstract (netEvtLabels P.n)).relabel
+  ((deployedPre P).abstract (netEvtLabels P.n)).relabel
 
 /-- **The deployed system**: the group with the sub-protocol API hidden. -/
-noncomputable def netFlat (P : Params) :
+noncomputable def deployed (P : Params) :
     System ((∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n)))
       (Lab P.n) :=
-  (netGroup P).abstract (Lab.hiddenAPI P.n)
+  (deployedGroup P).abstract (Lab.hiddenAPI P.n)
 
 /-! ### Determinacy of the two new rule tables
 
@@ -828,11 +818,6 @@ theorem procStepN_no_tau {P : Params} {j : Fin P.n} {q : ABANodeN P.n}
     {ν : PMF (ABANodeN P.n)} (h : ABAProcStepN P j q (Silent.τ : NLab P.n) ν) :
     False := by
   rw [nlab_tau] at h; cases h
-
-end Net
-
-
-namespace Net
 
 /-! ### Reading and building composite transitions
 
@@ -889,13 +874,13 @@ theorem syncN_no_tau {P : Params} {u : ∀ _ : Fin P.n, ABANodeN P.n}
   · exact procStepN_no_tau hstep
 
 /-- Build a joint transition of the three factors on a rendezvous label. -/
-theorem netPre_event_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedPre_event_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     {w w' : NetState P.n} {o o' : ℕ → WCC.SpecState P.n} (e : NetEvt P.n)
     (hall : ∀ i, ABAProcStepN P i (u i) (Sum.inr e) (PMF.pure (x i)))
     (hn : NetStep P w (Sum.inr e) (PMF.pure w'))
     (ho : (wccLift P).step o (Sum.inr e) (PMF.pure o')) :
-    (netPre P).step (u, w, o) (Sum.inr e) (PMF.pure (x, w', o')) := by
-  rw [netPre, System.parallel_step]
+    (deployedPre P).step (u, w, o) (Sum.inr e) (PMF.pure (x, w', o')) := by
+  rw [deployedPre, System.parallel_step]
   refine Or.inl ⟨by simp, PMF.pure x, PMF.pure (w', o'),
     syncN_pure (by simp) hall, ?_, (prodPMF_pure_pure _ _).symm⟩
   rw [System.parallel_step]
@@ -903,16 +888,16 @@ theorem netPre_event_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     (prodPMF_pure_pure _ _).symm⟩
 
 /-- Build a joint transition of the three factors on a visible shared label. -/
-theorem netPre_lab_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedPre_lab_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     {ω : PMF (ℕ → WCC.SpecState P.n)} {l : Lab P.n} (hl : l ≠ Lab.tau)
     (hall : ∀ i, ABAProcStepN P i (u i) (Sum.inl l) (PMF.pure (x i)))
     (hn : NetStep P w (Sum.inl l) (PMF.pure w'))
     (ho : (WCC.specFamily P).step o l ω) :
-    (netPre P).step (u, w, o) (Sum.inl l)
+    (deployedPre P).step (u, w, o) (Sum.inl l)
       (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω)) := by
   have hne : (Sum.inl l : NLab P.n) ≠ Silent.τ := by simpa using hl
-  rw [netPre, System.parallel_step]
+  rw [deployedPre, System.parallel_step]
   refine Or.inl ⟨hne, PMF.pure x, prodPMF (PMF.pure w') ω,
     syncN_pure hne hall, ?_, rfl⟩
   rw [System.parallel_step]
@@ -920,11 +905,11 @@ theorem netPre_lab_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     (System.mapIdle_step_some (by simp) ω).mpr ho, rfl⟩
 
 /-- Build a silent transition of the three factors from a network-local one. -/
-theorem netPre_tau_net (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedPre_tau_net (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     (hn : NetStep P w (Sum.inl .tau) (PMF.pure w')) :
-    (netPre P).step (u, w, o) (Sum.inl .tau) (PMF.pure (u, w', o)) := by
-  rw [netPre, System.parallel_step]
+    (deployedPre P).step (u, w, o) (Sum.inl .tau) (PMF.pure (u, w', o)) := by
+  rw [deployedPre, System.parallel_step]
   refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure w') (PMF.pure o), ?_, ?_⟩)
   · rw [System.parallel_step]
     exact Or.inr (Or.inl ⟨rfl, PMF.pure w', hn, rfl⟩)
@@ -933,13 +918,13 @@ theorem netPre_tau_net (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
 /-- Build a silent transition of the three factors from an oracle-local one
 (the coin resolution — the one transition of the composite that is not
 Dirac). -/
-theorem netPre_tau_wcc (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedPre_tau_wcc (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     {ω : PMF (ℕ → WCC.SpecState P.n)}
     (ho : (WCC.specFamily P).step o Lab.tau ω) :
-    (netPre P).step (u, w, o) (Sum.inl .tau)
+    (deployedPre P).step (u, w, o) (Sum.inl .tau)
       (prodPMF (PMF.pure u) (prodPMF (PMF.pure w) ω)) := by
-  rw [netPre, System.parallel_step]
+  rw [deployedPre, System.parallel_step]
   refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure w) ω, ?_, rfl⟩)
   rw [System.parallel_step]
   exact Or.inr (Or.inr ⟨rfl, ω,
@@ -947,14 +932,14 @@ theorem netPre_tau_wcc (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
 
 /-- The composite step relation of the deployed group, unfolded to the hidden
 rendezvous case and the shared-label case. -/
-theorem netGroup_step_iff (P : Params)
+theorem deployedGroup_step_iff (P : Params)
     (q : (∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n)))
     (l : Lab P.n)
     (μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))) :
-    (netGroup P).step q l μ ↔
-      (l = .tau ∧ ∃ e : NetEvt P.n, (netPre P).step q (Sum.inr e) μ) ∨
-      (netPre P).step q (Sum.inl l) μ := by
+    (deployedGroup P).step q l μ ↔
+      (l = .tau ∧ ∃ e : NetEvt P.n, (deployedPre P).step q (Sum.inr e) μ) ∨
+      (deployedPre P).step q (Sum.inl l) μ := by
   constructor
   · rintro (⟨hτ, l', ⟨e, rfl⟩, hstep⟩ | ⟨-, hstep⟩)
     · exact Or.inl ⟨Sum.inl_injective hτ, e, hstep⟩
@@ -965,57 +950,52 @@ theorem netGroup_step_iff (P : Params)
 
 /-- The deployed system's step relation: a sub-protocol API label seen as `τ`,
 or a label that survives the hiding. -/
-theorem netFlat_step_iff (P : Params)
+theorem deployed_step_iff (P : Params)
     (q : (∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n)))
     (l : Lab P.n)
     (μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))) :
-    (netFlat P).step q l μ ↔
-      (l = .tau ∧ ∃ l' ∈ Lab.hiddenAPI P.n, (netGroup P).step q l' μ) ∨
-      (l ∉ Lab.hiddenAPI P.n ∧ (netGroup P).step q l μ) :=
+    (deployed P).step q l μ ↔
+      (l = .tau ∧ ∃ l' ∈ Lab.hiddenAPI P.n, (deployedGroup P).step q l' μ) ∨
+      (l ∉ Lab.hiddenAPI P.n ∧ (deployedGroup P).step q l μ) :=
   System.abstract_step _ _ _ _ _
 
 /-- A hidden rendezvous is a silent transition of the deployed group. -/
-theorem netGroup_event_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedGroup_event_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     {w w' : NetState P.n} {o o' : ℕ → WCC.SpecState P.n} (e : NetEvt P.n)
     (hall : ∀ i, ABAProcStepN P i (u i) (Sum.inr e) (PMF.pure (x i)))
     (hn : NetStep P w (Sum.inr e) (PMF.pure w'))
     (ho : (wccLift P).step o (Sum.inr e) (PMF.pure o')) :
-    (netGroup P).step (u, w, o) Lab.tau (PMF.pure (x, w', o')) :=
-  (netGroup_step_iff P _ _ _).mpr
-    (Or.inl ⟨rfl, e, netPre_event_step P e hall hn ho⟩)
+    (deployedGroup P).step (u, w, o) Lab.tau (PMF.pure (x, w', o')) :=
+  (deployedGroup_step_iff P _ _ _).mpr
+    (Or.inl ⟨rfl, e, deployedPre_event_step P e hall hn ho⟩)
 
 /-- A shared visible label is a transition of the deployed group. -/
-theorem netGroup_lab_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedGroup_lab_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     {ω : PMF (ℕ → WCC.SpecState P.n)} {l : Lab P.n} (hl : l ≠ Lab.tau)
     (hall : ∀ i, ABAProcStepN P i (u i) (Sum.inl l) (PMF.pure (x i)))
     (hn : NetStep P w (Sum.inl l) (PMF.pure w'))
     (ho : (WCC.specFamily P).step o l ω) :
-    (netGroup P).step (u, w, o) l
+    (deployedGroup P).step (u, w, o) l
       (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω)) :=
-  (netGroup_step_iff P _ _ _).mpr (Or.inr (netPre_lab_step P hl hall hn ho))
+  (deployedGroup_step_iff P _ _ _).mpr (Or.inr (deployedPre_lab_step P hl hall hn ho))
 
 /-- A network-local injection is a silent transition of the deployed group. -/
-theorem netGroup_tau_net (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedGroup_tau_net (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     (hn : NetStep P w (Sum.inl .tau) (PMF.pure w')) :
-    (netGroup P).step (u, w, o) Lab.tau (PMF.pure (u, w', o)) :=
-  (netGroup_step_iff P _ _ _).mpr (Or.inr (netPre_tau_net P hn))
+    (deployedGroup P).step (u, w, o) Lab.tau (PMF.pure (u, w', o)) :=
+  (deployedGroup_step_iff P _ _ _).mpr (Or.inr (deployedPre_tau_net P hn))
 
 /-- The coin resolution is a silent transition of the deployed group. -/
-theorem netGroup_tau_wcc (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedGroup_tau_wcc (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     {ω : PMF (ℕ → WCC.SpecState P.n)}
     (ho : (WCC.specFamily P).step o Lab.tau ω) :
-    (netGroup P).step (u, w, o) Lab.tau
+    (deployedGroup P).step (u, w, o) Lab.tau
       (prodPMF (PMF.pure u) (prodPMF (PMF.pure w) ω)) :=
-  (netGroup_step_iff P _ _ _).mpr (Or.inr (netPre_tau_wcc P ho))
-
-end Net
-
-
-namespace Net
+  (deployedGroup_step_iff P _ _ _).mpr (Or.inr (deployedPre_tau_wcc P ho))
 
 /-! ### One process's rules, by label class
 
@@ -1164,11 +1144,6 @@ theorem stepN_fail {k : Fin P.n}
   cases h; rfl
 
 end ProcInversion
-
-end Net
-
-
-namespace Net
 
 /-! ### One process's rules on the rendezvous alphabet -/
 
@@ -1411,11 +1386,6 @@ theorem stepN_byzRetW {r : ℕ} {k : Fin P.n} {b : Bool}
 
 end ProcNetInversion
 
-end Net
-
-
-namespace Net
-
 /-! ### The network adversary's rules, by label class -/
 
 section NetInversion
@@ -1514,11 +1484,6 @@ theorem netStep_tau (h : NetStep P s (Sum.inl .tau) μ) :
 
 end NetInversion
 
-end Net
-
-
-namespace Net
-
 /-! ### Dirac successors and the network's field algebra
 
 A Dirac distribution determines its point, and each of the network
@@ -1570,45 +1535,35 @@ theorem netCorrupt_F {P : Params} (s : NetState P.n) (k : Fin P.n) :
       if k ∉ s.F ∧ s.F.card < P.f then insert k s.F else s.F := by
   unfold NetState.corrupt; split <;> rfl
 
-end Net
-
-
-namespace Net
-
 /-! ### The coin oracle's idle row over the shared alphabet -/
 
 /-- The coin oracle idles on a shared label that is neither `τ`, nor a
 handshake of one of its own rounds, nor `fail`. Read through the pullback
 `wccPull`, this is the oracle's row in every joint transition — of the
-deployed system, of its exploded presentation, and of the deployment-shaped
-specification (`ABA/FlatSpec.lean`) — that leaves the coin standing still. -/
+deployed system, of its layered presentation, and of the deployment-shaped
+specification (`ABA/LayeredSpec.lean`) — that leaves the coin standing still. -/
 theorem wccFamilyN_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {l : Lab P.n}
     (hl : l ≠ Lab.tau) (hr : Lab.wccRound l = none) (hf : ¬ Lab.isFail l) :
     (WCC.specFamily P).step o l (PMF.pure o) := by
   rw [WCC.specFamily, System.family_step_iff]
   exact Or.inr (Or.inr (Or.inr ⟨hl, hr, hf, rfl⟩))
 
-end Net
-
-
-namespace Net
-
 /-! ### Reading a deployed transition into its three factors -/
 
 /-- A rendezvous transition: every process, the network and the lifted oracle
 move together, and only the oracle's successor can fail to be a Dirac. -/
-theorem netPre_event_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedPre_event_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} {e : NetEvt P.n}
     {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))}
-    (h : (netPre P).step (u, w, o) (Sum.inr e) μ) :
+    (h : (deployedPre P).step (u, w, o) (Sum.inr e) μ) :
     ∃ (x : ∀ _ : Fin P.n, ABANodeN P.n) (w' : NetState P.n)
       (μ₃ : PMF (ℕ → WCC.SpecState P.n)),
       (∀ i, ABAProcStepN P i (u i) (Sum.inr e) (PMF.pure (x i))) ∧
       NetStep P w (Sum.inr e) (PMF.pure w') ∧
       (wccLift P).step o (Sum.inr e) μ₃ ∧
       μ = prodPMF (PMF.pure x) (prodPMF (PMF.pure w') μ₃) := by
-  rw [netPre, System.parallel_step] at h
+  rw [deployedPre, System.parallel_step] at h
   rcases h with ⟨-, μ₁, μ₂₃, hS, hNW, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
   · obtain ⟨x, rfl, hall⟩ := syncN_inv hS
     rw [System.parallel_step] at hNW
@@ -1621,18 +1576,18 @@ theorem netPre_event_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
   · simp [nlab_tau] at habs
 
 /-- A visible shared-label transition. -/
-theorem netPre_lab_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedPre_lab_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} {l : Lab P.n} (hl : l ≠ Lab.tau)
     {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))}
-    (h : (netPre P).step (u, w, o) (Sum.inl l) μ) :
+    (h : (deployedPre P).step (u, w, o) (Sum.inl l) μ) :
     ∃ (x : ∀ _ : Fin P.n, ABANodeN P.n) (w' : NetState P.n)
       (ω : PMF (ℕ → WCC.SpecState P.n)),
       (∀ i, ABAProcStepN P i (u i) (Sum.inl l) (PMF.pure (x i))) ∧
       NetStep P w (Sum.inl l) (PMF.pure w') ∧
       (WCC.specFamily P).step o l ω ∧
       μ = prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω) := by
-  rw [netPre, System.parallel_step] at h
+  rw [deployedPre, System.parallel_step] at h
   rcases h with ⟨-, μ₁, μ₂₃, hS, hNW, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
   · obtain ⟨x, rfl, hall⟩ := syncN_inv hS
     rw [System.parallel_step] at hNW
@@ -1647,15 +1602,15 @@ theorem netPre_lab_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
 
 /-- A silent shared-label transition: no process has a `τ` row, so it is the
 network's own injection or the coin resolution. -/
-theorem netPre_tau_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedPre_tau_inv (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))}
-    (h : (netPre P).step (u, w, o) (Sum.inl Lab.tau) μ) :
+    (h : (deployedPre P).step (u, w, o) (Sum.inl Lab.tau) μ) :
     (∃ w', NetStep P w (Sum.inl .tau) (PMF.pure w') ∧ μ = PMF.pure (u, w', o)) ∨
     (∃ ω, (WCC.specFamily P).step o Lab.tau ω ∧
       μ = prodPMF (PMF.pure u) (prodPMF (PMF.pure w) ω)) := by
-  rw [netPre, System.parallel_step] at h
+  rw [deployedPre, System.parallel_step] at h
   rcases h with ⟨habs, -⟩ | ⟨-, μ₁, hS, rfl⟩ | ⟨-, μ₂₃, hNW, rfl⟩
   · exact absurd rfl habs
   · exact (syncN_no_tau hS).elim
@@ -1683,17 +1638,12 @@ theorem procsN_id {P : Params} {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     (hall : ∀ i, (PMF.pure (x i) : PMF (ABANodeN P.n)) = PMF.pure (u i)) : x = u :=
   funext fun i => pureN_inj (hall i)
 
-end Net
-
-
-namespace Net
-
 /-! ### Component rows for building a deployed transition
 
 A builder of a deployed transition supplies, alongside the mover's own row,
 the oracle's row on a rendezvous label the pullback does not carry and the
-per-process family of a one-mover joint step. Both are used by the exploded
-presentation (`ABA/Exploded.lean`). -/
+per-process family of a one-mover joint step. Both are used by the layered
+presentation (`ABA/Layered.lean`). -/
 
 /-- The oracle idles on a rendezvous label outside the pullback's domain. -/
 theorem wccLift_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {e : NetEvt P.n}

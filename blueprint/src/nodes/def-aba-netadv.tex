@@ -1,25 +1,25 @@
 \begin{definition}[The network adversary and the deployed composition]
   \label{def:aba-netadv}
-  \lean{PLTS.ABA.Net.NetState}\lean{PLTS.ABA.Net.NetState.corrupt}\lean{PLTS.ABA.Net.NetStep}\lean{PLTS.ABA.Net.netAdv}\lean{PLTS.System.mapIdle}\lean{PLTS.ABA.Net.wccPull}\lean{PLTS.ABA.Net.wccLift}\lean{PLTS.ABA.Net.netPre}\lean{PLTS.ABA.Net.netGroup}\lean{PLTS.ABA.Net.netFlat}\leanok
+  \lean{PLTS.ABA.Net.NetState}\lean{PLTS.ABA.Net.NetState.corrupt}\lean{PLTS.ABA.Net.NetStep}\lean{PLTS.ABA.Net.netAdv}\lean{PLTS.System.mapIdle}\lean{PLTS.ABA.Net.wccPull}\lean{PLTS.ABA.Net.wccLift}\lean{PLTS.ABA.Net.deployedPre}\lean{PLTS.ABA.Net.deployedGroup}\lean{PLTS.ABA.Net.deployed}\leanok
   \uses{def:aba-procnet, def:aba-labels, def:aba-params, def:relabel, def:syncproduct, def:process-algebra}
   The network adversary $\mathrm{netAdv}(P)$ holds what a process may not see: the round-tagged pools $pool(r,j)$ of the stage messages $j$ has multicast in round $r$ (D5), the pools $dpool(j)$ of the DECIDED payloads $j$ has multicast (D12$'$), and the corrupted set $F$ with its budget, the guard $k \notin F \wedge |F| < f$ on the $\mathrm{fail}$ row (D1).
   It supplies the other half of every send and every delivery, the delivery guards $m \in pool(r,j)$ and $b \in dpool(j)$ being the soundness of the authenticated network; it carries the authorisation $k \in F$ of each of the five Byzantine drives (D11), and the two injections $\mathrm{byzG}$ and $\mathrm{byzD}$, by which a corrupted sender pools an arbitrary stage message or either DECIDED bit and so equivocates at that layer.
   The coin oracle $\mathrm{WCC.specFamily}(P)$ speaks $\mathrm{Lab}(n)$, so it is read over the extended alphabet by the construction $\mathrm{mapIdle}$ along the partial map $\mathrm{wccPull}$, which sends the two coin drives and the fused return $\mathrm{retWPub}$ to the coin handshake they stand for and every other rendezvous label to none: a label with an image steps by that image's rows, and a label without one is a self-loop.
   The deployed system is built in three stages,
   \[
-    \mathrm{netPre}(P) \;=\;
+    \mathrm{deployedPre}(P) \;=\;
       \bigl(\mathrm{syncProduct}_{j \in [n]}\ \mathrm{ABAProcN}(P,j)\bigr)
         \parallel \bigl(\mathrm{netAdv}(P) \parallel \mathrm{wccLift}(P)\bigr),
   \]
   \[
-    \mathrm{netGroup}(P) \;=\;
+    \mathrm{deployedGroup}(P) \;=\;
       \mathrm{relabel}\bigl(
-        \mathrm{abstract}_{\mathrm{netEvtLabels}}(\mathrm{netPre}(P))\bigr),
+        \mathrm{abstract}_{\mathrm{netEvtLabels}}(\mathrm{deployedPre}(P))\bigr),
   \]
   \[
-    \mathrm{netFlat}(P) \;=\; \mathrm{abstract}_H\bigl(\mathrm{netGroup}(P)\bigr),
+    \mathrm{deployed}(P) \;=\; \mathrm{abstract}_H\bigl(\mathrm{deployedGroup}(P)\bigr),
   \]
   where $\mathrm{wccLift}(P)$ is the oracle read along $\mathrm{wccPull}$ and $H$ is the sub-protocol API of Definition~\ref{def:aba-labels}.
-  Hiding $\mathrm{netEvtLabels}$ discharges the extended alphabet, so $\mathrm{netGroup}(P)$ speaks exactly $\mathrm{Lab}(n)$.
-  Full construction: \leandecl{PLTS.ABA.Net.netAdv} and \leandecl{PLTS.ABA.Net.netFlat}.
+  Hiding $\mathrm{netEvtLabels}$ discharges the extended alphabet, so $\mathrm{deployedGroup}(P)$ speaks exactly $\mathrm{Lab}(n)$.
+  Full construction: \leandecl{PLTS.ABA.Net.netAdv} and \leandecl{PLTS.ABA.Net.deployed}.
 \end{definition}

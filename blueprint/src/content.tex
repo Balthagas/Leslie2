@@ -87,7 +87,7 @@ No reasoning about schedulers, path measures or infinite executions survives int
 Safety properties are stated on the supports of achievable trace distributions, and the trace-support bridge below carries such a property from a system to every system it simulates.
 The bridge is in \leanmodule{Leslie2Protocols/Framework/TraceSupport} and the composition operators are in \leanmodule{Leslie2/ProcessAlgebra/Composition} and \leanmodule{Leslie2/ProcessAlgebra/Abstract}.
 The synchronised product of the nodes is in \leanmodule{Leslie2Protocols/Framework/SyncProduct} and the idle-padded instance families are in \leanmodule{Leslie2Protocols/Framework/IdleFamily}.
-The restriction along the left embedding is in \leanmodule{Leslie2Protocols/Framework/Relabel} and the precongruence it enjoys is proved in \leanmodule{Leslie2Protocols/ABA/FlatSpec}.
+The restriction along the left embedding and the precongruence it enjoys are both in \leanmodule{Leslie2Protocols/Framework/Relabel}.
 
 \input{nodes-min/thm-trace-support}
 \input{nodes-min/def-process-algebra}
@@ -190,13 +190,13 @@ The stage record is in \leanmodule{Leslie2Protocols/ABA/GBCAImpl} and the contro
 
 What runs is $n$ corruption-blind programs, a network adversary holding the message pools and the corrupted set with its budget, and a coin oracle held at specification level.
 The rendezvous the shared alphabet cannot name are carried by an extended alphabet, hidden to $\tau$ and then discharged by the restriction, so what leaves the outermost frame is the alphabet the ABA specification speaks.
-See \leanmodule{Leslie2Protocols/ABA/FlatNetwork}.
+See \leanmodule{Leslie2Protocols/ABA/Deployed}.
 
 \input{nodes-min/def-aba-procnet}
 \input{nodes-min/def-aba-netadv}
 
-\blueprintfig{fig-flat}{The deployed system \leandecl{PLTS.ABA.Net.netFlat}: the $n$ programs \leandecl{PLTS.ABA.Net.ABAProcN} under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} over the state \leandecl{PLTS.ABA.Net.NetState}, and the coin oracle beside the group.
-The dashed vertical is Theorem~\ref{thm:aba-exploded-atd}, along the graph of $\mathrm{regroup}$ and its converse.}
+\blueprintfig{fig-deployed}{The deployed system \leandecl{PLTS.ABA.Net.deployed}: the $n$ programs \leandecl{PLTS.ABA.Net.ABAProcN} under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} over the state \leandecl{PLTS.ABA.Net.NetState}, and the coin oracle beside the group.
+The dashed vertical is Theorem~\ref{thm:aba-layered-atd}, along the graph of $\mathrm{regroup}$ and its converse.}
 
 \subsection{The graded-agreement stage}
 
@@ -270,31 +270,31 @@ See \leanmodule{Leslie2Protocols/ABA/GBCASim}.
 \blueprintfig{fig-gbca-sim}{The GBCA instance forward simulation \leandecl{PLTS.ABA.GBCA.implRefines}, along the relation \leandecl{PLTS.ABA.GBCA.instRel}: implementation rows above, specification-instance states below, dashed verticals the relation.
 A return whose bit the specification has not yet excluded is a burst, mapping to the weak step $\mathrm{bindUnset};\mathrm{ret}$ whose killed bit is pinned by the return's own kill certificate; a return whose kill has already happened maps to a single graded specification return.}
 
-\subsection{The exploded presentation}
+\subsection{The layered presentation}
 
 A sub-protocol may be exchanged for its specification where it is a component of a composition, and the deployed protocol does not present the graded-agreement layer as one.
 This subsection re-cuts the same system so that a layer boundary is a component boundary, the cut being decided by which factor owns the round's message fabric, and it proves the re-cut exact in both directions.
 Exactness matters and an inclusion would not do: the chain is read as a statement about the deployed system, so the first step has to leave the deployed behaviour untouched rather than over-approximate it.
-See \leanmodule{Leslie2Protocols/ABA/GBCASub} and \leanmodule{Leslie2Protocols/ABA/Exploded}.
+See \leanmodule{Leslie2Protocols/ABA/GBCASub} and \leanmodule{Leslie2Protocols/ABA/Layered}.
 
 \input{nodes-min/def-aba-gbcasub}
 \input{nodes-min/thm-aba-subsim}
-\input{nodes-min/def-aba-exploded}
+\input{nodes-min/def-aba-layered}
 
-\blueprintfig{fig-exploded}{The exploded system \leandecl{PLTS.ABA.exploded} and the substitution: the four factors of Definition~\ref{def:aba-exploded} inside the two hiding frames of the deployed pipeline.
+\blueprintfig{fig-layered}{The layered system \leandecl{PLTS.ABA.Layer.layered} and the substitution: the four factors of Definition~\ref{def:aba-layered} inside the two hiding frames of the deployed pipeline.
 The round subsystem \leandecl{PLTS.ABA.GSub.sub} is drawn open, the $n$ stage programs of round $r$ beside that round's own message fabric, with the multicast and the delivery hidden inside its own frame.
 The left slot is the refinable one: Theorem~\ref{thm:aba-substitution} replaces the family of round subsystems by the family of round specifications and leaves the other three factors as they stand.}
 
-\input{nodes-min/thm-aba-exploded-atd}
+\input{nodes-min/thm-aba-layered-atd}
 
 \subsection{The substitution}
 
-The graded-agreement family occupies the refinable slot of the exploded system, so exchanging it for its specification is one family congruence followed by the precongruences of the pipeline, and no transitivity of simulations enters.
+The graded-agreement family occupies the refinable slot of the layered system, so exchanging it for its specification is one family congruence followed by the precongruences of the pipeline, and no transitivity of simulations enters.
 What the idealisation removes is the round's message fabric and every Byzantine power over it; the DECIDED layer, the corrupted set with the budget $|F| < f$ as the guard on the $\mathrm{fail}$ row, and the authorisation of every Byzantine drive are outside the exchanged factor and survive unchanged.
-See \leanmodule{Leslie2Protocols/Framework/FamilySim} and \leanmodule{Leslie2Protocols/ABA/FlatSpec}.
+See \leanmodule{Leslie2Protocols/Framework/FamilySim} and \leanmodule{Leslie2Protocols/ABA/LayeredSpec}.
 
 \input{nodes-min/thm-gbca-family-refines}
-\input{nodes-min/def-aba-flatspec}
+\input{nodes-min/def-aba-layeredspec}
 \input{nodes-min/thm-aba-substitution}
 
 \subsection{From the deployment-shaped specification to the ABA specification}
@@ -304,33 +304,33 @@ Assembling $n$ nodes and a network into one record loses the distinction between
 The simulation's abstract twin is lazy and two-phase (D16), deferring the decision to a single weak step under the first visible return, which is what a forward simulation permits and a strong one does not.
 See \leanmodule{Leslie2Protocols/ABA/Hybrid} and \leanmodule{Leslie2Protocols/ABA/CoreSim}.
 
-\input{nodes-min/thm-aba-flatspec-spec}
+\input{nodes-min/thm-aba-layeredspec-spec}
 
 \blueprintfig{fig-hybrid}{The waypoint of the proof, \leandecl{PLTS.ABA.hybridSpec}: the GBCA specification family, the monolithic round loop and the WCC specification family under $\mathrm{abstract}\,\mathrm{hiddenAPI}$.
-The dashed vertical is the repartition leg of Theorem~\ref{thm:aba-flatspec-spec}, along the graph of $\mathrm{flatSpecDefl}$, which assembles the $n$ round-loop nodes and the ABA-side network into the one $\mathrm{CoreState}$ and leaves the round specifications and the coin oracle where they are.}
+The dashed vertical is the repartition leg of Theorem~\ref{thm:aba-layeredspec-spec}, along the graph of $\mathrm{layeredSpecDefl}$, which assembles the $n$ round-loop nodes and the ABA-side network into the one $\mathrm{CoreState}$ and leaves the round specifications and the coin oracle where they are.}
 
-\blueprintfig{fig-coresim}{The simulation leg of Theorem~\ref{thm:aba-flatspec-spec} out of that waypoint, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
+\blueprintfig{fig-coresim}{The simulation leg of Theorem~\ref{thm:aba-layeredspec-spec} out of that waypoint, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
 
 \subsection{The main theorems}
 
 Three steps separate the deployed protocol from the ABA specification:
 \[
-  \mathrm{netFlat}(P)
-  \;\overset{\text{(1)}}{=}\; \mathrm{exploded}(P)
-  \;\overset{\text{(2)}}{\sqsubseteq}\; \mathrm{flatSpec}(P)
+  \mathrm{deployed}(P)
+  \;\overset{\text{(1)}}{=}\; \mathrm{layered}(P)
+  \;\overset{\text{(2)}}{\sqsubseteq}\; \mathrm{layeredSpec}(P)
   \;\overset{\text{(3)}}{\sqsubseteq}\; \mathrm{spec}(P),
 \]
-where (1) is the regrouping of Theorem~\ref{thm:aba-exploded-atd}, exact in both directions; (2) the substitution of Theorem~\ref{thm:aba-substitution}; and (3) the refinement of Theorem~\ref{thm:aba-flatspec-spec}, whose proof repartitions state onto the monolithic composition and applies the core simulation there.
+where (1) is the regrouping of Theorem~\ref{thm:aba-layered-atd}, exact in both directions; (2) the substitution of Theorem~\ref{thm:aba-substitution}; and (3) the refinement of Theorem~\ref{thm:aba-layeredspec-spec}, whose proof repartitions state onto the monolithic composition and applies the core simulation there.
 Safety then transfers by Theorem~\ref{thm:trace-support}, with no hypothesis on the trace beyond positive probability, and both properties are stated on all returns, corrupted returners included.
 The chain is assembled in \leanmodule{Leslie2Protocols/ABA/Main}.
 
-\input{nodes-min/thm-aba-netflat}
+\input{nodes-min/thm-aba-deployed}
 \input{nodes-min/thm-aba-main}
 
 \subsection{Non-vacuity}
 
 A refinement statement is compatible with a system that does nothing.
-The chain is therefore accompanied by machine-checked witnesses that the composition the proof of Theorem~\ref{thm:aba-flatspec-spec} passes through executes and reaches a return at $n = 4$ and $f = 1$, on a connected run of positive probability that exercises the one probabilistic transition on the way, and that the $\mathrm{fail}$ label is live in that composition rather than merely declared.
+The chain is therefore accompanied by machine-checked witnesses that the composition the proof of Theorem~\ref{thm:aba-layeredspec-spec} passes through executes and reaches a return at $n = 4$ and $f = 1$, on a connected run of positive probability that exercises the one probabilistic transition on the way, and that the $\mathrm{fail}$ label is live in that composition rather than merely declared.
 Membership of a decision trace in the achievable trace distributions of the deployed protocol is not established; the witnesses are about that composition alone.
 See \leanmodule{Leslie2Protocols/ABA/Examples}.
 

@@ -1,0 +1,11 @@
+\begin{theorem}[The layered presentation is exact]
+  \label{thm:aba-layered-atd}
+  \lean{PLTS.ABA.Layer.regG}\lean{PLTS.ABA.Layer.regC}\lean{PLTS.ABA.Layer.regA}\lean{PLTS.ABA.Layer.regroup}\lean{PLTS.ABA.Layer.layeredForward}\lean{PLTS.ABA.Layer.layeredConverse}\lean{PLTS.ABA.Layer.layeredSim}\lean{PLTS.ABA.Layer.layeredSimConverse}\lean{PLTS.ABA.Layer.layered_atd}\leanok
+  \uses{def:aba-layered, def:aba-procnet, def:aba-netadv, def:strongfunctional, def:achievable, thm:forward-sound}
+  The deployed system and the same system cut along its layer boundaries achieve exactly the same trace distributions, $\operatorname{ATD}(\mathrm{deployed}(P)) = \operatorname{ATD}(\mathrm{layered}(P))$: \leandecl{PLTS.ABA.Layer.layered_atd}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-layered, def:aba-procnet, def:aba-netadv, def:strongfunctional, def:achievable, thm:forward-sound}
+  See the Lean proof of \leandecl{PLTS.ABA.Layer.layered_atd}.
+\end{proof}

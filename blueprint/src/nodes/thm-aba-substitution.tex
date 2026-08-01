@@ -1,17 +1,17 @@
 \begin{theorem}[Substitution]
   \label{thm:aba-substitution}
-  \lean{PLTS.ABA.substSimX}\lean{PLTS.ABA.substitutionX}\lean{PLTS.ABA.netFlat_flatSpec}\leanok
-  \uses{def:aba-flatspec, def:aba-exploded, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-exploded-atd, def:achievable}
-  Replacing each round's graded-agreement subsystem by its specification, the other three factors untouched, is a probabilistic forward simulation of $\mathrm{exploded}(P)$ by $\mathrm{flatSpec}(P)$, and hence a trace-distribution inclusion.
-  Composed with Theorem~\ref{thm:aba-exploded-atd},
+  \lean{PLTS.ABA.substSim}\lean{PLTS.ABA.substitution}\lean{PLTS.ABA.deployed_layeredSpec}\leanok
+  \uses{def:aba-layeredspec, def:aba-layered, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-layered-atd, def:achievable}
+  Replacing each round's graded-agreement subsystem by its specification, the other three factors untouched, is a probabilistic forward simulation of $\mathrm{layered}(P)$ by $\mathrm{layeredSpec}(P)$, and hence a trace-distribution inclusion.
+  Composed with Theorem~\ref{thm:aba-layered-atd},
   \[
-    \operatorname{ATD}(\mathrm{netFlat}(P)) \;\subseteq\;
-    \operatorname{ATD}(\mathrm{flatSpec}(P)).
+    \operatorname{ATD}(\mathrm{deployed}(P)) \;\subseteq\;
+    \operatorname{ATD}(\mathrm{layeredSpec}(P)).
   \]
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-flatspec, def:aba-exploded, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-exploded-atd}
+  \uses{def:aba-layeredspec, def:aba-layered, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-layered-atd}
   The two systems are the same expression with one subterm replaced, so the precongruences apply to the family refinement of Theorem~\ref{thm:gbca-family-refines} along the shape of that expression: parallel composition against the fixed right-hand factor (Theorem~\ref{thm:precong-parallel}), hiding the rendezvous alphabet (Theorem~\ref{thm:precong-abstract}), reading the result back over $\mathrm{Lab}(n)$ (Theorem~\ref{thm:precong-relabel}), and hiding the sub-protocol API (Theorem~\ref{thm:precong-abstract} again).
-  Soundness (Theorem~\ref{thm:forward-sound}) turns the resulting simulation into $\operatorname{ATD}(\mathrm{exploded}(P)) \subseteq \operatorname{ATD}(\mathrm{flatSpec}(P))$, and Theorem~\ref{thm:aba-exploded-atd} rewrites its left-hand side.
+  Soundness (Theorem~\ref{thm:forward-sound}) turns the resulting simulation into $\operatorname{ATD}(\mathrm{layered}(P)) \subseteq \operatorname{ATD}(\mathrm{layeredSpec}(P))$, and Theorem~\ref{thm:aba-layered-atd} rewrites its left-hand side.
 \end{proof}

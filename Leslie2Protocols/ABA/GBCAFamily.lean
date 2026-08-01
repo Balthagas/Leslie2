@@ -21,7 +21,7 @@ lifting (`ABA/GBCASub.lean`).
 
 `Framework/FamilySim.lean` is imported here for the downstream tree: the family
 congruence `ForwardSimulation.family` reaches `ABA/GBCASub.lean` and
-`ABA/FlatSpec.lean` along this file.
+`ABA/LayeredSpec.lean` along this file.
 -/
 
 namespace PLTS

@@ -4,13 +4,14 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.CoreSimRel
+import Leslie2Protocols.ABA.CoreSimAbs
 import Leslie2Protocols.ABA.CoreSimBurst
 
 /-!
 # The core simulation `hybridSpec ⊑ ABA.spec`
 
-Assembles `CoreSimRel`'s invariant/relation and `CoreSimBurst`'s burst kit into the theorem
+Assembles the invariant/relation of the `CoreSimRel`/`CoreSimInv`/`CoreSimAbs` chain and
+`CoreSimBurst`'s burst kit into the theorem
 `coreSim`, the probabilistic forward simulation `hybridSpec P ⊑ spec P` along `coreRel P`.
 -/
 

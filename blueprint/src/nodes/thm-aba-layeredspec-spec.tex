@@ -1,0 +1,21 @@
+\begin{theorem}[The deployment-shaped specification refines the ABA specification]
+  \label{thm:aba-layeredspec-spec}
+  \lean{PLTS.ABA.context}\lean{PLTS.ABA.hybridSpec}\lean{PLTS.ABA.deflCore}\lean{PLTS.ABA.layeredSpecDefl}\lean{PLTS.ABA.layeredSpecForward}\lean{PLTS.ABA.layeredSpecSim}\lean{PLTS.ABA.layeredSpec_refines}\lean{PLTS.ABA.coreSim}\leanok
+  \uses{def:aba-layeredspec, def:aba-spec, def:aba-core, def:aba-subspecs, def:aba-labels, def:process-algebra, def:idle-family, def:strongfunctional, def:achievable, thm:forward-sound}
+  For all parameters $P$,
+  \[
+    \operatorname{ATD}(\mathrm{layeredSpec}(P)) \;\subseteq\;
+    \operatorname{ATD}(\mathrm{spec}(P)).
+  \]
+  The two systems are compared on the ABA interface alone, namely $\mathrm{callABA}(i,b)$, $\mathrm{retABA}(i,b)$, $\mathrm{fail}(i)$ and $\tau$; the sub-protocol API, the labels $\mathrm{callG}(r,i,b)$, $\mathrm{retG}(r,i,g)$, $\mathrm{callW}(r,i)$ and $\mathrm{retW}(r,i,c)$ for $r \in \mathbb{N}$, $i \in [n]$, bits $b$ and $c$ and graded outcomes $g \in \{A\,0, A\,1, B\,0, B\,1, C\}$, is hidden at the outer frame of $\mathrm{layeredSpec}(P)$.
+  Headline: \leandecl{PLTS.ABA.layeredSpec_spec}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-layeredspec, def:aba-spec, def:strongfunctional, def:weakstep, def:achievable, thm:forward-sound}
+  The route passes through the monolithic composition $\mathrm{hybridSpec}(P) = \mathrm{abstract}_H\bigl(\mathrm{GBCA.specFamily}(P) \parallel \mathrm{context}(P)\bigr)$, \leandecl{PLTS.ABA.hybridSpec}, which holds the same four layers as $\mathrm{layeredSpec}(P)$ under a coarser partition: the monolithic round loop of Definition~\ref{def:aba-core} beside the coin oracle, with the graded-agreement layer read at specification level.
+  The deflation \leandecl{PLTS.ABA.layeredSpecDefl} is the inverse cut: it assembles the $n$ round loops and the ABA-side network into the monolithic $\mathrm{CoreState}$, carries the initial state to the initial state, and read through it each row of $\mathrm{layeredSpec}(P)$ is the matching one-row update of the monolithic state, the fused coin return $\mathrm{retWPub}$ rejoining the single $\mathrm{retW}$ row it was cut from (D10), the two $\mathrm{fail}$ rows sharing the guard $k \notin F \wedge |F| < f$ with each layer holding its own copy of the corrupted set (D1), and the two hiding frames of Definition~\ref{def:aba-layeredspec} being applied in the order of the composition's single frame.
+  So the deflation commutes with steps, Lemma~\ref{def:strongfunctional} gives a probabilistic forward simulation along its graph, and soundness (Theorem~\ref{thm:forward-sound}) turns it into $\operatorname{ATD}(\mathrm{layeredSpec}(P)) \subseteq \operatorname{ATD}(\mathrm{hybridSpec}(P))$, \leandecl{PLTS.ABA.layeredSpec_refines}.
+  The core simulation \leandecl{PLTS.ABA.coreSim} carries the composition into $\mathrm{spec}(P)$ under the relation $Inv \wedge Abs$, checked row by row: $Abs$ pins the corrupted set, the returns and $coin = \bot$, so the twin never fires the coin rule, and is two-phase on the twin's $val$ (D16); every hidden row and the coin flip are answered by an $Abs$-frame stutter under a constant coupling; the first $\mathrm{retABA}$ is answered by the single $\mathrm{decide\_burst}$ weak step, whose bind is licensed by the $f{+}1$ input support carried in the invariant and whose $A$-lock certificate comes from a pigeonhole on the $n-f$ DECIDED tally behind the return; and a $\mathrm{fail}$ row is answered by the corruption broadcast.
+  Its soundness inclusion chains with the deflation's by transitivity of set inclusion.
+\end{proof}

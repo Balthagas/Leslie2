@@ -1,0 +1,11 @@
+\begin{theorem}[Safety of the deployed protocol]
+  \label{thm:aba-deployed}
+  \lean{PLTS.ABA.layeredSpec_spec}\lean{PLTS.ABA.deployed_spec}\lean{PLTS.ABA.deployed_safe}\lean{PLTS.ABA.deployed_traces}\lean{PLTS.ABA.layered_safe}\leanok
+  \uses{def:aba-procnet, def:aba-netadv, thm:aba-layered-atd, thm:aba-substitution, thm:aba-layeredspec-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
+  The deployed protocol refines the ABA specification, and every trace of positive probability under an achievable trace distribution of it satisfies Validity and Agreement: \leandecl{PLTS.ABA.deployed_spec}, \leandecl{PLTS.ABA.deployed_safe}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:aba-layered-atd, thm:aba-substitution, thm:aba-layeredspec-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
+  See the Lean proofs of \leandecl{PLTS.ABA.deployed_spec} and \leandecl{PLTS.ABA.deployed_safe}.
+\end{proof}

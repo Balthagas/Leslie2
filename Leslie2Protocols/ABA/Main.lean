@@ -4,12 +4,12 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.FlatSpec
+import Leslie2Protocols.ABA.LayeredSpec
 
 /-!
 # The main theorems of the ABA case study
 
-The subject is the deployed protocol `Net.netFlat P`: `n` corruption-blind
+The subject is the deployed protocol `Net.deployed P`: `n` corruption-blind
 programs, one per process, beside two boxes that are not processes — the
 network adversary, which owns the message pools, the DECIDED pools and the
 corrupted set with its budget, and the common-coin oracle, the only factor
@@ -25,16 +25,16 @@ whose traces satisfy Validity and Agreement (`spec_safe`, `SpecSafety.lean`).
 Four probabilistic forward simulations carry the deployed protocol to the
 specification:
 
-1. `explodedSim` (`Exploded.lean`) — re-cut the deployed state so that a
+1. `layeredSim` (`Layered.lean`) — re-cut the deployed state so that a
    *layer* boundary is a *component* boundary: the family of graded-agreement
    round subsystems, the `n` round loops, the DECIDED layer beside the
    corrupted set, and the coin oracle. The re-cut is exact in both directions
-   (`exploded_atd`).
-2. `substSimX` (`FlatSpec.lean`) — replace each round's graded-agreement
+   (`layered_atd`).
+2. `substSim` (`LayeredSpec.lean`) — replace each round's graded-agreement
    subsystem by its specification, the other three factors untouched: the
    family substitution carried by four congruences (`parallel_right`,
    `abstract`, `relabel`, `abstract`).
-3. `flatSpecSim` (`FlatSpec.lean`) — repartition the two ABA-side factors into
+3. `layeredSpecSim` (`LayeredSpec.lean`) — repartition the two ABA-side factors into
    the monolithic coordinator state, reaching `hybridSpec`.
 4. `coreSim` (`CoreSim.lean`) — the hand-built simulation of the coordinator
    against the specification.
@@ -68,15 +68,65 @@ clean axiom list `[propext, Classical.choice, Quot.sound]`.
 namespace PLTS
 namespace ABA
 
-open Net
+open Net Layer
+
+/-! ### The chain, link by link
+
+Cut the deployed reading along its layer boundaries (`layered_atd`), substitute
+each round's graded-agreement subsystem by its specification at the deployed
+shape (`substitution`), deflate the two ABA-side factors into the monolithic
+core (`layeredSpec_refines`), then take the core simulation (`coreSim`). Every
+step is a simulation between systems the deployed reading itself names. -/
+
+/-- **The deployment-shaped specification refines the ABA specification**: the
+deflation inclusion chained with the core simulation's soundness. -/
+theorem layeredSpec_spec (P : Params) :
+    achievableTraceDists (layeredSpec P) ⊆ achievableTraceDists (spec P) :=
+  Set.Subset.trans (layeredSpec_refines P) (coreSim P).achievableTraceDists_subset
+
+/-- **The deployed protocol refines the ABA specification**: the substitution
+at the deployed shape, then the deflation, then the core simulation. -/
+theorem deployed_spec (P : Params) :
+    achievableTraceDists (deployed P) ⊆ achievableTraceDists (spec P) :=
+  Set.Subset.trans (deployed_layeredSpec P) (layeredSpec_spec P)
+
+/-- **Safety of the deployed reading**: every positive-probability trace of
+every achievable trace distribution of the `n` programs beside the network
+adversary and the coin oracle satisfies Validity and Agreement. The corruption
+budget is a guard of the network adversary's own `fail` row, so every deployed
+execution is in budget by construction and nothing is assumed of the
+traces. -/
+theorem deployed_safe (P : Params) :
+    ∀ D ∈ achievableTraceDists (deployed P), ∀ t, D t ≠ 0 →
+      ValidityTrace P t ∧ AgreementTrace t :=
+  safety_transfer (deployed_spec P) (spec_safe P)
+
+/-- **Trace conservativity of the deployed reading**: every
+positive-probability trace of the deployed protocol has positive probability
+under an achievable trace distribution of the deployment-shaped
+specification. -/
+theorem deployed_traces (P : Params) :
+    ∀ D ∈ achievableTraceDists (deployed P), ∀ t, D t ≠ 0 →
+      ∃ D' ∈ achievableTraceDists (layeredSpec P), D' t ≠ 0 :=
+  fun D hD _ ht => ⟨D, deployed_layeredSpec P hD, ht⟩
+
+/-- **Safety of the layered presentation**: the layered reading achieves
+exactly the trace distributions of the deployed one (`layered_atd`), so it
+inherits the same guarantee. -/
+theorem layered_safe (P : Params) :
+    ∀ D ∈ achievableTraceDists (layered P), ∀ t, D t ≠ 0 →
+      ValidityTrace P t ∧ AgreementTrace t :=
+  fun D hD => deployed_safe P D (by rw [layered_atd]; exact hD)
+
+/-! ### The two routes -/
 
 /-- **Trace-distribution refinement** (blueprint `thm:aba-main`, safety
 fragment): every trace distribution achievable by the deployed protocol is
-achievable by the ABA specification. The explosion and the substitution give
+achievable by the ABA specification. The layering and the substitution give
 the first inclusion, the repartition and the core simulation the second. -/
 theorem refines (P : Params) :
-    achievableTraceDists (netFlat P) ⊆ achievableTraceDists (spec P) :=
-  Set.Subset.trans (netFlat_flatSpec P) (flatSpec_spec P)
+    achievableTraceDists (deployed P) ⊆ achievableTraceDists (spec P) :=
+  Set.Subset.trans (deployed_layeredSpec P) (layeredSpec_spec P)
 
 /-- **Correctness of ABA** (blueprint `thm:aba-main`, safety fragment):
 every positive-probability trace of the deployed protocol satisfies Validity
@@ -84,26 +134,62 @@ and Agreement. No side condition on the traces: the corruption budget is a
 guard of the network adversary's own `fail` row, so every deployed execution
 is in budget by construction. -/
 theorem main (P : Params) :
-    ∀ D ∈ achievableTraceDists (netFlat P), ∀ t, D t ≠ 0 →
+    ∀ D ∈ achievableTraceDists (deployed P), ∀ t, D t ≠ 0 →
       ValidityTrace P t ∧ AgreementTrace t :=
   safety_transfer (refines P) (spec_safe P)
 
-/-- **The composed simulation** `netFlat ⊑ ABA.spec`: the four simulations of
+/-- **The composed simulation** `deployed ⊑ ABA.spec`: the four simulations of
 the chain joined by Result 2 (`ProbabilisticForwardSimulation.trans`), along
 the composite of their four relations — the graph of the regrouping, the
 pointwise round substitution, the graph of the spec-side repartition, and the
 core relation. -/
 noncomputable def simComposed (P : Params) :
-    ProbabilisticForwardSimulation (netFlat P) (spec P)
+    ProbabilisticForwardSimulation (deployed P) (spec P)
       (compRel (fun s ν => ν = PMF.pure (regroup s))
         (compRel (parallelRel (diracRel (RsubAll P)))
-          (compRel (fun s ν => ν = PMF.pure (flatSpecDefl P s)) (coreRel P)))) :=
-  (explodedSim P).trans ((substSimX P).trans ((flatSpecSim P).trans (coreSim P)))
+          (compRel (fun s ν => ν = PMF.pure (layeredSpecDefl P s)) (coreRel P)))) :=
+  (layeredSim P).trans ((substSim P).trans ((layeredSpecSim P).trans (coreSim P)))
 
 /-! ### Mechanical axiom firewall
 
 Neither the headlines nor the framework results the chain rests on may acquire
 a `sorryAx` dependence. -/
+
+/-- info: 'PLTS.ProbabilisticForwardSimulation.relabel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms ProbabilisticForwardSimulation.relabel
+
+/-- info: 'PLTS.ABA.substitution' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms substitution
+
+/-- info: 'PLTS.ABA.deployed_layeredSpec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms deployed_layeredSpec
+
+/-- info: 'PLTS.ABA.layeredSpec_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms layeredSpec_refines
+
+/-- info: 'PLTS.ABA.layeredSpec_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms layeredSpec_spec
+
+/-- info: 'PLTS.ABA.deployed_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms deployed_spec
+
+/-- info: 'PLTS.ABA.deployed_safe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms deployed_safe
+
+/-- info: 'PLTS.ABA.deployed_traces' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms deployed_traces
+
+/-- info: 'PLTS.ABA.layered_safe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms layered_safe
 
 /-- info: 'PLTS.ABA.main' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

@@ -1,15 +1,15 @@
-\begin{definition}[The exploded system]
-  \label{def:aba-exploded}
-  \lean{PLTS.ABA.CoreProcStepN}\lean{PLTS.ABA.coreProcN}\lean{PLTS.ABA.ANetState}\lean{PLTS.ABA.ANetState.corrupt}\lean{PLTS.ABA.ANetStep}\lean{PLTS.ABA.aNet}\lean{PLTS.ABA.ExpState}\lean{PLTS.ABA.explodedPre}\lean{PLTS.ABA.explodedGroup}\lean{PLTS.ABA.exploded}\leanok
+\begin{definition}[The layered system]
+  \label{def:aba-layered}
+  \lean{PLTS.ABA.Layer.CoreProcStepN}\lean{PLTS.ABA.Layer.coreProcN}\lean{PLTS.ABA.Layer.ANetState}\lean{PLTS.ABA.Layer.ANetState.corrupt}\lean{PLTS.ABA.Layer.ANetStep}\lean{PLTS.ABA.Layer.aNet}\lean{PLTS.ABA.Layer.LayeredState}\lean{PLTS.ABA.Layer.layeredPre}\lean{PLTS.ABA.Layer.layeredGroup}\lean{PLTS.ABA.Layer.layered}\leanok
   \uses{def:aba-gbcasub, def:aba-procnet, def:aba-netadv, def:aba-core-vocab, def:relabel, def:syncproduct, def:process-algebra}
   The deployed protocol cut along its layer boundaries into four factors over the extended alphabet $\mathrm{NLab}(n)$: the family $\mathrm{gbcaSide}(P)$ of round subsystems, the round loop $\mathrm{coreProcN}(P,j)$ of each process, the ABA-side network $\mathrm{aNet}(P)$ holding the DECIDED pools (D12$'$) and the corrupted set with its budget, and the coin oracle joined through $\mathrm{wccPull}$.
   \[
-    \mathrm{explodedPre}(P) \;=\;
+    \mathrm{layeredPre}(P) \;=\;
       \mathrm{gbcaSide}(P) \parallel \bigl(\mathrm{syncProduct}_{j}\ \mathrm{coreProcN}(P,j)
         \parallel (\mathrm{aNet}(P) \parallel \mathrm{wccLift}(P))\bigr)
   \]
-  runs through the pipeline of Definition~\ref{def:aba-netadv} factor for factor, giving $\mathrm{explodedGroup}(P)$ inside the inner frame and $\mathrm{exploded}(P)$ inside the outer.
+  runs through the pipeline of Definition~\ref{def:aba-netadv} factor for factor, giving $\mathrm{layeredGroup}(P)$ inside the inner frame and $\mathrm{layered}(P)$ inside the outer.
   A round loop is not round-filtered: it answers every round's $\mathrm{callG}$, its own as a participant and every other process's as a bystander.
   The graded-agreement family occupies the left argument of the outer parallel composition, which is the refinable slot.
-  Full construction: \leandecl{PLTS.ABA.exploded}, over \leandecl{PLTS.ABA.coreProcN} and \leandecl{PLTS.ABA.aNet}.
+  Full construction: \leandecl{PLTS.ABA.Layer.layered}, over \leandecl{PLTS.ABA.Layer.coreProcN} and \leandecl{PLTS.ABA.Layer.aNet}.
 \end{definition}

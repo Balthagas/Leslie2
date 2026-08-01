@@ -1,6 +1,6 @@
 \begin{definition}[The network adversary and the deployed composition]
   \label{def:aba-netadv}
-  \lean{PLTS.ABA.Net.NetState}\lean{PLTS.ABA.Net.NetState.corrupt}\lean{PLTS.ABA.Net.NetStep}\lean{PLTS.ABA.Net.netAdv}\lean{PLTS.System.mapIdle}\lean{PLTS.ABA.Net.wccPull}\lean{PLTS.ABA.Net.wccLift}\lean{PLTS.ABA.Net.netPre}\lean{PLTS.ABA.Net.netGroup}\lean{PLTS.ABA.Net.netFlat}\leanok
+  \lean{PLTS.ABA.Net.NetState}\lean{PLTS.ABA.Net.NetState.corrupt}\lean{PLTS.ABA.Net.NetStep}\lean{PLTS.ABA.Net.netAdv}\lean{PLTS.System.mapIdle}\lean{PLTS.ABA.Net.wccPull}\lean{PLTS.ABA.Net.wccLift}\lean{PLTS.ABA.Net.deployedPre}\lean{PLTS.ABA.Net.deployedGroup}\lean{PLTS.ABA.Net.deployed}\leanok
   \uses{def:aba-procnet, def:aba-labels, def:aba-params, def:relabel, def:syncproduct, def:process-algebra}
-  The network adversary holds the per-sender message pools and the corrupted set with its budget, and the deployed system composes it with the $n$ programs and the coin oracle under the two hiding frames: \leandecl{PLTS.ABA.Net.netAdv} and \leandecl{PLTS.ABA.Net.netFlat}.
+  The network adversary holds the per-sender message pools and the corrupted set with its budget, and the deployed system composes it with the $n$ programs and the coin oracle under the two hiding frames: \leandecl{PLTS.ABA.Net.netAdv} and \leandecl{PLTS.ABA.Net.deployed}.
 \end{definition}

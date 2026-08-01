@@ -274,7 +274,7 @@ corrupted set and the corruption budget.
 Substitution needs the layer it replaces to be a component, so the first step
 of the argument re-cuts that system along its layer boundaries, which is a
 change of partition and not of system
-(Theorem~\ref{thm:aba-exploded-atd}).
+(Theorem~\ref{thm:aba-layered-atd}).
 The substitution then runs in those coordinates, and one further repartition
 puts the result in the shape the hand-built core simulation is written
 against.
@@ -458,7 +458,7 @@ projects onto, which is how the refinement proved of it transports
 (Theorem~\ref{thm:aba-subsim}).
 The round-loop inventory is a factor of the composition the core simulation is
 written against, reached from the deployed shape by a repartition of state
-(Theorem~\ref{thm:aba-flatspec-spec}).
+(Theorem~\ref{thm:aba-layeredspec-spec}).
 The forms name one system in each case, and the choice between them fixes only
 which state a rule is written to read.
 
@@ -584,13 +584,13 @@ alone.
 
 \input{nodes/def-aba-netadv}
 
-\blueprintfig{fig-flat}{The deployed system \leandecl{PLTS.ABA.Net.netFlat}: the $n$ programs $\mathrm{ABAProcN}(P,j)$, \leandecl{PLTS.ABA.Net.ABAProcN}, under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} and the coin oracle beside the group.
+\blueprintfig{fig-deployed}{The deployed system \leandecl{PLTS.ABA.Net.deployed}: the $n$ programs $\mathrm{ABAProcN}(P,j)$, \leandecl{PLTS.ABA.Net.ABAProcN}, under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} and the coin oracle beside the group.
 Each program holds one process's round loop and its stage of every round; every guard of its forty-four rules reads that program's own node, and none of them names corruption.
 Its state \leandecl{PLTS.ABA.Net.NetState} holds the pools $pool(r,j)$ and $dpool(j)$ and the corrupted set $F$, and its twenty rules supply the other half of every send, every delivery and every Byzantine drive; the corruption budget is the guard on its own $\mathrm{fail}$ row.
 The inner dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netEvtLabels}$: every $\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$, $\mathrm{retWPub}$, $\mathrm{gcallLoop}$ and Byzantine drive becomes $\tau$.
 The coin oracle is joined through the partial map $\mathrm{wccPull}$, so the drives $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ and the fused return $\mathrm{retWPub}$ reach it as coin handshakes while the network labels leave it idle.
 The outer dashed frame is $\mathrm{abstract}_H$, which hides the coin handshake $\mathrm{callW}/\mathrm{retW}$; what leaves it is the API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ together with $\tau$.
-The dashed vertical is Theorem~\ref{thm:aba-exploded-atd}: the deployed system and the same system cut along its layer boundaries achieve the same trace distributions, along the graph of $\mathrm{regroup}$ and its converse.}
+The dashed vertical is Theorem~\ref{thm:aba-layered-atd}: the deployed system and the same system cut along its layer boundaries achieve the same trace distributions, along the graph of $\mathrm{regroup}$ and its converse.}
 
 \dynamics{What is distributed and what is not}{%
 Calling the encoding a distributed algorithm is a claim about which state a
@@ -1545,7 +1545,7 @@ Every delivery, relay, echo, vote, bind and seal row maps to a specification stu
 A return whose bit the specification has not yet excluded is a burst: it maps to the weak step $\mathrm{bindUnset};\mathrm{ret}$, whose $f{+}1$ support is supplied by the $input\_supp$ invariant and whose killed bit is pinned by the return's own kill certificate.
 Every return row does the same case split on $dead$, $C$-returns included, however many returns preceded it; a return whose kill has already happened maps to a single graded specification return.}
 
-\subsection{The exploded presentation}
+\subsection{The layered presentation}
 
 A sub-protocol may be replaced by its specification where it is a component of
 a composition, and nowhere else.
@@ -1556,7 +1556,7 @@ Each program runs two layers at once --- its round loop and one stage record
 per round --- and the single network adversary holds the message pools of both
 layers.
 This subsection re-cuts the same system so that a layer boundary is a
-component boundary, and Theorem~\ref{thm:aba-exploded-atd} states that the
+component boundary, and Theorem~\ref{thm:aba-layered-atd} states that the
 re-cut is exact in both directions.
 
 The cut is decided by one question: which network does a factor own?
@@ -1570,19 +1570,19 @@ The subsystem of Definition~\ref{def:aba-gbcasub} is drawn to own it.
 
 \input{nodes/thm-aba-subsim}
 
-\input{nodes/def-aba-exploded}
+\input{nodes/def-aba-layered}
 
-\blueprintfig{fig-exploded}{The exploded system \leandecl{PLTS.ABA.exploded} and the substitution: the four factors of Definition~\ref{def:aba-exploded} inside the two hiding frames of the deployed pipeline.
+\blueprintfig{fig-layered}{The layered system \leandecl{PLTS.ABA.Layer.layered} and the substitution: the four factors of Definition~\ref{def:aba-layered} inside the two hiding frames of the deployed pipeline.
 The round subsystem $\mathrm{sub}(P,r)$, \leandecl{PLTS.ABA.GSub.sub}, is drawn open: the $n$ stage programs of round $r$ beside that round's own message fabric, with the multicast and the delivery hidden inside the subsystem's own frame.
 The left slot is the refinable one: Theorem~\ref{thm:aba-substitution} replaces the family of round subsystems by the family of round specifications and leaves the other three factors as they stand.
 Everything the round's message fabric holds --- the stage pools, the delivery guard, the injection $\mathrm{byzG}$ --- is inside the replaced factor.
 The DECIDED layer, the corrupted set with its budget, and the authorisation $k \in F$ of every Byzantine drive are outside it, at $\mathrm{aNet}(P)$, and survive the replacement unchanged.}
 
-\input{nodes/thm-aba-exploded-atd}
+\input{nodes/thm-aba-layered-atd}
 
 \subsection{The substitution}
 
-The graded-agreement family occupies the refinable slot of the exploded system,
+The graded-agreement family occupies the refinable slot of the layered system,
 so replacing it by its specification is one family congruence followed by one
 parallel precongruence, with the abstraction and restriction of the pipeline
 carried along.
@@ -1590,7 +1590,7 @@ No transitivity of simulations enters.
 
 \input{nodes/thm-gbca-family-refines}
 
-\input{nodes/def-aba-flatspec}
+\input{nodes/def-aba-layeredspec}
 
 \input{nodes/thm-aba-substitution}
 
@@ -1635,14 +1635,14 @@ Assembling $n$ nodes and a network into one record loses the distinction
 between states that differ only in how the same data is distributed, which is
 why the repartition is an inclusion and not an equality.
 
-\input{nodes/thm-aba-flatspec-spec}
+\input{nodes/thm-aba-layeredspec-spec}
 
 \blueprintfig{fig-hybrid}{The waypoint of the proof, $\mathrm{hybridSpec}(P)$, \leandecl{PLTS.ABA.hybridSpec}: the GBCA specification family, the monolithic round loop and the WCC specification family under $\mathrm{abstract}\,\mathrm{hiddenAPI}$.
 One illustrated rendezvous $\mathrm{callG}\,r\,id\,b$: the round loop emits it, instance $r$ steps on it, and every other instance idles.
 The $\mathrm{abstract}\,\mathrm{hiddenAPI}$ frame turns the GBCA and WCC handshake alphabet into $\tau$; the visible API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ leaves the frame.
-The dashed vertical is the repartition leg of Theorem~\ref{thm:aba-flatspec-spec}: the deployment-shaped specification $\mathrm{flatSpec}(P)$ reaches this composition along the graph of $\mathrm{flatSpecDefl}$, which assembles the $n$ round-loop nodes and the ABA-side network into the one $\mathrm{CoreState}$ and leaves the round specifications and the coin oracle where they are.}
+The dashed vertical is the repartition leg of Theorem~\ref{thm:aba-layeredspec-spec}: the deployment-shaped specification $\mathrm{layeredSpec}(P)$ reaches this composition along the graph of $\mathrm{layeredSpecDefl}$, which assembles the $n$ round-loop nodes and the ABA-side network into the one $\mathrm{CoreState}$ and leaves the round specifications and the coin oracle where they are.}
 
-\blueprintfig{fig-coresim}{The simulation leg of Theorem~\ref{thm:aba-flatspec-spec} out of that waypoint, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
+\blueprintfig{fig-coresim}{The simulation leg of Theorem~\ref{thm:aba-layeredspec-spec} out of that waypoint, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
 
 \dynamics{What the simulation buys}{%
 The abstract twin of a state of that composition is lazy.
@@ -1666,15 +1666,15 @@ trace of positive probability in the protocol as it runs.
 
 Three steps separate the deployed protocol from the ABA specification:
 \[
-  \mathrm{netFlat}(P)
-  \;\overset{\text{(1)}}{=}\; \mathrm{exploded}(P)
-  \;\overset{\text{(2)}}{\sqsubseteq}\; \mathrm{flatSpec}(P)
+  \mathrm{deployed}(P)
+  \;\overset{\text{(1)}}{=}\; \mathrm{layered}(P)
+  \;\overset{\text{(2)}}{\sqsubseteq}\; \mathrm{layeredSpec}(P)
   \;\overset{\text{(3)}}{\sqsubseteq}\; \mathrm{spec}(P),
 \]
-where (1) is the regrouping of Theorem~\ref{thm:aba-exploded-atd}, exact in
+where (1) is the regrouping of Theorem~\ref{thm:aba-layered-atd}, exact in
 both directions; (2) the substitution of
 Theorem~\ref{thm:aba-substitution}; and (3) the refinement of
-Theorem~\ref{thm:aba-flatspec-spec}, itself a repartition of state followed by
+Theorem~\ref{thm:aba-layeredspec-spec}, itself a repartition of state followed by
 the core simulation.
 The subject of the chain is the system as deployed.
 No step of it leaves the deployed vocabulary for the sake of the argument: (1)
@@ -1682,7 +1682,7 @@ and (2) are read in deployment coordinates throughout, and only the proof of
 (3) leaves deployment coordinates, for the composition the hand-built
 simulation is written against.
 
-\input{nodes/thm-aba-netflat}
+\input{nodes/thm-aba-deployed}
 
 \input{nodes/thm-aba-main}
 
@@ -1696,10 +1696,10 @@ it, and no theorem assumes it of a trace.
 
 A refinement statement is compatible with a system that does nothing, so the
 chain is accompanied by machine-checked witnesses that the composition the
-proof of Theorem~\ref{thm:aba-flatspec-spec} passes through executes and
+proof of Theorem~\ref{thm:aba-layeredspec-spec} passes through executes and
 reaches a return.
 Membership of a decision trace in
-$\operatorname{ATD}(\mathrm{netFlat}\ P4)$ is not established; the
+$\operatorname{ATD}(\mathrm{deployed}\ P4)$ is not established; the
 witnesses are about that composition alone.
 
 \input{nodes/def-aba-examples}

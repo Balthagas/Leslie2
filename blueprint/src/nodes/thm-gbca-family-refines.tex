@@ -1,6 +1,6 @@
 \begin{theorem}[Family congruence and the graded-agreement family refinement]
   \label{thm:gbca-family-refines}
-  \lean{PLTS.ForwardSimulation.family}\lean{PLTS.ABA.specSide}\lean{PLTS.ABA.RsubAll}\lean{PLTS.ABA.famSubSim}\lean{PLTS.ABA.famSubSimP}\leanok
+  \lean{PLTS.ForwardSimulation.family}\lean{PLTS.ABA.specSide}\lean{PLTS.ABA.RsubAll}\lean{PLTS.ABA.famSubSim}\lean{PLTS.ABA.famSubSimProb}\leanok
   \uses{thm:aba-subsim, def:aba-gbcasub, def:idle-family, lem:bridge}
   Per-instance forward simulations lift to the $\mathbb{N}$-indexed families under the pointwise relation, broadcast labels being matched by the abstract family's own broadcast under a corruption-compatibility lemma.
   Applied to Theorem~\ref{thm:aba-subsim}, the lift says that the family $\mathrm{gbcaSide}(P)$ of round subsystems is forward-simulated, round by round, by the family $\mathrm{specSide}(P)$ of round specifications read over the same interface.

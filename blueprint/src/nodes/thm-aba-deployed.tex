@@ -1,0 +1,18 @@
+\begin{theorem}[Safety of the deployed protocol]
+  \label{thm:aba-deployed}
+  \lean{PLTS.ABA.layeredSpec_spec}\lean{PLTS.ABA.deployed_spec}\lean{PLTS.ABA.deployed_safe}\lean{PLTS.ABA.deployed_traces}\lean{PLTS.ABA.layered_safe}\leanok
+  \uses{def:aba-procnet, def:aba-netadv, thm:aba-layered-atd, thm:aba-substitution, thm:aba-layeredspec-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
+  Let $P$ be parameters.
+  Then $\operatorname{ATD}(\mathrm{deployed}(P)) \subseteq \operatorname{ATD}(\mathrm{spec}(P))$, and every trace $t$ of positive probability under an achievable trace distribution of $\mathrm{deployed}(P)$ satisfies Validity and Agreement.
+  Such a $t$ also has positive probability under an achievable trace distribution of $\mathrm{layeredSpec}(P)$.
+  Every trace of positive probability under an achievable trace distribution of $\mathrm{layered}(P)$ satisfies Validity and Agreement as well.
+  The statement carries no hypothesis on $t$ beyond positive probability, the corruption budget included: that budget is a guard of the network adversary, which every execution of $\mathrm{deployed}(P)$ respects by construction.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:aba-layered-atd, thm:aba-substitution, thm:aba-layeredspec-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
+  Theorem~\ref{thm:aba-substitution} gives the third conclusion, $\operatorname{ATD}(\mathrm{deployed}(P)) \subseteq \operatorname{ATD}(\mathrm{layeredSpec}(P))$.
+  Theorem~\ref{thm:aba-layeredspec-spec} carries that on to $\operatorname{ATD}(\mathrm{spec}(P))$, the two inclusions chained by transitivity of set inclusion, which is the first conclusion.
+  The trace-support bridge (Theorem~\ref{thm:trace-support}) transfers safety of the specification's trace supports (Theorem~\ref{thm:aba-spec-safe}) along that inclusion, which is the second.
+  For the last, Theorem~\ref{thm:aba-layered-atd} is an equality of the two sets of achievable trace distributions, so an achievable trace distribution of $\mathrm{layered}(P)$ is one of $\mathrm{deployed}(P)$ and the safety conclusion reads across.
+\end{proof}

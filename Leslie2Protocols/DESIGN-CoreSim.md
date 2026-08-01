@@ -1,7 +1,9 @@
 # Design — the core simulation `hybridSpec ⊑ ABA.spec` (`coreSim`)
 
 Companion design document to the Lean proof in `ABA/CoreSimRel.lean` (relation +
-invariant), `ABA/CoreSimBurst.lean` (abstract τ-burst kit), and `ABA/CoreSim.lean`
+invariant), `ABA/CoreSimInv.lean` (step inversion and invariant preservation),
+`ABA/CoreSimAbs.lean` (the stutter rows and the assembly),
+`ABA/CoreSimBurst.lean` (abstract τ-burst kit), and `ABA/CoreSim.lean`
 (the per-row simulation proof). The `coreSim` proof prose in
 `blueprint/src/content.tex` condenses this document. The spec-level repairs the simulation
 depends on are labelled D13/D14/D15 (Validity provenance) and D12′ (DECIDED
@@ -67,7 +69,7 @@ carrying an `AbsFrame` (§ Certificates) for the last — and `Abs.w_swap` is th
 `w`-only corollary, since the twin never reads the coin state. Together they replace the
 per-row stutter arguments: every hidden row preserves the three projections, so its
 `Abs`-match is one `Abs.frame`/`Abs.w_swap` invocation rather than a bespoke
-re-derivation (the six Stage-C stutter lemmas of `CoreSimRel.lean` are all instances).
+re-derivation (the six Stage-C stutter lemmas of `CoreSimAbs.lean` are all instances).
 
 ### Certificates: decided values stated without the live pair
 

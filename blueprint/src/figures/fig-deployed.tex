@@ -1,4 +1,4 @@
-% The deployed system (PLTS.ABA.Net.ABAProcN, PLTS.ABA.Net.netAdv, PLTS.ABA.Net.netFlat):
+% The deployed system (PLTS.ABA.Net.ABAProcN, PLTS.ABA.Net.netAdv, PLTS.ABA.Net.deployed):
 % n corruption-blind programs, the network adversary, the coin oracle.
 \begin{tikzpicture}[
     >={Stealth[round]}, semithick,
@@ -50,7 +50,7 @@
      $\mathrm{retWPub}$};
   % the presentation it is equal to
   \node[box] (impl) at (4.9,-5.2)
-    {the layer-boundary cut\\ $\mathrm{exploded}(P)$};
+    {the layer-boundary cut\\ $\mathrm{layered}(P)$};
   \draw[<->, dashed] (4.9,-3.9) --
     node[lbl, right, align=left, pos=0.72]{$\operatorname{ATD}$ equal, no restriction,\\ along $\mathrm{regroup}$} (impl.north);
   % the rendezvous bus legend, drawn last so it masks the descending arrows

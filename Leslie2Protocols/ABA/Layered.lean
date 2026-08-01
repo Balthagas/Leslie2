@@ -8,9 +8,9 @@ import Leslie2Protocols.ABA.GBCASub
 import Leslie2.Results
 
 /-!
-# The exploded presentation: layer boundaries as component boundaries
+# The layered presentation: layer boundaries as component boundaries
 
-`ABA/FlatNetwork.lean` presents the deployed protocol as `n` corruption-blind
+`ABA/Deployed.lean` presents the deployed protocol as `n` corruption-blind
 programs beside one network adversary and the coin oracle. Each program runs
 two layers at once — the round loop and one graded-agreement stage record per
 round — and the single network adversary holds both message layers. The
@@ -28,7 +28,7 @@ present file re-cuts the same system so that a *layer* boundary is a
 
 The four factors speak the extended alphabet `Net.NLab n`, the rendezvous
 labels are hidden, and the result is read back over `Lab n` — the pipeline of
-`netFlat`, factor for factor.
+`deployed`, factor for factor.
 
 ## What moved where
 
@@ -58,12 +58,12 @@ proposition.
 
 ## The result
 
-`regroup` re-partitions a deployed state into an exploded one — the stage
+`regroup` re-partitions a deployed state into an layered one — the stage
 slices and pools are gathered per round, the core slices are gathered per
 process, the DECIDED pools and the corrupted set go to `aNet`, and the coin
-oracle is carried across untouched. It both preserves (`explodedForward`) and
-reflects (`explodedConverse`) transitions, so the two soundness inclusions
-close `exploded_atd`: the two presentations achieve exactly the same trace
+oracle is carried across untouched. It both preserves (`layeredForward`) and
+reflects (`layeredConverse`) transitions, so the two soundness inclusions
+close `layered_atd`: the two presentations achieve exactly the same trace
 distributions.
 -/
 
@@ -71,6 +71,14 @@ namespace PLTS
 namespace ABA
 
 open Net
+
+/-! ## The `Layer` namespace
+
+Everything the layer cut names lives under `PLTS.ABA.Layer`, so that `PLTS.ABA`
+itself carries only what the chain cites. `Net` is the deployed reading's own
+namespace; this is its layer-cut counterpart. -/
+
+namespace Layer
 
 /-! ### The round-loop program of one process
 
@@ -335,25 +343,25 @@ noncomputable def aNet (P : Params) : System (ANetState P.n) (NLab P.n) where
 @[simp] theorem aNet_step (P : Params) (a : ANetState P.n) (l : NLab P.n)
     (μ : PMF (ANetState P.n)) : (aNet P).step a l μ ↔ ANetStep P a l μ := Iff.rfl
 
-/-- The state of the exploded system: the round subsystems, the round loops,
+/-- The state of the layered system: the round subsystems, the round loops,
 the ABA-side network and the coin oracle. -/
-abbrev ExpState (P : Params) : Type :=
+abbrev LayeredState (P : Params) : Type :=
   (ℕ → GSub.GSubState P.n) ×
     ((∀ _ : Fin P.n, CoreNodeN P.n) × (ANetState P.n × (ℕ → WCC.SpecState P.n)))
 
 /-- The four factors side by side, over the extended alphabet. -/
-noncomputable def explodedPre (P : Params) : System (ExpState P) (NLab P.n) :=
+noncomputable def layeredPre (P : Params) : System (LayeredState P) (NLab P.n) :=
   (GSub.gbcaSide P).parallel
     ((System.syncProduct (coreProcN P)).parallel ((aNet P).parallel (wccLift P)))
 
-/-- **The exploded group**: the rendezvous alphabet hidden, the result read
+/-- **The layered group**: the rendezvous alphabet hidden, the result read
 back over `Lab n`. -/
-noncomputable def explodedGroup (P : Params) : System (ExpState P) (Lab P.n) :=
-  ((explodedPre P).abstract (netEvtLabels P.n)).relabel
+noncomputable def layeredGroup (P : Params) : System (LayeredState P) (Lab P.n) :=
+  ((layeredPre P).abstract (netEvtLabels P.n)).relabel
 
-/-- **The exploded system**: the group with the sub-protocol API hidden. -/
-noncomputable def exploded (P : Params) : System (ExpState P) (Lab P.n) :=
-  (explodedGroup P).abstract (Lab.hiddenAPI P.n)
+/-- **The layered system**: the group with the sub-protocol API hidden. -/
+noncomputable def layered (P : Params) : System (LayeredState P) (Lab P.n) :=
+  (layeredGroup P).abstract (Lab.hiddenAPI P.n)
 
 /-! ### Determinacy of the two new rule tables -/
 
@@ -388,11 +396,11 @@ theorem coreProcStepN_no_tau {P : Params} {j : Fin P.n} {c : CoreNodeN P.n}
 
 /-! ### The regrouping map
 
-A deployed state is re-partitioned into an exploded one. The round-`r`
+A deployed state is re-partitioned into an layered one. The round-`r`
 subsystem takes its stage records from the nodes' round-`r` stage slices and
 its pools from the network's round-`r` pools; the round loops take the nodes'
 coordinator slices; the ABA-side network takes the DECIDED pools; and every
-copy of the corrupted set on the exploded side is the network adversary's one
+copy of the corrupted set on the layered side is the network adversary's one
 set. The coin oracle occupies the same slot on both sides. -/
 
 /-- The graded-agreement side of the regrouping. -/
@@ -411,15 +419,15 @@ def regA {n : ℕ} (w : NetState n) : ANetState n := ⟨w.dpool, w.F⟩
 network beside the untouched coin oracle. -/
 def regroup {P : Params}
     (s : (∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n))) :
-    ExpState P :=
+    LayeredState P :=
   (regG s.1 s.2.1, regC s.1, regA s.2.1, s.2.2)
 
 @[simp] theorem regroup_apply {P : Params} (u : ∀ _ : Fin P.n, ABANodeN P.n)
     (w : NetState P.n) (o : ℕ → WCC.SpecState P.n) :
     regroup (P := P) (u, w, o) = (regG u w, regC u, regA w, o) := rfl
 
-/-- The regrouping carries the deployed initial state to the exploded one. -/
-theorem regroup_init (P : Params) : regroup (netFlat P).init = (exploded P).init := by
+/-- The regrouping carries the deployed initial state to the layered one. -/
+theorem regroup_init (P : Params) : regroup (deployed P).init = (layered P).init := by
   refine Prod.ext (funext fun r => ?_) (Prod.ext rfl (Prod.ext ?_ rfl))
   · exact Prod.ext rfl rfl
   · exact rfl
@@ -469,15 +477,15 @@ theorem strongConverse_relabel {S T L E : Type} [Silent L]
       ∃ ν, sys₁.relabel.step q l ν ∧ μ = ν.map f :=
   fun q l μ hq => h q (Sum.inl l) μ hq
 
-/-! ### Reading and building composite transitions of the exploded system -/
+/-! ### Reading and building composite transitions of the layered system -/
 
-/-- The exploded group's step relation, unfolded to the hidden rendezvous case
+/-- The layered group's step relation, unfolded to the hidden rendezvous case
 and the shared-label case. -/
-theorem explodedGroup_step_iff (P : Params) (q : ExpState P) (l : Lab P.n)
-    (μ : PMF (ExpState P)) :
-    (explodedGroup P).step q l μ ↔
-      (l = .tau ∧ ∃ e : NetEvt P.n, (explodedPre P).step q (Sum.inr e) μ) ∨
-      (explodedPre P).step q (Sum.inl l) μ := by
+theorem layeredGroup_step_iff (P : Params) (q : LayeredState P) (l : Lab P.n)
+    (μ : PMF (LayeredState P)) :
+    (layeredGroup P).step q l μ ↔
+      (l = .tau ∧ ∃ e : NetEvt P.n, (layeredPre P).step q (Sum.inr e) μ) ∨
+      (layeredPre P).step q (Sum.inl l) μ := by
   constructor
   · rintro (⟨hτ, l', ⟨e, rfl⟩, hstep⟩ | ⟨-, hstep⟩)
     · exact Or.inl ⟨Sum.inl_injective hτ, e, hstep⟩
@@ -522,7 +530,7 @@ theorem syncCore_no_tau {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
 
 /-- Build a joint transition of the four factors on a visible label, the
 oracle's successor left arbitrary. -/
-theorem explodedPre_vis_step (P : Params) {G G' : ℕ → GSub.GSubState P.n}
+theorem layeredPre_vis_step (P : Params) {G G' : ℕ → GSub.GSubState P.n}
     {C C' : ∀ _ : Fin P.n, CoreNodeN P.n} {A A' : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)} {L : NLab P.n}
     (hL : L ≠ Silent.τ)
@@ -530,9 +538,9 @@ theorem explodedPre_vis_step (P : Params) {G G' : ℕ → GSub.GSubState P.n}
     (hC : ∀ i, CoreProcStepN P i (C i) L (PMF.pure (C' i)))
     (hA : ANetStep P A L (PMF.pure A'))
     (hW : (wccLift P).step o L ω) :
-    (explodedPre P).step (G, C, A, o) L
+    (layeredPre P).step (G, C, A, o) L
       (prodPMF (PMF.pure G') (prodPMF (PMF.pure C') (prodPMF (PMF.pure A') ω))) := by
-  rw [explodedPre, System.parallel_step]
+  rw [layeredPre, System.parallel_step]
   refine Or.inl ⟨hL, PMF.pure G', prodPMF (PMF.pure C') (prodPMF (PMF.pure A') ω),
     hG, ?_, rfl⟩
   rw [System.parallel_step]
@@ -542,23 +550,23 @@ theorem explodedPre_vis_step (P : Params) {G G' : ℕ → GSub.GSubState P.n}
 
 /-- Build a silent transition of the four factors from a graded-agreement-side
 one. -/
-theorem explodedPre_tau_gbca (P : Params) {G G' : ℕ → GSub.GSubState P.n}
+theorem layeredPre_tau_gbca (P : Params) {G G' : ℕ → GSub.GSubState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n}
     (hG : (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure G')) :
-    (explodedPre P).step (G, C, A, o) (Sum.inl Lab.tau) (PMF.pure (G', C, A, o)) := by
-  rw [explodedPre, System.parallel_step]
+    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) (PMF.pure (G', C, A, o)) := by
+  rw [layeredPre, System.parallel_step]
   refine Or.inr (Or.inl ⟨rfl, PMF.pure G', hG, ?_⟩)
   rw [prodPMF_pure_pure]
 
 /-- Build a silent transition of the four factors from an ABA-side network
 injection. -/
-theorem explodedPre_tau_aNet (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem layeredPre_tau_aNet (P : Params) {G : ℕ → GSub.GSubState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A A' : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n}
     (hA : ANetStep P A (Sum.inl Lab.tau) (PMF.pure A')) :
-    (explodedPre P).step (G, C, A, o) (Sum.inl Lab.tau) (PMF.pure (G, C, A', o)) := by
-  rw [explodedPre, System.parallel_step]
+    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) (PMF.pure (G, C, A', o)) := by
+  rw [layeredPre, System.parallel_step]
   refine Or.inr (Or.inr ⟨rfl,
     prodPMF (PMF.pure C) (prodPMF (PMF.pure A') (PMF.pure o)), ?_, ?_⟩)
   · rw [System.parallel_step]
@@ -569,13 +577,13 @@ theorem explodedPre_tau_aNet (P : Params) {G : ℕ → GSub.GSubState P.n}
 
 /-- Build a silent transition of the four factors from the coin resolution —
 the one transition of the composite that is not Dirac. -/
-theorem explodedPre_tau_wcc (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem layeredPre_tau_wcc (P : Params) {G : ℕ → GSub.GSubState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)}
     (hW : (WCC.specFamily P).step o Lab.tau ω) :
-    (explodedPre P).step (G, C, A, o) (Sum.inl Lab.tau)
+    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau)
       (prodPMF (PMF.pure G) (prodPMF (PMF.pure C) (prodPMF (PMF.pure A) ω))) := by
-  rw [explodedPre, System.parallel_step]
+  rw [layeredPre, System.parallel_step]
   refine Or.inr (Or.inr ⟨rfl, _, ?_, rfl⟩)
   rw [System.parallel_step]
   refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure A) ω, ?_, rfl⟩)
@@ -584,17 +592,17 @@ theorem explodedPre_tau_wcc (P : Params) {G : ℕ → GSub.GSubState P.n}
 
 /-- A visible transition of the four factors: all of them move together, and
 only the oracle's successor can fail to be a Dirac. -/
-theorem explodedPre_vis_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem layeredPre_vis_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n} {L : NLab P.n} (hL : L ≠ Silent.τ)
-    {μ : PMF (ExpState P)} (h : (explodedPre P).step (G, C, A, o) L μ) :
+    {μ : PMF (LayeredState P)} (h : (layeredPre P).step (G, C, A, o) L μ) :
     ∃ (G' : ℕ → GSub.GSubState P.n) (C' : ∀ _ : Fin P.n, CoreNodeN P.n)
       (A' : ANetState P.n) (ω : PMF (ℕ → WCC.SpecState P.n)),
       (GSub.gbcaSide P).step G L (PMF.pure G') ∧
       (∀ i, CoreProcStepN P i (C i) L (PMF.pure (C' i))) ∧
       ANetStep P A L (PMF.pure A') ∧ (wccLift P).step o L ω ∧
       μ = prodPMF (PMF.pure G') (prodPMF (PMF.pure C') (prodPMF (PMF.pure A') ω)) := by
-  rw [explodedPre, System.parallel_step] at h
+  rw [layeredPre, System.parallel_step] at h
   rcases h with ⟨-, μ₁, μ₂, hG, hrest, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
   · obtain ⟨G', rfl⟩ := GSub.gbcaSide_isLTS P _ _ _ hG
     rw [System.parallel_step] at hrest
@@ -614,17 +622,17 @@ theorem explodedPre_vis_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
 /-- A silent transition of the four factors: no round loop has a `τ` row, so it
 is the graded-agreement side's, the ABA-side network's own injection, or the
 coin resolution. -/
-theorem explodedPre_tau_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
+theorem layeredPre_tau_inv (P : Params) {G : ℕ → GSub.GSubState P.n}
     {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
-    {o : ℕ → WCC.SpecState P.n} {μ : PMF (ExpState P)}
-    (h : (explodedPre P).step (G, C, A, o) (Sum.inl Lab.tau) μ) :
+    {o : ℕ → WCC.SpecState P.n} {μ : PMF (LayeredState P)}
+    (h : (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) μ) :
     (∃ G', (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure G') ∧
         μ = PMF.pure (G', C, A, o)) ∨
     (∃ A', ANetStep P A (Sum.inl Lab.tau) (PMF.pure A') ∧
         μ = PMF.pure (G, C, A', o)) ∨
     (∃ ω, (WCC.specFamily P).step o Lab.tau ω ∧
         μ = prodPMF (PMF.pure G) (prodPMF (PMF.pure C) (prodPMF (PMF.pure A) ω))) := by
-  rw [explodedPre, System.parallel_step] at h
+  rw [layeredPre, System.parallel_step] at h
   rcases h with ⟨habs, -⟩ | ⟨-, μ₁, hG, rfl⟩ | ⟨-, μ₂, hrest, rfl⟩
   · exact absurd rfl habs
   · obtain ⟨G', rfl⟩ := GSub.gbcaSide_isLTS P _ _ _ hG
@@ -975,7 +983,7 @@ theorem coresN_family {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
 /-! ### Deltas of the regrouping
 
 Each row writes one node slice and one network slot; read through the
-regrouping, the pair becomes the matching one-row update of one exploded
+regrouping, the pair becomes the matching one-row update of one layered
 factor, every other factor being left alone. -/
 
 private theorem gnet_ext {n : ℕ} {a b : GSub.GNetState n} (h1 : a.pool = b.pool)
@@ -1308,40 +1316,40 @@ theorem gprocs_family {P : Params} {r : ℕ}
 
 /-! ### The hidden rendezvous, forwards
 
-Each rendezvous of the deployed system is a silent transition of the exploded
+Each rendezvous of the deployed system is a silent transition of the layered
 one. The two stage rendezvous become *internal* to a round subsystem — they are
 hidden inside `GSub.sub` and reach the composite as the family's own `τ` — and
 every other rendezvous keeps its label, the four factors answering it
 together. -/
 
-theorem explodedGroup_of_event (P : Params) {q : ExpState P} (e : NetEvt P.n)
-    {μ : PMF (ExpState P)} (h : (explodedPre P).step q (Sum.inr e) μ) :
-    (explodedGroup P).step q Lab.tau μ :=
-  (explodedGroup_step_iff P _ _ _).mpr (Or.inl ⟨rfl, e, h⟩)
+theorem layeredGroup_of_event (P : Params) {q : LayeredState P} (e : NetEvt P.n)
+    {μ : PMF (LayeredState P)} (h : (layeredPre P).step q (Sum.inr e) μ) :
+    (layeredGroup P).step q Lab.tau μ :=
+  (layeredGroup_step_iff P _ _ _).mpr (Or.inl ⟨rfl, e, h⟩)
 
-theorem explodedGroup_of_tau (P : Params) {q : ExpState P} {μ : PMF (ExpState P)}
-    (h : (explodedPre P).step q (Sum.inl Lab.tau) μ) :
-    (explodedGroup P).step q Lab.tau μ :=
-  (explodedGroup_step_iff P _ _ _).mpr (Or.inr h)
+theorem layeredGroup_of_tau (P : Params) {q : LayeredState P} {μ : PMF (LayeredState P)}
+    (h : (layeredPre P).step q (Sum.inl Lab.tau) μ) :
+    (layeredGroup P).step q Lab.tau μ :=
+  (layeredGroup_step_iff P _ _ _).mpr (Or.inr h)
 
 /-- A stage multicast or delivery, forwards: the round-`r` subsystem takes the
 rendezvous internally and the other three factors are frozen. -/
-theorem explodedGroup_of_gEvent (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem layeredGroup_of_gEvent (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} (r : ℕ)
     {X : GSub.GSubState P.n}
     (hs : (GSub.sub P r).step (regG u w r) (Sum.inl Lab.tau) (PMF.pure X)) :
-    (explodedGroup P).step (regG u w, regC u, regA w, o) Lab.tau
+    (layeredGroup P).step (regG u w, regC u, regA w, o) Lab.tau
       (PMF.pure (Function.update (regG u w) r X, regC u, regA w, o)) :=
-  explodedGroup_of_tau P (explodedPre_tau_gbca P (gbcaSide_tau P _ r hs))
+  layeredGroup_of_tau P (layeredPre_tau_gbca P (gbcaSide_tau P _ r hs))
 
 /-- **The forward matching on the rendezvous alphabet.** -/
-theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem layeredGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} (e : NetEvt P.n)
     {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))}
-    (h : (netPre P).step (u, w, o) (Sum.inr e) μ) :
-    (explodedGroup P).step (regroup (u, w, o)) Lab.tau (μ.map regroup) := by
-  obtain ⟨x, w', μ₃, hall, hn, ho, rfl⟩ := netPre_event_inv P h
+    (h : (deployedPre P).step (u, w, o) (Sum.inr e) μ) :
+    (layeredGroup P).step (regroup (u, w, o)) Lab.tau (μ.map regroup) := by
+  obtain ⟨x, w', μ₃, hall, hn, ho, rfl⟩ := deployedPre_event_inv P h
   rw [map_regroup_prod, regroup_apply]
   cases e with
   | gsnd r j m =>
@@ -1353,12 +1361,12 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
         x = Function.update u j ((u j).1, Function.update (u j).2 r p') →
         (∀ i, GSub.GProcStep P r i ((u i).2 r) (Sum.inr (.snd j m))
           (PMF.pure (Function.update (fun i => (u i).2 r) j p' i))) →
-        (explodedGroup P).step (regG u w, regC u, regA w, o) Lab.tau
+        (layeredGroup P).step (regG u w, regC u, regA w, o) Lab.tau
           (PMF.pure (regG x (w.gpool r j m), regC x, regA (w.gpool r j m), o)) := by
       intro p' heq hfam
       subst heq
       rw [regG_stage_mcast u w j _ r p' m, regC_stage, regA_gpool]
-      exact explodedGroup_of_gEvent P r
+      exact layeredGroup_of_gEvent P r
         (GSub.sub_event_step P r (.snd j m) hfam (GSub.GNetStep.snd _ j m))
     have hidle : ∀ i, i ≠ j → GSub.GProcStep P r i ((u i).2 r) (Sum.inr (.snd j m))
           (PMF.pure ((u i).2 r)) :=
@@ -1419,7 +1427,7 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain rfl := procsN_update (stepN_gdlv_self (hall i))
       (fun k hk => stepN_gdlv_foreign (Ne.symm hk) (hall k))
     rw [regG_stage_still u w i _ r _, regC_stage]
-    exact explodedGroup_of_gEvent P r
+    exact layeredGroup_of_gEvent P r
       (GSub.sub_event_step P r (.dlv i j m)
         (gprocs_family (u := fun k => (u k).2 r) i _
           (GSub.GProcStep.dlvRecv _ j m)
@@ -1434,7 +1442,7 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
       · subst hi; exact hx0
       · exact stepN_dsnd_foreign (Ne.symm hi) (hall i)).symm
     rw [regG_dput, regA_dput]
-    refine explodedGroup_of_event P (.dsnd j b) (explodedPre_vis_step P (by simp)
+    refine layeredGroup_of_event P (.dsnd j b) (layeredPre_vis_step P (by simp)
       (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN])) ?_
       (ANetStep.dsnd _ j b hpool) ho)
     intro i
@@ -1447,7 +1455,7 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain ⟨hnr, hx0⟩ := stepN_ddlv_self (hall i)
     obtain rfl := procsN_update hx0 (fun k hk => stepN_ddlv_foreign (Ne.symm hk) (hall k))
     rw [regG_core u w w i _ rfl rfl, regC_core]
-    exact explodedGroup_of_event P (.ddlv i j b) (explodedPre_vis_step P (by simp)
+    exact layeredGroup_of_event P (.ddlv i j b) (layeredPre_vis_step P (by simp)
       (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN]))
       (coresN_family (C := regC u) i _ (CoreProcStepN.ddlvRecv _ j b hnr)
         (fun k hk => CoreProcStepN.ddlvIdle _ i j b (Ne.symm hk)))
@@ -1458,7 +1466,7 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain rfl := procsN_update hx0
       (fun i hi => stepN_retWPub_foreign (Ne.symm hi) (hall i))
     rw [regG_core u w (w.dput id b) id _ rfl rfl, regC_core, regA_dput]
-    exact explodedGroup_of_event P (.retWPub r id c b) (explodedPre_vis_step P (by simp)
+    exact layeredGroup_of_event P (.retWPub r id c b) (layeredPre_vis_step P (by simp)
       (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN]))
       (coresN_family (C := regC u) id _ (CoreProcStepN.retWPub _ r c b hph hr hg)
         (fun i hi => CoreProcStepN.retWPubIdle _ r id c b (Ne.symm hi)))
@@ -1469,7 +1477,7 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain rfl := procsN_update hx0
       (fun i hi => stepN_gcallLoop_foreign (Ne.symm hi) (hall i))
     rw [regG_core u w w id _ rfl rfl, regC_core]
-    refine explodedGroup_of_event P (.gcallLoop r id b) (explodedPre_vis_step P (by simp)
+    refine layeredGroup_of_event P (.gcallLoop r id b) (layeredPre_vis_step P (by simp)
       (gbcaSide_owned_id P _ r (by simp) ?_)
       (coresN_family (C := regC u) id _ (CoreProcStepN.gcallLoop _ r b hph hr hest)
         (fun i hi => CoreProcStepN.gcallLoopIdle _ r id b (Ne.symm hi)))
@@ -1483,7 +1491,7 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain rfl := procsN_update hx0
       (fun i hi => stepN_byzCallG_foreign (Ne.symm hi) (hall i))
     rw [regG_stage_mcast u w k _ r _ (.input b), regC_stage, regA_gpool]
-    refine explodedGroup_of_event P (.byzCallG r k b) (explodedPre_vis_step P (by simp)
+    refine layeredGroup_of_event P (.byzCallG r k b) (layeredPre_vis_step P (by simp)
       (gbcaSide_owned P _ r (by simp) ?_)
       (fun i => CoreProcStepN.byzCallGIdle _ r k b)
       (ANetStep.byzCallG _ r k b hF) ho)
@@ -1495,8 +1503,8 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain ⟨hF, hw⟩ := netStep_byzCallGLoop hn
     obtain rfl : w = w' := (pureN_inj hw).symm
     obtain rfl : u = x := (procsN_id fun i => stepN_byzCallGLoop (hall i)).symm
-    refine explodedGroup_of_event P (.byzCallGLoop r k b)
-      (explodedPre_vis_step P (by simp) (gbcaSide_owned_id P _ r (by simp) ?_)
+    refine layeredGroup_of_event P (.byzCallGLoop r k b)
+      (layeredPre_vis_step P (by simp) (gbcaSide_owned_id P _ r (by simp) ?_)
         (fun i => CoreProcStepN.byzCallGLoopIdle _ r k b)
         (ANetStep.byzCallGLoop _ r k b hF) ho)
     exact GSub.sub_lab_step P r (by simp)
@@ -1508,13 +1516,13 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
         x = Function.update u k ((u k).1, Function.update (u k).2 r p') →
         (∀ i, GSub.GProcStep P r i ((u i).2 r) (Sum.inl (Sum.inr (.byzRetG r k out)))
           (PMF.pure (Function.update (fun i => (u i).2 r) k p' i))) →
-        (explodedGroup P).step (regG u w, regC u, regA w, o) Lab.tau
+        (layeredGroup P).step (regG u w, regC u, regA w, o) Lab.tau
           (prodPMF (PMF.pure (regG x w))
             (prodPMF (PMF.pure (regC x)) (prodPMF (PMF.pure (regA w)) μ₃))) := by
       intro p' heq hfam
       subst heq
       rw [regG_stage_still u w k _ r p', regC_stage]
-      refine explodedGroup_of_event P (.byzRetG r k out) (explodedPre_vis_step P (by simp)
+      refine layeredGroup_of_event P (.byzRetG r k out) (layeredPre_vis_step P (by simp)
         (gbcaSide_owned P _ r (by simp) ?_)
         (fun i => CoreProcStepN.byzRetGIdle _ r k out)
         (ANetStep.byzRetG _ r k out hF) ho)
@@ -1543,7 +1551,7 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain ⟨hF, hw⟩ := netStep_byzCallW hn
     obtain rfl : w = w' := (pureN_inj hw).symm
     obtain rfl : u = x := (procsN_id fun i => stepN_byzCallW (hall i)).symm
-    exact explodedGroup_of_event P (.byzCallW r k) (explodedPre_vis_step P (by simp)
+    exact layeredGroup_of_event P (.byzCallW r k) (layeredPre_vis_step P (by simp)
       (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN]))
       (fun i => CoreProcStepN.byzCallWIdle _ r k)
       (ANetStep.byzCallW _ r k hF) ho)
@@ -1551,42 +1559,42 @@ theorem explodedGroup_of_netEvt (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain ⟨hF, hw⟩ := netStep_byzRetW hn
     obtain rfl : w = w' := (pureN_inj hw).symm
     obtain rfl : u = x := (procsN_id fun i => stepN_byzRetW (hall i)).symm
-    exact explodedGroup_of_event P (.byzRetW r k b) (explodedPre_vis_step P (by simp)
+    exact layeredGroup_of_event P (.byzRetW r k b) (layeredPre_vis_step P (by simp)
       (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN]))
       (fun i => CoreProcStepN.byzRetWIdle _ r k b)
       (ANetStep.byzRetW _ r k b hF) ho)
 
 /-! ### The shared labels, forwards
 
-A label of the shared alphabet is answered by the exploded system on the same
+A label of the shared alphabet is answered by the layered system on the same
 label: the round subsystems take the graded-agreement handshakes, the round
 loops take the ABA API and the coin handshakes, and `fail` is a broadcast on
 one side and a joint step of all four factors on the other, every copy of the
 corrupted set being the network adversary's one set. -/
 
 /-- **The forward matching before the hiding.** -/
-theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem layeredPre_of_deployedPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n} {l : Lab P.n}
     {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))}
-    (h : (netPre P).step (u, w, o) (Sum.inl l) μ) :
-    (explodedPre P).step (regroup (u, w, o)) (Sum.inl l) (μ.map regroup) := by
+    (h : (deployedPre P).step (u, w, o) (Sum.inl l) μ) :
+    (layeredPre P).step (regroup (u, w, o)) (Sum.inl l) (μ.map regroup) := by
   rw [regroup_apply]
   by_cases hl : l = Lab.tau
   · subst hl
-    rcases netPre_tau_inv P h with ⟨w', hnet, rfl⟩ | ⟨ω, hW, rfl⟩
+    rcases deployedPre_tau_inv P h with ⟨w', hnet, rfl⟩ | ⟨ω, hW, rfl⟩
     · rw [map_regroup_pure]
       rcases netStep_tau hnet with ⟨r, k, m, hF, hw⟩ | ⟨k, b, hF, hw⟩
       · obtain rfl : w' = w.gpool r k m := pureN_inj hw
         rw [regG_mcast u w r k m, regA_gpool]
-        exact explodedPre_tau_gbca P (gbcaSide_tau P _ r
+        exact layeredPre_tau_gbca P (gbcaSide_tau P _ r
           (GSub.sub_tau_net P r (GSub.GNetStep.byzG _ k m hF)))
       · obtain rfl : w' = w.dput k b := pureN_inj hw
         rw [regG_dput, regA_dput]
-        exact explodedPre_tau_aNet P (ANetStep.byzD _ k b hF)
+        exact layeredPre_tau_aNet P (ANetStep.byzD _ k b hF)
     · rw [map_regroup_prod]
-      exact explodedPre_tau_wcc P hW
-  · obtain ⟨x, w', ω, hall, hn, hW, rfl⟩ := netPre_lab_inv P hl h
+      exact layeredPre_tau_wcc P hW
+  · obtain ⟨x, w', ω, hall, hn, hW, rfl⟩ := deployedPre_lab_inv P hl h
     rw [map_regroup_prod]
     cases l with
     | tau => exact absurd rfl hl
@@ -1597,7 +1605,7 @@ theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
       · obtain rfl := procsN_update hx0
           (fun i hi => stepN_callABA_foreign (Ne.symm hi) (hall i))
         rw [regG_core u w w id _ rfl rfl, regC_core]
-        exact explodedPre_vis_step P (by simp)
+        exact layeredPre_vis_step P (by simp)
           (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN]))
           (coresN_family (C := regC u) id _ (CoreProcStepN.input _ b hin)
             (fun i hi => CoreProcStepN.callABAIdle _ id b (Ne.symm hi)))
@@ -1606,7 +1614,7 @@ theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
           by_cases hi : i = id
           · subst hi; exact hx0
           · exact stepN_callABA_foreign (Ne.symm hi) (hall i)).symm
-        refine explodedPre_vis_step P (by simp)
+        refine layeredPre_vis_step P (by simp)
           (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN])) ?_
           (ANetStep.callABAIdle _ id b) hWl
         intro i
@@ -1620,7 +1628,7 @@ theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
       obtain rfl := procsN_update hx0
         (fun i hi => stepN_retABA_foreign (Ne.symm hi) (hall i))
       rw [regG_core u w w id _ rfl rfl, regC_core]
-      exact explodedPre_vis_step P (by simp)
+      exact layeredPre_vis_step P (by simp)
         (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN]))
         (coresN_family (C := regC u) id _ (CoreProcStepN.ret _ b hcnt hret)
           (fun i hi => CoreProcStepN.retABAIdle _ id b (Ne.symm hi)))
@@ -1632,7 +1640,7 @@ theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
       obtain rfl := procsN_update hx0
         (fun i hi => stepN_callG_foreign (Ne.symm hi) (hall i))
       rw [regG_stage_mcast u w id _ r _ (.input b), regC_core, regA_gpool]
-      refine explodedPre_vis_step P (by simp) (gbcaSide_owned P _ r (by simp) ?_)
+      refine layeredPre_vis_step P (by simp) (gbcaSide_owned P _ r (by simp) ?_)
         (coresN_family (C := regC u) id _ (CoreProcStepN.callG _ r b hph hr hest)
           (fun i hi => CoreProcStepN.callGIdle _ r id b (Ne.symm hi)))
         (ANetStep.callGIdle _ r id b)
@@ -1650,13 +1658,13 @@ theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
             (PMF.pure (Function.update (fun i => (u i).2 r) id p' i))) →
           (∀ i, CoreProcStepN P i (regC u i) (Sum.inl (.retG r id out))
             (PMF.pure (Function.update (regC u) id c' i))) →
-          (explodedPre P).step (regG u w, regC u, regA w, o) (Sum.inl (.retG r id out))
+          (layeredPre P).step (regG u w, regC u, regA w, o) (Sum.inl (.retG r id out))
             (prodPMF (PMF.pure (regG x w))
               (prodPMF (PMF.pure (regC x)) (prodPMF (PMF.pure (regA w)) ω))) := by
         intro p' c' heq hfam hcore
         subst heq
         rw [regG_stage_still u w id _ r p', regC_core]
-        refine explodedPre_vis_step P (by simp) (gbcaSide_owned P _ r (by simp) ?_)
+        refine layeredPre_vis_step P (by simp) (gbcaSide_owned P _ r (by simp) ?_)
           hcore (ANetStep.retGIdle _ r id out) hWl
         exact GSub.sub_lab_step P r (by simp) hfam (GSub.GNetStep.retGIdle _ id out)
       have hidle : ∀ i, i ≠ id →
@@ -1691,7 +1699,7 @@ theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
       obtain rfl := procsN_update hx0
         (fun i hi => stepN_callW_foreign (Ne.symm hi) (hall i))
       rw [regG_core u w w id _ rfl rfl, regC_core]
-      exact explodedPre_vis_step P (by simp)
+      exact layeredPre_vis_step P (by simp)
         (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN]))
         (coresN_family (C := regC u) id _ (CoreProcStepN.callW _ r hph hr)
           (fun i hi => CoreProcStepN.callWIdle _ r id (Ne.symm hi)))
@@ -1703,7 +1711,7 @@ theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
       obtain rfl := procsN_update hx0
         (fun i hi => stepN_retW_foreign (Ne.symm hi) (hall i))
       rw [regG_core u w w id _ rfl rfl, regC_core]
-      exact explodedPre_vis_step P (by simp)
+      exact layeredPre_vis_step P (by simp)
         (gbcaSide_idle P _ (by simp) (by simp) (by simp [GSub.isFailN]))
         (coresN_family (C := regC u) id _ (CoreProcStepN.retW _ r c hph hr hgr)
           (fun i hi => CoreProcStepN.retWIdle _ r id c (Ne.symm hi)))
@@ -1713,65 +1721,65 @@ theorem explodedPre_of_netPre (P : Params) {u : ∀ _ : Fin P.n, ABANodeN P.n}
       obtain rfl : w' = NetState.corrupt P k w := pureN_inj (netStep_fail hn)
       obtain rfl : u = x := (procsN_id fun i => stepN_fail (hall i)).symm
       rw [regG_corrupt, regA_corrupt]
-      exact explodedPre_vis_step P (by simp) (gbcaSide_fail P _ k)
+      exact layeredPre_vis_step P (by simp) (gbcaSide_fail P _ k)
         (fun i => CoreProcStepN.failIdle _ k) (ANetStep.fail _ k)
         ((System.mapIdle_step_some (wccPull_inl (Lab.fail k)) ω).mpr hW)
 
 /-! ### The forward simulation
 
 The regrouping is a step-commuting state map: every deployed transition is the
-exploded system's transition on the same label, its successor distribution
+layered system's transition on the same label, its successor distribution
 pushed forward. -/
 
 /-- The forward matching at the level of the two groups. -/
-theorem explodedGroupForward (P : Params) :
-    ∀ s l μ, (netGroup P).step s l μ →
-      (explodedGroup P).step (regroup s) l (μ.map regroup) := by
+theorem layeredGroupForward (P : Params) :
+    ∀ s l μ, (deployedGroup P).step s l μ →
+      (layeredGroup P).step (regroup s) l (μ.map regroup) := by
   rintro ⟨u, w, o⟩ l μ h
-  rw [netGroup_step_iff] at h
+  rw [deployedGroup_step_iff] at h
   rcases h with ⟨rfl, e, hpre⟩ | hpre
-  · exact explodedGroup_of_netEvt P e hpre
-  · exact (explodedGroup_step_iff P _ _ _).mpr (Or.inr (explodedPre_of_netPre P hpre))
+  · exact layeredGroup_of_netEvt P e hpre
+  · exact (layeredGroup_step_iff P _ _ _).mpr (Or.inr (layeredPre_of_deployedPre P hpre))
 
 /-- **The forward matching**: every transition of the deployed system is the
-matching transition of the exploded system along the regrouping. -/
-theorem explodedForward (P : Params) :
-    ∀ s l μ, (netFlat P).step s l μ →
-      (exploded P).step (regroup s) l (μ.map regroup) :=
-  strongForward_abstract regroup (Lab.hiddenAPI P.n) (explodedGroupForward P)
+matching transition of the layered system along the regrouping. -/
+theorem layeredForward (P : Params) :
+    ∀ s l μ, (deployed P).step s l μ →
+      (layered P).step (regroup s) l (μ.map regroup) :=
+  strongForward_abstract regroup (Lab.hiddenAPI P.n) (layeredGroupForward P)
 
 /-! ### Building a deployed transition
 
-The forward direction reads a deployed transition into the exploded factors;
+The forward direction reads a deployed transition into the layered factors;
 the converse must build one. -/
 
-theorem netGroup_of_event (P : Params)
+theorem deployedGroup_of_event (P : Params)
     {q : (∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n))}
     (e : NetEvt P.n)
     {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))}
-    (h : (netPre P).step q (Sum.inr e) μ) : (netGroup P).step q Lab.tau μ :=
-  (netGroup_step_iff P _ _ _).mpr (Or.inl ⟨rfl, e, h⟩)
+    (h : (deployedPre P).step q (Sum.inr e) μ) : (deployedGroup P).step q Lab.tau μ :=
+  (deployedGroup_step_iff P _ _ _).mpr (Or.inl ⟨rfl, e, h⟩)
 
-theorem netGroup_of_lab (P : Params)
+theorem deployedGroup_of_lab (P : Params)
     {q : (∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n))}
     {l : Lab P.n}
     {μ : PMF ((∀ _ : Fin P.n, ABANodeN P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))}
-    (h : (netPre P).step q (Sum.inl l) μ) : (netGroup P).step q l μ :=
-  (netGroup_step_iff P _ _ _).mpr (Or.inr h)
+    (h : (deployedPre P).step q (Sum.inl l) μ) : (deployedGroup P).step q l μ :=
+  (deployedGroup_step_iff P _ _ _).mpr (Or.inr h)
 
 /-- Build a joint transition of the three deployed factors on any visible
 label, the oracle's successor left arbitrary. -/
-theorem netPre_vis_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem deployedPre_vis_step (P : Params) {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     {ω : PMF (ℕ → WCC.SpecState P.n)} {L : NLab P.n} (hL : L ≠ Silent.τ)
     (hall : ∀ i, ABAProcStepN P i (u i) L (PMF.pure (x i)))
     (hn : NetStep P w L (PMF.pure w'))
     (ho : (wccLift P).step o L ω) :
-    (netPre P).step (u, w, o) L
+    (deployedPre P).step (u, w, o) L
       (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω)) := by
-  rw [netPre, System.parallel_step]
+  rw [deployedPre, System.parallel_step]
   refine Or.inl ⟨hL, PMF.pure x, prodPMF (PMF.pure w') ω, syncN_pure hL hall, ?_, rfl⟩
   rw [System.parallel_step]
   exact Or.inl ⟨hL, PMF.pure w', ω, hn, ho, rfl⟩
@@ -1812,17 +1820,17 @@ theorem sub_tau_inv (P : Params) (r : ℕ) {U : ∀ _ : Fin P.n, GBCA.ProcNodeN 
 /-! ### The converse on the rendezvous alphabet
 
 The two stage rendezvous of the deployed alphabet carry no transition of the
-exploded system — the ABA-side network has no row for them, so the
+layered system — the ABA-side network has no row for them, so the
 synchronisation is unsatisfiable. Every other rendezvous is answered by the
 deployed system on the same label. -/
 
-theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
+theorem deployedGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     (w : NetState P.n) (o : ℕ → WCC.SpecState P.n) (e : NetEvt P.n)
-    {μ : PMF (ExpState P)}
-    (h : (explodedPre P).step (regroup (u, w, o)) (Sum.inr e) μ) :
-    ∃ ν, (netGroup P).step (u, w, o) Lab.tau ν ∧ μ = ν.map regroup := by
+    {μ : PMF (LayeredState P)}
+    (h : (layeredPre P).step (regroup (u, w, o)) (Sum.inr e) μ) :
+    ∃ ν, (deployedGroup P).step (u, w, o) Lab.tau ν ∧ μ = ν.map regroup := by
   rw [regroup_apply] at h
-  obtain ⟨G', C', A', ω, hG, hC, hA, hW, rfl⟩ := explodedPre_vis_inv P (by simp) h
+  obtain ⟨G', C', A', ω, hG, hC, hA, hW, rfl⟩ := layeredPre_vis_inv P (by simp) h
   cases e with
   | gsnd r j m => exact (aStep_gsnd_dead hA).elim
   | gdlv r i j m => exact (aStep_gdlv_dead hA).elim
@@ -1842,8 +1850,8 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
       by_cases hi : i = j
       · subst hi; exact ABAProcStepN.dsndRelay _ _ b hcnt
       · exact ABAProcStepN.dsndIdle _ _ j b (Ne.symm hi)
-    refine ⟨_, netGroup_of_event P (.dsnd j b)
-      (netPre_vis_step P (by simp) hall (NetStep.dsnd w j b hpool) hW), ?_⟩
+    refine ⟨_, deployedGroup_of_event P (.dsnd j b)
+      (deployedPre_vis_step P (by simp) hall (NetStep.dsnd w j b hpool) hW), ?_⟩
     rw [map_regroup_prod, regG_dput, regA_dput]
   | ddlv i j b =>
     obtain ⟨hmem, hA'⟩ := aStep_ddlv hA
@@ -1852,8 +1860,8 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
       pureN_inj (gbcaSide_idle_inv P (by simp) (by simp) (by simp [GSub.isFailN]) hG)
     obtain ⟨hnr, hC0⟩ := stepC_ddlv_self (hC i)
     obtain rfl := coresN_update hC0 (fun k hk => stepC_ddlv_foreign (Ne.symm hk) (hC k))
-    refine ⟨_, netGroup_of_event P (.ddlv i j b)
-      (netPre_vis_step P (by simp)
+    refine ⟨_, deployedGroup_of_event P (.ddlv i j b)
+      (deployedPre_vis_step P (by simp)
         (procsN_family i _ (ABAProcStepN.ddlvRecv _ _ j b hnr)
           (fun k hk => ABAProcStepN.ddlvIdle _ _ i j b (Ne.symm hk)))
         (NetStep.ddlv w i j b hmem) hW), ?_⟩
@@ -1865,8 +1873,8 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
       pureN_inj (gbcaSide_idle_inv P (by simp) (by simp) (by simp [GSub.isFailN]) hG)
     obtain ⟨hph, hr, hg, hC0⟩ := stepC_retWPub_self (hC id)
     obtain rfl := coresN_update hC0 (fun i hi => stepC_retWPub_foreign (Ne.symm hi) (hC i))
-    refine ⟨_, netGroup_of_event P (.retWPub r id c b)
-      (netPre_vis_step P (by simp)
+    refine ⟨_, deployedGroup_of_event P (.retWPub r id c b)
+      (deployedPre_vis_step P (by simp)
         (procsN_family id _ (ABAProcStepN.retWPub _ _ r c b hph hr hg)
           (fun i hi => ABAProcStepN.retWPubIdle _ _ r id c b (Ne.symm hi)))
         (NetStep.retWPub w r id c b) hW), ?_⟩
@@ -1888,8 +1896,8 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     obtain rfl : G' = regG u w := pureN_inj hG'
     obtain ⟨hph, hr, hest, hC0⟩ := stepC_gcallLoop_self (hC id)
     obtain rfl := coresN_update hC0 (fun i hi => stepC_gcallLoop_foreign (Ne.symm hi) (hC i))
-    refine ⟨_, netGroup_of_event P (.gcallLoop r id b)
-      (netPre_vis_step P (by simp)
+    refine ⟨_, deployedGroup_of_event P (.gcallLoop r id b)
+      (deployedPre_vis_step P (by simp)
         (procsN_family id _ (ABAProcStepN.gcallLoop _ _ r b hph hr hest)
           (fun i hi => ABAProcStepN.gcallLoopIdle _ _ r id b (Ne.symm hi)))
         (NetStep.gcallLoop w r id b) hW), ?_⟩
@@ -1909,8 +1917,8 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
       (fun i hi => GSub.stepG_byzCallG_foreign (Ne.symm hi) (hgall i))
     obtain rfl : C' = regC u := coresN_id fun i => stepC_byzCallG (hC i)
     obtain rfl := pureN_inj hG'
-    refine ⟨_, netGroup_of_event P (.byzCallG r k b)
-      (netPre_vis_step P (by simp)
+    refine ⟨_, deployedGroup_of_event P (.byzCallG r k b)
+      (deployedPre_vis_step P (by simp)
         (procsN_family k _ (ABAProcStepN.byzCallG _ _ r b hin)
           (fun i hi => ABAProcStepN.byzCallGIdle _ _ r k b (Ne.symm hi)))
         (NetStep.byzCallG w r k b hF) hW), ?_⟩
@@ -1932,8 +1940,8 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
       Function.update_eq_self r (regG u w)] at hG'
     obtain rfl : G' = regG u w := pureN_inj hG'
     obtain rfl : C' = regC u := coresN_id fun i => stepC_byzCallGLoop (hC i)
-    refine ⟨_, netGroup_of_event P (.byzCallGLoop r k b)
-      (netPre_vis_step P (by simp)
+    refine ⟨_, deployedGroup_of_event P (.byzCallGLoop r k b)
+      (deployedPre_vis_step P (by simp)
         (fun i => ABAProcStepN.byzCallGLoopIdle _ _ r k b)
         (NetStep.byzCallGLoop w r k b hF) hW), ?_⟩
     rw [map_regroup_prod]
@@ -1954,13 +1962,13 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
         Y = Function.update (fun i => (u i).2 r) k nd →
         ABAProcStepN P k (u k) (Sum.inr (.byzRetG r k out))
           (PMF.pure ((u k).1, Function.update (u k).2 r nd)) →
-        ∃ ν, (netGroup P).step (u, w, o) Lab.tau ν ∧
+        ∃ ν, (deployedGroup P).step (u, w, o) Lab.tau ν ∧
           prodPMF (PMF.pure (Function.update (regG u w) r (Y, ⟨w.pool r, w.F⟩)))
             (prodPMF (PMF.pure (regC u)) (prodPMF (PMF.pure (regA w)) ω))
             = ν.map regroup := by
       rintro nd rfl hown
-      refine ⟨_, netGroup_of_event P (.byzRetG r k out)
-        (netPre_vis_step P (by simp)
+      refine ⟨_, deployedGroup_of_event P (.byzRetG r k out)
+        (deployedPre_vis_step P (by simp)
           (procsN_family k _ hown
             (fun i hi => ABAProcStepN.byzRetGIdle _ _ r k out (Ne.symm hi)))
           (NetStep.byzRetG w r k out hF) hW), ?_⟩
@@ -1983,8 +1991,8 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     obtain rfl : G' = regG u w :=
       pureN_inj (gbcaSide_idle_inv P (by simp) (by simp) (by simp [GSub.isFailN]) hG)
     obtain rfl : C' = regC u := coresN_id fun i => stepC_byzCallW (hC i)
-    refine ⟨_, netGroup_of_event P (.byzCallW r k)
-      (netPre_vis_step P (by simp) (fun i => ABAProcStepN.byzCallWIdle _ _ r k)
+    refine ⟨_, deployedGroup_of_event P (.byzCallW r k)
+      (deployedPre_vis_step P (by simp) (fun i => ABAProcStepN.byzCallWIdle _ _ r k)
         (NetStep.byzCallW w r k hF) hW), ?_⟩
     rw [map_regroup_prod]
   | byzRetW r k b =>
@@ -1993,24 +2001,24 @@ theorem netGroupConverse_netEvt (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     obtain rfl : G' = regG u w :=
       pureN_inj (gbcaSide_idle_inv P (by simp) (by simp) (by simp [GSub.isFailN]) hG)
     obtain rfl : C' = regC u := coresN_id fun i => stepC_byzRetW (hC i)
-    refine ⟨_, netGroup_of_event P (.byzRetW r k b)
-      (netPre_vis_step P (by simp) (fun i => ABAProcStepN.byzRetWIdle _ _ r k b)
+    refine ⟨_, deployedGroup_of_event P (.byzRetW r k b)
+      (deployedPre_vis_step P (by simp) (fun i => ABAProcStepN.byzRetWIdle _ _ r k b)
         (NetStep.byzRetW w r k b hF) hW), ?_⟩
     rw [map_regroup_prod]
 
 /-! ### The converse on the silent label
 
-A silent transition of the exploded system is one factor's own silent rule.
+A silent transition of the layered system is one factor's own silent rule.
 The graded-agreement side's is a round subsystem's, which is either one of the
 two rendezvous hidden inside it — reappearing as a deployed `gsnd` or `gdlv` —
 or that round's fabric injection. -/
 
-theorem netGroupConverse_tau (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
-    (w : NetState P.n) (o : ℕ → WCC.SpecState P.n) {μ : PMF (ExpState P)}
-    (h : (explodedPre P).step (regroup (u, w, o)) (Sum.inl Lab.tau) μ) :
-    ∃ ν, (netGroup P).step (u, w, o) Lab.tau ν ∧ μ = ν.map regroup := by
+theorem deployedGroupConverse_tau (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
+    (w : NetState P.n) (o : ℕ → WCC.SpecState P.n) {μ : PMF (LayeredState P)}
+    (h : (layeredPre P).step (regroup (u, w, o)) (Sum.inl Lab.tau) μ) :
+    ∃ ν, (deployedGroup P).step (u, w, o) Lab.tau ν ∧ μ = ν.map regroup := by
   rw [regroup_apply] at h
-  rcases explodedPre_tau_inv P h with ⟨G', hG, rfl⟩ | ⟨A', hA, rfl⟩ | ⟨ω, hW, rfl⟩
+  rcases layeredPre_tau_inv P h with ⟨G', hG, rfl⟩ | ⟨A', hA, rfl⟩ | ⟨ω, hW, rfl⟩
   · obtain ⟨r, X, hsub, hG'⟩ := gbcaSide_tau_inv P hG
     obtain rfl := pureN_inj hG'
     rcases sub_tau_inv P r (U := fun i => (u i).2 r) (W := ⟨w.pool r, w.F⟩) hsub with
@@ -2024,14 +2032,14 @@ theorem netGroupConverse_tau (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
             Y = Function.update (fun i => (u i).2 r) j p' →
             ABAProcStepN P j (u j) (Sum.inr (.gsnd r j m))
               (PMF.pure ((u j).1, Function.update (u j).2 r p')) →
-            ∃ ν, (netGroup P).step (u, w, o) Lab.tau ν ∧
+            ∃ ν, (deployedGroup P).step (u, w, o) Lab.tau ν ∧
               (PMF.pure (Function.update (regG u w) r
                   (Y, (⟨w.pool r, w.F⟩ : GSub.GNetState P.n).gpool j m),
-                regC u, regA w, o) : PMF (ExpState P)) = ν.map regroup := by
+                regC u, regA w, o) : PMF (LayeredState P)) = ν.map regroup := by
           intro p' heq hown
           subst heq
-          refine ⟨_, netGroup_of_event P (.gsnd r j m)
-            (netPre_vis_step P (by simp)
+          refine ⟨_, deployedGroup_of_event P (.gsnd r j m)
+            (deployedPre_vis_step P (by simp)
               (procsN_family j _ hown
                 (fun i hi => ABAProcStepN.gsndIdle _ _ r j m (Ne.symm hi)))
               (NetStep.gsnd w r j m) (wccLift_idle P o (wccPull_gsnd r j m))), ?_⟩
@@ -2085,8 +2093,8 @@ theorem netGroupConverse_tau (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
         obtain rfl : W' = (⟨w.pool r, w.F⟩ : GSub.GNetState P.n) := GSub.pure_inj hW'
         obtain rfl := gprocs_update (GSub.stepG_dlv_own (hgall i))
           (fun k hk => GSub.stepG_dlv_foreign (Ne.symm hk) (hgall k))
-        refine ⟨_, netGroup_of_event P (.gdlv r i j m)
-          (netPre_vis_step P (by simp)
+        refine ⟨_, deployedGroup_of_event P (.gdlv r i j m)
+          (deployedPre_vis_step P (by simp)
             (procsN_family i _ (ABAProcStepN.gdlvRecv _ _ r j m)
               (fun k hk => ABAProcStepN.gdlvIdle _ _ r i j m (Ne.symm hk)))
             (NetStep.gdlv w r i j m hmem)
@@ -2098,26 +2106,26 @@ theorem netGroupConverse_tau (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
       obtain ⟨k, m, hF, hW'⟩ := GSub.netG_tau hgn
       obtain rfl : W' = (⟨w.pool r, w.F⟩ : GSub.GNetState P.n).gpool k m :=
         GSub.pure_inj hW'
-      refine ⟨_, netGroup_of_lab P (netPre_tau_net P (NetStep.byzG w r k m hF)), ?_⟩
+      refine ⟨_, deployedGroup_of_lab P (deployedPre_tau_net P (NetStep.byzG w r k m hF)), ?_⟩
       rw [map_regroup_pure, regG_mcast u w r k m, regA_gpool]
       rfl
   · obtain ⟨k, b, hF, hA'⟩ := aStep_tau hA
     obtain rfl : A' = (regA w).dput k b := pureN_inj hA'
-    refine ⟨_, netGroup_of_lab P (netPre_tau_net P (NetStep.byzD w k b hF)), ?_⟩
+    refine ⟨_, deployedGroup_of_lab P (deployedPre_tau_net P (NetStep.byzD w k b hF)), ?_⟩
     rw [map_regroup_pure, regG_dput, regA_dput]
-  · refine ⟨_, netGroup_of_lab P (netPre_tau_wcc P hW), ?_⟩
+  · refine ⟨_, deployedGroup_of_lab P (deployedPre_tau_wcc P hW), ?_⟩
     rw [map_regroup_prod]
 
 /-! ### The converse on the shared labels -/
 
-theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
+theorem deployedGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     (w : NetState P.n) (o : ℕ → WCC.SpecState P.n) (l : Lab P.n) (hl : l ≠ Lab.tau)
-    {μ : PMF (ExpState P)}
-    (h : (explodedPre P).step (regroup (u, w, o)) (Sum.inl l) μ) :
-    ∃ ν, (netGroup P).step (u, w, o) l ν ∧ μ = ν.map regroup := by
+    {μ : PMF (LayeredState P)}
+    (h : (layeredPre P).step (regroup (u, w, o)) (Sum.inl l) μ) :
+    ∃ ν, (deployedGroup P).step (u, w, o) l ν ∧ μ = ν.map regroup := by
   rw [regroup_apply] at h
   have hL : (Sum.inl l : NLab P.n) ≠ Silent.τ := by simpa using hl
-  obtain ⟨G', C', A', ω, hG, hC, hA, hW, rfl⟩ := explodedPre_vis_inv P hL h
+  obtain ⟨G', C', A', ω, hG, hC, hA, hW, rfl⟩ := layeredPre_vis_inv P hL h
   cases l with
   | tau => exact absurd rfl hl
   | callABA id b =>
@@ -2127,7 +2135,7 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     rcases stepC_callABA_own (hC id) with ⟨hin, hC0⟩ | hC0
     · obtain rfl := coresN_update hC0
         (fun i hi => stepC_callABA_foreign (Ne.symm hi) (hC i))
-      refine ⟨_, netGroup_of_lab P (netPre_vis_step P hL
+      refine ⟨_, deployedGroup_of_lab P (deployedPre_vis_step P hL
         (procsN_family id _ (ABAProcStepN.input _ _ b hin)
           (fun i hi => ABAProcStepN.callABAIdle _ _ id b (Ne.symm hi)))
         (NetStep.callABAIdle w id b) hW), ?_⟩
@@ -2143,8 +2151,8 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
         by_cases hi : i = id
         · subst hi; exact ABAProcStepN.inputLoop _ _ b
         · exact ABAProcStepN.callABAIdle _ _ id b (Ne.symm hi)
-      refine ⟨_, netGroup_of_lab P
-        (netPre_vis_step P hL hall (NetStep.callABAIdle w id b) hW), ?_⟩
+      refine ⟨_, deployedGroup_of_lab P
+        (deployedPre_vis_step P hL hall (NetStep.callABAIdle w id b) hW), ?_⟩
       rw [map_regroup_prod]
   | retABA id b =>
     obtain ⟨hpool, hA'⟩ := aStep_retABA hA
@@ -2154,7 +2162,7 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     obtain ⟨hcnt, hret, hC0⟩ := stepC_retABA_own (hC id)
     obtain rfl := coresN_update hC0
       (fun i hi => stepC_retABA_foreign (Ne.symm hi) (hC i))
-    refine ⟨_, netGroup_of_lab P (netPre_vis_step P hL
+    refine ⟨_, deployedGroup_of_lab P (deployedPre_vis_step P hL
       (procsN_family id _ (ABAProcStepN.ret _ _ b hcnt hret)
         (fun i hi => ABAProcStepN.retABAIdle _ _ id b (Ne.symm hi)))
       (NetStep.retABA w id b hpool) hW), ?_⟩
@@ -2175,7 +2183,7 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     obtain ⟨hph, hr, hest, hC0⟩ := stepC_callG_own (hC id)
     obtain rfl := coresN_update hC0
       (fun i hi => stepC_callG_foreign (Ne.symm hi) (hC i))
-    refine ⟨_, netGroup_of_lab P (netPre_vis_step P hL
+    refine ⟨_, deployedGroup_of_lab P (deployedPre_vis_step P hL
       (procsN_family id _ (ABAProcStepN.callG_call _ _ r b hph hr hest hin)
         (fun i hi => ABAProcStepN.callGIdle _ _ r id b (Ne.symm hi)))
       (NetStep.callG w r id b) hW), ?_⟩
@@ -2202,7 +2210,7 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
           (PMF.pure ((u id).1.setProc { (u id).1.proc with
               est := out.est, lastGrade := some out, phase := .toCallW },
             Function.update (u id).2 r p')) →
-        ∃ ν, (netGroup P).step (u, w, o) (Lab.retG r id out) ν ∧
+        ∃ ν, (deployedGroup P).step (u, w, o) (Lab.retG r id out) ν ∧
           prodPMF (PMF.pure (Function.update (regG u w) r
               (Y, (⟨w.pool r, w.F⟩ : GSub.GNetState P.n))))
             (prodPMF (PMF.pure (Function.update (regC u) id
@@ -2211,7 +2219,7 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
               (prodPMF (PMF.pure (regA w)) ω)) = ν.map regroup := by
       intro p' heq hown
       subst heq
-      refine ⟨_, netGroup_of_lab P (netPre_vis_step P hL
+      refine ⟨_, deployedGroup_of_lab P (deployedPre_vis_step P hL
         (procsN_family id _ hown
           (fun i hi => ABAProcStepN.retGIdle _ _ r id out (Ne.symm hi)))
         (NetStep.retGIdle w r id out) hW), ?_⟩
@@ -2237,7 +2245,7 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     obtain ⟨hph, hr, hC0⟩ := stepC_callW_own (hC id)
     obtain rfl := coresN_update hC0
       (fun i hi => stepC_callW_foreign (Ne.symm hi) (hC i))
-    refine ⟨_, netGroup_of_lab P (netPre_vis_step P hL
+    refine ⟨_, deployedGroup_of_lab P (deployedPre_vis_step P hL
       (procsN_family id _ (ABAProcStepN.callW _ _ r hph hr)
         (fun i hi => ABAProcStepN.callWIdle _ _ r id (Ne.symm hi)))
       (NetStep.callWIdle w r id) hW), ?_⟩
@@ -2250,7 +2258,7 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     obtain ⟨hph, hr, hgr, hC0⟩ := stepC_retW_own (hC id)
     obtain rfl := coresN_update hC0
       (fun i hi => stepC_retW_foreign (Ne.symm hi) (hC i))
-    refine ⟨_, netGroup_of_lab P (netPre_vis_step P hL
+    refine ⟨_, deployedGroup_of_lab P (deployedPre_vis_step P hL
       (procsN_family id _ (ABAProcStepN.retW _ _ r c hph hr hgr)
         (fun i hi => ABAProcStepN.retWIdle _ _ r id c (Ne.symm hi)))
       (NetStep.retWIdle w r id c) hW), ?_⟩
@@ -2260,7 +2268,7 @@ theorem netGroupConverse_lab (P : Params) (u : ∀ _ : Fin P.n, ABANodeN P.n)
     obtain rfl : A' = ANetState.corrupt P k (regA w) := pureN_inj (aStep_fail hA)
     obtain rfl := pureN_inj (gbcaSide_fail_inv P k hG)
     obtain rfl : C' = regC u := coresN_id fun i => stepC_fail (hC i)
-    refine ⟨_, netGroup_of_lab P (netPre_vis_step P hL
+    refine ⟨_, deployedGroup_of_lab P (deployedPre_vis_step P hL
       (fun i => ABAProcStepN.failIdle _ _ k) (NetStep.fail w k) hW), ?_⟩
     rw [map_regroup_prod, regG_corrupt, regA_corrupt]
 
@@ -2270,69 +2278,71 @@ The regrouping reflects transitions as well as it preserves them, so it is a
 step-*bi*simulating state map and the two soundness inclusions close the two
 halves of an equality. Every state is arbitrary throughout — no reachability
 and no invariant enters, because every copy of the corrupted set on the
-exploded side *is* the network adversary's set, read through `regroup`. -/
+layered side *is* the network adversary's set, read through `regroup`. -/
 
 /-- **The converse matching** at the level of the two groups. -/
-theorem explodedGroupConverse (P : Params) :
-    ∀ q l μ, (explodedGroup P).step (regroup q) l μ →
-      ∃ ν, (netGroup P).step q l ν ∧ μ = ν.map regroup := by
+theorem layeredGroupConverse (P : Params) :
+    ∀ q l μ, (layeredGroup P).step (regroup q) l μ →
+      ∃ ν, (deployedGroup P).step q l ν ∧ μ = ν.map regroup := by
   rintro ⟨u, w, o⟩ l μ h
-  rw [explodedGroup_step_iff] at h
+  rw [layeredGroup_step_iff] at h
   rcases h with ⟨rfl, e, hpre⟩ | hpre
-  · exact netGroupConverse_netEvt P u w o e hpre
+  · exact deployedGroupConverse_netEvt P u w o e hpre
   · by_cases hl : l = Lab.tau
-    · subst hl; exact netGroupConverse_tau P u w o hpre
-    · exact netGroupConverse_lab P u w o l hl hpre
+    · subst hl; exact deployedGroupConverse_tau P u w o hpre
+    · exact deployedGroupConverse_lab P u w o l hl hpre
 
-/-- **The converse matching**: every transition of the exploded system out of a
+/-- **The converse matching**: every transition of the layered system out of a
 regrouped state is a transition of the deployed system, its successor
 distribution pushed forward. -/
-theorem explodedConverse (P : Params) :
-    ∀ q l μ, (exploded P).step (regroup q) l μ →
-      ∃ ν, (netFlat P).step q l ν ∧ μ = ν.map regroup :=
-  strongConverse_abstract regroup (Lab.hiddenAPI P.n) (explodedGroupConverse P)
+theorem layeredConverse (P : Params) :
+    ∀ q l μ, (layered P).step (regroup q) l μ →
+      ∃ ν, (deployed P).step q l ν ∧ μ = ν.map regroup :=
+  strongConverse_abstract regroup (Lab.hiddenAPI P.n) (layeredGroupConverse P)
 
-/-- **The deployed system simulates into the exploded one** along the graph of
+/-- **The deployed system simulates into the layered one** along the graph of
 the regrouping. -/
-noncomputable def explodedSim (P : Params) :
-    ProbabilisticForwardSimulation (netFlat P) (exploded P)
+noncomputable def layeredSim (P : Params) :
+    ProbabilisticForwardSimulation (deployed P) (layered P)
       (fun s ν => ν = PMF.pure (regroup s)) :=
   ProbabilisticForwardSimulation.ofStrongFunctional regroup (regroup_init P)
-    (explodedForward P)
+    (layeredForward P)
 
-/-- **The exploded system simulates into the deployed one** along the converse
+/-- **The layered system simulates into the deployed one** along the converse
 of the graph of the regrouping. -/
-noncomputable def explodedSimConverse (P : Params) :
-    ProbabilisticForwardSimulation (exploded P) (netFlat P)
+noncomputable def layeredSimConverse (P : Params) :
+    ProbabilisticForwardSimulation (layered P) (deployed P)
       (fun p ν => ∃ q, ν = PMF.pure q ∧ p = regroup q) :=
   ProbabilisticForwardSimulation.ofStrongFunctional_converse regroup
-    (regroup_init P) (explodedConverse P)
+    (regroup_init P) (layeredConverse P)
 
-/-- **The exploded presentation is exact**: cutting the deployed system along
+/-- **The layered presentation is exact**: cutting the deployed system along
 its layer boundaries — the family of graded-agreement round subsystems, the
 `n` round loops, the DECIDED layer with the corrupted set, and the coin
 oracle — achieves exactly the trace distributions of the deployed reading. No
 behaviour is added and none is lost. -/
-theorem exploded_atd (P : Params) :
-    achievableTraceDists (netFlat P) = achievableTraceDists (exploded P) :=
-  Set.Subset.antisymm (explodedSim P).achievableTraceDists_subset
-    (explodedSimConverse P).achievableTraceDists_subset
+theorem layered_atd (P : Params) :
+    achievableTraceDists (deployed P) = achievableTraceDists (layered P) :=
+  Set.Subset.antisymm (layeredSim P).achievableTraceDists_subset
+    (layeredSimConverse P).achievableTraceDists_subset
 
 /-! ### Mechanical axiom firewall
 
 No headline may acquire a `sorryAx` dependence. -/
 
-/-- info: 'PLTS.ABA.exploded_atd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'PLTS.ABA.Layer.layered_atd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms exploded_atd
+#print axioms layered_atd
 
-/-- info: 'PLTS.ABA.explodedForward' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'PLTS.ABA.Layer.layeredForward' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms explodedForward
+#print axioms layeredForward
 
-/-- info: 'PLTS.ABA.explodedConverse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'PLTS.ABA.Layer.layeredConverse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms explodedConverse
+#print axioms layeredConverse
+
+end Layer
 
 end ABA
 end PLTS

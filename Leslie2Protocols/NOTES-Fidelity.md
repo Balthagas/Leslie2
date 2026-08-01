@@ -77,7 +77,7 @@ receiving `echo4` messages from `2t + 1` parties" where the pseudocode's lines 1
 received once". `ImplStep.retB` reads this as *from at least one sender*: `honce : ∃ k,
 Msg.seal (some v) ∈ s.recv id k` (`GBCAImpl.lean:467`), not as a cardinality constraint
 of exactly one receipt. The hypothesis is a genuine part of the rule, carried through the
-deployed rendering (`FlatNetwork.lean:415`, the `retG_B` row of the corruption-blind
+deployed rendering (`Deployed.lean:415`, the `retG_B` row of the corruption-blind
 program, and `:610`, its Byzantine-drive twin), but no proof
 consumes it: the refinement's `retB` rows bind it and leave it unused, discharging the
 `B`-return's specification-side guards from the `f + 1` `BIND v` receipts and `hval`
@@ -103,10 +103,10 @@ and re-delivery is `insert` into a set, so the guard removes redundant transitio
 rather than reachable states — and the asymmetry reappears exactly in the deployed
 rendering, where each delivery is a rendezvous whose two halves are held by different
 components. Soundness is the network adversary's conjunct on both layers: `NetStep.gdlv`
-requires `h : m ∈ s.pool r j` (`FlatNetwork.lean:664`) and `NetStep.ddlv` requires
+requires `h : m ∈ s.pool r j` (`Deployed.lean:664`) and `NetStep.ddlv` requires
 `h : b ∈ s.dpool j` (`:672`), neither consuming the pooled message. Freshness is the
 receiver's, and only at the DECIDED layer: `ABAProcStepN.ddlvRecv` carries
-`hr : b ∉ c.decIn k` (`FlatNetwork.lean:550`) while `ABAProcStepN.gdlvRecv` carries no
+`hr : b ∉ c.decIn k` (`Deployed.lean:550`) while `ABAProcStepN.gdlvRecv` carries no
 hypothesis at all (`:529`), filing the message under the sender's inbox row
 unconditionally.
 
@@ -163,6 +163,6 @@ is what `spec_safe` (`SpecSafety.lean:855`) proves.
 Neither is a fidelity gap; both sit under Future work in `ABA/README.md`.
 **Achievability** — `Examples.lean` carries the non-vacuity run on `hybridSpec`, the
 analysis-side composition the core simulation takes as its subject, and a machine-checked
-positive-mass trace for `netFlat`, the deployed system `main` is about, is outstanding.
+positive-mass trace for `deployed`, the deployed system `main` is about, is outstanding.
 **`ValidityTrace` witness strengthening** — the witness clause accepts any preceding
 `callABA id' b`, where the proof yields a stronger ghost-backed one.

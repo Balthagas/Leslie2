@@ -24,9 +24,9 @@ The system the hand-built core simulation takes as its subject:
 
 `CoreSim.lean` relates `hybridSpec` to the ABA specification `spec`; the
 deployed protocol reaches `hybridSpec` from the deployment-shaped
-specification by a repartition of state (`flatSpecSim`, `ABA/FlatSpec.lean`).
+specification by a repartition of state (`layeredSpecSim`, `ABA/LayeredSpec.lean`).
 Nothing here mentions the deployed coordinates: those are
-`ABA/FlatNetwork.lean`'s.
+`ABA/Deployed.lean`'s.
 
 The graded-agreement family sits in the **left** (refinable) slot of
 `System.parallel`, so a substitution under this fixed context is the
