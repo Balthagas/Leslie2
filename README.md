@@ -48,6 +48,14 @@ development is the `WeakClosure/` unfolding pipeline, which proves the non-trivi
 concrete `sys`-path. Transitivity and the three precongruences (results 2–5) then
 build on the simulation framework directly.
 
+A fourth precongruence, for restriction along the left summand of an extended
+alphabet `Label ⊕ Extra`, is proved outside the core in
+`Leslie2Protocols/Framework/Relabel.lean`
+(`PLTS.ProbabilisticForwardSimulation.relabel`): it is what lets a composition
+built over auxiliary rendezvous labels be read back over the alphabet it shares
+with everything else, and the ABA case study's composition pipeline uses it
+between its two `abstract` steps.
+
 ## Project layout
 
 The project is split into **three Lake libraries**:

@@ -5,6 +5,7 @@ Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.FlatNetwork
+import Leslie2Protocols.ABA.GBCAFamily
 import Leslie2Protocols.Framework.IdleFamily
 
 /-!
@@ -102,168 +103,6 @@ the broadcast corruption act it carries at that alphabet.
 -/
 
 namespace PLTS
-
-/-! ### Determinacy of a binary composition
-
-Binary parallel composition preserves the LTS property, the companion of
-`System.syncProduct_isLTS`: a synchronised step is a product of two Diracs and
-an interleaved one holds the other component's state. -/
-
-/-- **A binary composition of LTS components is an LTS.** -/
-theorem System.parallel_isLTS {S₁ S₂ L : Type} [Silent L] {sys₁ : System S₁ L}
-    {sys₂ : System S₂ L} (h₁ : sys₁.IsLTS) (h₂ : sys₂.IsLTS) :
-    (sys₁.parallel sys₂).IsLTS := by
-  rintro ⟨a, b⟩ l μ hstep
-  rw [System.parallel_step] at hstep
-  rcases hstep with ⟨-, μ₁, μ₂, ha, hb, rfl⟩ | ⟨-, μ₁, ha, rfl⟩ | ⟨-, μ₂, hb, rfl⟩
-  · obtain ⟨a', rfl⟩ := h₁ _ _ _ ha
-    obtain ⟨b', rfl⟩ := h₂ _ _ _ hb
-    exact ⟨(a', b'), ABA.Net.prodPMF_pure_pure a' b'⟩
-  · obtain ⟨a', rfl⟩ := h₁ _ _ _ ha
-    exact ⟨(a', b), ABA.Net.prodPMF_pure_pure a' b⟩
-  · obtain ⟨b', rfl⟩ := h₂ _ _ _ hb
-    exact ⟨(a, b'), ABA.Net.prodPMF_pure_pure a b'⟩
-
-/-! ### Reading a system over a finer alphabet
-
-`System.mapIdle φ` (`ABA/FlatNetwork.lean`) reads a system over `L` as a system
-over `L'`: a label `l'` with `φ l' = some l` delegates to the `l`-transitions,
-and a label outside the image of `φ` idles. Three facts are needed below —
-determinacy passes through, and both weak transitions of the underlying system
-are carried along any *section* of `φ` that respects the silent label.
-
-A section is what makes the transport trivial on transitions: `φ (g x) = some x`
-turns every `x`-step into a `g x`-step of the read-back system, with no
-condition on which labels occur in the witness execution. The second hypothesis,
-`g x = τ ↔ x = τ`, is what makes it trivial on traces: the transported execution
-hides exactly the transitions the original hid, so its trace is the original
-trace relabelled by `g`. -/
-
-/-- **`mapIdle` preserves the LTS property**: a delegated label keeps the
-underlying system's distribution, an idle one is a Dirac by construction. -/
-theorem System.mapIdle_isLTS {S L L' : Type} (φ : L' → Option L)
-    {sys : System S L} (h : sys.IsLTS) : (sys.mapIdle φ).IsLTS := by
-  intro s l' μ hstep
-  rw [System.mapIdle_step] at hstep
-  rcases hstep with ⟨l, -, hs⟩ | ⟨-, rfl⟩
-  · exact h s l μ hs
-  · exact ⟨s, rfl⟩
-
-/-- Relabel the transitions of an alternating sequence, leaving its states
-untouched — the label-side companion of `AlterSeq.map`. -/
-def AlterSeq.mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L) :
-    AlterSeq S L' where
-  init := e.init
-  trans := e.trans.map (fun lq => (g lq.1, lq.2))
-
-/-- `AlterSeq.mapLab` preserves termination: it rewrites labels in place. -/
-@[simp] theorem AlterSeq.mapLab_trans_terminates_iff {S L L' : Type} (g : L → L')
-    (e : AlterSeq S L) : (e.mapLab g).trans.Terminates ↔ e.trans.Terminates :=
-  Stream'.Seq.terminates_map_iff
-
-/-- `AlterSeq.mapLab` leaves the states of the run alone. -/
-theorem AlterSeq.stateAt_mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L)
-    (n : ℕ) : (e.mapLab g).stateAt n = e.stateAt n := by
-  cases n with
-  | zero => rfl
-  | succ k =>
-    change ((e.trans.map fun lq => (g lq.1, lq.2)).get? k).map Prod.snd
-      = (e.trans.get? k).map Prod.snd
-    rw [Stream'.Seq.map_get?]
-    cases e.trans.get? k with
-    | none => rfl
-    | some lq => rfl
-
-/-- `AlterSeq.mapLab` leaves the end state of the run alone. -/
-theorem AlterSeq.endState_mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L)
-    (h : e.trans.Terminates) (h' : (e.mapLab g).trans.Terminates) :
-    (e.mapLab g).endState h' = e.endState h := by
-  have hterm_iff : ∀ n, (e.mapLab g).trans.TerminatedAt n ↔ e.trans.TerminatedAt n := by
-    intro n
-    change (e.trans.map fun lq => (g lq.1, lq.2)).get? n = none ↔ e.trans.get? n = none
-    rw [Stream'.Seq.map_get?]
-    cases e.trans.get? n <;> simp
-  have hfind : Nat.find h' = Nat.find h := by
-    apply le_antisymm
-    · exact Nat.find_le ((hterm_iff _).mpr (Nat.find_spec h))
-    · exact Nat.find_le ((hterm_iff _).mp (Nat.find_spec h'))
-  have h1 := AlterSeq.stateAt_find_eq_endState (e.mapLab g) h'
-  rw [hfind, AlterSeq.stateAt_mapLab, AlterSeq.stateAt_find_eq_endState e h] at h1
-  exact (Option.some.inj h1).symm
-
-/-- Transport a partial execution along a label map that turns every step of
-`sys` into a step of `sys'`. -/
-theorem is_partial_exec_mapLab {S L L' : Type} {sys : System S L} {sys' : System S L'}
-    (g : L → L') (hg : ∀ s l μ, sys.step s l μ → sys'.step s (g l) μ)
-    {e : AlterSeq S L} (hpe : is_partial_exec e sys) :
-    is_partial_exec (e.mapLab g) sys' := by
-  intro n l s' hn
-  rw [show (e.mapLab g).trans = e.trans.map (fun lq : L × S => (g lq.1, lq.2)) from rfl,
-    Stream'.Seq.map_get?] at hn
-  cases hq : e.trans.get? n with
-  | none => rw [hq] at hn; exact absurd hn (by simp)
-  | some lq =>
-    obtain ⟨l₀, x⟩ := lq
-    rw [hq] at hn
-    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hn
-    obtain ⟨rfl, rfl⟩ := hn
-    obtain ⟨sn, μ, hsn, hstep, hmem⟩ := hpe n l₀ x hq
-    exact ⟨sn, μ, by rw [AlterSeq.stateAt_mapLab]; exact hsn, hg sn l₀ μ hstep, hmem⟩
-
-/-- The trace of a relabelled execution is the relabelled trace, whenever the
-label map preserves and reflects the silent label: both sides drop exactly the
-same transitions. -/
-theorem System.trace_mapLab {S L L' : Type} [Silent L] [Silent L']
-    (sys' : System S L') (sys : System S L) (g : L → L')
-    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
-    (e : AlterSeq S L) : sys'.trace (e.mapLab g) = (sys.trace e).map g := by
-  have hp : (fun q : L' × S => ¬ (q.1 = (Silent.τ : L'))) ∘
-      (fun lq : L × S => (g lq.1, lq.2))
-      = fun lq : L × S => ¬ (lq.1 = (Silent.τ : L)) := by
-    funext lq
-    exact propext (not_congr (hgτ lq.1))
-  unfold System.trace
-  rw [show (e.mapLab g).trans = e.trans.map (fun lq : L × S => (g lq.1, lq.2)) from rfl,
-    Stream'.Seq.filter_map, hp, ← Stream'.Seq.map_comp, ← Stream'.Seq.map_comp]
-  rfl
-
-section MapIdleWeak
-
-variable {S L L' : Type} [Silent L] [Silent L'] {sys : System S L}
-  {φ : L' → Option L} {s s' : S}
-
-/-- **A silent weak run survives the read-back**: `q =ε=> q'` of `sys` is
-`q =ε=> q'` of `sys.mapIdle φ`, the witness execution relabelled along a
-section `g` of `φ`. -/
-theorem System.weakLSilent_mapIdle (g : L → L') (hsec : ∀ x, φ (g x) = some x)
-    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
-    (h : sys.weakLSilent s s') : (sys.mapIdle φ).weakLSilent s s' := by
-  obtain ⟨e, hterm, hpe, hinit, hend, htr⟩ := h
-  refine ⟨e.mapLab g, (AlterSeq.mapLab_trans_terminates_iff g e).mpr hterm,
-    is_partial_exec_mapLab g
-      (fun _ x _ hx => (System.mapIdle_step_some (hsec x) _).mpr hx) hpe,
-    hinit, ?_, ?_⟩
-  · rw [AlterSeq.endState_mapLab g e hterm]; exact hend
-  · rw [System.trace_mapLab _ sys g hgτ, htr, Stream'.Seq.map_nil]
-
-/-- **A labelled weak run survives the read-back**: `q =l=> q'` of `sys` is
-`q =l'=> q'` of `sys.mapIdle φ` at any label `l'` the section `g` puts over
-`l`. -/
-theorem System.weakLStep_mapIdle (g : L → L') (hsec : ∀ x, φ (g x) = some x)
-    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
-    {l : L} {l' : L'} (hgl : g l = l') (h : sys.weakLStep s l s') :
-    (sys.mapIdle φ).weakLStep s l' s' := by
-  obtain ⟨e, hterm, hpe, hinit, hend, htr⟩ := h
-  refine ⟨e.mapLab g, (AlterSeq.mapLab_trans_terminates_iff g e).mpr hterm,
-    is_partial_exec_mapLab g
-      (fun _ x _ hx => (System.mapIdle_step_some (hsec x) _).mpr hx) hpe,
-    hinit, ?_, ?_⟩
-  · rw [AlterSeq.endState_mapLab g e hterm]; exact hend
-  · rw [System.trace_mapLab _ sys g hgτ, htr, Stream'.Seq.map_cons,
-      Stream'.Seq.map_nil, hgl]
-
-end MapIdleWeak
-
 namespace ABA
 namespace GSub
 
@@ -767,7 +606,7 @@ theorem subPre_event_step (P : Params) (r : ℕ)
     (subPre P r).step (u, w) (Sum.inr e) (PMF.pure (x, w')) := by
   rw [subPre, System.parallel_step]
   exact Or.inl ⟨by simp, PMF.pure x, PMF.pure w', syncG_pure (by simp) hall, hn,
-    (ABA.Net.prodPMF_pure_pure _ _).symm⟩
+    (prodPMF_pure_pure _ _).symm⟩
 
 /-- Build a joint transition of the programs and the fabric on a visible
 shared label. -/
@@ -781,7 +620,7 @@ theorem subPre_lab_step (P : Params) (r : ℕ)
     rw [glab_tau]; simpa using hl
   rw [subPre, System.parallel_step]
   exact Or.inl ⟨hne, PMF.pure x, PMF.pure w', syncG_pure hne hall, hn,
-    (ABA.Net.prodPMF_pure_pure _ _).symm⟩
+    (prodPMF_pure_pure _ _).symm⟩
 
 /-- Build a silent transition of the programs and the fabric from a
 fabric-local one. -/
@@ -790,7 +629,7 @@ theorem subPre_tau_net (P : Params) (r : ℕ)
     (hn : GNetStep P r w (Sum.inl (Sum.inl .tau)) (PMF.pure w')) :
     (subPre P r).step (u, w) (Sum.inl (Sum.inl .tau)) (PMF.pure (u, w')) := by
   rw [subPre, System.parallel_step]
-  exact Or.inr (Or.inr ⟨rfl, PMF.pure w', hn, (ABA.Net.prodPMF_pure_pure _ _).symm⟩)
+  exact Or.inr (Or.inr ⟨rfl, PMF.pure w', hn, (prodPMF_pure_pure _ _).symm⟩)
 
 /-- A hidden rendezvous is a silent transition of the subsystem. -/
 theorem sub_event_step (P : Params) (r : ℕ)
@@ -1433,7 +1272,7 @@ theorem subPre_joint_inv {P : Params} {r : ℕ}
   rcases h with ⟨-, μ₁, μ₂, hs, hn, rfl⟩ | ⟨hτ, -⟩ | ⟨hτ, -⟩
   · obtain ⟨x, rfl, hall⟩ := syncG_inv hs
     obtain ⟨w', rfl⟩ := gNetStep_dirac hn
-    exact ⟨x, w', ABA.Net.prodPMF_pure_pure _ _, hall, hn⟩
+    exact ⟨x, w', prodPMF_pure_pure _ _, hall, hn⟩
   · exact absurd hτ hL
   · exact absurd hτ hL
 
@@ -1450,7 +1289,7 @@ theorem subPre_tau_inv {P : Params} {r : ℕ}
   · exact absurd rfl hτ
   · exact absurd hs syncG_no_tau
   · obtain ⟨w', rfl⟩ := gNetStep_dirac hn
-    exact ⟨w', ABA.Net.prodPMF_pure_pure _ _, hn⟩
+    exact ⟨w', prodPMF_pure_pure _ _, hn⟩
 
 /-! ### The fabric's rules read off a round-tagged label
 

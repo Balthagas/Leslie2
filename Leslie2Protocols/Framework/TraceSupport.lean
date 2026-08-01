@@ -27,6 +27,14 @@ trace distribution:
   genuine execution.
 * `safety_transfer` — trace-support safety transfers along
   `achievableTraceDists ⊆`.
+
+It also carries the label-side transport of a run: `AlterSeq.mapLab g` rewrites
+the labels of a run in place, leaving its states — and therefore its
+termination, its `stateAt` and its `endState` — alone. A run of `sys` is a run
+of `sys'` once `g` turns every step of the one into a step of the other
+(`is_partial_exec_mapLab`), and its trace is the original trace relabelled
+whenever `g` preserves and reflects the silent label (`System.trace_mapLab`):
+both sides then drop exactly the same transitions.
 -/
 
 open Stream'
@@ -85,6 +93,86 @@ theorem stateAt_ofList_append_le (s₀ : State) (M K : List (Label × State))
     rw [Seq.ofList_get?, Seq.ofList_get?, List.getElem?_append_left (by omega)]
 
 end AlterSeq
+
+/-! ### Relabelling the transitions of a run -/
+
+/-- Relabel the transitions of an alternating sequence, leaving its states
+untouched — the label-side companion of `AlterSeq.map`. -/
+def AlterSeq.mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L) :
+    AlterSeq S L' where
+  init := e.init
+  trans := e.trans.map (fun lq => (g lq.1, lq.2))
+
+/-- `AlterSeq.mapLab` preserves termination: it rewrites labels in place. -/
+@[simp] theorem AlterSeq.mapLab_trans_terminates_iff {S L L' : Type} (g : L → L')
+    (e : AlterSeq S L) : (e.mapLab g).trans.Terminates ↔ e.trans.Terminates :=
+  Stream'.Seq.terminates_map_iff
+
+/-- `AlterSeq.mapLab` leaves the states of the run alone. -/
+theorem AlterSeq.stateAt_mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L)
+    (n : ℕ) : (e.mapLab g).stateAt n = e.stateAt n := by
+  cases n with
+  | zero => rfl
+  | succ k =>
+    change ((e.trans.map fun lq => (g lq.1, lq.2)).get? k).map Prod.snd
+      = (e.trans.get? k).map Prod.snd
+    rw [Stream'.Seq.map_get?]
+    cases e.trans.get? k with
+    | none => rfl
+    | some lq => rfl
+
+/-- `AlterSeq.mapLab` leaves the end state of the run alone. -/
+theorem AlterSeq.endState_mapLab {S L L' : Type} (g : L → L') (e : AlterSeq S L)
+    (h : e.trans.Terminates) (h' : (e.mapLab g).trans.Terminates) :
+    (e.mapLab g).endState h' = e.endState h := by
+  have hterm_iff : ∀ n, (e.mapLab g).trans.TerminatedAt n ↔ e.trans.TerminatedAt n := by
+    intro n
+    change (e.trans.map fun lq => (g lq.1, lq.2)).get? n = none ↔ e.trans.get? n = none
+    rw [Stream'.Seq.map_get?]
+    cases e.trans.get? n <;> simp
+  have hfind : Nat.find h' = Nat.find h := by
+    apply le_antisymm
+    · exact Nat.find_le ((hterm_iff _).mpr (Nat.find_spec h))
+    · exact Nat.find_le ((hterm_iff _).mp (Nat.find_spec h'))
+  have h1 := AlterSeq.stateAt_find_eq_endState (e.mapLab g) h'
+  rw [hfind, AlterSeq.stateAt_mapLab, AlterSeq.stateAt_find_eq_endState e h] at h1
+  exact (Option.some.inj h1).symm
+
+/-- Transport a partial execution along a label map that turns every step of
+`sys` into a step of `sys'`. -/
+theorem is_partial_exec_mapLab {S L L' : Type} {sys : System S L} {sys' : System S L'}
+    (g : L → L') (hg : ∀ s l μ, sys.step s l μ → sys'.step s (g l) μ)
+    {e : AlterSeq S L} (hpe : is_partial_exec e sys) :
+    is_partial_exec (e.mapLab g) sys' := by
+  intro n l s' hn
+  rw [show (e.mapLab g).trans = e.trans.map (fun lq : L × S => (g lq.1, lq.2)) from rfl,
+    Stream'.Seq.map_get?] at hn
+  cases hq : e.trans.get? n with
+  | none => rw [hq] at hn; exact absurd hn (by simp)
+  | some lq =>
+    obtain ⟨l₀, x⟩ := lq
+    rw [hq] at hn
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hn
+    obtain ⟨rfl, rfl⟩ := hn
+    obtain ⟨sn, μ, hsn, hstep, hmem⟩ := hpe n l₀ x hq
+    exact ⟨sn, μ, by rw [AlterSeq.stateAt_mapLab]; exact hsn, hg sn l₀ μ hstep, hmem⟩
+
+/-- The trace of a relabelled execution is the relabelled trace, whenever the
+label map preserves and reflects the silent label: both sides drop exactly the
+same transitions. -/
+theorem System.trace_mapLab {S L L' : Type} [Silent L] [Silent L']
+    (sys' : System S L') (sys : System S L) (g : L → L')
+    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
+    (e : AlterSeq S L) : sys'.trace (e.mapLab g) = (sys.trace e).map g := by
+  have hp : (fun q : L' × S => ¬ (q.1 = (Silent.τ : L'))) ∘
+      (fun lq : L × S => (g lq.1, lq.2))
+      = fun lq : L × S => ¬ (lq.1 = (Silent.τ : L)) := by
+    funext lq
+    exact propext (not_congr (hgτ lq.1))
+  unfold System.trace
+  rw [show (e.mapLab g).trans = e.trans.map (fun lq : L × S => (g lq.1, lq.2)) from rfl,
+    Stream'.Seq.filter_map, hp, ← Stream'.Seq.map_comp, ← Stream'.Seq.map_comp]
+  rfl
 
 /-! ### From `probOf` positivity to genuine executions -/
 

@@ -5,6 +5,7 @@ Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.Hybrid
+import Leslie2Protocols.Framework.SyncProduct
 
 /-!
 # Non-vacuity witnesses for the analysis-side composition
@@ -57,29 +58,6 @@ never-failing `ε = 1/2` coin, so that each bit outcome carries positive mass
 outcome and the failure outcome then both have mass `0`. -/
 noncomputable def P4 : Params := ⟨4, 1, by omega, 1 / 2, 0, by
   rw [add_zero, one_div, ENNReal.mul_inv_cancel] <;> simp⟩
-
-/-- Collapse a product of two Dirac distributions to a single Dirac. -/
-theorem prodPMF_pure_pure {α β : Type*} (a : α) (b : β) :
-    prodPMF (PMF.pure a) (PMF.pure b) = PMF.pure (a, b) := by
-  rw [prodPMF_pure_left, PMF.pure_map]
-
-/-- The mass a `prodPMF` with Dirac left factor puts on `(a, y)` is `ν y` (used
-to read off the coin flip's mass through the two idle product factors). -/
-theorem prodPMF_pure_left_apply {α β : Type*}
-    (a : α) (ν : PMF β) (y : β) : prodPMF (PMF.pure a) ν (a, y) = ν y := by
-  rw [prodPMF_pure_left, PMF.map_apply]
-  refine (tsum_eq_single y ?_).trans ?_
-  · intro b hb
-    simp only [Prod.mk.injEq, true_and, ite_eq_right_iff]
-    exact fun h => absurd h (Ne.symm hb)
-  · simp
-
-/-- Pushing an injective `f` forward, the mass at `f x` is the mass at `x`. -/
-theorem map_apply_inj {α β : Type*} {f : α → β} (hf : Function.Injective f)
-    (p : PMF α) (x : α) : (p.map f) (f x) = p x := by
-  rw [PMF.map_apply, tsum_eq_single x]
-  · rw [if_pos rfl]
-  · intro a ha; rw [if_neg]; exact fun h => ha (hf h.symm)
 
 /-! ### Named states of the run -/
 

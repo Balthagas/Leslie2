@@ -36,12 +36,37 @@ keeps the operator itself uniform: a single conjunction over the whole family.
 Full synchronisation preserves `System.IsLTS` (`System.syncProduct_isLTS`): a
 product of Diracs is the Dirac on the tuple of their points (`piPMF_pure`), and a
 single-coordinate update of an all-Dirac family is a Dirac too
-(`piPMF_update_pure`).
+(`piPMF_update_pure`). The binary composition `System.parallel` preserves it for
+the same reason, through the two-factor `prodPMF_pure_pure`
+(`System.parallel_isLTS`).
 -/
 
 namespace PLTS
 
 /-! ### Products of Diracs -/
+
+/-- Collapse a product of two Dirac distributions to a single Dirac. -/
+theorem prodPMF_pure_pure {α β : Type*} (a : α) (b : β) :
+    prodPMF (PMF.pure a) (PMF.pure b) = PMF.pure (a, b) := by
+  rw [prodPMF_pure_left, PMF.pure_map]
+
+/-- The mass a `prodPMF` with Dirac left factor puts on `(a, y)` is `ν y` (used
+to read off a probabilistic factor's mass through idle product factors). -/
+theorem prodPMF_pure_left_apply {α β : Type*}
+    (a : α) (ν : PMF β) (y : β) : prodPMF (PMF.pure a) ν (a, y) = ν y := by
+  rw [prodPMF_pure_left, PMF.map_apply]
+  refine (tsum_eq_single y ?_).trans ?_
+  · intro b hb
+    simp only [Prod.mk.injEq, true_and, ite_eq_right_iff]
+    exact fun h => absurd h (Ne.symm hb)
+  · simp
+
+/-- Pushing an injective `f` forward, the mass at `f x` is the mass at `x`. -/
+theorem map_apply_inj {α β : Type*} {f : α → β} (hf : Function.Injective f)
+    (p : PMF α) (x : α) : (p.map f) (f x) = p x := by
+  rw [PMF.map_apply, tsum_eq_single x]
+  · rw [if_pos rfl]
+  · intro a ha; rw [if_neg]; exact fun h => ha (hf h.symm)
 
 section PiPMFPure
 
@@ -114,5 +139,26 @@ theorem syncProduct_isLTS {sys : ∀ i, System (State i) Label}
 end System
 
 end Family
+
+/-! ### Determinacy of a binary composition
+
+Binary parallel composition preserves the LTS property, the companion of
+`System.syncProduct_isLTS`: a synchronised step is a product of two Diracs and
+an interleaved one holds the other component's state. -/
+
+/-- **A binary composition of LTS components is an LTS.** -/
+theorem System.parallel_isLTS {S₁ S₂ L : Type} [Silent L] {sys₁ : System S₁ L}
+    {sys₂ : System S₂ L} (h₁ : sys₁.IsLTS) (h₂ : sys₂.IsLTS) :
+    (sys₁.parallel sys₂).IsLTS := by
+  rintro ⟨a, b⟩ l μ hstep
+  rw [System.parallel_step] at hstep
+  rcases hstep with ⟨-, μ₁, μ₂, ha, hb, rfl⟩ | ⟨-, μ₁, ha, rfl⟩ | ⟨-, μ₂, hb, rfl⟩
+  · obtain ⟨a', rfl⟩ := h₁ _ _ _ ha
+    obtain ⟨b', rfl⟩ := h₂ _ _ _ hb
+    exact ⟨(a', b'), prodPMF_pure_pure a' b'⟩
+  · obtain ⟨a', rfl⟩ := h₁ _ _ _ ha
+    exact ⟨(a', b), prodPMF_pure_pure a' b⟩
+  · obtain ⟨b', rfl⟩ := h₂ _ _ _ hb
+    exact ⟨(a, b'), prodPMF_pure_pure a b'⟩
 
 end PLTS

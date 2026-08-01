@@ -4,8 +4,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.CoreSim
+import Leslie2Protocols.ABA.Core
+import Leslie2Protocols.ABA.GBCAImpl
 import Leslie2Protocols.ABA.SpecSafety
+import Leslie2Protocols.ABA.WCCSpec
+import Leslie2Protocols.Framework.IdleFamily
 import Leslie2Protocols.Framework.Relabel
 import Leslie2Protocols.Framework.SyncProduct
 
@@ -106,48 +109,6 @@ there in `ABA/FlatSpec.lean`.
 -/
 
 namespace PLTS
-
-/-! ### Pulling a system back along a partial label map -/
-
-/-- Read a system over `L` as a system over `L'`: a label `l'` with
-`φ l' = some l` delegates to the `l`-transitions, and a label outside the
-image of `φ` leaves the system idle. -/
-def System.mapIdle {S L L' : Type} (φ : L' → Option L) (sys : System S L) :
-    System S L' where
-  init := sys.init
-  step s l' μ :=
-    match φ l' with
-    | some l => sys.step s l μ
-    | none => μ = PMF.pure s
-
-@[simp] theorem System.mapIdle_init {S L L' : Type} (φ : L' → Option L)
-    (sys : System S L) : (sys.mapIdle φ).init = sys.init := rfl
-
-theorem System.mapIdle_step {S L L' : Type} (φ : L' → Option L) (sys : System S L)
-    (s : S) (l' : L') (μ : PMF S) :
-    (sys.mapIdle φ).step s l' μ ↔
-      (∃ l, φ l' = some l ∧ sys.step s l μ) ∨ (φ l' = none ∧ μ = PMF.pure s) := by
-  change (match φ l' with
-        | some l => sys.step s l μ
-        | none => μ = PMF.pure s) ↔ _
-  cases hφ : φ l' with
-  | none => simp
-  | some l => simp
-
-/-- Delegated labels read off the underlying system. -/
-theorem System.mapIdle_step_some {S L L' : Type} {φ : L' → Option L}
-    {sys : System S L} {s : S} {l' : L'} {l : L} (hφ : φ l' = some l)
-    (μ : PMF S) : (sys.mapIdle φ).step s l' μ ↔ sys.step s l μ := by
-  rw [System.mapIdle_step]
-  simp [hφ]
-
-/-- Unmapped labels are idle self-loops. -/
-theorem System.mapIdle_step_none {S L L' : Type} {φ : L' → Option L}
-    {sys : System S L} {s : S} {l' : L'} (hφ : φ l' = none) (μ : PMF S) :
-    (sys.mapIdle φ).step s l' μ ↔ μ = PMF.pure s := by
-  rw [System.mapIdle_step]
-  simp [hφ]
-
 namespace ABA
 
 /-! ### The corruption-blind records -/
@@ -877,10 +838,6 @@ namespace Net
 
 The pipeline is `relabel ∘ abstract ∘ parallel ∘ parallel ∘ syncProduct`; the
 lemmas below unfold it once and for all, in both directions. -/
-
-theorem prodPMF_pure_pure {α β : Type} (a : α) (b : β) :
-    prodPMF (PMF.pure a) (PMF.pure b) = PMF.pure (a, b) := by
-  rw [prodPMF_pure_left, PMF.pure_map]
 
 /-- A synchronised transition of the process group on a visible label: every
 process steps, and the joint distribution is Dirac. -/

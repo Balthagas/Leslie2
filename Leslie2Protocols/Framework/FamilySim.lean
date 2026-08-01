@@ -22,7 +22,8 @@ into the family via `AlterSeq.map (Function.update t r)` — the non-moving
 coordinates just carry the ambient joint state along:
 
 * `System.weakLSilent_of_step` / `System.weakLStep_of_step` — a single Dirac
-  step is a (one-transition) weak run;
+  step is a (one-transition) weak run; `weakLStep_tauThen` is the two-step
+  burst, a silent step followed by an external one;
 * `AlterSeq.stateAt_map`, `AlterSeq.endState_map`, `System.trace_map_state` —
   `AlterSeq.map` glue: pointwise state maps commute with `stateAt`/`endState`
   and leave the trace unchanged (the trace only reads labels);
@@ -63,6 +64,32 @@ private theorem singleStep_partial_exec {q q' : State} {l : Label}
     rw [Stream'.Seq.get?_cons_succ, Stream'.Seq.get?_nil] at hk
     exact absurd hk (by simp)
 
+private theorem terminates₂ {l₀ l₁ : Label} {q₁ q₂ : State} :
+    (Seq.cons (l₀, q₁) (Seq.cons (l₁, q₂) Seq.nil) : Seq (Label × State)).Terminates :=
+  Seq.terminates_cons_iff.mpr (Seq.terminates_cons_iff.mpr Seq.terminates_nil)
+
+/-- `endState` of a two-transition alternating sequence. -/
+private theorem endState₂ (q₀ : State) (l₀ : Label) (q₁ : State) (l₁ : Label)
+    (q₂ : State) :
+    (⟨q₀, Seq.cons (l₀, q₁) (Seq.cons (l₁, q₂) Seq.nil)⟩ : AlterSeq State Label).endState
+      terminates₂ = q₂ := by
+  classical
+  set e : AlterSeq State Label := ⟨q₀, Seq.cons (l₀, q₁) (Seq.cons (l₁, q₂) Seq.nil)⟩ with he
+  have hterm : e.trans.Terminates := terminates₂
+  have hfind : Nat.find hterm = 2 := by
+    refine le_antisymm (Nat.find_le (show e.trans.TerminatedAt 2 from rfl)) ?_
+    rw [Nat.le_find_iff]
+    intro m hm
+    interval_cases m
+    · exact Seq.cons_not_terminatedAt_zero
+    · intro hc
+      exact absurd (hc : e.trans.get? 1 = none) (by simp [he])
+  have hstate := AlterSeq.stateAt_find_eq_endState e hterm
+  rw [hfind] at hstate
+  have h2 : e.stateAt 2 = some q₂ := rfl
+  rw [h2] at hstate
+  exact (Option.some.inj hstate).symm
+
 variable [Silent Label]
 
 /-- A single internal Dirac step is a silent weak transition. -/
@@ -86,6 +113,36 @@ theorem System.weakLStep_of_step {q q' : State} {l : Label}
     singleStep_partial_exec h, rfl,
     AlterSeq.endState_singleton_cons q l q',
     by rw [System.trace_cons_external sys q l q' Seq.nil hl, System.trace_init]⟩
+
+/-- **The burst.** A silent step followed by an external step is a weak
+`l`-transition: the τ-step is the leading τ-closure. -/
+theorem weakLStep_tauThen {q q₁ q' : State} {l : Label}
+    (h1 : sys.LStep q Silent.τ q₁) (h2 : sys.LStep q₁ l q')
+    (hl : ¬ l = Silent.τ) : sys.weakLStep q l q' := by
+  refine ⟨⟨q, Seq.cons (Silent.τ, q₁) (Seq.cons (l, q') Seq.nil)⟩, terminates₂,
+    ?_, rfl, endState₂ q Silent.τ q₁ l q', ?_⟩
+  · intro k l' s' hk
+    match k with
+    | 0 =>
+      rw [Seq.get?_cons_zero] at hk
+      injection hk with hk
+      injection hk with ha hb
+      subst ha; subst hb
+      exact ⟨q, PMF.pure q₁, rfl, h1, by rw [PMF.mem_support_pure_iff]⟩
+    | 1 =>
+      rw [Seq.get?_cons_succ, Seq.get?_cons_zero] at hk
+      injection hk with hk
+      injection hk with ha hb
+      subst ha; subst hb
+      exact ⟨q₁, PMF.pure q', rfl, h2, by rw [PMF.mem_support_pure_iff]⟩
+    | (k + 2) =>
+      rw [Seq.get?_cons_succ, Seq.get?_cons_succ, Seq.get?_nil] at hk
+      exact absurd hk (by simp)
+  · have htail : sys.trace ⟨q₁, Seq.cons (l, q') Seq.nil⟩ = Seq.cons l Seq.nil := by
+      rw [System.trace_cons_external sys q₁ l q' Seq.nil hl, System.trace_init]
+    unfold System.trace at htail ⊢
+    rw [Seq.filter_cons_neg _ _ (by simp)]
+    exact htail
 
 end SingleStep
 

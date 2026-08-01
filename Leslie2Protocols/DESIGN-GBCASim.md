@@ -439,7 +439,8 @@ The kit the proof draws on, most of it common to the instance refinements of
 the development; the `SEAL`-level τ-rows (`sealBit`/`sealBot`) are frame cases
 identical in shape to `bindBit`/`bindBot` and need nothing beyond it:
 
-* the weak-transition kit: `weakLStep_single`, `weakLSilent_single`,
+* the weak-transition kit of `Framework/FamilySim.lean`:
+  `System.weakLStep_of_step`, `System.weakLSilent_of_step`,
   `weakLStep_tauThen`;
 * network plumbing: `recv_sub`, `recvCount_le_recvMsg`, `mem_mcast_sent`,
   `mem_recvMsg_recv`, `exists_sender_notMem`, `exists_honest_recv₂`,

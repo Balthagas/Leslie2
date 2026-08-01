@@ -5,7 +5,7 @@ Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.GBCAImpl
-import Leslie2.Simulation.ForwardLTS
+import Leslie2Protocols.Framework.FamilySim
 
 /-!
 # The per-instance GBCA refinement
@@ -103,108 +103,6 @@ open Stream'
 namespace PLTS
 namespace ABA
 namespace GBCA
-
-/-! ### Single-step weak transitions -/
-
-section WeakHelpers
-
-variable {S L : Type} [Silent L] {sys : System S L}
-
-omit [Silent L] in
-private theorem singleStep_partial_exec {q q' : S} {l : L} (h : sys.LStep q l q') :
-    is_partial_exec ⟨q, Seq.cons (l, q') Seq.nil⟩ sys := by
-  intro k l' s' hk
-  cases k with
-  | zero =>
-    rw [Stream'.Seq.get?_cons_zero] at hk
-    injection hk with hk
-    injection hk with h1 h2
-    subst h1
-    subst h2
-    exact ⟨q, PMF.pure q', rfl, h, by rw [PMF.mem_support_pure_iff]⟩
-  | succ k =>
-    rw [Stream'.Seq.get?_cons_succ, Stream'.Seq.get?_nil] at hk
-    exact absurd hk (by simp)
-
-/-- A single external `LStep` is a weak transition. -/
-private theorem weakLStep_single {q q' : S} {l : L} (h : sys.LStep q l q')
-    (hl : ¬ l = Silent.τ) : sys.weakLStep q l q' :=
-  ⟨⟨q, Seq.cons (l, q') Seq.nil⟩,
-    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil,
-    singleStep_partial_exec h, rfl,
-    AlterSeq.endState_singleton_cons q l q',
-    by rw [System.trace_cons_external sys q l q' Seq.nil hl, System.trace_init]⟩
-
-/-- A single internal `LStep` is a silent weak transition. -/
-private theorem weakLSilent_single {q q' : S} (h : sys.LStep q Silent.τ q') :
-    sys.weakLSilent q q' :=
-  ⟨⟨q, Seq.cons (Silent.τ, q') Seq.nil⟩,
-    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil,
-    singleStep_partial_exec h, rfl,
-    AlterSeq.endState_singleton_cons q Silent.τ q',
-    by
-      unfold System.trace
-      rw [Stream'.Seq.filter_cons_neg _ _ (by simp)]
-      exact System.trace_init sys q'⟩
-
-omit [Silent L] in
-private theorem terminates₂ {l₀ l₁ : L} {q₁ q₂ : S} :
-    (Seq.cons (l₀, q₁) (Seq.cons (l₁, q₂) Seq.nil) : Seq (L × S)).Terminates :=
-  Seq.terminates_cons_iff.mpr (Seq.terminates_cons_iff.mpr Seq.terminates_nil)
-
-omit [Silent L] in
-/-- `endState` of a two-transition alternating sequence. -/
-private theorem endState₂ (q₀ : S) (l₀ : L) (q₁ : S) (l₁ : L) (q₂ : S) :
-    (⟨q₀, Seq.cons (l₀, q₁) (Seq.cons (l₁, q₂) Seq.nil)⟩ : AlterSeq S L).endState
-      terminates₂ = q₂ := by
-  classical
-  set e : AlterSeq S L := ⟨q₀, Seq.cons (l₀, q₁) (Seq.cons (l₁, q₂) Seq.nil)⟩ with he
-  have hterm : e.trans.Terminates := terminates₂
-  have hfind : Nat.find hterm = 2 := by
-    refine le_antisymm (Nat.find_le (show e.trans.TerminatedAt 2 from rfl)) ?_
-    rw [Nat.le_find_iff]
-    intro m hm
-    interval_cases m
-    · exact Seq.cons_not_terminatedAt_zero
-    · intro hc
-      exact absurd (hc : e.trans.get? 1 = none) (by simp [he])
-  have hstate := AlterSeq.stateAt_find_eq_endState e hterm
-  rw [hfind] at hstate
-  have h2 : e.stateAt 2 = some q₂ := rfl
-  rw [h2] at hstate
-  exact (Option.some.inj hstate).symm
-
-/-- **The burst.** A silent step followed by an external step is a weak
-`l`-transition: the τ-step is the leading τ-closure. -/
-theorem weakLStep_tauThen {q q₁ q' : S} {l : L}
-    (h1 : sys.LStep q Silent.τ q₁) (h2 : sys.LStep q₁ l q')
-    (hl : ¬ l = Silent.τ) : sys.weakLStep q l q' := by
-  refine ⟨⟨q, Seq.cons (Silent.τ, q₁) (Seq.cons (l, q') Seq.nil)⟩, terminates₂,
-    ?_, rfl, endState₂ q Silent.τ q₁ l q', ?_⟩
-  · intro k l' s' hk
-    match k with
-    | 0 =>
-      rw [Seq.get?_cons_zero] at hk
-      injection hk with hk
-      injection hk with ha hb
-      subst ha; subst hb
-      exact ⟨q, PMF.pure q₁, rfl, h1, by rw [PMF.mem_support_pure_iff]⟩
-    | 1 =>
-      rw [Seq.get?_cons_succ, Seq.get?_cons_zero] at hk
-      injection hk with hk
-      injection hk with ha hb
-      subst ha; subst hb
-      exact ⟨q₁, PMF.pure q', rfl, h2, by rw [PMF.mem_support_pure_iff]⟩
-    | (k + 2) =>
-      rw [Seq.get?_cons_succ, Seq.get?_cons_succ, Seq.get?_nil] at hk
-      exact absurd hk (by simp)
-  · have htail : sys.trace ⟨q₁, Seq.cons (l, q') Seq.nil⟩ = Seq.cons l Seq.nil := by
-      rw [System.trace_cons_external sys q₁ l q' Seq.nil hl, System.trace_init]
-    unfold System.trace at htail ⊢
-    rw [Seq.filter_cons_neg _ _ (by simp)]
-    exact htail
-
-end WeakHelpers
 
 /-! ### Counting kit: any-payload monotonicity and harvest variants -/
 
@@ -1432,8 +1330,8 @@ theorem implRefines (P : Params) (r : ℕ) :
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     refine ⟨{ q2 with call := Function.update q2.call id (some b) },
-      Or.inr ⟨by simp, weakLStep_single
-        (Step.call q2 id b (by rw [hRR.call_eq]; exact h)) (by simp)⟩,
+      Or.inr ⟨by simp, System.weakLStep_of_step (by simp)
+        (Step.call q2 id b (by rw [hRR.call_eq]; exact h))⟩,
       hI', ?_, ?_, hRR.F_eq, ?_,
       hRR.gradeA_ev, hRR.gradeC_ev⟩
     · intro k
@@ -1456,7 +1354,7 @@ theorem implRefines (P : Params) (r : ℕ) :
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     exact ⟨q2, Or.inr ⟨by simp,
-      weakLStep_single (Step.callLoop q2 id b) (by simp)⟩, hRR⟩
+      System.weakLStep_of_step (by simp) (Step.callLoop q2 id b)⟩, hRR⟩
   | deliver i j m hsent =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
@@ -1661,8 +1559,8 @@ theorem implRefines (P : Params) (r : ℕ) :
     by_cases hdead : (!v) ∈ q2.dead
     · refine ⟨{ q2 with grade := some true,
                         ret := Function.update q2.ret id true },
-        Or.inr ⟨by simp, weakLStep_single
-          (Step.retA q2 id v hlive hdead hgr hret) (by simp)⟩,
+        Or.inr ⟨by simp, System.weakLStep_of_step (by simp)
+          (Step.retA q2 id v hlive hdead hgr hret)⟩,
         hI', ?_, ?_, hRR.F_eq,
         fun b hb => deadCert_ret (hRR.dead_cert b hb),
         fun _ => ⟨v, id, hcnt⟩,
@@ -1722,8 +1620,8 @@ theorem implRefines (P : Params) (r : ℕ) :
       hRR.spec_supp (suppI_of_valid hRR.inv hval (!v))
     by_cases hdead : (!v) ∈ q2.dead
     · refine ⟨{ q2 with ret := Function.update q2.ret id true },
-        Or.inr ⟨by simp, weakLStep_single
-          (Step.retB q2 id v hlive hdead hd hret) (by simp)⟩,
+        Or.inr ⟨by simp, System.weakLStep_of_step (by simp)
+          (Step.retB q2 id v hlive hdead hd hret)⟩,
         hI', ?_, ?_, hRR.F_eq,
         fun b hb => deadCert_ret (hRR.dead_cert b hb),
         hRR.gradeA_ev, hRR.gradeC_ev⟩
@@ -1823,8 +1721,8 @@ theorem implRefines (P : Params) (r : ℕ) :
       have hd1 : 1 ≤ q2.dead.card := Finset.card_pos.mpr hdne
       refine ⟨{ q2 with grade := some false,
                         ret := Function.update q2.ret id true },
-        Or.inr ⟨by simp, weakLStep_single
-          (Step.retC q2 id hd1 hwT hwF hgr hret) (by simp)⟩,
+        Or.inr ⟨by simp, System.weakLStep_of_step (by simp)
+          (Step.retC q2 id hd1 hwT hwF hgr hret)⟩,
         hI', ?_, ?_, hRR.F_eq,
         fun b hb => deadCert_ret (hRR.dead_cert b hb),
         fun hgt => absurd hgt (by simp),
@@ -1847,7 +1745,7 @@ theorem implRefines (P : Params) (r : ℕ) :
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     refine ⟨q2.corrupt P id,
-      Or.inr ⟨by simp, weakLStep_single (Step.fail q2 id) (by simp)⟩,
+      Or.inr ⟨by simp, System.weakLStep_of_step (by simp) (Step.fail q2 id)⟩,
       hI', ?_, ?_, implSpec_corrupt_F_eq hRR.F_eq id, ?_, ?_, ?_⟩
     · intro k
       rw [corrupt_call, ImplState.corrupt_proc]

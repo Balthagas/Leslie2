@@ -4,17 +4,24 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
+import Leslie2Protocols.Framework.TraceSupport
 import Leslie2.Systems.LTS
 
 /-!
-# Idle-padding and ℕ-indexed instance families
+# Idle padding, label pullbacks and ℕ-indexed instance families
 
-The two combinators that make the full-synchronisation `System.parallel`
+The three combinators that make the full-synchronisation `System.parallel`
 emulate the blueprint's sync-set composition `∥_S`:
 
 * `System.withIdle sys busy` — `sys` plus idle self-loops `s —l→ δ_s` on every
   label outside `busy`. Under full synchronisation, a non-participant then
   answers every foreign handshake by standing still.
+
+* `System.mapIdle φ sys` — `sys` read over a finer alphabet `L'` along the
+  partial label map `φ : L' → Option L`: a label `l'` with `φ l' = some l`
+  delegates to the `l`-transitions, and a label outside the image of `φ`
+  leaves the system idle. This is how a component that speaks a coarser
+  alphabet joins a composition over a finer one.
 
 * `System.family inst owns glob act` — the ℕ-indexed family of instances
   `inst r` over a shared alphabet, with **three** step disjuncts (plus idling):
@@ -31,8 +38,17 @@ emulate the blueprint's sync-set composition `∥_S`:
   be justified by instance steps); the intended `act`s are total corruption
   functions in the style of deviation D1.
 
-Both combinators preserve `System.IsLTS`, so an LTS instance family is again
-an LTS and the `ForwardLTS` bridge applies at family level.
+All three combinators preserve `System.IsLTS`, so an LTS instance family is
+again an LTS and the `ForwardLTS` bridge applies at family level.
+
+Both weak transitions of a system are carried along `mapIdle` by any *section*
+`g` of `φ` that respects the silent label. A section is what makes the
+transport trivial on transitions: `φ (g x) = some x` turns every `x`-step into
+a `g x`-step of the read-back system, with no condition on which labels occur
+in the witness execution. The second hypothesis, `g x = τ ↔ x = τ`, is what
+makes it trivial on traces: the transported execution hides exactly the
+transitions the original hid, so its trace is the original trace relabelled by
+`g` (`System.trace_mapLab`, in `Framework/TraceSupport.lean`).
 -/
 
 namespace PLTS
@@ -61,6 +77,94 @@ theorem System.IsLTS.withIdle {sys : System State Label} (h : sys.IsLTS)
   rintro s l μ (hstep | ⟨-, rfl⟩)
   · exact h s l μ hstep
   · exact ⟨s, rfl⟩
+
+/-! ### Pulling a system back along a partial label map -/
+
+/-- Read a system over `L` as a system over `L'`: a label `l'` with
+`φ l' = some l` delegates to the `l`-transitions, and a label outside the
+image of `φ` leaves the system idle. -/
+def System.mapIdle {S L L' : Type} (φ : L' → Option L) (sys : System S L) :
+    System S L' where
+  init := sys.init
+  step s l' μ :=
+    match φ l' with
+    | some l => sys.step s l μ
+    | none => μ = PMF.pure s
+
+@[simp] theorem System.mapIdle_init {S L L' : Type} (φ : L' → Option L)
+    (sys : System S L) : (sys.mapIdle φ).init = sys.init := rfl
+
+theorem System.mapIdle_step {S L L' : Type} (φ : L' → Option L) (sys : System S L)
+    (s : S) (l' : L') (μ : PMF S) :
+    (sys.mapIdle φ).step s l' μ ↔
+      (∃ l, φ l' = some l ∧ sys.step s l μ) ∨ (φ l' = none ∧ μ = PMF.pure s) := by
+  change (match φ l' with
+        | some l => sys.step s l μ
+        | none => μ = PMF.pure s) ↔ _
+  cases hφ : φ l' with
+  | none => simp
+  | some l => simp
+
+/-- Delegated labels read off the underlying system. -/
+theorem System.mapIdle_step_some {S L L' : Type} {φ : L' → Option L}
+    {sys : System S L} {s : S} {l' : L'} {l : L} (hφ : φ l' = some l)
+    (μ : PMF S) : (sys.mapIdle φ).step s l' μ ↔ sys.step s l μ := by
+  rw [System.mapIdle_step]
+  simp [hφ]
+
+/-- Unmapped labels are idle self-loops. -/
+theorem System.mapIdle_step_none {S L L' : Type} {φ : L' → Option L}
+    {sys : System S L} {s : S} {l' : L'} (hφ : φ l' = none) (μ : PMF S) :
+    (sys.mapIdle φ).step s l' μ ↔ μ = PMF.pure s := by
+  rw [System.mapIdle_step]
+  simp [hφ]
+
+/-- **`mapIdle` preserves the LTS property**: a delegated label keeps the
+underlying system's distribution, an idle one is a Dirac by construction. -/
+theorem System.mapIdle_isLTS {S L L' : Type} (φ : L' → Option L)
+    {sys : System S L} (h : sys.IsLTS) : (sys.mapIdle φ).IsLTS := by
+  intro s l' μ hstep
+  rw [System.mapIdle_step] at hstep
+  rcases hstep with ⟨l, -, hs⟩ | ⟨-, rfl⟩
+  · exact h s l μ hs
+  · exact ⟨s, rfl⟩
+
+section MapIdleWeak
+
+variable {S L L' : Type} [Silent L] [Silent L'] {sys : System S L}
+  {φ : L' → Option L} {s s' : S}
+
+/-- **A silent weak run survives the read-back**: `q =ε=> q'` of `sys` is
+`q =ε=> q'` of `sys.mapIdle φ`, the witness execution relabelled along a
+section `g` of `φ`. -/
+theorem System.weakLSilent_mapIdle (g : L → L') (hsec : ∀ x, φ (g x) = some x)
+    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
+    (h : sys.weakLSilent s s') : (sys.mapIdle φ).weakLSilent s s' := by
+  obtain ⟨e, hterm, hpe, hinit, hend, htr⟩ := h
+  refine ⟨e.mapLab g, (AlterSeq.mapLab_trans_terminates_iff g e).mpr hterm,
+    is_partial_exec_mapLab g
+      (fun _ x _ hx => (System.mapIdle_step_some (hsec x) _).mpr hx) hpe,
+    hinit, ?_, ?_⟩
+  · rw [AlterSeq.endState_mapLab g e hterm]; exact hend
+  · rw [System.trace_mapLab _ sys g hgτ, htr, Stream'.Seq.map_nil]
+
+/-- **A labelled weak run survives the read-back**: `q =l=> q'` of `sys` is
+`q =l'=> q'` of `sys.mapIdle φ` at any label `l'` the section `g` puts over
+`l`. -/
+theorem System.weakLStep_mapIdle (g : L → L') (hsec : ∀ x, φ (g x) = some x)
+    (hgτ : ∀ x, g x = (Silent.τ : L') ↔ x = (Silent.τ : L))
+    {l : L} {l' : L'} (hgl : g l = l') (h : sys.weakLStep s l s') :
+    (sys.mapIdle φ).weakLStep s l' s' := by
+  obtain ⟨e, hterm, hpe, hinit, hend, htr⟩ := h
+  refine ⟨e.mapLab g, (AlterSeq.mapLab_trans_terminates_iff g e).mpr hterm,
+    is_partial_exec_mapLab g
+      (fun _ x _ hx => (System.mapIdle_step_some (hsec x) _).mpr hx) hpe,
+    hinit, ?_, ?_⟩
+  · rw [AlterSeq.endState_mapLab g e hterm]; exact hend
+  · rw [System.trace_mapLab _ sys g hgτ, htr, Stream'.Seq.map_cons,
+      Stream'.Seq.map_nil, hgl]
+
+end MapIdleWeak
 
 /-! ### ℕ-indexed instance families -/
 

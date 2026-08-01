@@ -5,6 +5,7 @@ Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.GBCASub
+import Leslie2.Results
 
 /-!
 # The exploded presentation: layer boundaries as component boundaries
