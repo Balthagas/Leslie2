@@ -1,11 +1,11 @@
 \begin{theorem}[Binding and graded agreement of the GBCA specification]
   \label{thm:gbca-spec-binding}
   \lean{PLTS.ABA.GBCA.retG_value_agree}\lean{PLTS.ABA.GBCA.specInst_binding}\leanok
-  \uses{def:aba-subspecs, thm:trace-support}
+  \uses{def:aba-gbca-spec, thm:trace-support}
   Any two round-$r$ returns of one execution of the GBCA specification instance that hand out a bit hand out the same bit, and the same holds of any two such returns in a trace of positive probability: \leandecl{PLTS.ABA.GBCA.retG_value_agree}, \leandecl{PLTS.ABA.GBCA.specInst_binding}.
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-subspecs, thm:trace-support}
+  \uses{def:aba-gbca-spec, thm:trace-support}
   See the Lean proofs of \leandecl{PLTS.ABA.GBCA.retG_value_agree} and \leandecl{PLTS.ABA.GBCA.specInst_binding}.
 \end{proof}

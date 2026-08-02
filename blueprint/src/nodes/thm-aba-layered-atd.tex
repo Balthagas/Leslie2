@@ -1,7 +1,7 @@
 \begin{theorem}[The layered presentation is exact]
   \label{thm:aba-layered-atd}
   \lean{PLTS.ABA.Layer.regG}\lean{PLTS.ABA.Layer.regC}\lean{PLTS.ABA.Layer.regA}\lean{PLTS.ABA.Layer.regroup}\lean{PLTS.ABA.Layer.layeredForward}\lean{PLTS.ABA.Layer.layeredConverse}\lean{PLTS.ABA.Layer.layeredSim}\lean{PLTS.ABA.Layer.layeredSimConverse}\lean{PLTS.ABA.Layer.layered_atd}\leanok
-  \uses{def:aba-layered, def:aba-procnet, def:aba-netadv, def:strongfunctional, def:achievable, thm:forward-sound}
+  \uses{def:aba-layered, def:aba-procnet, def:aba-netadv, def:aba-deployed, def:strongfunctional, def:achievable, thm:forward-sound}
   For all parameters $P$,
   \[
     \operatorname{ATD}(\mathrm{deployed}(P)) \;=\;
@@ -12,7 +12,7 @@
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-layered, def:aba-procnet, def:aba-netadv, def:strongfunctional, def:achievable, thm:forward-sound}
+  \uses{def:aba-layered, def:aba-procnet, def:aba-netadv, def:aba-deployed, def:strongfunctional, def:achievable, thm:forward-sound}
   The regrouping \leandecl{PLTS.ABA.Layer.regroup} carries a deployed state to an layered one: the round-$r$ stage slices of the nodes and the adversary's round-$r$ pools make the round-$r$ subsystem, the nodes' coordinator slices make the round loops, the adversary's DECIDED pools make $\mathrm{aNet}(P)$, and the coin oracle is carried across untouched.
   Every rule matches guard for guard along it, each row splitting along the layer boundary into its core-slice half and its stage-slice half, each Byzantine drive keeping its authorisation at $\mathrm{aNet}(P)$ and its effect at the round subsystem (D11), and the hiding order being the same on both sides.
   No invariant and no reachability hypothesis enters, every copy of the corrupted set on the layered side being the adversary's set read along the map rather than a field that could drift from it.

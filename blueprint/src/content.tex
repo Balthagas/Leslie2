@@ -194,6 +194,7 @@ See \leanmodule{Leslie2Protocols/ABA/Deployed}.
 
 \input{nodes-min/def-aba-procnet}
 \input{nodes-min/def-aba-netadv}
+\input{nodes-min/def-aba-deployed}
 
 \blueprintfig{fig-deployed}{The deployed system \leandecl{PLTS.ABA.Net.deployed}: the $n$ programs \leandecl{PLTS.ABA.Net.ABAProcN} under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} over the state \leandecl{PLTS.ABA.Net.NetState}, and the coin oracle beside the group.
 The dashed vertical is Theorem~\ref{thm:aba-layered-atd}, along the graph of $\mathrm{regroup}$ and its converse.}
@@ -242,10 +243,9 @@ The total corruption rule \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} (D1) and 
 
 Transition Systems~2 and~3 are the specifications of the two sub-protocols, given as round-indexed instances together with the $\mathbb{N}$-indexed families the round loop calls.
 The GBCA instance, over \leandecl{PLTS.ABA.GBCA.SpecState}, binds by removing an option rather than by choosing one (D19): its exclusion set starts empty, has the internal binding transition as its only writer, and grows along every execution, which is what makes Graded Agreement and Binding structural rather than invariants.
-The WCC instance, over \leandecl{PLTS.ABA.WCC.SpecState}, resolves its coin once into four outcomes, and that resolution is the second and last non-Dirac transition of the development.
-See \leanmodule{Leslie2Protocols/ABA/GBCASpec} and \leanmodule{Leslie2Protocols/ABA/WCCSpec}.
+See \leanmodule{Leslie2Protocols/ABA/GBCASpec}.
 
-\input{nodes-min/def-aba-subspecs}
+\input{nodes-min/def-aba-gbca-spec}
 
 \blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance \leandecl{PLTS.ABA.GBCA.specInst} (Transition System 2): the reachable states quotiented to the pair $(|dead|, grade)$, the single kill \leandeclnamed{bindUnset}{PLTS.ABA.GBCA.Step.bindUnset} under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
 The seven bit-labelled reachable states are drawn as their four-node quotient by the exchange of $0$ and $1$; $(\emptyset,\mathrm A)$ and $(\emptyset,\mathrm C)$ are unreachable, every graded return requiring $dead \neq \emptyset$.
@@ -256,6 +256,11 @@ The $\varepsilon$-Goodness assumption is inert for what is proved, since $\dagge
 
 \input{nodes-min/thm-gbca-spec-binding}
 \input{nodes-min/thm-gbca-spec-validity}
+
+The WCC instance, over \leandecl{PLTS.ABA.WCC.SpecState}, resolves its coin once into four outcomes, and that resolution is the second and last non-Dirac transition of the development.
+See \leanmodule{Leslie2Protocols/ABA/WCCSpec}.
+
+\input{nodes-min/def-aba-wcc-spec}
 
 \blueprintfig{fig-wcc}{The WCC specification instance \leandecl{PLTS.ABA.WCC.specInst} (Transition System 3): the four-outcome coin resolution and the return of the common bit or an adversary-chosen bit.
 The \leandeclnamed{flip}{PLTS.ABA.WCC.Step.flip} guard requires more than $f$ callers counting corrupted, and the branch $val{=}\dagger$ of mass $\failmass$ is a sink for returns (D17), \leandeclnamed{ret}{PLTS.ABA.WCC.Step.ret} having a positive guard.}

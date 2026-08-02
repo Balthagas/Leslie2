@@ -586,6 +586,8 @@ alone.
 
 \input{nodes/def-aba-netadv}
 
+\input{nodes/def-aba-deployed}
+
 \blueprintfig{fig-deployed}{The deployed system \leandecl{PLTS.ABA.Net.deployed}: the $n$ programs $\mathrm{ABAProcN}(P,j)$, \leandecl{PLTS.ABA.Net.ABAProcN}, under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} and the coin oracle beside the group.
 Each program holds one process's round loop and its stage of every round; every guard of its forty-four rules reads that program's own node, and none of them names corruption.
 Its state \leandecl{PLTS.ABA.Net.NetState} holds the pools $pool(r,j)$ and $dpool(j)$ and the corrupted set $F$, and its twenty rules supply the other half of every send, every delivery and every Byzantine drive; the corruption budget is the guard on its own $\mathrm{fail}$ row.
@@ -1282,7 +1284,7 @@ slot to be empty.
 
 \subsection{The sub-protocol specifications}
 
-\input{nodes/def-aba-subspecs}
+\input{nodes/def-aba-gbca-spec}
 
 \blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance \leandecl{PLTS.ABA.GBCA.specInst} (Transition System 2): the reachable states quotiented to the pair $(|dead|, grade)$, the single kill under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
 The bit-labelled reachable states are $(\emptyset,\bot)$, $(\{b\},\bot)$, $(\{b\},\mathrm A)$ and $(\{b\},\mathrm C)$ for each bit $b$, seven in all, and the four nodes are their quotient by the exchange of $0$ and $1$.
@@ -1471,6 +1473,8 @@ there certified $f+1$ $F$-blind supporters of $v$ itself.
 
 \input{nodes/thm-gbca-spec-validity}
 
+\input{nodes/def-aba-wcc-spec}
+
 \blueprintfig{fig-wcc}{The WCC specification instance \leandecl{PLTS.ABA.WCC.specInst} (Transition System 3): the four-outcome coin resolution and the return of the common bit or an adversary-chosen bit.
 The \leandeclnamed{flip}{PLTS.ABA.WCC.Step.flip} guard requires more than $f$ callers counting corrupted, $|\{id\notin F:\ called\}\cup F|>f$, and is the sole probabilistic transition besides Transition System 1.
 On $val{=}1$ and $val{=}0$ every process returns the common bit, and on $val{=}\top$ each process returns an adversary-chosen bit.
@@ -1602,7 +1606,7 @@ Every return row does the same case split on $dead$, $C$-returns included, howev
 A sub-protocol may be replaced by its specification where it is a component of
 a composition, and nowhere else.
 The deployed protocol of Definitions~\ref{def:aba-procnet}
-and~\ref{def:aba-netadv} does not present the graded-agreement layer as a
+and~\ref{def:aba-deployed} does not present the graded-agreement layer as a
 component.
 Each program runs two layers at once --- its round loop and one stage record
 per round --- and the single network adversary holds the message pools of both

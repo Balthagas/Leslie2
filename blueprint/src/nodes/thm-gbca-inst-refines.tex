@@ -1,14 +1,14 @@
 \begin{theorem}[GBCA instance refinement]
   \label{thm:gbca-inst-refines}
   \lean{PLTS.ABA.GBCA.implRefines}\leanok
-  \uses{def:aba-gbca-impl, def:aba-subspecs}
+  \uses{def:aba-gbca-impl, def:aba-gbca-spec}
   The GBCA implementation instance is forward-simulated, instance by instance, by the GBCA specification instance.
   The relation reads the specification's $call$, $ret$ and $F$ off the implementation state and certifies its $dead$ and $grade$ by receipt patterns: a \emph{kill certificate} for every member of $dead$, and an $n{-}f$ SEAL quorum for each side of the grade latch.
   Kills are fired on demand: a return met by a specification state whose $dead$ lacks the bit that return needs excluded is answered by the two-step weak burst $\mathrm{bindUnset};\mathrm{ret}$, and every return row --- $C$-returns included --- does the same case split on $dead$, however many returns preceded it.
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-gbca-impl, def:aba-subspecs, def:forwardsim}
+  \uses{def:aba-gbca-impl, def:aba-gbca-spec, def:forwardsim}
   The relation is checked constructor by constructor, and the work is in the certificates it carries for the two fields the protocol does not store.
   A member $b$ of $dead$ is certified either by an $n{-}f$ $\mathrm{ECHO}\,(1-b)$ receipt quorum or by an $n{-}f$ wall of processes each corrupted or committed by its write-once $\mathit{sentVote}$ to a payload other than $b$; each side of the grade latch is certified by an $n{-}f$ $\mathrm{SEAL}$ quorum at its own payload.
   All of these are $F$-blind and monotone in the delivered sets, in the write-once send slots and in $F$, so they survive every step and every $\mathrm{fail}$, and the relation bounds $dead$ from above only.

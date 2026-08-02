@@ -1,7 +1,7 @@
 \begin{theorem}[Validity of the GBCA specification, safety half]
   \label{thm:gbca-spec-validity}
   \lean{PLTS.ABA.GBCA.specInst_validity}\leanok
-  \uses{def:aba-subspecs, thm:trace-support}
+  \uses{def:aba-gbca-spec, thm:trace-support}
   Fix a bit $v$ and a trace in the support of an achievable trace distribution of the round-$r$ GBCA specification instance.
   Call the trace \emph{unanimous at $v$} when every round-$r$ call of the trace carries $v$, unless the calling process is corrupted somewhere along the trace.\lean{PLTS.ABA.GBCA.UnanimousInput}\leanok{}
   Corruption is the trace-level notion of Theorem~\ref{thm:aba-spec-safe}, non-membership in the fold of the corruption transform over the trace's $\mathrm{fail}$ labels, so a $\mathrm{fail}$ the budget refuses corrupts nobody.\lean{PLTS.ABA.NeverCorrupted}\leanok{}
@@ -10,7 +10,7 @@
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-subspecs, thm:trace-support}
+  \uses{def:aba-gbca-spec, thm:trace-support}
   The instance carries one bookkeeping invariant: every pending input has a $\mathrm{callG}$ event in the label history, and $F$ is the fold of that history's $\mathrm{fail}$ labels.\lean{PLTS.ABA.GBCA.CallInv}\leanok{}
   Both conjuncts are read off the rules, and the filter that produces the trace keeps every $\mathrm{callG}$ and every $\mathrm{fail}$ label, so both transfer from the history to the trace.
   At any state of the execution every supporter of the dissenting bit $1-v$ is corrupted at some stage of the trace, a caller of $1-v$ by unanimity and a member of $F$ by the fold; the stages form a chain, so the whole set sits inside a single stage, which the corruption budget caps at $f$.\lean{PLTS.ABA.GBCA.supp_le_of_unanimous}\leanok{}

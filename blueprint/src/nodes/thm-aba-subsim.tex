@@ -1,18 +1,18 @@
-\begin{theorem}[The round subsystem simulation]
+\begin{theorem}[A round's subsystem is refined by its specification]
   \label{thm:aba-subsim}
   \lean{PLTS.ABA.GSub.sub_projects}\lean{PLTS.ABA.GSub.gPull}\lean{PLTS.ABA.GSub.liftedSpecG}\lean{PLTS.ABA.GSub.Rsub}\lean{PLTS.ABA.GSub.subSim}\lean{PLTS.ABA.GSub.subSim_init}\lean{PLTS.ABA.GSub.subSim_failAct}\leanok
-  \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-subspecs, thm:gbca-inst-refines, def:forwardsim}
+  \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-gbca-spec, thm:gbca-inst-refines, def:forwardsim}
   For all parameters $P$ and every round $r$, the round subsystem $\mathrm{sub}(P,r)$ is forward-simulated by the round-$r$ GBCA specification instance, read over the subsystem's interface.
   The relation is the instance relation of Theorem~\ref{thm:gbca-inst-refines} itself, the subsystem and the instance being two presentations of one round over one state.
   It holds at the initial states and survives the corruption broadcast.
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-subspecs, thm:gbca-inst-refines, def:forwardsim, def:weakstep}
+  \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-gbca-spec, thm:gbca-inst-refines, def:forwardsim, def:weakstep}
   The argument runs in two legs through the round instance of Definition~\ref{def:aba-gbca-impl} and reproves nothing of Theorem~\ref{thm:gbca-inst-refines}.
   The first leg is the strong projection \leandecl{PLTS.ABA.GSub.sub_projects}.
   The state of the instance is the pair of the $n$ stage records and the round's message fabric, which are exactly the components the subsystem composes, so the two systems run on one state and no coordinate change is needed: every transition of the subsystem is a transition of the instance at that same state, one step for one step.
-  The second leg is the partial map \leandecl{PLTS.ABA.GSub.gPull}, which identifies the drives and the call loop of round $r$ with the specification labels they stand for, and along which the specification instance is read back by the construction $\mathrm{mapIdle}$ of Definition~\ref{def:aba-netadv}.
+  The second leg is the partial map \leandecl{PLTS.ABA.GSub.gPull}, which identifies the drives and the call loop of round $r$ with the specification labels they stand for, and along which the specification instance is read back by the construction $\mathrm{mapIdle}$ of Definition~\ref{def:aba-deployed}.
   Composing the legs, a step of the subsystem on $l$ is a step of the instance on $\mathrm{gPull}(l)$, which Theorem~\ref{thm:gbca-inst-refines} answers by a weak transition transported segment by segment along the section of $\mathrm{gPull}$ that returns $l$; the specification is input-enabled on the driven call and the driven return, so that answer needs no rule of its own (D11).
   The initial states are related, and the corruption broadcast preserves the relation, the fabric's corrupted set being the instance's and the two budget guards the same proposition (D1).
 \end{proof}

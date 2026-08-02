@@ -1,0 +1,9 @@
+\begin{definition}[The coin specification]
+  \label{def:aba-wcc-spec}
+  \lean{PLTS.ABA.WCC.Step}\lean{PLTS.ABA.WCC.specFamily}\leanok
+  \uses{def:aba-labels, def:aba-params, def:idle-family}
+  Transition System 3, as a round-indexed instance and the $\mathbb{N}$-indexed family of Definition~\ref{def:idle-family} over it: a call quorum, then one resolution of the coin.
+  The resolution follows the distribution of Definition~\ref{def:aba-params}, the one both coin resolutions of the development share, and it is the only rule of this system that is not Dirac.
+  Its fourth outcome $\dagger$, of mass $\failmass$, delivers to no process and so freezes the round it resolves (D17).
+  Full rule table: \leandecl{PLTS.ABA.WCC.specFamily}.
+\end{definition}

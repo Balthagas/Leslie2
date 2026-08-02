@@ -1,11 +1,11 @@
-\begin{theorem}[The round subsystem simulation]
+\begin{theorem}[A round's subsystem is refined by its specification]
   \label{thm:aba-subsim}
   \lean{PLTS.ABA.GSub.sub_projects}\lean{PLTS.ABA.GSub.gPull}\lean{PLTS.ABA.GSub.liftedSpecG}\lean{PLTS.ABA.GSub.Rsub}\lean{PLTS.ABA.GSub.subSim}\lean{PLTS.ABA.GSub.subSim_init}\lean{PLTS.ABA.GSub.subSim_failAct}\leanok
-  \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-subspecs, thm:gbca-inst-refines, def:forwardsim}
+  \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-gbca-spec, thm:gbca-inst-refines, def:forwardsim}
   Each round subsystem is forward-simulated by that round's GBCA specification instance, read over the subsystem's interface: \leandecl{PLTS.ABA.GSub.subSim}.
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-subspecs, thm:gbca-inst-refines, def:forwardsim, def:weakstep}
+  \uses{def:aba-gbcasub, def:aba-gbca-impl, def:aba-gbca-spec, thm:gbca-inst-refines, def:forwardsim, def:weakstep}
   See the Lean proof of \leandecl{PLTS.ABA.GSub.subSim}.
 \end{proof}

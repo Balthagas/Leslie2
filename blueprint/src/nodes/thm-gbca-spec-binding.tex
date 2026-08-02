@@ -1,7 +1,7 @@
 \begin{theorem}[Binding and graded agreement of the GBCA specification]
   \label{thm:gbca-spec-binding}
   \lean{PLTS.ABA.GBCA.retG_value_agree}\lean{PLTS.ABA.GBCA.specInst_binding}\leanok
-  \uses{def:aba-subspecs, thm:trace-support}
+  \uses{def:aba-gbca-spec, thm:trace-support}
   Any two returns of one execution of the round-$r$ GBCA specification instance that hand out a bit hand out the same bit, whatever their grades and whichever processes they answer; the bit a graded outcome hands out is the one $A\,b$ and $B\,b$ name, $C$ naming none.\lean{PLTS.ABA.GBCA.outValue}\leanok{}
   Read on traces: every trace in the support of every achievable trace distribution of the instance satisfies $\mathrm{BindingTrace}$, that any two round-$r$ graded returns of the trace which name a bit name the same one.\lean{PLTS.ABA.GBCA.BindingTrace}\leanok{}
   A $C$-return moreover leaves $dead$ nonempty in every later state of the execution, so the bit it kills is a bit no extension of the run hands out at grade $\ge 1$, and the Binding witness is that bit's complement.\lean{PLTS.ABA.GBCA.retC_dead_nonempty}\leanok{}
@@ -9,7 +9,7 @@
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-subspecs, thm:trace-support}
+  \uses{def:aba-gbca-spec, thm:trace-support}
   The exclusion set never shrinks, its single writer inserting and corruption leaving it alone, so the inclusion holds rule by rule and lifts to whole executions.\lean{PLTS.ABA.GBCA.Step.dead_mono}\leanok{}
   Inverting the two value-bearing return rows yields the guard pair $v \notin dead$, $1-v \in dead$ at the state each fires from.\lean{PLTS.ABA.GBCA.retG_value_guards}\leanok{}
   Monotonicity carries $1-v_1 \in dead$ from the earlier return to the later, which demands $v_2 \notin dead$, so $v_2 \neq 1-v_1$ and on a two-element domain $v_2 = v_1$; the $C$-return clause is the same monotonicity applied to the witness its own guard $|dead| \ge 1$ produces.

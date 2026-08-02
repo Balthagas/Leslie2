@@ -1,0 +1,10 @@
+\begin{definition}[The graded-agreement specification]
+  \label{def:aba-gbca-spec}
+  \lean{PLTS.ABA.GBCA.Step}\lean{PLTS.ABA.GBCA.specFamily}\leanok
+  \uses{def:aba-labels, def:idle-family}
+  Transition System 2, as a round-indexed instance and the $\mathbb{N}$-indexed family of Definition~\ref{def:idle-family} over it: internal binding and the graded returns $A\,b$, $B\,b$ and $C$.
+  The family is an LTS.\lean{PLTS.ABA.GBCA.specFamily_isLTS}\leanok{}
+  An instance binds by exclusion (D19): its state carries the set $dead \subseteq \{0,1\}$ of bits the instance can no longer hand out, in place of the source's bound value, written only by an internal kill enabled from $dead = \emptyset$ alone, so the kill fires at most once per instance; beside it the state carries the pending call $call$ and the return flag $ret$ of each process, the grade lock $grade$, latched by an $A$-return and by a $C$-return exclusively, and the corrupted set.
+  That kill, the dissenting bit at a $B$-return and each of the two bits at a $C$-return carry an $f{+}1$ $F$-blind support guard, $\mathrm{SuppOK}$: $f{+}1$ distinct callers-or-corrupted of the bit in question (D14, D15).
+  Full rule table: \leandecl{PLTS.ABA.GBCA.specFamily}.
+\end{definition}
