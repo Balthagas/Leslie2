@@ -4,17 +4,27 @@ The ABA case study relates the protocol as it runs to a small specification thro
 four systems:
 
 ```
-deployed  =ATD=  layered  ⊑  layeredSpec  ⊑  ABA.spec
+deployed  ⊑  layered  ⊑  layeredSpec  ⊑  ABA.spec
 ```
 
 `deployed` is the protocol: `n` corruption-blind programs beside a network adversary and
-a coin oracle. `layered` is the same system re-cut so that a layer boundary is a component
+a coin oracle. `layered` is the same protocol read with a layer boundary as a component
 boundary. `layeredSpec` replaces each round's graded-agreement subsystem by the graded
 agreement specification. `ABA.spec` is the single-automaton reading of agreement.
 
 This note records why that cut is placed where it is, what it buys, and what the model
 already weakens. The systems themselves are in `ABA/Deployed.lean`, `ABA/Layered.lean`,
-`ABA/LayeredSpec.lean` and `ABA/Spec.lean`; the file guide is `ABA/README.md`.
+`ABA/LayeredSpec.lean` and `ABA/Spec.lean`, and the first link in `ABA/DeployedSim.lean`;
+the file guide is `ABA/README.md`.
+
+The first link is where the chain passes from implementation to specification: `deployed`
+is the system that runs, and everything above it is specification. It is therefore an
+inclusion, `DeployedSim.deployed_layered`, and not an equality. A deployed process node
+carries one graded-agreement stage record, that of the round its round loop is in, and the
+round advance resets it (D20); a layered state carries one graded-agreement subsystem per
+round at every moment. The stage records of the rounds a process has left are
+specification-side state, so `DepRel` relates the two readings rather than mapping one onto
+the other.
 
 ## What the layering buys
 
@@ -65,9 +75,9 @@ product of those: `Net.ABANodeN`, `GBCA.ImplState`, `ABAState`, `LayeredState`,
 One record holds more than one layer's data, and it is the right one to. `Net.NetState`
 (`ABA/Deployed.lean`) carries the stage pools, the DECIDED pools and the corrupted set
 together, because it is the network adversary of the deployed protocol — the subject of
-the chain, not a vehicle for proving anything about it. `Layered.layered_atd` proves that
-cutting it into a fabric per round beside `ANetState` achieves exactly the same trace
-distributions, so the un-cut reading loses nothing and is never reasoned over.
+the chain, not a vehicle for proving anything about it. `DeployedSim.deployed_layered`
+carries that reading into one where each round owns a fabric beside `ANetState`, and every
+step above the first link runs there.
 
 ## What the DECIDED model already weakens
 

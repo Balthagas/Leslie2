@@ -6,6 +6,7 @@ import Leslie2Protocols.ABA.CoreSimInv
 import Leslie2Protocols.ABA.CoreSimRel
 import Leslie2Protocols.ABA.CoreView
 import Leslie2Protocols.ABA.Deployed
+import Leslie2Protocols.ABA.DeployedSim
 import Leslie2Protocols.ABA.GBCAFamily
 import Leslie2Protocols.ABA.GBCAImpl
 import Leslie2Protocols.ABA.GBCASafety

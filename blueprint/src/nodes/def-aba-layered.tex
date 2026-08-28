@@ -10,6 +10,8 @@
   \]
   runs through the pipeline of Definition~\ref{def:aba-deployed} factor for factor, giving $\mathrm{layeredGroup}(P)$ inside the inner frame and $\mathrm{layered}(P)$ inside the outer.
   A round loop is not round-filtered: it answers every round's $\mathrm{callG}$, its own as a participant and every other process's as a bystander.
+  A round subsystem is a factor of the composite at every moment, so the graded-agreement coordinate of a layered state is $\mathbb{N} \to \mathrm{ImplState}(n)$: every round keeps its stage records and its fabric for the whole run, whichever round each process is in.
+  That retained per-round memory is specification-side state, held by no process (D20).
   The graded-agreement family occupies the left argument of the outer parallel composition, which is the refinable slot.
   Full construction: \leandecl{PLTS.ABA.Layer.layered}, over \leandecl{PLTS.ABA.Layer.coreProcN} and \leandecl{PLTS.ABA.Layer.aNet}.
 \end{definition}

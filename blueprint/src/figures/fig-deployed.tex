@@ -17,11 +17,11 @@
     {$\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netEvtLabels}$};
   % the n programs
   \node[prog] (p1) at (0.6,1.0)
-    {$\mathrm{ABAProcN}(P,1)$\\ round loop\\ stages $r = 0,1,\dots$\\ inbox rows};
+    {$\mathrm{ABAProcN}(P,1)$\\ round loop\\ stage of its round\\ inbox rows};
   \node[prog] (pj) at (4.9,1.0)
-    {$\mathrm{ABAProcN}(P,j)$\\ round loop\\ stages $r = 0,1,\dots$\\ inbox rows};
+    {$\mathrm{ABAProcN}(P,j)$\\ round loop\\ stage of its round\\ inbox rows};
   \node[prog] (pn) at (8.9,1.0)
-    {$\mathrm{ABAProcN}(P,n)$\\ round loop\\ stages $r = 0,1,\dots$\\ inbox rows};
+    {$\mathrm{ABAProcN}(P,n)$\\ round loop\\ stage of its round\\ inbox rows};
   \node[font=\footnotesize] at (2.75,1.0) {$\cdots$};
   \node[font=\footnotesize] at (6.9,1.0) {$\cdots$};
   % the synchronised visible bus
@@ -48,14 +48,15 @@
   \node[ann, anchor=west] at (7.85,-1.5)
     {$\mathrm{callW}$, $\mathrm{retW}$,\\ $\mathrm{byzCallW}$, $\mathrm{byzRetW}$,\\
      $\mathrm{retWPub}$};
-  % the presentation it is equal to
+  % the presentation it is included in
   \node[box] (impl) at (4.9,-5.2)
-    {the layer-boundary cut\\ $\mathrm{layered}(P)$};
-  \draw[<->, dashed] (4.9,-3.9) --
-    node[lbl, right, align=left, pos=0.72]{$\operatorname{ATD}$ equal, no restriction,\\ along $\mathrm{regroup}$} (impl.north);
+    {the layer-boundary reading\\ $\mathrm{layered}(P)$};
+  \draw[->, dashed] (4.9,-3.9) --
+    node[lbl, right, align=left, pos=0.72]{$\operatorname{ATD}$ inclusion, no restriction,\\ along $\mathrm{DepRel}$} (impl.north);
   % the rendezvous bus legend, drawn last so it masks the descending arrows
   \node[ann, fill=white] at (4.7,-0.8)
     {$\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$,
      $\mathrm{retWPub}$, $\mathrm{gcallLoop}$, the five drives $\to \tau$:\\
-     one half at the named program, the other at the adversary};
+     one half at the named program, the other at the adversary,\\
+     save $\mathrm{byzCallG}$ and $\mathrm{byzRetG}$, which have no program half (D20)};
 \end{tikzpicture}

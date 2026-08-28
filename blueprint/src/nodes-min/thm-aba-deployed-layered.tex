@@ -1,0 +1,11 @@
+\begin{theorem}[The deployed protocol under its layered presentation]
+  \label{thm:aba-deployed-layered}
+  \lean{PLTS.ABA.DeployedState}\lean{PLTS.ABA.DepRel}\lean{PLTS.ABA.depRel_mk}\lean{PLTS.ABA.depRel_init}\lean{PLTS.ABA.deployedSim}\lean{PLTS.ABA.deployed_layered}\leanok
+  \uses{def:aba-layered, def:aba-procnet, def:aba-netadv, def:aba-deployed, def:forwardsim, def:pmfrel, def:achievable, thm:forward-sound}
+  The deployed protocol is forward-simulated by its layered presentation along the Dirac lift of $\mathrm{DepRel}(P)$, the relation that pins of a layered state everything a deployed state determines and leaves the stage records of the rounds a process has left free (D20), and hence $\operatorname{ATD}(\mathrm{deployed}(P)) \subseteq \operatorname{ATD}(\mathrm{layered}(P))$: \leandecl{PLTS.ABA.deployedSim}, \leandecl{PLTS.ABA.deployed_layered}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-layered, def:aba-procnet, def:aba-netadv, def:aba-deployed, def:forwardsim, def:pmfrel, def:achievable, thm:forward-sound}
+  See the Lean proof of \leandecl{PLTS.ABA.deployedSim}, then soundness (Theorem~\ref{thm:forward-sound}).
+\end{proof}

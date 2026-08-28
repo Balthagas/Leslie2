@@ -268,13 +268,15 @@ WCC is left at specification level.
 The subject of the argument is the system as deployed: $n$ programs beside a
 network adversary and a coin oracle, given in that form in
 Section~\ref{sec:aba-perproc} --- one automaton per process, carrying that
-process's round loop and its graded-agreement stage at every round and nothing
-that names corruption, and one automaton holding the message pools, the
-corrupted set and the corruption budget.
+process's round loop and the graded-agreement stage record of the round that
+loop is in, and nothing that names corruption, and one automaton holding the
+message pools, the corrupted set and the corruption budget.
 Substitution needs the layer it replaces to be a component, so the first step
-of the argument re-cuts that system along its layer boundaries, which is a
-change of partition and not of system
-(Theorem~\ref{thm:aba-layered-atd}).
+of the argument reads that system with a layer boundary as a component
+boundary (Theorem~\ref{thm:aba-deployed-layered}).
+That step is an inclusion, and it is where the chain passes from implementation
+to specification: the layered reading retains the stage records and the fabric
+of every round, which no process holds (D20).
 The substitution then runs in those coordinates, and the hand-built core
 simulation runs in them too.
 
@@ -302,7 +304,7 @@ Algorithm~$k$'' and ``ABDY22's Algorithm~$k$''.
 
 \paragraph{Deviations.}
 The encodings depart from~\cite{LeslieBP} in catalogued ways.
-Each departure carries a label D1--D19 and is cited at the point where it
+Each departure carries a label D1--D20 and is cited at the point where it
 applies.
 The labels D2, D6 and D7 are unused.
 \begin{itemize}
@@ -373,6 +375,24 @@ The labels D2, D6 and D7 are unused.
     structural rather than invariants of the specification
     (Theorem~\ref{thm:gbca-spec-binding}) and carries the safety half of
     Validity (Theorem~\ref{thm:gbca-spec-validity}).
+  \item D20: instance forgetting at the round advance.
+    A process node carries one graded-agreement stage record, that of the round
+    the process is in, and the round advance resets it to the initial stage
+    record.
+    Every stage-side rule is accordingly guarded by $round = r$, so a label
+    whose round tag is not the acting process's round has no row at that
+    process, and the Byzantine stage drives keep their labels and their network
+    rows but have no row at the process they name.
+    The cited paper~\cite{ABDY22} separates deciding from terminating --- a
+    process decides and then eventually terminates (its Definitions~3.1
+    and~3.2) --- and its liveness argument counts the amplification echoes a
+    process sends after its own decision (its Lemma~E.5).
+    A process of this encoding sends nothing in an instance it has left.
+    Every behaviour of the forgetting reading is a behaviour of the reading
+    that retains the stage records of every round
+    (Theorem~\ref{thm:aba-deployed-layered}), so the safety headline is
+    unaffected.
+    Liveness is outside the scope of this development.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -430,8 +450,8 @@ once and read by every presentation of those layers below.
 \label{sec:aba-perproc}
 
 What runs is $n$ programs, a network adversary and a coin oracle.
-Each program is one process: its round loop, its graded-agreement stage at every
-round, and the messages that have been delivered to it.
+Each program is one process: its round loop, the graded-agreement stage record
+of the round that loop is in, and the messages that have been delivered to it.
 It is corruption-blind.
 No field of its node is a copy of the corrupted set, none is a corruption flag,
 and none records what the process has multicast, so no guard of its rule table
@@ -454,8 +474,8 @@ Each inventory enters the argument at a named point.
 Each is one automaton read on the pair of factors that hold its layer's
 state.
 The graded-agreement inventory is read on the $n$ stage records beside the
-round's message fabric, which is the state one round of the deployed protocol
-runs on, and that is how the refinement proved of it transports
+round's message fabric, which is the state one round subsystem runs on, and
+that is how the refinement proved of it transports
 (Theorem~\ref{thm:aba-subsim}).
 The round-loop inventory is read on the round-loop nodes beside the DECIDED
 network, which is the state the core simulation's relation is defined on
@@ -467,6 +487,10 @@ same object.
 Algorithm~\ref{alg:gbca-impl} is the graded-agreement stage of one process and
 Algorithm~\ref{alg:aba-core} the round loop that calls it, with one stage
 instance and one coin instance per round.
+Instance identity is carried on the messages: in the cited paper every message
+bears a tag $id$ naming the instance it belongs to, and the encoding carries
+that tag as the round index $r$ on the stage labels, on the message pools
+$pool(r,j)$ and on the round-tagged sub-protocol handshakes.
 
 \begin{algorithm}
     \caption{Implementation of GBCA. Algorithm 6 of Abraham, Ben-David and
@@ -534,7 +558,6 @@ instance and one coin instance per round.
     \label{alg:aba-core}
     \begin{algorithmic}
         \State \textbf{Input:} $b \in \{0,1\}$
-        \State \textbf{Sub-protocols:} countably many instances of GBCA and WCC
         \medskip
         \State $r \gets 1$
         \State \textbf{loop}
@@ -589,12 +612,12 @@ alone.
 \input{nodes/def-aba-deployed}
 
 \blueprintfig{fig-deployed}{The deployed system \leandecl{PLTS.ABA.Net.deployed}: the $n$ programs $\mathrm{ABAProcN}(P,j)$, \leandecl{PLTS.ABA.Net.ABAProcN}, under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} and the coin oracle beside the group.
-Each program holds one process's round loop and its stage of every round; every guard of its forty-four rules reads that program's own node, and none of them names corruption.
+Each program holds one process's round loop and the stage record of the round that loop is in, which the round advance resets (D20); every guard of its forty rules reads that program's own node, and none of them names corruption.
 Its state \leandecl{PLTS.ABA.Net.NetState} holds the pools $pool(r,j)$ and $dpool(j)$ and the corrupted set $F$, and its twenty rules supply the other half of every send, every delivery and every Byzantine drive; the corruption budget is the guard on its own $\mathrm{fail}$ row.
 The inner dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netEvtLabels}$: every $\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$, $\mathrm{retWPub}$, $\mathrm{gcallLoop}$ and Byzantine drive becomes $\tau$.
 The coin oracle is joined through the partial map $\mathrm{wccPull}$, so the drives $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ and the fused return $\mathrm{retWPub}$ reach it as coin handshakes while the network labels leave it idle.
 The outer dashed frame is $\mathrm{abstract}_H$, which hides the coin handshake $\mathrm{callW}/\mathrm{retW}$; what leaves it is the API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ together with $\tau$.
-The dashed vertical is Theorem~\ref{thm:aba-layered-atd}: the deployed system and the same system cut along its layer boundaries achieve the same trace distributions, along the graph of $\mathrm{regroup}$ and its converse.}
+The dashed vertical is Theorem~\ref{thm:aba-deployed-layered}: the deployed system is forward-simulated by the same system read with a layer boundary as a component boundary, along the Dirac lift of $\mathrm{DepRel}$.}
 
 \dynamics{What is distributed and what is not}{%
 Calling the encoding a distributed algorithm is a claim about which state a
@@ -602,7 +625,7 @@ rule is allowed to read, and the presentation states it in its sharpest form.
 Every implemented part of the protocol is $n$ programs: the round loop, the
 graded-agreement stage of each round, the DECIDED gossip and the receipt
 bookkeeping of both layers sit inside $\mathrm{ABAProcN}(P,j)$, and every guard
-of its forty-four rules is a function of $j$'s node.
+of its forty rules is a function of $j$'s node.
 Nothing of the protocol is shared.
 The receipt rows and the control records each belong to one process, every
 quorum count is taken over one node's rows, and a process knows nothing at all
@@ -1608,12 +1631,20 @@ a composition, and nowhere else.
 The deployed protocol of Definitions~\ref{def:aba-procnet}
 and~\ref{def:aba-deployed} does not present the graded-agreement layer as a
 component.
-Each program runs two layers at once --- its round loop and one stage record
-per round --- and the single network adversary holds the message pools of both
-layers.
-This subsection re-cuts the same system so that a layer boundary is a
-component boundary, and Theorem~\ref{thm:aba-layered-atd} states that the
-re-cut is exact in both directions.
+Each program runs two layers at once --- its round loop and the stage record of
+the round that loop is in --- and the single network adversary holds the
+message pools of both layers.
+This subsection reads the same protocol with a layer boundary as a component
+boundary, and Theorem~\ref{thm:aba-deployed-layered} carries the deployed
+reading into it.
+The link is an inclusion, and the factor boundary is where the chain passes
+from implementation to specification: below it is the system that runs,
+and above it everything is specification.
+A layered state carries one graded-agreement subsystem per round at every
+moment, so the stage records and the fabric of a round a process has left
+survive there as specification-side state that no process holds (D20).
+The graded-agreement layer is a parallel factor of that reading, and that is
+what the substitution congruence consumes.
 
 The cut is decided by one question: which network does a factor own?
 A round of graded agreement is a replaceable factor exactly when the round's
@@ -1634,7 +1665,7 @@ The left slot is the refinable one: Theorem~\ref{thm:aba-substitution} replaces 
 Everything the round's message fabric holds --- the stage pools, the delivery guard, the injection $\mathrm{byzG}$ --- is inside the replaced factor.
 The DECIDED layer, the corrupted set with its budget, and the authorisation $k \in F$ of every Byzantine drive are outside it, at $\mathrm{aNet}(P)$, and survive the replacement unchanged.}
 
-\input{nodes/thm-aba-layered-atd}
+\input{nodes/thm-aba-deployed-layered}
 
 \subsection{The substitution}
 
@@ -1716,12 +1747,13 @@ trace of positive probability in the protocol as it runs.
 Three steps separate the deployed protocol from the ABA specification:
 \[
   \mathrm{deployed}(P)
-  \;\overset{\text{(1)}}{=}\; \mathrm{layered}(P)
+  \;\overset{\text{(1)}}{\sqsubseteq}\; \mathrm{layered}(P)
   \;\overset{\text{(2)}}{\sqsubseteq}\; \mathrm{layeredSpec}(P)
   \;\overset{\text{(3)}}{\sqsubseteq}\; \mathrm{spec}(P),
 \]
-where (1) is the regrouping of Theorem~\ref{thm:aba-layered-atd}, exact in
-both directions; (2) the substitution of
+where (1) is the layering inclusion of
+Theorem~\ref{thm:aba-deployed-layered}, along the Dirac lift of
+$\mathrm{DepRel}(P)$; (2) the substitution of
 Theorem~\ref{thm:aba-substitution}; and (3) the refinement of
 Theorem~\ref{thm:aba-layeredspec-spec}, the hand-built core simulation.
 The subject of the chain is the system as deployed.

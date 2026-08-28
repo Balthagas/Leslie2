@@ -17,7 +17,7 @@ file are the source blueprint's. The encoding follows the
 source blueprint; where the source blueprint departs from ABDY22 the encoding inherits
 the departure, with the single exception of §1.
 
-**The D-registry is elsewhere.** The catalogued deviations — D1, D3–D5, D8–D19, D12
+**The D-registry is elsewhere.** The catalogued deviations — D1, D3–D5, D8–D20, D12
 refined to D12′ — are cited at the point of use in the ABA module docstrings and glossed
 one by one in the blueprint chapter (the Deviations paragraph of
 `blueprint/src/content.tex`), which is the registry of record.
@@ -78,8 +78,8 @@ receiving `echo4` messages from `2t + 1` parties" where the pseudocode's lines 1
 received once". `ImplStep.retB` reads this as *from at least one sender*: `honce : ∃ k,
 Msg.seal (some v) ∈ s.recv id k`, not as a cardinality constraint of exactly one
 receipt. The hypothesis is a genuine part of the rule, carried through the deployed
-rendering by `ABAProcStepN.retG_B` and its Byzantine-drive twin
-`ABAProcStepN.byzRetG_B`, but no proof
+rendering by `ABAProcStepN.retG_B` and through the round subsystem's Byzantine-drive
+twin `GProcStep.byzRetB`, but no proof
 consumes it: the refinement's `retB` rows bind it and leave it unused, discharging the
 `B`-return's specification-side guards from the `f + 1` `BIND v` receipts and `hval`
 instead. Either reading supports the same theorems.
@@ -151,6 +151,22 @@ Unpredictability, inexpressible once the guess is dropped.
 - **Termination.** ABA's ε-sure Termination, GBCA's Termination and WCC's ε′-sure
   Termination (pp. 6–7) are unclaimed — `ABA.main` is Validity ∧
   Agreement. See `NOTES-Liveness-Roadmap.md`.
+- **Instance memory past the round advance.** ABDY22 separates deciding from terminating:
+  a process decides and then eventually terminates (Definitions 3.1 and 3.2), and the
+  liveness argument counts the amplification echoes a decided process keeps sending
+  (Lemma E.5). A process node of the encoding carries one graded-agreement stage record,
+  that of the round its round loop is in, and the round advance resets it to
+  `GBCA.ProcNodeN.initial` — `ABAProcStepN.retW` and `ABAProcStepN.retWPub` in
+  `Deployed.lean`. That is deviation **D20**, and its effect is that a process sends
+  nothing in an instance it has left: every stage-side rule is guarded by
+  `c.proc.round = r`, a stage message addressed to a round the receiver has left is not
+  filed, and the Byzantine stage drives `byzCallG` and `byzRetG` have no row at the
+  process they name, a corrupted process's stage traffic entering through the network's
+  own `byzG` injection. The soundness of the omission is one-directional and safety-only:
+  `DeployedSim.deployed_layered` makes every behaviour of the forgetting reading a
+  behaviour of `layered`, which retains every round's stage records as specification-side
+  state, so Validity and Agreement read across unchanged, while a liveness claim resting
+  on post-decision echoes has no counterpart here.
 
 One divergence runs in the safe direction. The source's Validity restricts to correct
 processes ("if a correct process returns `b` then a correct process had `b` as input",

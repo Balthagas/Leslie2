@@ -5,6 +5,7 @@ Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.CoreSim
+import Leslie2Protocols.ABA.DeployedSim
 import Leslie2Protocols.ABA.LayeredSpec
 
 /-!
@@ -16,7 +17,9 @@ network adversary, which owns the message pools, the DECIDED pools and the
 corrupted set with its budget, and the common-coin oracle, the only factor
 whose transitions are not Dirac. A program reads nothing but its own records
 and its own inbox; whether a process may be driven off-protocol is decided by
-the network's `k ∈ F` guard, never by the program.
+the network's `k ∈ F` guard, never by the program. A program holds one
+graded-agreement stage record, that of the round its round loop is in, and the
+round advance resets it (D20).
 
 The abstract side is `ABA.spec P`, the single-automaton reading of agreement,
 whose traces satisfy Validity and Agreement (`spec_safe`, `SpecSafety.lean`).
@@ -26,11 +29,12 @@ whose traces satisfy Validity and Agreement (`spec_safe`, `SpecSafety.lean`).
 Three probabilistic forward simulations carry the deployed protocol to the
 specification:
 
-1. `layeredSim` (`Layered.lean`) — re-cut the deployed state so that a
-   *layer* boundary is a *component* boundary: the family of graded-agreement
-   round subsystems, the `n` round loops, the DECIDED layer beside the
-   corrupted set, and the coin oracle. The re-cut is exact in both directions
-   (`layered_atd`).
+1. `deployedSim` (`DeployedSim.lean`) — the deployed protocol into the layered
+   presentation, along the Dirac lift of `DepRel`. A layered state carries one
+   graded-agreement subsystem per round at every moment, where a deployed
+   process node carries only the stage record of the round it is in (D20), so
+   the layered side holds strictly more state and the two are related by a
+   relation rather than by a map.
 2. `substSim` (`LayeredSpec.lean`) — replace each round's graded-agreement
    subsystem by its specification, the other three factors untouched: the
    family substitution carried by four congruences (`parallel_right`,
@@ -74,10 +78,11 @@ open Net Layer
 
 /-! ### The chain, link by link
 
-Cut the deployed reading along its layer boundaries (`layered_atd`), substitute
-each round's graded-agreement subsystem by its specification at the deployed
-shape (`substitution`), then take the core simulation (`coreSim`). Every step
-is a simulation between systems the deployed reading itself names. -/
+Carry the deployed reading into the layered presentation (`deployed_layered`),
+substitute each round's graded-agreement subsystem by its specification at the
+deployed shape (`substitution`), then take the core simulation (`coreSim`).
+Every step is a simulation between systems the deployed reading itself
+names. -/
 
 /-- **The deployment-shaped specification refines the ABA specification**: the
 soundness of the core simulation. -/
@@ -85,11 +90,12 @@ theorem layeredSpec_spec (P : Params) :
     achievableTraceDists (layeredSpec P) ⊆ achievableTraceDists (spec P) :=
   (coreSim P).achievableTraceDists_subset
 
-/-- **The deployed protocol refines the ABA specification**: the substitution
-at the deployed shape, then the core simulation. -/
+/-- **The deployed protocol refines the ABA specification**: the layering, then
+the substitution at the deployed shape, then the core simulation. -/
 theorem deployed_spec (P : Params) :
     achievableTraceDists (deployed P) ⊆ achievableTraceDists (spec P) :=
-  Set.Subset.trans (deployed_layeredSpec P) (layeredSpec_spec P)
+  Set.Subset.trans (deployed_layered P)
+    (Set.Subset.trans (substitution P) (layeredSpec_spec P))
 
 /-- **Safety of the deployed reading**: every positive-probability trace of
 every achievable trace distribution of the `n` programs beside the network
@@ -109,15 +115,15 @@ specification. -/
 theorem deployed_traces (P : Params) :
     ∀ D ∈ achievableTraceDists (deployed P), ∀ t, D t ≠ 0 →
       ∃ D' ∈ achievableTraceDists (layeredSpec P), D' t ≠ 0 :=
-  fun D hD _ ht => ⟨D, deployed_layeredSpec P hD, ht⟩
+  fun D hD _ ht => ⟨D, Set.Subset.trans (deployed_layered P) (substitution P) hD, ht⟩
 
-/-- **Safety of the layered presentation**: the layered reading achieves
-exactly the trace distributions of the deployed one (`layered_atd`), so it
-inherits the same guarantee. -/
+/-- **Safety of the layered presentation**: the substitution and the core
+simulation carry the layered reading to the specification, so it inherits the
+same guarantee. -/
 theorem layered_safe (P : Params) :
     ∀ D ∈ achievableTraceDists (layered P), ∀ t, D t ≠ 0 →
       ValidityTrace P t ∧ AgreementTrace t :=
-  fun D hD => deployed_safe P D (by rw [layered_atd]; exact hD)
+  safety_transfer (Set.Subset.trans (substitution P) (layeredSpec_spec P)) (spec_safe P)
 
 /-! ### The two routes -/
 
@@ -127,7 +133,8 @@ achievable by the ABA specification. The layering and the substitution give
 the first inclusion, the core simulation the second. -/
 theorem refines (P : Params) :
     achievableTraceDists (deployed P) ⊆ achievableTraceDists (spec P) :=
-  Set.Subset.trans (deployed_layeredSpec P) (layeredSpec_spec P)
+  Set.Subset.trans (deployed_layered P)
+    (Set.Subset.trans (substitution P) (layeredSpec_spec P))
 
 /-- **Correctness of ABA** (blueprint `thm:aba-main`, safety fragment):
 every positive-probability trace of the deployed protocol satisfies Validity
@@ -141,13 +148,13 @@ theorem main (P : Params) :
 
 /-- **The composed simulation** `deployed ⊑ ABA.spec`: the three simulations of
 the chain joined by Result 2 (`ProbabilisticForwardSimulation.trans`), along
-the composite of their three relations — the graph of the regrouping, the
-pointwise round substitution, and the core relation. -/
+the composite of their three relations — the Dirac lift of the layering
+relation, the pointwise round substitution, and the core relation. -/
 noncomputable def simComposed (P : Params) :
     ProbabilisticForwardSimulation (deployed P) (spec P)
-      (compRel (fun s ν => ν = PMF.pure (regroup s))
+      (compRel (diracRel (DepRel P))
         (compRel (parallelRel (diracRel (RsubAll P))) (coreRel P))) :=
-  (layeredSim P).trans ((substSim P).trans (coreSim P))
+  (deployedSim P).trans ((substSim P).trans (coreSim P))
 
 /-! ### Mechanical axiom firewall
 
@@ -161,10 +168,6 @@ a `sorryAx` dependence. -/
 /-- info: 'PLTS.ABA.substitution' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms substitution
-
-/-- info: 'PLTS.ABA.deployed_layeredSpec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms deployed_layeredSpec
 
 /-- info: 'PLTS.ABA.layeredSpec_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

@@ -1,7 +1,7 @@
 \begin{theorem}[Refinement and correctness of ABA]
   \label{thm:aba-main}
   \lean{PLTS.ABA.refines}\lean{PLTS.ABA.main}\leanok
-  \uses{thm:aba-deployed, thm:aba-layered-atd, thm:aba-substitution, thm:aba-layeredspec-spec, thm:aba-spec-safe}
+  \uses{thm:aba-deployed, thm:aba-deployed-layered, thm:aba-substitution, thm:aba-layeredspec-spec, thm:aba-spec-safe}
   Every trace distribution achievable by the deployed protocol is achievable by the ABA specification, and every positive-probability trace of the deployed protocol satisfies Validity and Agreement: \leandecl{PLTS.ABA.refines}, \leandecl{PLTS.ABA.main}.
 \end{theorem}
 

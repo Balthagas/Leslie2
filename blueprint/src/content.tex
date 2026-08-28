@@ -142,7 +142,7 @@ Transition System~1 is the ABA specification, Transition System~2 the GBCA speci
 A rule is cited by its Lean constructor name, a deviation label in parentheses marks a point where an encoding departs from~\cite{LeslieBP}, and where a node names ABDY22's Algorithm~$k$ it means the numbering of~\cite{ABDY22}.
 
 \paragraph{Deviations.}
-Each departure from~\cite{LeslieBP} carries a label D1--D19, cited at the point where it applies; the labels D2, D6 and D7 are unused.
+Each departure from~\cite{LeslieBP} carries a label D1--D20, cited at the point where it applies; the labels D2, D6 and D7 are unused.
 \begin{itemize}
   \item D1: corruption is a total deterministic transform.
   \item D3: the re-propose guard on \leandeclnamed{repropose}{PLTS.ABA.SpecStep.repropose} of Transition System~1.
@@ -160,6 +160,7 @@ Each departure from~\cite{LeslieBP} carries a label D1--D19, cited at the point 
   \item D17: a fourth coin outcome $\dagger$, of mass $\failmass$, on the single distribution both coin resolutions follow, which delivers to no process and freezes the round it resolves.
   \item D18: the GBCA implementation transcribes ABDY22's Algorithm~6 in full, six rounds over the message levels INPUT, ECHO, VOTE, BIND and SEAL, in place of the source's four-round compression of it, which elides the SEAL level and takes $f{+}1$ $\mathrm{VOTE}\,v$ receipts as the grade-$1$ witness and thereby violates Binding.
   \item D19: the GBCA specification state carries an exclusion set $dead \subseteq \{0,1\}$, the bits the instance is barred from handing out, in place of the source's bound value $bind \in \{0,1,\bot\}$, which makes Binding negative and monotone.
+  \item D20: instance forgetting at the round advance.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -197,7 +198,7 @@ See \leanmodule{Leslie2Protocols/ABA/Deployed}.
 \input{nodes-min/def-aba-deployed}
 
 \blueprintfig{fig-deployed}{The deployed system \leandecl{PLTS.ABA.Net.deployed}: the $n$ programs \leandecl{PLTS.ABA.Net.ABAProcN} under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} over the state \leandecl{PLTS.ABA.Net.NetState}, and the coin oracle beside the group.
-The dashed vertical is Theorem~\ref{thm:aba-layered-atd}, along the graph of $\mathrm{regroup}$ and its converse.}
+The dashed vertical is Theorem~\ref{thm:aba-deployed-layered}, along the Dirac lift of $\mathrm{DepRel}$.}
 
 \subsection{The graded-agreement stage}
 
@@ -280,8 +281,10 @@ A return whose bit the specification has not yet excluded is a burst, mapping to
 \subsection{The layered presentation}
 
 A sub-protocol may be exchanged for its specification where it is a component of a composition, and the deployed protocol does not present the graded-agreement layer as one.
-This subsection re-cuts the same system so that a layer boundary is a component boundary, the cut being decided by which factor owns the round's message fabric, and it proves the re-cut exact in both directions.
-Exactness matters and an inclusion would not do: the chain is read as a statement about the deployed system, so the first step has to leave the deployed behaviour untouched rather than over-approximate it.
+This subsection reads the same protocol with a layer boundary as a component boundary, the cut being decided by which factor owns the round's message fabric.
+The factor boundary is where the chain passes from implementation to specification: $\mathrm{deployed}(P)$ is the system that runs, everything above it is specification, and the first link is accordingly an inclusion.
+The layered reading holds one graded-agreement subsystem per round at every moment, where a deployed process node holds the stage record of the round it is in and nothing else (D20), so the per-round memory it retains is specification-side state.
+The graded-agreement layer is a parallel factor of that reading, which is what the substitution congruence consumes.
 See \leanmodule{Leslie2Protocols/ABA/GBCASubsystem} and \leanmodule{Leslie2Protocols/ABA/Layered}.
 
 \input{nodes-min/def-aba-gbcasub}
@@ -292,7 +295,7 @@ See \leanmodule{Leslie2Protocols/ABA/GBCASubsystem} and \leanmodule{Leslie2Proto
 The round subsystem \leandecl{PLTS.ABA.GSub.sub} is drawn open, the $n$ stage programs of round $r$ beside that round's own message fabric, with the multicast and the delivery hidden inside its own frame.
 The left slot is the refinable one: Theorem~\ref{thm:aba-substitution} replaces the family of round subsystems by the family of round specifications and leaves the other three factors as they stand.}
 
-\input{nodes-min/thm-aba-layered-atd}
+\input{nodes-min/thm-aba-deployed-layered}
 
 \subsection{The substitution}
 
@@ -320,11 +323,11 @@ See \leanmodule{Leslie2Protocols/ABA/CoreView} and \leanmodule{Leslie2Protocols/
 Three steps separate the deployed protocol from the ABA specification:
 \[
   \mathrm{deployed}(P)
-  \;\overset{\text{(1)}}{=}\; \mathrm{layered}(P)
+  \;\overset{\text{(1)}}{\sqsubseteq}\; \mathrm{layered}(P)
   \;\overset{\text{(2)}}{\sqsubseteq}\; \mathrm{layeredSpec}(P)
   \;\overset{\text{(3)}}{\sqsubseteq}\; \mathrm{spec}(P),
 \]
-where (1) is the regrouping of Theorem~\ref{thm:aba-layered-atd}, exact in both directions; (2) the substitution of Theorem~\ref{thm:aba-substitution}; and (3) the refinement of Theorem~\ref{thm:aba-layeredspec-spec}, whose proof is the hand-built core simulation, read in the coordinates of $\mathrm{layeredSpec}(P)$.
+where (1) is the layering inclusion of Theorem~\ref{thm:aba-deployed-layered}, along the Dirac lift of $\mathrm{DepRel}(P)$; (2) the substitution of Theorem~\ref{thm:aba-substitution}; and (3) the refinement of Theorem~\ref{thm:aba-layeredspec-spec}, whose proof is the hand-built core simulation, read in the coordinates of $\mathrm{layeredSpec}(P)$.
 Safety then transfers by Theorem~\ref{thm:trace-support}, with no hypothesis on the trace beyond positive probability, and both properties are stated on all returns, corrupted returners included.
 The chain is assembled in \leanmodule{Leslie2Protocols/ABA/Results}.
 

@@ -9,15 +9,22 @@ all axiom-clean and guarded.
 The architecture in one line, all of it in deployment coordinates:
 
 ```
-deployed  =ATD=  layered  ⊑  layeredSpec  ⊑  ABA.spec
+deployed  ⊑  layered  ⊑  layeredSpec  ⊑  ABA.spec
 ```
 
 - `deployed` — the protocol as it runs: `n` corruption-blind programs beside the network
   adversary, which owns the message pools and the corrupted set, and the coin oracle,
-  the only factor whose transitions are not Dirac.
-- `layered` — the same system cut so that a layer boundary is a component boundary: the
+  the only factor whose transitions are not Dirac. A program holds its round loop and one
+  graded-agreement stage record, that of the round the loop is in, which the round advance
+  resets (D20).
+- `layered` — the same protocol read with a layer boundary as a component boundary: the
   round subsystems, the `n` round loops, the DECIDED layer, and the coin oracle.
-  `layered_atd` says the two achieve exactly the same trace distributions.
+  `deployedSim` carries `deployed` into it along the Dirac lift of `DepRel`, and
+  `deployed_layered` is the inclusion it yields. The link is one-directional: a layered
+  state holds one graded-agreement subsystem per round at every moment, where a deployed
+  process node holds the stage record of the round it is in and nothing else (D20), so the
+  retained per-round memory is specification-side state. This is where the chain passes
+  from implementation to specification.
 - `layeredSpec` — each round's subsystem replaced by the graded agreement specification
   (`substSim`), the other three factors untouched. This is what the core simulation runs on.
 - `ABA.spec` — the single-automaton reading of agreement, reached by `coreSim`.
@@ -65,11 +72,12 @@ the file is. The order is the dependency order.
 | `CoreSimAbs.lean` | 336 | `Abs` preservation for the stutter rows, and the assembly `Inv.step`. |
 | `CoreSimBurst.lean` | 187 | The abstract-twin burst kit: how the twin catches up in one weak step. |
 | `CoreSim.lean` | 698 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
-| `Deployed.lean` | 1566 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, the coin oracle, and the pipeline that composes them. |
+| `Deployed.lean` | 1509 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, the coin oracle, and the pipeline that composes them. |
 | `GBCASubsystem.lean` | 1532 | **The round's graded-agreement subsystem** and the licence to replace it, `subSim`. |
-| `Layered.lean` | 2348 | **`layered_atd`**: the same system cut into four factors, achieving the same trace distributions. |
-| `LayeredSpec.lean` | 487 | **`substSim`**: the graded-agreement factor replaced by its specification, under the four congruences. |
-| `Results.lean` | 214 | The deliverables, gathered so every citable statement is in one file. Fifteen `#guard_msgs` axiom firewalls. |
+| `Layered.lean` | 1097 | **`layered`**: the same protocol read as four factors, one round subsystem per round retained at every moment. |
+| `DeployedSim.lean` | 1091 | **`deployedSim`**, **`deployed_layered`**: the deployed protocol carried into that reading along `DepRel`. |
+| `LayeredSpec.lean` | 480 | **`substSim`**: the graded-agreement factor replaced by its specification, under the four congruences. |
+| `Results.lean` | 217 | The deliverables, gathered so every citable statement is in one file. Fifteen `#guard_msgs` axiom firewalls. |
 | `NonVacuity.lean` | 619 | A concrete 21-step run of `layeredSpec P4` to a `retABA` decision, so the simulation about it is not vacuous. |
 
 ## Suggested first read
@@ -77,7 +85,7 @@ the file is. The order is the dependency order.
 `Params` → `Labels` → `Spec` → skim `SpecSafety`'s two trace predicates → `Core`'s module
 docstring → `Deployed`'s (the system the headlines are about) → `LayeredSpec`'s (the system
 the core simulation starts from) → `Results`, whose docstring names the three steps of the
-chain and their files. Follow it into the statements along `Layered.layered_atd` →
+chain and their files. Follow it into the statements along `DeployedSim.deployedSim` →
 `LayeredSpec.substSim` → `CoreSim.coreSim`, with `CoreView`'s `ABAState` beside the last.
 That is roughly 700 lines of reading and gives the full statement-level picture; descend
 into the GBCA and core-simulation proofs only when you want them.

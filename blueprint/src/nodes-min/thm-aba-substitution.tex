@@ -1,11 +1,11 @@
 \begin{theorem}[Substitution]
   \label{thm:aba-substitution}
-  \lean{PLTS.ABA.substSim}\lean{PLTS.ABA.substitution}\lean{PLTS.ABA.deployed_layeredSpec}\leanok
-  \uses{def:aba-layeredspec, def:aba-layered, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-layered-atd, def:achievable}
-  Replacing each round's graded-agreement subsystem by its specification is a forward simulation of $\mathrm{layered}(P)$ by $\mathrm{layeredSpec}(P)$, \leandecl{PLTS.ABA.substSim}, and hence $\operatorname{ATD}(\mathrm{deployed}(P)) \subseteq \operatorname{ATD}(\mathrm{layeredSpec}(P))$: \leandecl{PLTS.ABA.substitution}, \leandecl{PLTS.ABA.deployed_layeredSpec}.
+  \lean{PLTS.ABA.substSim}\lean{PLTS.ABA.substitution}\leanok
+  \uses{def:aba-layeredspec, def:aba-layered, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, def:achievable}
+  Replacing each round's graded-agreement subsystem by its specification is a forward simulation of $\mathrm{layered}(P)$ by $\mathrm{layeredSpec}(P)$, \leandecl{PLTS.ABA.substSim}, and hence $\operatorname{ATD}(\mathrm{layered}(P)) \subseteq \operatorname{ATD}(\mathrm{layeredSpec}(P))$: \leandecl{PLTS.ABA.substitution}.
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-layeredspec, def:aba-layered, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, thm:aba-layered-atd}
-  See the Lean proofs of \leandecl{PLTS.ABA.substitution} and \leandecl{PLTS.ABA.deployed_layeredSpec}.
+  \uses{def:aba-layeredspec, def:aba-layered, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound}
+  See the Lean proof of \leandecl{PLTS.ABA.substitution}.
 \end{proof}

@@ -20,8 +20,9 @@ substitution is one application of `ProbabilisticForwardSimulation.parallel_righ
 under a syntactically identical context, followed by the three congruences the
 deployed pipeline is built from — `abstract` for the rendezvous alphabet,
 `relabel` for the read-back to `Lab n` (`Framework/Relabel.lean`), and
-`abstract` again for the sub-protocol API — giving `substitution` and, past
-the layered presentation, `deployed_layeredSpec`.
+`abstract` again for the sub-protocol API. The result is `substitution`, the
+inclusion of the layered system's achievable trace distributions in the
+specification's.
 
 The rest of the file reads `layeredSpec` row by row, in both directions: the
 rows of the specification side and of the coin oracle's family, the reading of
@@ -127,14 +128,6 @@ specification. -/
 theorem substitution (P : Params) :
     achievableTraceDists (layered P) ⊆ achievableTraceDists (layeredSpec P) :=
   (substSim P).achievableTraceDists_subset
-
-/-- **The deployed protocol refines the deployment-shaped specification**:
-every trace distribution achievable by the deployed reading is achievable once
-each round's graded-agreement subsystem is replaced by its specification, the
-other three factors untouched. -/
-theorem deployed_layeredSpec (P : Params) :
-    achievableTraceDists (deployed P) ⊆ achievableTraceDists (layeredSpec P) :=
-  Set.Subset.trans (layered_atd P).subset (substitution P)
 
 /-! ### The specification side's rows
 

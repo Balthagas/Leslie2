@@ -43,8 +43,8 @@ oracle — and no network state: the DECIDED pools and the corrupted set belong
 to the network. The transitions themselves are `CoreProcStepN`
 (`ABA/Layered.lean`), the rows of a round-loop node `CoreNodeN` over the
 extended alphabet, and `Net.ABAProcStepN` (`ABA/Deployed.lean`), the rows of
-the deployed program that carries a round loop beside its graded-agreement
-stage records. This file realises the Core-side assumptions of
+the deployed program that carries a round loop beside the graded-agreement
+stage record of the round it is in. This file realises the Core-side assumptions of
 `DESIGN-CoreSim.md`: the phase machine (invariant conjunct 4), the DECIDED
 diffusion state (conjunct 6), and input coherence (conjunct 5 — the honest
 `callG` guard ties the emitted bit to the current estimate).
