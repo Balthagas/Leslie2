@@ -41,7 +41,7 @@ labels, advancing the process's `phase` and recording the returned data, while
 the sub-protocol state itself lives in the round specifications and the coin
 oracle — and no network state: the DECIDED pools and the corrupted set belong
 to the network. The transitions themselves are `CoreProcStepN`
-(`ABA/Layered.lean`), the rows of a round-loop node `CoreNodeN` over the
+(`ABA/Factors.lean`), the rows of a round-loop node `CoreNodeN` over the
 extended alphabet, and `Net.ABAProcStepN` (`ABA/Deployed.lean`), the rows of
 the deployed program that carries a round loop beside the graded-agreement
 stage record of the round it is in. This file realises the Core-side assumptions of

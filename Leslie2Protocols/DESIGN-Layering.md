@@ -13,9 +13,9 @@ boundary. `layeredSpec` replaces each round's graded-agreement subsystem by the 
 agreement specification. `ABA.spec` is the single-automaton reading of agreement.
 
 This note records why that cut is placed where it is, what it buys, and what the model
-already weakens. The systems themselves are in `ABA/Deployed.lean`, `ABA/Layered.lean`,
-`ABA/LayeredSpec.lean` and `ABA/Spec.lean`, and the first link in `ABA/DeployedSim.lean`;
-the file guide is `ABA/README.md`.
+already weakens. The systems themselves are in `ABA/Deployed.lean`, `ABA/Spec.lean` and
+`ABA/LayeredSpec.lean`, which carries both `layered` and `layeredSpec`; the first link is
+in `ABA/DeployedSim.lean`. The file guide is `ABA/README.md`.
 
 The first link is where the chain passes from implementation to specification: `deployed`
 is the system that runs, and everything above it is specification. It is therefore an

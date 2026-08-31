@@ -4,8 +4,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Deployed
-import Leslie2Protocols.ABA.GBCAFamily
+import Leslie2Protocols.ABA.Factors
+import Leslie2Protocols.ABA.GBCASim
+import Leslie2Protocols.Framework.FamilySim
 import Leslie2Protocols.Framework.IdleFamily
 
 /-!
@@ -1528,5 +1529,73 @@ theorem subSim_failAct (P : Params) :
 #print axioms sub_projects
 
 end GSub
+
+/-! ## The routing table, evaluated
+
+`gOwns` and `isFailN` are decided by a `rfl` at every label of the extended
+alphabet. The layered presentation composes `gbcaSide` with boxes that speak
+that alphabet, so it discharges the routing side conditions by `simp`; the
+table below is what `simp` uses, and it lives under `PLTS.ABA.Layer` with the
+rest of the layer cut's vocabulary. -/
+
+namespace Layer
+
+open Net
+
+/-! ### Which labels the round-indexed family owns -/
+
+section GOwns
+
+variable {n : ℕ}
+
+@[simp] theorem gOwns_callG (r : ℕ) (id : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inl (Lab.callG r id b) : NLab n) = some r := rfl
+@[simp] theorem gOwns_retG (r : ℕ) (id : Fin n) (out : GbcaOut) :
+    GSub.gOwns (Sum.inl (Lab.retG r id out) : NLab n) = some r := rfl
+@[simp] theorem gOwns_gcallLoop (r : ℕ) (id : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inr (.gcallLoop r id b) : NLab n) = some r := rfl
+@[simp] theorem gOwns_byzCallG (r : ℕ) (k : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inr (.byzCallG r k b) : NLab n) = some r := rfl
+@[simp] theorem gOwns_byzCallGLoop (r : ℕ) (k : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inr (.byzCallGLoop r k b) : NLab n) = some r := rfl
+@[simp] theorem gOwns_byzRetG (r : ℕ) (k : Fin n) (out : GbcaOut) :
+    GSub.gOwns (Sum.inr (.byzRetG r k out) : NLab n) = some r := rfl
+
+@[simp] theorem gOwns_tau : GSub.gOwns (Sum.inl Lab.tau : NLab n) = none := rfl
+@[simp] theorem gOwns_callABA (id : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inl (Lab.callABA id b) : NLab n) = none := rfl
+@[simp] theorem gOwns_retABA (id : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inl (Lab.retABA id b) : NLab n) = none := rfl
+@[simp] theorem gOwns_callW (r : ℕ) (id : Fin n) :
+    GSub.gOwns (Sum.inl (Lab.callW r id) : NLab n) = none := rfl
+@[simp] theorem gOwns_retW (r : ℕ) (id : Fin n) (c : Bool) :
+    GSub.gOwns (Sum.inl (Lab.retW r id c) : NLab n) = none := rfl
+@[simp] theorem gOwns_fail (k : Fin n) :
+    GSub.gOwns (Sum.inl (Lab.fail k) : NLab n) = none := rfl
+@[simp] theorem gOwns_gsnd (r : ℕ) (j : Fin n) (m : GBCA.Msg) :
+    GSub.gOwns (Sum.inr (.gsnd r j m) : NLab n) = none := rfl
+@[simp] theorem gOwns_gdlv (r : ℕ) (i j : Fin n) (m : GBCA.Msg) :
+    GSub.gOwns (Sum.inr (.gdlv r i j m) : NLab n) = none := rfl
+@[simp] theorem gOwns_dsnd (j : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inr (.dsnd j b) : NLab n) = none := rfl
+@[simp] theorem gOwns_ddlv (i j : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inr (.ddlv i j b) : NLab n) = none := rfl
+@[simp] theorem gOwns_retWPub (r : ℕ) (id : Fin n) (c b : Bool) :
+    GSub.gOwns (Sum.inr (.retWPub r id c b) : NLab n) = none := rfl
+@[simp] theorem gOwns_byzCallW (r : ℕ) (k : Fin n) :
+    GSub.gOwns (Sum.inr (.byzCallW r k) : NLab n) = none := rfl
+@[simp] theorem gOwns_byzRetW (r : ℕ) (k : Fin n) (b : Bool) :
+    GSub.gOwns (Sum.inr (.byzRetW r k b) : NLab n) = none := rfl
+
+@[simp] theorem isFailN_fail (k : Fin n) :
+    GSub.isFailN (Sum.inl (Lab.fail k) : NLab n) := trivial
+
+theorem gAct_fail {P : Params} (k : Fin P.n) (s : GBCA.ImplState P.n) :
+    GSub.gAct P (Sum.inl (Lab.fail k)) s = (s.1, s.2.corrupt P k) := rfl
+
+end GOwns
+
+end Layer
+
 end ABA
 end PLTS

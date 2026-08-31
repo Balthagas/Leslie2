@@ -7,14 +7,13 @@ import Leslie2Protocols.ABA.CoreSimRel
 import Leslie2Protocols.ABA.CoreView
 import Leslie2Protocols.ABA.Deployed
 import Leslie2Protocols.ABA.DeployedSim
-import Leslie2Protocols.ABA.GBCAFamily
+import Leslie2Protocols.ABA.Factors
 import Leslie2Protocols.ABA.GBCAImpl
 import Leslie2Protocols.ABA.GBCASafety
 import Leslie2Protocols.ABA.GBCASim
 import Leslie2Protocols.ABA.GBCASpec
 import Leslie2Protocols.ABA.GBCASubsystem
 import Leslie2Protocols.ABA.Labels
-import Leslie2Protocols.ABA.Layered
 import Leslie2Protocols.ABA.LayeredSpec
 import Leslie2Protocols.ABA.NonVacuity
 import Leslie2Protocols.ABA.Params

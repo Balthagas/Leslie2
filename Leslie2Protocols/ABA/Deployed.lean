@@ -4,13 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Core
-import Leslie2Protocols.ABA.GBCAImpl
-import Leslie2Protocols.ABA.SpecSafety
-import Leslie2Protocols.ABA.WCCSpec
-import Leslie2Protocols.Framework.IdleFamily
-import Leslie2Protocols.Framework.Relabel
-import Leslie2Protocols.Framework.SyncProduct
+import Leslie2Protocols.ABA.Factors
 
 /-!
 # ABA as corruption-blind programs beside a network adversary
@@ -39,16 +33,15 @@ a process may be driven off-protocol is decided by the network's `k ∈ F`
 guard on the Byzantine labels, never by the process.
 
 The coin oracle `WCC.specFamily` is the third factor and the only box whose
-transitions are not Dirac. It speaks the shared alphabet `Lab n`, so it is
-joined to the extended alphabet through a label pullback
-(`System.mapIdle wccPull`): the handshake labels of the extended alphabet
-are mapped onto the oracle's own handshake rows and every other extended
-label leaves it idle.
+transitions are not Dirac. It enters as `Net.wccLift`, the oracle read over
+the extended alphabet along the label pullback `Net.wccPull`
+(`ABA/Factors.lean`).
 
-`NetEvt n` is the auxiliary rendezvous alphabet the shared alphabet `Lab n`
-cannot name — the two networks, the Byzantine drives, and the branches of a
-handshake that the shared label does not distinguish. It is hidden by the
-composition, so the composite `deployedGroup` speaks exactly `Lab n`.
+The extended alphabet is `Net.NLab n = Lab n ⊕ Net.NetEvt n`
+(`ABA/Factors.lean`). Its right summand is the rendezvous alphabet the
+shared alphabet `Lab n` cannot name — the two networks, the Byzantine drives,
+and the branches of a handshake that the shared label does not distinguish.
+The composition hides it, so `deployedGroup` speaks exactly `Lab n`.
 
 ## Model and deviations
 
@@ -107,12 +100,11 @@ lifted oracle. Hiding `NetEvt` and reading the result back over `Lab n` gives
 ## What this file supplies
 
 `deployed` is the subject of the refinement chain, and this file is where its
-transition relation is pinned down: the rule tables of the process programs,
-of the network adversary and of the coin pullback, the composition pipeline,
-and the inversion lemmas that read a composite transition back into the rows
-its components contributed. `ABA/Layered.lean` re-cuts the same system along
-its layer boundaries; the chain to `ABA.spec` continues from there in
-`ABA/LayeredSpec.lean`.
+transition relation is pinned down: the rule tables of the process programs
+and of the network adversary, the composition pipeline, and the inversion
+lemmas that read a composite transition back into the rows its components
+contributed. `ABA/LayeredSpec.lean` re-cuts the same system along its layer
+boundaries and continues the chain to `ABA.spec` from there.
 -/
 
 namespace PLTS
@@ -120,54 +112,7 @@ namespace ABA
 
 namespace Net
 
-/-! ### The auxiliary alphabet -/
-
-/-- The rendezvous alphabet: the two networks, the Byzantine drives, and the
-handshake branches the shared alphabet does not distinguish. -/
-inductive NetEvt (n : ℕ) : Type
-  /-- Stage-`r` multicast: sender `j` writes its record and the network pools
-  `m` under `j`. -/
-  | gsnd (r : ℕ) (j : Fin n) (m : GBCA.Msg)
-  /-- Stage-`r` delivery: `m`, pooled under sender `j`, reaches receiver `i`. -/
-  | gdlv (r : ℕ) (i j : Fin n) (m : GBCA.Msg)
-  /-- DECIDED relay: sender `j` publishes `⟨DECIDED, b⟩` on an `f + 1` quorum. -/
-  | dsnd (j : Fin n) (b : Bool)
-  /-- DECIDED delivery: sender `j`'s `⟨DECIDED, b⟩` reaches receiver `i`. -/
-  | ddlv (i j : Fin n) (b : Bool)
-  /-- The coin return fused with a `⟨DECIDED, b⟩` publication (D10): the
-  round-`r` coin `c` returns to `id`, whose grade was `A b`. -/
-  | retWPub (r : ℕ) (id : Fin n) (c : Bool) (b : Bool)
-  /-- The graded-agreement call against an already-called stage record. -/
-  | gcallLoop (r : ℕ) (id : Fin n) (b : Bool)
-  /-- A corrupted process drives the graded-agreement call, opening the stage
-  record (D11). -/
-  | byzCallG (r : ℕ) (k : Fin n) (b : Bool)
-  /-- A corrupted process drives the graded-agreement call against an
-  already-called stage record (D11). -/
-  | byzCallGLoop (r : ℕ) (k : Fin n) (b : Bool)
-  /-- A corrupted process takes a graded-agreement return (D11). -/
-  | byzRetG (r : ℕ) (k : Fin n) (out : GbcaOut)
-  /-- A corrupted process drives the coin call (D11). -/
-  | byzCallW (r : ℕ) (k : Fin n)
-  /-- A corrupted process takes the coin return (D11). -/
-  | byzRetW (r : ℕ) (k : Fin n) (b : Bool)
-  deriving DecidableEq
-
-/-- The extended alphabet. Its silent label is `Sum.inl τ`, so every
-`Sum.inr` label is observable and hence hideable. -/
-abbrev NLab (n : ℕ) : Type := Lab n ⊕ NetEvt n
-
-/-- The rendezvous labels, hidden by the composition. -/
-def netEvtLabels (n : ℕ) : Set (NLab n) := {l | ∃ e : NetEvt n, l = Sum.inr e}
-
-@[simp] theorem inl_notMem_netEvtLabels {n : ℕ} (l : Lab n) :
-    Sum.inl l ∉ netEvtLabels n := by
-  simp [netEvtLabels]
-
-@[simp] theorem inr_mem_netEvtLabels {n : ℕ} (e : NetEvt n) :
-    Sum.inr e ∈ netEvtLabels n := ⟨e, rfl⟩
-
-@[simp] theorem nlab_tau (n : ℕ) : (Silent.τ : NLab n) = Sum.inl Lab.tau := rfl
+/-! ### The state of one process -/
 
 /-- The state of one corruption-blind process: its round-loop record and the
 stage record of the round it is in (D20). -/
@@ -563,54 +508,6 @@ inductive NetStep (P : Params) :
   | byzD (s : NetState P.n) (k : Fin P.n) (b : Bool) (hF : k ∈ s.F) :
       NetStep P s (Sum.inl .tau) (PMF.pure (s.dput k b))
 
-/-! ### The label pullback of the coin oracle -/
-
-/-- The pullback along which the coin oracle is read over the extended
-alphabet: a shared label is its own, the Byzantine handshake drives and the
-fused coin return are the oracle's own handshakes, and every other rendezvous
-label leaves the oracle idle. -/
-def wccPull (n : ℕ) : NLab n → Option (Lab n)
-  | Sum.inl l => some l
-  | Sum.inr (.byzCallW r k) => some (.callW r k)
-  | Sum.inr (.byzRetW r k b) => some (.retW r k b)
-  | Sum.inr (.retWPub r id c _) => some (.retW r id c)
-  | Sum.inr _ => none
-
-@[simp] theorem wccPull_inl {n : ℕ} (l : Lab n) : wccPull n (Sum.inl l) = some l := rfl
-
-@[simp] theorem wccPull_byzCallW {n : ℕ} (r : ℕ) (k : Fin n) :
-    wccPull n (Sum.inr (.byzCallW r k)) = some (.callW r k) := rfl
-
-@[simp] theorem wccPull_byzRetW {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
-    wccPull n (Sum.inr (.byzRetW r k b)) = some (.retW r k b) := rfl
-
-@[simp] theorem wccPull_retWPub {n : ℕ} (r : ℕ) (id : Fin n) (c b : Bool) :
-    wccPull n (Sum.inr (.retWPub r id c b)) = some (.retW r id c) := rfl
-
-@[simp] theorem wccPull_gsnd {n : ℕ} (r : ℕ) (j : Fin n) (m : GBCA.Msg) :
-    wccPull n (Sum.inr (.gsnd r j m)) = none := rfl
-
-@[simp] theorem wccPull_gdlv {n : ℕ} (r : ℕ) (i j : Fin n) (m : GBCA.Msg) :
-    wccPull n (Sum.inr (.gdlv r i j m)) = none := rfl
-
-@[simp] theorem wccPull_dsnd {n : ℕ} (j : Fin n) (b : Bool) :
-    wccPull n (Sum.inr (.dsnd j b)) = none := rfl
-
-@[simp] theorem wccPull_ddlv {n : ℕ} (i j : Fin n) (b : Bool) :
-    wccPull n (Sum.inr (.ddlv i j b)) = none := rfl
-
-@[simp] theorem wccPull_gcallLoop {n : ℕ} (r : ℕ) (id : Fin n) (b : Bool) :
-    wccPull n (Sum.inr (.gcallLoop r id b)) = none := rfl
-
-@[simp] theorem wccPull_byzCallG {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
-    wccPull n (Sum.inr (.byzCallG r k b)) = none := rfl
-
-@[simp] theorem wccPull_byzCallGLoop {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
-    wccPull n (Sum.inr (.byzCallGLoop r k b)) = none := rfl
-
-@[simp] theorem wccPull_byzRetG {n : ℕ} (r : ℕ) (k : Fin n) (out : GbcaOut) :
-    wccPull n (Sum.inr (.byzRetG r k out)) = none := rfl
-
 /-! ### The automata and the composition pipeline -/
 
 /-- The corruption-blind program of process `j`. -/
@@ -635,13 +532,6 @@ noncomputable def netAdv (P : Params) : System (NetState P.n) (NLab P.n) where
 
 @[simp] theorem netAdv_step (P : Params) (s : NetState P.n) (l : NLab P.n)
     (μ : PMF (NetState P.n)) : (netAdv P).step s l μ ↔ NetStep P s l μ := Iff.rfl
-
-/-- The coin oracle, read over the extended alphabet through the pullback. -/
-noncomputable def wccLift (P : Params) : System (ℕ → WCC.SpecState P.n) (NLab P.n) :=
-  (WCC.specFamily P).mapIdle (wccPull P.n)
-
-@[simp] theorem wccLift_init (P : Params) :
-    (wccLift P).init = (WCC.specFamily P).init := rfl
 
 /-- The three factors side by side, over the extended alphabet: the
 synchronised process group, the network adversary and the lifted oracle. -/
@@ -1324,19 +1214,11 @@ theorem netStep_tau (h : NetStep P s (Sum.inl .tau) μ) :
 
 end NetInversion
 
-/-! ### Dirac successors and the network's field algebra
+/-! ### The network's own field algebra
 
-A Dirac distribution determines its point, and each of the network
-adversary's three writes — a stage multicast, a DECIDED multicast, and
-corruption — touches one field of `NetState` and leaves the other two
-alone. -/
-
-theorem pureN_inj {α : Type} {a b : α}
-    (h : (PMF.pure a : PMF α) = PMF.pure b) : a = b := by
-  have hm : a ∈ (PMF.pure b).support := by rw [← h]; simp
-  simpa using hm
-
-/-! #### The network's own field algebra -/
+Each of the network adversary's three writes — a stage multicast, a DECIDED
+multicast, and corruption — touches one field of `NetState` and leaves the
+other two alone. -/
 
 @[simp] theorem gpool_pool_self {n : ℕ} (s : NetState n) (r : ℕ) (j : Fin n)
     (m : GBCA.Msg) :
@@ -1374,19 +1256,6 @@ theorem netCorrupt_F {P : Params} (s : NetState P.n) (k : Fin P.n) :
     (NetState.corrupt P k s).F =
       if k ∉ s.F ∧ s.F.card < P.f then insert k s.F else s.F := by
   unfold NetState.corrupt; split <;> rfl
-
-/-! ### The coin oracle's idle row over the shared alphabet -/
-
-/-- The coin oracle idles on a shared label that is neither `τ`, nor a
-handshake of one of its own rounds, nor `fail`. Read through the pullback
-`wccPull`, this is the oracle's row in every joint transition — of the
-deployed system, of its layered presentation, and of the deployment-shaped
-specification (`ABA/LayeredSpec.lean`) — that leaves the coin standing still. -/
-theorem wccFamilyN_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {l : Lab P.n}
-    (hl : l ≠ Lab.tau) (hr : Lab.wccRound l = none) (hf : ¬ Lab.isFail l) :
-    (WCC.specFamily P).step o l (PMF.pure o) := by
-  rw [WCC.specFamily, System.family_step_iff]
-  exact Or.inr (Or.inr (Or.inr ⟨hl, hr, hf, rfl⟩))
 
 /-! ### Reading a deployed transition into its three factors -/
 
@@ -1478,18 +1347,7 @@ theorem procsN_id {P : Params} {u x : ∀ _ : Fin P.n, ABANodeN P.n}
     (hall : ∀ i, (PMF.pure (x i) : PMF (ABANodeN P.n)) = PMF.pure (u i)) : x = u :=
   funext fun i => pureN_inj (hall i)
 
-/-! ### Component rows for building a deployed transition
-
-A builder of a deployed transition supplies, alongside the mover's own row,
-the oracle's row on a rendezvous label the pullback does not carry and the
-per-process family of a one-mover joint step. Both are used by the layered
-presentation (`ABA/Layered.lean`). -/
-
-/-- The oracle idles on a rendezvous label outside the pullback's domain. -/
-theorem wccLift_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {e : NetEvt P.n}
-    (hφ : wccPull P.n (Sum.inr e) = none) :
-    (wccLift P).step o (Sum.inr e) (PMF.pure o) :=
-  (System.mapIdle_step_none hφ (PMF.pure o)).mpr rfl
+/-! ### The per-process family of a one-mover joint step -/
 
 /-- One process moves and every other idles: the per-process family of a
 one-mover joint step. -/

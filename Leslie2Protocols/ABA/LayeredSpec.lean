@@ -4,41 +4,285 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Layered
+import Leslie2Protocols.ABA.Factors
+import Leslie2Protocols.ABA.GBCASubsystem
+import Leslie2.Results
 
 /-!
-# The deployment-shaped specification
+# The specification stages: the layered presentation and the substitution
 
-The link of the refinement chain that replaces each round's graded-agreement
-subsystem by its specification, and the row-by-row reading of the system that
-results. The headlines that chain this with the earlier links are in
-`ABA/Results.lean`.
+Two links of the refinement chain, and the row-by-row readings of the systems
+they introduce. The headlines that chain these links with the earlier ones are
+in `ABA/Results.lean`.
 
-`layeredSpec` is the deployed system with each round's graded-agreement subsystem
-replaced by that round's specification, read at the deployed shape. The
-substitution is one application of `ProbabilisticForwardSimulation.parallel_right`
-under a syntactically identical context, followed by the three congruences the
-deployed pipeline is built from — `abstract` for the rendezvous alphabet,
-`relabel` for the read-back to `Lab n` (`Framework/Relabel.lean`), and
-`abstract` again for the sub-protocol API. The result is `substitution`, the
-inclusion of the layered system's achievable trace distributions in the
-specification's.
+The first link is the layered presentation. The deployed reading of
+`ABA/Deployed.lean` presents the protocol as `n` corruption-blind programs
+beside one network adversary and the coin oracle; each program runs two layers
+at once, and the single adversary holds both message layers. The layered
+presentation reads the same protocol with a *layer* boundary as a *component*
+boundary:
 
-The rest of the file reads `layeredSpec` row by row, in both directions: the
-rows of the specification side and of the coin oracle's family, the reading of
-a joint transition of the four factors into its component rows and the
-construction of one from them, and the three routes a labelled transition takes
-through the two hiding layers. The core simulation of `ABA/CoreSim.lean` runs
-from `layeredSpec` on this vocabulary, and the non-vacuity witnesses of
-`ABA/NonVacuity.lean` are built with it; `ABA/Results.lean` chains the simulation
-with the substitution and, through `safety_transfer`, reads off the deployed
-protocol's Validity and Agreement guarantee.
+* the graded-agreement side is the round-indexed family `GSub.gbcaSide`. Its
+  round-`r` factor is a parallel component in its own right: the stage
+  programs of round `r` beside the message fabric of round `r`, which that
+  component owns outright;
+* the round loops are `n` separate automata (`coreProcN`), synchronised;
+* what is left of the network adversary is the DECIDED layer beside the
+  corrupted set (`aNet`);
+* the coin oracle enters through the same label pullback as in the deployed
+  reading (`Net.wccLift`).
+
+The four factors speak the extended alphabet `Net.NLab n`, the rendezvous
+labels are hidden, and the result is read back over `Lab n`. The round loops,
+the ABA-side network and the lifted oracle are defined in `ABA/Factors.lean`,
+the round subsystems in `ABA/GBCASubsystem.lean`; the composition pipeline
+`layeredPre` / `layeredGroup` / `layered` is the first section below.
+
+The second link is the substitution, which replaces each round's
+graded-agreement subsystem by that round's specification. `layeredSpec` is the
+system that results, read at the deployed shape. The substitution is one
+application of `ProbabilisticForwardSimulation.parallel_right` under a
+syntactically identical context, followed by the three congruences the deployed
+pipeline is built from: `abstract` for the rendezvous alphabet, `relabel` for
+the read-back to `Lab n` (`Framework/Relabel.lean`), and `abstract` again for
+the sub-protocol API. The conclusion is `substitution`, the inclusion of the
+layered system's achievable trace distributions in the specification's.
+
+## Per-round memory
+
+A round subsystem is a factor of the composite from the start, not an object
+created by the round's first call, and it keeps its stage records and its
+fabric for the whole run. The graded-agreement coordinate of a layered state
+is therefore `ℕ → GBCA.ImplState n`: every round is present at every moment,
+whichever round each process is in. That retained memory is specification-side
+state. No process holds it. A deployed node carries the stage record of the
+round its round loop is in and nothing else (D20).
+
+## The authorisation relocation (D11)
+
+A round subsystem carries no `k ∈ F` guard on the drive labels `byzCallG`,
+`byzCallGLoop` and `byzRetG` (`GBCASubsystem.lean`, D11). A drive label stays
+visible at the subsystem boundary and is authorised outside it. Here `aNet` is
+that outside, and it carries the guard on its own copy of the corrupted set.
+The two copies are written by one broadcast: `fail` reaches every round's
+fabric through the family (`gbcaSide_fail`) and `aNet` on its own `fail` row,
+and `GSub.GNetState.corrupt` and `ANetState.corrupt` are the same
+budget-guarded insertion.
+
+## What this file supplies
+
+The layered system and its rows, the deployment-shaped specification and its
+rows, and the substitution between them. The builders assemble a transition of
+a composite out of transitions of its factors (`layeredPre_vis_step`,
+`layeredPre_tau_gbca`, `layeredPre_tau_aNet`, `layeredPre_tau_wcc`,
+`gbcaSide_owned`, `gbcaSide_idle`, `gbcaSide_tau`, `gbcaSide_fail`,
+`layeredGroup_of_event`, `layeredGroup_of_tau`, and their counterparts on the
+specification side). On the specification side the reading also runs in the
+inverse direction, from a composite transition back into the rows its factors
+contributed, and a labelled transition takes one of three routes through the
+two hiding layers. The per-factor rows these consume and produce are the tables
+of `ABA/Factors.lean` and `ABA/GBCASubsystem.lean`.
+
+The core simulation of `ABA/CoreSim.lean` runs from `layeredSpec` on this
+vocabulary, and the non-vacuity witnesses of `ABA/NonVacuity.lean` are built
+with it; `ABA/Results.lean` chains the simulation with the substitution and,
+through `safety_transfer`, reads off the deployed protocol's Validity and
+Agreement guarantee.
 -/
 
 namespace PLTS
 namespace ABA
 
-open Net Layer
+open Net
+
+/-! ## The layered presentation
+
+The layer cut of the protocol: the graded-agreement side as a round-indexed
+family of subsystems, the round loops as `n` synchronised automata, the DECIDED
+layer beside the corrupted set, and the lifted coin oracle. This section
+composes the four factors and reads the rows of the composite. -/
+
+namespace Layer
+
+/-! ### The composition pipeline -/
+
+/-- The state of the layered system: the round subsystems, the round loops,
+the ABA-side network and the coin oracle. -/
+abbrev LayeredState (P : Params) : Type :=
+  (ℕ → GBCA.ImplState P.n) ×
+    ((∀ _ : Fin P.n, CoreNodeN P.n) × (ANetState P.n × (ℕ → WCC.SpecState P.n)))
+
+/-- The four factors side by side, over the extended alphabet. -/
+noncomputable def layeredPre (P : Params) : System (LayeredState P) (NLab P.n) :=
+  (GSub.gbcaSide P).parallel
+    ((System.syncProduct (coreProcN P)).parallel ((aNet P).parallel (wccLift P)))
+
+/-- **The layered group**: the rendezvous alphabet hidden, the result read
+back over `Lab n`. -/
+noncomputable def layeredGroup (P : Params) : System (LayeredState P) (Lab P.n) :=
+  ((layeredPre P).abstract (netEvtLabels P.n)).relabel
+
+/-- **The layered system**: the group with the sub-protocol API hidden. -/
+noncomputable def layered (P : Params) : System (LayeredState P) (Lab P.n) :=
+  (layeredGroup P).abstract (Lab.hiddenAPI P.n)
+
+/-! ### Reading and building composite transitions of the layered system -/
+
+/-- The layered group's step relation, unfolded to the hidden rendezvous case
+and the shared-label case. -/
+theorem layeredGroup_step_iff (P : Params) (q : LayeredState P) (l : Lab P.n)
+    (μ : PMF (LayeredState P)) :
+    (layeredGroup P).step q l μ ↔
+      (l = .tau ∧ ∃ e : NetEvt P.n, (layeredPre P).step q (Sum.inr e) μ) ∨
+      (layeredPre P).step q (Sum.inl l) μ := by
+  constructor
+  · rintro (⟨hτ, l', ⟨e, rfl⟩, hstep⟩ | ⟨-, hstep⟩)
+    · exact Or.inl ⟨Sum.inl_injective hτ, e, hstep⟩
+    · exact Or.inr hstep
+  · rintro (⟨rfl, e, hstep⟩ | hstep)
+    · exact Or.inl ⟨rfl, _, inr_mem_netEvtLabels e, hstep⟩
+    · exact Or.inr ⟨inl_notMem_netEvtLabels l, hstep⟩
+
+/-- Build a joint transition of the four factors on a visible label, the
+oracle's successor left arbitrary. -/
+theorem layeredPre_vis_step (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
+    {C C' : ∀ _ : Fin P.n, CoreNodeN P.n} {A A' : ANetState P.n}
+    {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)} {L : NLab P.n}
+    (hL : L ≠ Silent.τ)
+    (hG : (GSub.gbcaSide P).step G L (PMF.pure G'))
+    (hC : ∀ i, CoreProcStepN P i (C i) L (PMF.pure (C' i)))
+    (hA : ANetStep P A L (PMF.pure A'))
+    (hW : (wccLift P).step o L ω) :
+    (layeredPre P).step (G, C, A, o) L
+      (prodPMF (PMF.pure G') (prodPMF (PMF.pure C') (prodPMF (PMF.pure A') ω))) := by
+  rw [layeredPre, System.parallel_step]
+  refine Or.inl ⟨hL, PMF.pure G', prodPMF (PMF.pure C') (prodPMF (PMF.pure A') ω),
+    hG, ?_, rfl⟩
+  rw [System.parallel_step]
+  refine Or.inl ⟨hL, PMF.pure C', prodPMF (PMF.pure A') ω, syncCore_pure hL hC, ?_, rfl⟩
+  rw [System.parallel_step]
+  exact Or.inl ⟨hL, PMF.pure A', ω, hA, hW, rfl⟩
+
+/-- Build a silent transition of the four factors from a graded-agreement-side
+one. -/
+theorem layeredPre_tau_gbca (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
+    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
+    {o : ℕ → WCC.SpecState P.n}
+    (hG : (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure G')) :
+    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) (PMF.pure (G', C, A, o)) := by
+  rw [layeredPre, System.parallel_step]
+  refine Or.inr (Or.inl ⟨rfl, PMF.pure G', hG, ?_⟩)
+  rw [prodPMF_pure_pure]
+
+/-- Build a silent transition of the four factors from an ABA-side network
+injection. -/
+theorem layeredPre_tau_aNet (P : Params) {G : ℕ → GBCA.ImplState P.n}
+    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A A' : ANetState P.n}
+    {o : ℕ → WCC.SpecState P.n}
+    (hA : ANetStep P A (Sum.inl Lab.tau) (PMF.pure A')) :
+    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) (PMF.pure (G, C, A', o)) := by
+  rw [layeredPre, System.parallel_step]
+  refine Or.inr (Or.inr ⟨rfl,
+    prodPMF (PMF.pure C) (prodPMF (PMF.pure A') (PMF.pure o)), ?_, ?_⟩)
+  · rw [System.parallel_step]
+    refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure A') (PMF.pure o), ?_, rfl⟩)
+    rw [System.parallel_step]
+    exact Or.inr (Or.inl ⟨rfl, PMF.pure A', hA, rfl⟩)
+  · rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure]
+
+/-- Build a silent transition of the four factors from the coin resolution —
+the one transition of the composite that is not Dirac. -/
+theorem layeredPre_tau_wcc (P : Params) {G : ℕ → GBCA.ImplState P.n}
+    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
+    {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)}
+    (hW : (WCC.specFamily P).step o Lab.tau ω) :
+    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau)
+      (prodPMF (PMF.pure G) (prodPMF (PMF.pure C) (prodPMF (PMF.pure A) ω))) := by
+  rw [layeredPre, System.parallel_step]
+  refine Or.inr (Or.inr ⟨rfl, _, ?_, rfl⟩)
+  rw [System.parallel_step]
+  refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure A) ω, ?_, rfl⟩)
+  rw [System.parallel_step]
+  exact Or.inr (Or.inr ⟨rfl, ω, (System.mapIdle_step_some (by simp) ω).mpr hW, rfl⟩)
+
+/-! ### The graded-agreement side's rows
+
+The family routes a round-tagged label to its round, takes `τ` at any round,
+broadcasts `fail`, and idles on everything else. -/
+
+/-- The round-`r` subsystem moves on a label it owns. -/
+theorem gbcaSide_owned (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
+    {L : NLab P.n} (hL : GSub.gOwns L = some r) {X : GBCA.ImplState P.n}
+    (h : (GSub.sub P r).step (G r) L (PMF.pure X)) :
+    (GSub.gbcaSide P).step G L (PMF.pure (Function.update G r X)) := by
+  rw [GSub.gbcaSide, System.family_step_iff]
+  exact Or.inr (Or.inl ⟨r, hL, PMF.pure X, h, by rw [PMF.pure_map]⟩)
+
+/-- An owned label whose subsystem stands still. -/
+theorem gbcaSide_owned_id (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
+    {L : NLab P.n} (hL : GSub.gOwns L = some r)
+    (h : (GSub.sub P r).step (G r) L (PMF.pure (G r))) :
+    (GSub.gbcaSide P).step G L (PMF.pure G) := by
+  have hstep := gbcaSide_owned P G r hL h
+  rwa [Function.update_eq_self] at hstep
+
+/-- The round-`r` subsystem takes one of its own silent rules. -/
+theorem gbcaSide_tau (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
+    {X : GBCA.ImplState P.n}
+    (h : (GSub.sub P r).step (G r) (Sum.inl Lab.tau) (PMF.pure X)) :
+    (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure (Function.update G r X)) := by
+  rw [GSub.gbcaSide, System.family_step_iff]
+  exact Or.inl ⟨rfl, r, PMF.pure X, h, by rw [PMF.pure_map]⟩
+
+/-- A label no round owns and no broadcast: the family idles. -/
+theorem gbcaSide_idle (P : Params) (G : ℕ → GBCA.ImplState P.n) {L : NLab P.n}
+    (hτ : L ≠ Silent.τ) (hown : GSub.gOwns L = none) (hf : ¬ GSub.isFailN L) :
+    (GSub.gbcaSide P).step G L (PMF.pure G) := by
+  rw [GSub.gbcaSide, System.family_step_iff]
+  exact Or.inr (Or.inr (Or.inr ⟨hτ, hown, hf, rfl⟩))
+
+/-- Corruption is broadcast to every round's fabric. -/
+theorem gbcaSide_fail (P : Params) (G : ℕ → GBCA.ImplState P.n) (k : Fin P.n) :
+    (GSub.gbcaSide P).step G (Sum.inl (Lab.fail k))
+      (PMF.pure (fun r => GSub.gAct P (Sum.inl (Lab.fail k)) (G r))) := by
+  rw [GSub.gbcaSide, System.family_step_iff]
+  exact Or.inr (Or.inr (Or.inl ⟨by simp, rfl, trivial, rfl⟩))
+
+/-! ### The stage-program tuple of one round -/
+
+/-- One stage program moves and every other idles. -/
+theorem gprocs_family {P : Params} {r : ℕ}
+    {u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n} {L : GSub.GLab P.n} (id : Fin P.n)
+    (nd : GBCA.ProcNodeN P.n)
+    (hown : GSub.GProcStep P r id (u id) L (PMF.pure nd))
+    (hfor : ∀ i, i ≠ id → GSub.GProcStep P r i (u i) L (PMF.pure (u i))) :
+    ∀ i, GSub.GProcStep P r i (u i) L (PMF.pure (Function.update u id nd i)) := by
+  intro i
+  by_cases hi : i = id
+  · subst hi; rw [Function.update_self]; exact hown
+  · rw [Function.update_of_ne hi]; exact hfor i hi
+
+/-! ### Hiding the rendezvous alphabet
+
+The composition hides `NetEvt n`, so a transition of `layeredPre` on a
+rendezvous label is a silent transition of `layeredGroup`, as is one on `τ`.
+The two stage rendezvous never reach this point. They are internal to a round
+subsystem, hidden inside `GSub.sub`, and reach the composite as the family's
+own `τ`. -/
+
+theorem layeredGroup_of_event (P : Params) {q : LayeredState P} (e : NetEvt P.n)
+    {μ : PMF (LayeredState P)} (h : (layeredPre P).step q (Sum.inr e) μ) :
+    (layeredGroup P).step q Lab.tau μ :=
+  (layeredGroup_step_iff P _ _ _).mpr (Or.inl ⟨rfl, e, h⟩)
+
+theorem layeredGroup_of_tau (P : Params) {q : LayeredState P} {μ : PMF (LayeredState P)}
+    (h : (layeredPre P).step q (Sum.inl Lab.tau) μ) :
+    (layeredGroup P).step q Lab.tau μ :=
+  (layeredGroup_step_iff P _ _ _).mpr (Or.inr h)
+
+end Layer
+
+open Layer
 
 /-! ## The deployment-shaped specification side
 

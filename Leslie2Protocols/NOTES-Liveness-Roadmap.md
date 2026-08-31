@@ -266,7 +266,7 @@ the sub-protocol slot.
 - Certificates: `Leslie/Prob/Liveness.lean` (`FairASTCertificate`, `sound` at :1719)
 - This repo's fairness line: `Leslie2Extra/Fairness/Simulation/{Defs,Soundness}.lean`
 - Corruption-blind deployed model: `ABA/Deployed.lean` (`deployed`, `netAdv`), with its
-  reading along the layer boundaries in `ABA/Layered.lean` (`layered`) and the inclusion
+  reading along the layer boundaries in `ABA/LayeredSpec.lean` (`layered`) and the inclusion
   into it in `ABA/DeployedSim.lean` (`DepRel`, `deployedSim`, `deployed_layered`) — the
   presentation to state fair
   termination over if it is to be stated of the deployed system: the `fail` row belongs

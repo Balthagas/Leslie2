@@ -4,13 +4,14 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Layered
+import Leslie2Protocols.ABA.Deployed
+import Leslie2Protocols.ABA.LayeredSpec
 
 /-!
 # The deployed protocol under its layered presentation
 
 The deployed reading of `ABA/Deployed.lean` and the layered reading of
-`ABA/Layered.lean` present one protocol at two cuts. A deployed process node
+`ABA/LayeredSpec.lean` present one protocol at two cuts. A deployed process node
 carries the round-loop record and the stage record of the round the loop is in,
 and nothing else (D20). A layered state carries one graded-agreement subsystem
 per round, at every moment. The round subsystems a process has left keep their

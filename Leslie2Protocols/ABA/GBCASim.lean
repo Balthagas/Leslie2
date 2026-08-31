@@ -96,6 +96,11 @@ The invariant carries
   `f + 1` F-blind genuine-holder support (`ImplSupp`) — inductive because
   the first honest relayer's `f + 1` `INPUT b` receipt senders are each in
   `F` or genuine holders, and the count is monotone under every step.
+
+`Framework/FamilySim.lean` is imported for the downstream tree: the family
+congruence `ForwardSimulation.family` reaches `ABA/GBCASubsystem.lean` and
+`ABA/LayeredSpec.lean` along this file, which also supplies the broadcast
+ingredient that congruence consumes (`instRel_corrupt`).
 -/
 
 open Stream'
@@ -1774,6 +1779,51 @@ theorem implRefines (P : Params) (r : ℕ) :
       rw [corrupt_grade] at hg
       obtain ⟨i0, hi0⟩ := hRR.gradeC_ev hg
       exact ⟨i0, by rw [ImplState.corrupt_recvCount]; exact hi0⟩
+
+/-! ### Broadcast compatibility of the simulation relation
+
+The round-indexed family lift of the refinement takes `fail` as a broadcast
+act, applied to every round at once. It needs the per-round relation to be
+preserved by that act. The spec-side corruption projections
+(`corrupt_call`/`corrupt_ret`/`corrupt_dead`/`corrupt_grade`) come from
+`ABA/GBCASpec.lean`; the two `corrupt` functions stay in lockstep by
+`implSpec_corrupt_F_eq`. The statement is proved directly rather than through
+`implRefines`, whose `fail` case only yields an existential match. Its
+consumer is the round subsystem's family lifting (`ABA/GBCASubsystem.lean`). -/
+
+/-- **Broadcast compatibility**: `instRel` is preserved by the synchronized
+corruption of both sides. The two `corrupt`s share the guard
+`id ∉ F ∧ |F| < f` and `instRel` aligns the `F`s, so the `if`-conditions
+agree; every other field is untouched by corruption. -/
+theorem instRel_corrupt (P : Params) (r : ℕ) (id : Fin P.n)
+    {x : ImplState P.n} {y : SpecState P.n} (h : instRel P r x y) :
+    instRel P r (x.corrupt P id) (y.corrupt P id) := by
+  have hR : InstRel P x y := h
+  exact
+    { inv := hR.inv.step (ImplStep.fail (r := r) x id)
+        (by rw [PMF.mem_support_pure_iff])
+      call_eq := fun k => by
+        rw [corrupt_call, ImplState.corrupt_proc]
+        exact hR.call_eq k
+      ret_eq := fun k => by
+        rw [corrupt_ret, ImplState.corrupt_proc]
+        exact hR.ret_eq k
+      F_eq := implSpec_corrupt_F_eq hR.F_eq id
+      dead_cert := fun b hb => by
+        rw [corrupt_dead] at hb
+        exact DeadCert.mono
+          (fun i j m hm => by rw [ImplState.corrupt_recv]; exact hm)
+          (fun j w hw => by rw [ImplState.corrupt_proc]; exact hw)
+          (ImplState.corrupt_F_subset x id)
+          (hR.dead_cert b hb)
+      gradeA_ev := fun hg => by
+        rw [corrupt_grade] at hg
+        obtain ⟨v, i, hi⟩ := hR.gradeA_ev hg
+        exact ⟨v, i, by rw [ImplState.corrupt_recvCount]; exact hi⟩
+      gradeC_ev := fun hg => by
+        rw [corrupt_grade] at hg
+        obtain ⟨i, hi⟩ := hR.gradeC_ev hg
+        exact ⟨i, by rw [ImplState.corrupt_recvCount]; exact hi⟩ }
 
 end GBCA
 end ABA

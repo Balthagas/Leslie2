@@ -63,8 +63,7 @@ the file is. The order is the dependency order.
 | `SpecSafety.lean` | 929 | `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. The trace predicates live here. |
 | `GBCASafety.lean` | 598 | Binding, graded agreement and Validity's safety half for the GBCA specification instance. |
 | `GBCAImpl.lean` | 707 | **The GBCA implementation**, ABDY22's Algorithm 6 in full (D18). Its state is the stage records beside the round's fabric. |
-| `GBCASim.lean` | 1780 | The per-instance refinement `implRefines`, by kill-on-demand: `dead` carried as a receipt-pattern certificate. |
-| `GBCAFamily.lean` | 86 | Broadcast compatibility of that refinement's relation with the `fail` act, which the family lifting consumes. |
+| `GBCASim.lean` | 1830 | The per-instance refinement `implRefines`, by kill-on-demand: `dead` carried as a receipt-pattern certificate; and the broadcast compatibility of its relation with the `fail` act (`instRel_corrupt`), which the family lifting consumes. |
 | `Core.lean` | 225 | **The ABA round loop**, per process and nothing else: the phase machine, the control record, the round-loop node. |
 | `CoreView.lean` | 331 | The ABA-side state as one object: the round-loop nodes beside the DECIDED network, with the accessors the invariant is stated in. |
 | `CoreSimRel.lean` | 700 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
@@ -72,13 +71,20 @@ the file is. The order is the dependency order.
 | `CoreSimAbs.lean` | 336 | `Abs` preservation for the stutter rows, and the assembly `Inv.step`. |
 | `CoreSimBurst.lean` | 187 | The abstract-twin burst kit: how the twin catches up in one weak step. |
 | `CoreSim.lean` | 698 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
-| `Deployed.lean` | 1509 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, the coin oracle, and the pipeline that composes them. |
-| `GBCASubsystem.lean` | 1532 | **The round's graded-agreement subsystem** and the licence to replace it, `subSim`. |
-| `Layered.lean` | 1097 | **`layered`**: the same protocol read as four factors, one round subsystem per round retained at every moment. |
-| `DeployedSim.lean` | 1091 | **`deployedSim`**, **`deployed_layered`**: the deployed protocol carried into that reading along `DepRel`. |
-| `LayeredSpec.lean` | 480 | **`substSim`**: the graded-agreement factor replaced by its specification, under the four congruences. |
-| `Results.lean` | 217 | The deliverables, gathered so every citable statement is in one file. Fifteen `#guard_msgs` axiom firewalls. |
+| `Factors.lean` | 864 | The extended alphabet `NLab n`, the coin oracle read along its label pullback, the round loop of one process, and the ABA-side network — the pieces the two compositions are built from. |
+| `Deployed.lean` | 1368 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, and the pipeline that composes them beside the coin oracle. |
+| `GBCASubsystem.lean` | 1601 | **The round's graded-agreement subsystem** and the licence to replace it, `subSim`. |
+| `LayeredSpec.lean` | 724 | **`layered`**, **`substSim`**: the same protocol read as four factors, one round subsystem per round retained at every moment, and that graded-agreement factor then replaced by its specification under the four congruences. |
+| `DeployedSim.lean` | 1092 | **`deployedSim`**, **`deployed_layered`**: the deployed protocol carried into the layered reading along `DepRel`. |
+| `Results.lean` | 217 | The deliverables, gathered so every citable statement is in one file. Thirteen `#guard_msgs` axiom firewalls. |
 | `NonVacuity.lean` | 619 | A concrete 21-step run of `layeredSpec P4` to a `retABA` decision, so the simulation about it is not vacuous. |
+
+The pieces both compositions are built from are in `Factors.lean`. `Deployed.lean` and
+`GBCASubsystem.lean` each import it and neither imports the other, so the two readings of
+the protocol are assembled independently over one set of factors. The specification side —
+`GBCASubsystem.lean`, `LayeredSpec.lean` and the core simulation above them — never imports
+`Deployed.lean`; the deployed protocol enters only at `DeployedSim.lean`, which is where the
+two readings meet, and `Results.lean` reaches it through that file.
 
 ## Suggested first read
 

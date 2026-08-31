@@ -20,7 +20,7 @@ target       : ForwardSimulation (implInst P r) (specInst P r) (instRel P r)
 Both systems are Dirac-transition LTSs. The instance refinement reaches the
 ℕ-indexed families through the round subsystem (`ABA/GBCASubsystem.lean`), whose
 family lifting takes its broadcast ingredient from
-`GBCAFamily.instRel_corrupt`.
+`GBCASim.instRel_corrupt`.
 
 ### The implementation (D18): the five-level ladder
 
@@ -589,7 +589,7 @@ over `dead`: `IsLastBound g r` is `(g r).dead ≠ ∅ ∧ (g (r + 1)).dead = ∅
 `Closed g r` is `(g r).dead ≠ ∅ ∨ (g r).grade = some false`, and `a_commit`,
 `gradeA_needs_bind`, `bind_supp` and the A-lock certificates are keyed on the
 guard pair `(!b) ∈ dead ∧ b ∉ dead` — the D19 rendering of `bind = some b`,
-with `bind ≠ none` rendered as `dead ≠ ∅`. `GBCAFamily.instRel_corrupt`
+with `bind ≠ none` rendered as `dead ≠ ∅`. `GBCASim.instRel_corrupt`
 carries the `dead_cert` row through `DeadCert.mono`, whose three hypotheses it
 discharges by `corrupt_recv`, `corrupt_proc` and `corrupt_F_subset`.
 `Deployed.lean`'s rendering carries the same ladder inside one

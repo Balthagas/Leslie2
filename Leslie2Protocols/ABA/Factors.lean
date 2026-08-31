@@ -4,87 +4,210 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.GBCASubsystem
-import Leslie2.Results
+import Leslie2Protocols.ABA.Core
+import Leslie2Protocols.ABA.GBCAImpl
+import Leslie2Protocols.ABA.SpecSafety
+import Leslie2Protocols.ABA.WCCSpec
+import Leslie2Protocols.Framework.IdleFamily
+import Leslie2Protocols.Framework.Relabel
+import Leslie2Protocols.Framework.SyncProduct
 
 /-!
-# The layered presentation: layer boundaries as component boundaries
+# The extended alphabet and the factors composed over it
 
-This is the first specification stage of the chain. The deployed reading of
-`ABA/Deployed.lean` presents the protocol as `n` corruption-blind programs
-beside one network adversary and the coin oracle; each program runs two layers
-at once, and the single adversary holds both message layers. The present file
-reads the same protocol with a *layer* boundary as a *component* boundary:
+The protocol is composed twice in this development. The deployed reading
+(`ABA/Deployed.lean`) puts `n` corruption-blind programs beside a network
+adversary and the coin oracle. The layered reading (`ABA/LayeredSpec.lean`) cuts
+the same protocol along its layer boundaries. Both compositions speak one
+alphabet, and some of what they compose is the same object on both sides.
+This file holds that alphabet and those factors.
 
-* the graded-agreement side is the round-indexed family `GSub.gbcaSide`. Its
-  round-`r` factor is a parallel component in its own right: the stage
-  programs of round `r` beside the message fabric of round `r`, which that
-  component owns outright;
-* the round loops are `n` separate automata (`coreProcN`), synchronised;
-* what is left of the network adversary is the DECIDED layer beside the
-  corrupted set (`aNet`);
-* the coin oracle enters through the same label pullback as in the deployed
-  reading (`Net.wccLift`).
+## The extended alphabet
 
-The four factors speak the extended alphabet `Net.NLab n`, the rendezvous
-labels are hidden, and the result is read back over `Lab n`.
+`Lab n` is the shared alphabet of the protocol and of its specification. It
+cannot name the two message networks, the Byzantine drives, or the branches of
+a handshake that it does not distinguish. `NetEvt n` names them, and
+`NLab n = Lab n ⊕ NetEvt n` is the alphabet every factor speaks. Its silent
+label is `Sum.inl τ`, so every `Sum.inr` label is observable, and
+`netEvtLabels n` — the set of all of them — is what both compositions hide
+before reading the result back over `Lab n`.
 
-## Per-round memory
+## The coin oracle
 
-A round subsystem is a factor of the composite from the start, not an object
-created by the round's first call, and it keeps its stage records and its
-fabric for the whole run. The graded-agreement coordinate of a layered state
-is therefore `ℕ → GBCA.ImplState n`: every round is present at every moment,
-whichever round each process is in. That retained memory is specification-side
-state. No process holds it — a deployed node carries the stage record of the
-round its round loop is in and nothing else (D20).
+The coin oracle `WCC.specFamily` speaks `Lab n`, so it is joined to the
+extended alphabet through a label pullback. `wccPull` sends a shared label to
+itself, the Byzantine handshake drives and the fused coin return to the
+oracle's own handshake rows, and every other rendezvous label out of the
+domain. `wccLift` is the oracle read along that pullback. It is a factor of
+both compositions, unchanged.
 
-## The rule tables
+## The round loop of one process
 
-`CoreProcStepN` is the round loop of one process: the API rows `callABA` and
-`retABA`, the graded-agreement and coin handshakes, the DECIDED relay and its
-delivery, and an idle row for every label the process does not act on. It has
-no stage content. The five multicast levels and the stage delivery are
-internal to a round subsystem, so their labels are dead at a round loop
-(`stepC_gsnd_dead`, `stepC_gdlv_dead`), and the Byzantine graded-agreement
-drives appear only as idle rows. The round loop's `retG` row fires on the
-grade the label carries, at the right phase and round; the evidence for that
-grade is the round subsystem's conjunct of the joint step.
+`CoreProcStepN` is the rule table of one process's round loop: the API rows
+`callABA` and `retABA`, the graded-agreement and coin handshakes, the DECIDED
+relay and its delivery, and an idle row for every label the process does not
+act on. It writes no stage record. The layered composition runs `n` of these
+automata (`coreProcN`) under a full-synchronisation product. The deployed
+composition fuses each round loop with a stage record into one program
+(`Net.ABAProcStepN`), whose node is the pair.
+
+## The ABA-side network
 
 `ANetStep` is what the network adversary retains once the round fabrics have
 taken the stage pools: the DECIDED pools `dpool j`, the corrupted set `F` with
-its budget, and the authorisation of the Byzantine drives.
-
-## The authorisation relocation (D11)
-
-A round subsystem carries no `k ∈ F` guard on the drive labels `byzCallG`,
-`byzCallGLoop` and `byzRetG` (`GBCASubsystem.lean`, D11). A drive label stays
-visible at the subsystem boundary and is authorised outside it. Here `aNet` is
-that outside, and it carries the guard on its own copy of the corrupted set.
-The two copies are written by one broadcast: `fail` reaches every round's
-fabric through the family (`gbcaSide_fail`) and `aNet` on its own `fail` row,
-and `GSub.GNetState.corrupt` and `ANetState.corrupt` are the same
-budget-guarded insertion.
+its budget, and the authorisation of every Byzantine drive. `aNet` is that
+automaton.
 
 ## What this file supplies
 
-The rule tables of the round loops and of the ABA-side network, the
-composition pipeline `layeredPre` / `layeredGroup` / `layered`, and the
-readings of that pipeline in both directions. The builders assemble a
-transition of the composite out of transitions of its factors
-(`layeredPre_vis_step`, `layeredPre_tau_gbca`, `layeredPre_tau_aNet`,
-`layeredPre_tau_wcc`, `gbcaSide_owned`, `gbcaSide_idle`, `gbcaSide_tau`,
-`gbcaSide_fail`, `syncCore_pure`, `layeredGroup_of_event`,
-`layeredGroup_of_tau`). The inversions read a composite transition back into
-the rows its factors contributed (`layeredPre_vis_inv`, `layeredPre_tau_inv`,
-`syncCore_inv`, the `stepC_*` table of one round loop and the `aStep_*` table
-of the ABA-side network). The file defines the layered system and reads its
-rows; it relates it to no other system. The chain past this reading continues
-in `ABA/LayeredSpec.lean`.
+The two rule tables above, the two automata they carry, the determinacy of
+both tables, and the inversion tables that read a row of each off its label
+(`stepC_*`, `aStep_*`). It also supplies the readings of the synchronised
+round-loop group in both directions (`syncCore_inv`, `syncCore_pure`) and the
+lemmas that pin a round-loop tuple down from its per-process rows
+(`coresN_*`).
 -/
 
 namespace PLTS
 namespace ABA
+
+namespace Net
+
+/-! ### The auxiliary alphabet -/
+
+/-- The rendezvous alphabet: the two networks, the Byzantine drives, and the
+handshake branches the shared alphabet does not distinguish. -/
+inductive NetEvt (n : ℕ) : Type
+  /-- Stage-`r` multicast: sender `j` writes its record and the network pools
+  `m` under `j`. -/
+  | gsnd (r : ℕ) (j : Fin n) (m : GBCA.Msg)
+  /-- Stage-`r` delivery: `m`, pooled under sender `j`, reaches receiver `i`. -/
+  | gdlv (r : ℕ) (i j : Fin n) (m : GBCA.Msg)
+  /-- DECIDED relay: sender `j` publishes `⟨DECIDED, b⟩` on an `f + 1` quorum. -/
+  | dsnd (j : Fin n) (b : Bool)
+  /-- DECIDED delivery: sender `j`'s `⟨DECIDED, b⟩` reaches receiver `i`. -/
+  | ddlv (i j : Fin n) (b : Bool)
+  /-- The coin return fused with a `⟨DECIDED, b⟩` publication (D10): the
+  round-`r` coin `c` returns to `id`, whose grade was `A b`. -/
+  | retWPub (r : ℕ) (id : Fin n) (c : Bool) (b : Bool)
+  /-- The graded-agreement call against an already-called stage record. -/
+  | gcallLoop (r : ℕ) (id : Fin n) (b : Bool)
+  /-- A corrupted process drives the graded-agreement call, opening the stage
+  record (D11). -/
+  | byzCallG (r : ℕ) (k : Fin n) (b : Bool)
+  /-- A corrupted process drives the graded-agreement call against an
+  already-called stage record (D11). -/
+  | byzCallGLoop (r : ℕ) (k : Fin n) (b : Bool)
+  /-- A corrupted process takes a graded-agreement return (D11). -/
+  | byzRetG (r : ℕ) (k : Fin n) (out : GbcaOut)
+  /-- A corrupted process drives the coin call (D11). -/
+  | byzCallW (r : ℕ) (k : Fin n)
+  /-- A corrupted process takes the coin return (D11). -/
+  | byzRetW (r : ℕ) (k : Fin n) (b : Bool)
+  deriving DecidableEq
+
+/-- The extended alphabet. Its silent label is `Sum.inl τ`, so every
+`Sum.inr` label is observable and hence hideable. -/
+abbrev NLab (n : ℕ) : Type := Lab n ⊕ NetEvt n
+
+/-- The rendezvous labels, hidden by the composition. -/
+def netEvtLabels (n : ℕ) : Set (NLab n) := {l | ∃ e : NetEvt n, l = Sum.inr e}
+
+@[simp] theorem inl_notMem_netEvtLabels {n : ℕ} (l : Lab n) :
+    Sum.inl l ∉ netEvtLabels n := by
+  simp [netEvtLabels]
+
+@[simp] theorem inr_mem_netEvtLabels {n : ℕ} (e : NetEvt n) :
+    Sum.inr e ∈ netEvtLabels n := ⟨e, rfl⟩
+
+@[simp] theorem nlab_tau (n : ℕ) : (Silent.τ : NLab n) = Sum.inl Lab.tau := rfl
+
+/-! ### The label pullback of the coin oracle -/
+
+/-- The pullback along which the coin oracle is read over the extended
+alphabet: a shared label is its own, the Byzantine handshake drives and the
+fused coin return are the oracle's own handshakes, and every other rendezvous
+label leaves the oracle idle. -/
+def wccPull (n : ℕ) : NLab n → Option (Lab n)
+  | Sum.inl l => some l
+  | Sum.inr (.byzCallW r k) => some (.callW r k)
+  | Sum.inr (.byzRetW r k b) => some (.retW r k b)
+  | Sum.inr (.retWPub r id c _) => some (.retW r id c)
+  | Sum.inr _ => none
+
+@[simp] theorem wccPull_inl {n : ℕ} (l : Lab n) : wccPull n (Sum.inl l) = some l := rfl
+
+@[simp] theorem wccPull_byzCallW {n : ℕ} (r : ℕ) (k : Fin n) :
+    wccPull n (Sum.inr (.byzCallW r k)) = some (.callW r k) := rfl
+
+@[simp] theorem wccPull_byzRetW {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
+    wccPull n (Sum.inr (.byzRetW r k b)) = some (.retW r k b) := rfl
+
+@[simp] theorem wccPull_retWPub {n : ℕ} (r : ℕ) (id : Fin n) (c b : Bool) :
+    wccPull n (Sum.inr (.retWPub r id c b)) = some (.retW r id c) := rfl
+
+@[simp] theorem wccPull_gsnd {n : ℕ} (r : ℕ) (j : Fin n) (m : GBCA.Msg) :
+    wccPull n (Sum.inr (.gsnd r j m)) = none := rfl
+
+@[simp] theorem wccPull_gdlv {n : ℕ} (r : ℕ) (i j : Fin n) (m : GBCA.Msg) :
+    wccPull n (Sum.inr (.gdlv r i j m)) = none := rfl
+
+@[simp] theorem wccPull_dsnd {n : ℕ} (j : Fin n) (b : Bool) :
+    wccPull n (Sum.inr (.dsnd j b)) = none := rfl
+
+@[simp] theorem wccPull_ddlv {n : ℕ} (i j : Fin n) (b : Bool) :
+    wccPull n (Sum.inr (.ddlv i j b)) = none := rfl
+
+@[simp] theorem wccPull_gcallLoop {n : ℕ} (r : ℕ) (id : Fin n) (b : Bool) :
+    wccPull n (Sum.inr (.gcallLoop r id b)) = none := rfl
+
+@[simp] theorem wccPull_byzCallG {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
+    wccPull n (Sum.inr (.byzCallG r k b)) = none := rfl
+
+@[simp] theorem wccPull_byzCallGLoop {n : ℕ} (r : ℕ) (k : Fin n) (b : Bool) :
+    wccPull n (Sum.inr (.byzCallGLoop r k b)) = none := rfl
+
+@[simp] theorem wccPull_byzRetG {n : ℕ} (r : ℕ) (k : Fin n) (out : GbcaOut) :
+    wccPull n (Sum.inr (.byzRetG r k out)) = none := rfl
+
+/-! ### The lifted coin oracle -/
+
+/-- The coin oracle, read over the extended alphabet through the pullback. -/
+noncomputable def wccLift (P : Params) : System (ℕ → WCC.SpecState P.n) (NLab P.n) :=
+  (WCC.specFamily P).mapIdle (wccPull P.n)
+
+@[simp] theorem wccLift_init (P : Params) :
+    (wccLift P).init = (WCC.specFamily P).init := rfl
+
+/-- The oracle idles on a rendezvous label outside the pullback's domain. -/
+theorem wccLift_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {e : NetEvt P.n}
+    (hφ : wccPull P.n (Sum.inr e) = none) :
+    (wccLift P).step o (Sum.inr e) (PMF.pure o) :=
+  (System.mapIdle_step_none hφ (PMF.pure o)).mpr rfl
+
+/-! ### The coin oracle's idle row over the shared alphabet -/
+
+/-- The coin oracle idles on a shared label that is neither `τ`, nor a
+handshake of one of its own rounds, nor `fail`. Read through the pullback
+`wccPull`, this is the oracle's row in every joint transition — of the
+deployed system, of its layered presentation, and of the deployment-shaped
+specification (`ABA/LayeredSpec.lean`) — that leaves the coin standing still. -/
+theorem wccFamilyN_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {l : Lab P.n}
+    (hl : l ≠ Lab.tau) (hr : Lab.wccRound l = none) (hf : ¬ Lab.isFail l) :
+    (WCC.specFamily P).step o l (PMF.pure o) := by
+  rw [WCC.specFamily, System.family_step_iff]
+  exact Or.inr (Or.inr (Or.inr ⟨hl, hr, hf, rfl⟩))
+
+/-! ### Dirac successors
+
+A Dirac distribution determines its point. -/
+
+theorem pureN_inj {α : Type} {a b : α}
+    (h : (PMF.pure a : PMF α) = PMF.pure b) : a = b := by
+  have hm : a ∈ (PMF.pure b).support := by rw [← h]; simp
+  simpa using hm
+
+end Net
 
 open Net
 
@@ -334,7 +457,7 @@ inductive ANetStep (P : Params) :
   | byzD (a : ANetState P.n) (k : Fin P.n) (b : Bool) (hF : k ∈ a.F) :
       ANetStep P a (Sum.inl .tau) (PMF.pure (a.dput k b))
 
-/-! ### The automata and the composition pipeline -/
+/-! ### The two automata -/
 
 /-- The round-loop program of process `j`. -/
 noncomputable def coreProcN (P : Params) (j : Fin P.n) :
@@ -358,26 +481,6 @@ noncomputable def aNet (P : Params) : System (ANetState P.n) (NLab P.n) where
 
 @[simp] theorem aNet_step (P : Params) (a : ANetState P.n) (l : NLab P.n)
     (μ : PMF (ANetState P.n)) : (aNet P).step a l μ ↔ ANetStep P a l μ := Iff.rfl
-
-/-- The state of the layered system: the round subsystems, the round loops,
-the ABA-side network and the coin oracle. -/
-abbrev LayeredState (P : Params) : Type :=
-  (ℕ → GBCA.ImplState P.n) ×
-    ((∀ _ : Fin P.n, CoreNodeN P.n) × (ANetState P.n × (ℕ → WCC.SpecState P.n)))
-
-/-- The four factors side by side, over the extended alphabet. -/
-noncomputable def layeredPre (P : Params) : System (LayeredState P) (NLab P.n) :=
-  (GSub.gbcaSide P).parallel
-    ((System.syncProduct (coreProcN P)).parallel ((aNet P).parallel (wccLift P)))
-
-/-- **The layered group**: the rendezvous alphabet hidden, the result read
-back over `Lab n`. -/
-noncomputable def layeredGroup (P : Params) : System (LayeredState P) (Lab P.n) :=
-  ((layeredPre P).abstract (netEvtLabels P.n)).relabel
-
-/-- **The layered system**: the group with the sub-protocol API hidden. -/
-noncomputable def layered (P : Params) : System (LayeredState P) (Lab P.n) :=
-  (layeredGroup P).abstract (Lab.hiddenAPI P.n)
 
 /-! ### Determinacy of the two new rule tables -/
 
@@ -410,22 +513,7 @@ theorem coreProcStepN_no_tau {P : Params} {j : Fin P.n} {c : CoreNodeN P.n}
     False := by
   rw [nlab_tau] at h; cases h
 
-/-! ### Reading and building composite transitions of the layered system -/
-
-/-- The layered group's step relation, unfolded to the hidden rendezvous case
-and the shared-label case. -/
-theorem layeredGroup_step_iff (P : Params) (q : LayeredState P) (l : Lab P.n)
-    (μ : PMF (LayeredState P)) :
-    (layeredGroup P).step q l μ ↔
-      (l = .tau ∧ ∃ e : NetEvt P.n, (layeredPre P).step q (Sum.inr e) μ) ∨
-      (layeredPre P).step q (Sum.inl l) μ := by
-  constructor
-  · rintro (⟨hτ, l', ⟨e, rfl⟩, hstep⟩ | ⟨-, hstep⟩)
-    · exact Or.inl ⟨Sum.inl_injective hτ, e, hstep⟩
-    · exact Or.inr hstep
-  · rintro (⟨rfl, e, hstep⟩ | hstep)
-    · exact Or.inl ⟨rfl, _, inr_mem_netEvtLabels e, hstep⟩
-    · exact Or.inr ⟨inl_notMem_netEvtLabels l, hstep⟩
+/-! ### Reading and building a transition of the round-loop group -/
 
 /-- A synchronised transition of the round-loop group on a visible label. -/
 theorem syncCore_inv {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n} {l : NLab P.n}
@@ -460,128 +548,6 @@ theorem syncCore_no_tau {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
   rcases h with ⟨hτ, -⟩ | ⟨-, i, μ_i, hstep, -⟩
   · exact hτ rfl
   · exact coreProcStepN_no_tau hstep
-
-/-- Build a joint transition of the four factors on a visible label, the
-oracle's successor left arbitrary. -/
-theorem layeredPre_vis_step (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
-    {C C' : ∀ _ : Fin P.n, CoreNodeN P.n} {A A' : ANetState P.n}
-    {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)} {L : NLab P.n}
-    (hL : L ≠ Silent.τ)
-    (hG : (GSub.gbcaSide P).step G L (PMF.pure G'))
-    (hC : ∀ i, CoreProcStepN P i (C i) L (PMF.pure (C' i)))
-    (hA : ANetStep P A L (PMF.pure A'))
-    (hW : (wccLift P).step o L ω) :
-    (layeredPre P).step (G, C, A, o) L
-      (prodPMF (PMF.pure G') (prodPMF (PMF.pure C') (prodPMF (PMF.pure A') ω))) := by
-  rw [layeredPre, System.parallel_step]
-  refine Or.inl ⟨hL, PMF.pure G', prodPMF (PMF.pure C') (prodPMF (PMF.pure A') ω),
-    hG, ?_, rfl⟩
-  rw [System.parallel_step]
-  refine Or.inl ⟨hL, PMF.pure C', prodPMF (PMF.pure A') ω, syncCore_pure hL hC, ?_, rfl⟩
-  rw [System.parallel_step]
-  exact Or.inl ⟨hL, PMF.pure A', ω, hA, hW, rfl⟩
-
-/-- Build a silent transition of the four factors from a graded-agreement-side
-one. -/
-theorem layeredPre_tau_gbca (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
-    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
-    {o : ℕ → WCC.SpecState P.n}
-    (hG : (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure G')) :
-    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) (PMF.pure (G', C, A, o)) := by
-  rw [layeredPre, System.parallel_step]
-  refine Or.inr (Or.inl ⟨rfl, PMF.pure G', hG, ?_⟩)
-  rw [prodPMF_pure_pure]
-
-/-- Build a silent transition of the four factors from an ABA-side network
-injection. -/
-theorem layeredPre_tau_aNet (P : Params) {G : ℕ → GBCA.ImplState P.n}
-    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A A' : ANetState P.n}
-    {o : ℕ → WCC.SpecState P.n}
-    (hA : ANetStep P A (Sum.inl Lab.tau) (PMF.pure A')) :
-    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) (PMF.pure (G, C, A', o)) := by
-  rw [layeredPre, System.parallel_step]
-  refine Or.inr (Or.inr ⟨rfl,
-    prodPMF (PMF.pure C) (prodPMF (PMF.pure A') (PMF.pure o)), ?_, ?_⟩)
-  · rw [System.parallel_step]
-    refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure A') (PMF.pure o), ?_, rfl⟩)
-    rw [System.parallel_step]
-    exact Or.inr (Or.inl ⟨rfl, PMF.pure A', hA, rfl⟩)
-  · rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure]
-
-/-- Build a silent transition of the four factors from the coin resolution —
-the one transition of the composite that is not Dirac. -/
-theorem layeredPre_tau_wcc (P : Params) {G : ℕ → GBCA.ImplState P.n}
-    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
-    {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)}
-    (hW : (WCC.specFamily P).step o Lab.tau ω) :
-    (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau)
-      (prodPMF (PMF.pure G) (prodPMF (PMF.pure C) (prodPMF (PMF.pure A) ω))) := by
-  rw [layeredPre, System.parallel_step]
-  refine Or.inr (Or.inr ⟨rfl, _, ?_, rfl⟩)
-  rw [System.parallel_step]
-  refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure A) ω, ?_, rfl⟩)
-  rw [System.parallel_step]
-  exact Or.inr (Or.inr ⟨rfl, ω, (System.mapIdle_step_some (by simp) ω).mpr hW, rfl⟩)
-
-/-- A visible transition of the four factors: all of them move together, and
-only the oracle's successor can fail to be a Dirac. -/
-theorem layeredPre_vis_inv (P : Params) {G : ℕ → GBCA.ImplState P.n}
-    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
-    {o : ℕ → WCC.SpecState P.n} {L : NLab P.n} (hL : L ≠ Silent.τ)
-    {μ : PMF (LayeredState P)} (h : (layeredPre P).step (G, C, A, o) L μ) :
-    ∃ (G' : ℕ → GBCA.ImplState P.n) (C' : ∀ _ : Fin P.n, CoreNodeN P.n)
-      (A' : ANetState P.n) (ω : PMF (ℕ → WCC.SpecState P.n)),
-      (GSub.gbcaSide P).step G L (PMF.pure G') ∧
-      (∀ i, CoreProcStepN P i (C i) L (PMF.pure (C' i))) ∧
-      ANetStep P A L (PMF.pure A') ∧ (wccLift P).step o L ω ∧
-      μ = prodPMF (PMF.pure G') (prodPMF (PMF.pure C') (prodPMF (PMF.pure A') ω)) := by
-  rw [layeredPre, System.parallel_step] at h
-  rcases h with ⟨-, μ₁, μ₂, hG, hrest, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
-  · obtain ⟨G', rfl⟩ := GSub.gbcaSide_isLTS P _ _ _ hG
-    rw [System.parallel_step] at hrest
-    rcases hrest with ⟨-, μ₂, μ₃, hC, hrest, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
-    · obtain ⟨C', rfl, hall⟩ := syncCore_inv hC
-      rw [System.parallel_step] at hrest
-      rcases hrest with ⟨-, μ₃, ω, hA, hW, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
-      · obtain ⟨A', rfl⟩ := aNetStep_dirac hA
-        exact ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩
-      · exact absurd habs hL
-      · exact absurd habs hL
-    · exact absurd habs hL
-    · exact absurd habs hL
-  · exact absurd habs hL
-  · exact absurd habs hL
-
-/-- A silent transition of the four factors: no round loop has a `τ` row, so it
-is the graded-agreement side's, the ABA-side network's own injection, or the
-coin resolution. -/
-theorem layeredPre_tau_inv (P : Params) {G : ℕ → GBCA.ImplState P.n}
-    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
-    {o : ℕ → WCC.SpecState P.n} {μ : PMF (LayeredState P)}
-    (h : (layeredPre P).step (G, C, A, o) (Sum.inl Lab.tau) μ) :
-    (∃ G', (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure G') ∧
-        μ = PMF.pure (G', C, A, o)) ∨
-    (∃ A', ANetStep P A (Sum.inl Lab.tau) (PMF.pure A') ∧
-        μ = PMF.pure (G, C, A', o)) ∨
-    (∃ ω, (WCC.specFamily P).step o Lab.tau ω ∧
-        μ = prodPMF (PMF.pure G) (prodPMF (PMF.pure C) (prodPMF (PMF.pure A) ω))) := by
-  rw [layeredPre, System.parallel_step] at h
-  rcases h with ⟨habs, -⟩ | ⟨-, μ₁, hG, rfl⟩ | ⟨-, μ₂, hrest, rfl⟩
-  · exact absurd rfl habs
-  · obtain ⟨G', rfl⟩ := GSub.gbcaSide_isLTS P _ _ _ hG
-    exact Or.inl ⟨G', hG, by rw [prodPMF_pure_pure]⟩
-  · rw [System.parallel_step] at hrest
-    rcases hrest with ⟨habs, -⟩ | ⟨-, μ₂, hC, rfl⟩ | ⟨-, μ₃, hrest, rfl⟩
-    · exact absurd rfl habs
-    · exact (syncCore_no_tau hC).elim
-    · rw [System.parallel_step] at hrest
-      rcases hrest with ⟨habs, -⟩ | ⟨-, μ₃, hA, rfl⟩ | ⟨-, ω, hW, rfl⟩
-      · exact absurd rfl habs
-      · obtain ⟨A', rfl⟩ := aNetStep_dirac hA
-        exact Or.inr (Or.inl ⟨A', hA,
-          by rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure]⟩)
-      · exact Or.inr (Or.inr ⟨ω,
-          (System.mapIdle_step_some (wccPull_inl Lab.tau) ω).mp hW, rfl⟩)
 
 /-! ### One round loop's rules, by label class
 
@@ -891,205 +857,6 @@ theorem coresN_family {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
   by_cases hi : i = id
   · subst hi; rw [Function.update_self]; exact hown
   · rw [Function.update_of_ne hi]; exact hfor i hi
-
-/-! ### Which labels the round-indexed family owns -/
-
-section GOwns
-
-variable {n : ℕ}
-
-@[simp] theorem gOwns_callG (r : ℕ) (id : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inl (Lab.callG r id b) : NLab n) = some r := rfl
-@[simp] theorem gOwns_retG (r : ℕ) (id : Fin n) (out : GbcaOut) :
-    GSub.gOwns (Sum.inl (Lab.retG r id out) : NLab n) = some r := rfl
-@[simp] theorem gOwns_gcallLoop (r : ℕ) (id : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inr (.gcallLoop r id b) : NLab n) = some r := rfl
-@[simp] theorem gOwns_byzCallG (r : ℕ) (k : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inr (.byzCallG r k b) : NLab n) = some r := rfl
-@[simp] theorem gOwns_byzCallGLoop (r : ℕ) (k : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inr (.byzCallGLoop r k b) : NLab n) = some r := rfl
-@[simp] theorem gOwns_byzRetG (r : ℕ) (k : Fin n) (out : GbcaOut) :
-    GSub.gOwns (Sum.inr (.byzRetG r k out) : NLab n) = some r := rfl
-
-@[simp] theorem gOwns_tau : GSub.gOwns (Sum.inl Lab.tau : NLab n) = none := rfl
-@[simp] theorem gOwns_callABA (id : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inl (Lab.callABA id b) : NLab n) = none := rfl
-@[simp] theorem gOwns_retABA (id : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inl (Lab.retABA id b) : NLab n) = none := rfl
-@[simp] theorem gOwns_callW (r : ℕ) (id : Fin n) :
-    GSub.gOwns (Sum.inl (Lab.callW r id) : NLab n) = none := rfl
-@[simp] theorem gOwns_retW (r : ℕ) (id : Fin n) (c : Bool) :
-    GSub.gOwns (Sum.inl (Lab.retW r id c) : NLab n) = none := rfl
-@[simp] theorem gOwns_fail (k : Fin n) :
-    GSub.gOwns (Sum.inl (Lab.fail k) : NLab n) = none := rfl
-@[simp] theorem gOwns_gsnd (r : ℕ) (j : Fin n) (m : GBCA.Msg) :
-    GSub.gOwns (Sum.inr (.gsnd r j m) : NLab n) = none := rfl
-@[simp] theorem gOwns_gdlv (r : ℕ) (i j : Fin n) (m : GBCA.Msg) :
-    GSub.gOwns (Sum.inr (.gdlv r i j m) : NLab n) = none := rfl
-@[simp] theorem gOwns_dsnd (j : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inr (.dsnd j b) : NLab n) = none := rfl
-@[simp] theorem gOwns_ddlv (i j : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inr (.ddlv i j b) : NLab n) = none := rfl
-@[simp] theorem gOwns_retWPub (r : ℕ) (id : Fin n) (c b : Bool) :
-    GSub.gOwns (Sum.inr (.retWPub r id c b) : NLab n) = none := rfl
-@[simp] theorem gOwns_byzCallW (r : ℕ) (k : Fin n) :
-    GSub.gOwns (Sum.inr (.byzCallW r k) : NLab n) = none := rfl
-@[simp] theorem gOwns_byzRetW (r : ℕ) (k : Fin n) (b : Bool) :
-    GSub.gOwns (Sum.inr (.byzRetW r k b) : NLab n) = none := rfl
-
-@[simp] theorem isFailN_fail (k : Fin n) :
-    GSub.isFailN (Sum.inl (Lab.fail k) : NLab n) := trivial
-
-theorem gAct_fail {P : Params} (k : Fin P.n) (s : GBCA.ImplState P.n) :
-    GSub.gAct P (Sum.inl (Lab.fail k)) s = (s.1, s.2.corrupt P k) := rfl
-
-end GOwns
-
-/-! ### The graded-agreement side's rows
-
-The family routes a round-tagged label to its round, takes `τ` at any round,
-broadcasts `fail`, and idles on everything else. -/
-
-/-- The round-`r` subsystem moves on a label it owns. -/
-theorem gbcaSide_owned (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
-    {L : NLab P.n} (hL : GSub.gOwns L = some r) {X : GBCA.ImplState P.n}
-    (h : (GSub.sub P r).step (G r) L (PMF.pure X)) :
-    (GSub.gbcaSide P).step G L (PMF.pure (Function.update G r X)) := by
-  rw [GSub.gbcaSide, System.family_step_iff]
-  exact Or.inr (Or.inl ⟨r, hL, PMF.pure X, h, by rw [PMF.pure_map]⟩)
-
-/-- An owned label whose subsystem stands still. -/
-theorem gbcaSide_owned_id (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
-    {L : NLab P.n} (hL : GSub.gOwns L = some r)
-    (h : (GSub.sub P r).step (G r) L (PMF.pure (G r))) :
-    (GSub.gbcaSide P).step G L (PMF.pure G) := by
-  have hstep := gbcaSide_owned P G r hL h
-  rwa [Function.update_eq_self] at hstep
-
-/-- The round-`r` subsystem takes one of its own silent rules. -/
-theorem gbcaSide_tau (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
-    {X : GBCA.ImplState P.n}
-    (h : (GSub.sub P r).step (G r) (Sum.inl Lab.tau) (PMF.pure X)) :
-    (GSub.gbcaSide P).step G (Sum.inl Lab.tau) (PMF.pure (Function.update G r X)) := by
-  rw [GSub.gbcaSide, System.family_step_iff]
-  exact Or.inl ⟨rfl, r, PMF.pure X, h, by rw [PMF.pure_map]⟩
-
-/-- A label no round owns and no broadcast: the family idles. -/
-theorem gbcaSide_idle (P : Params) (G : ℕ → GBCA.ImplState P.n) {L : NLab P.n}
-    (hτ : L ≠ Silent.τ) (hown : GSub.gOwns L = none) (hf : ¬ GSub.isFailN L) :
-    (GSub.gbcaSide P).step G L (PMF.pure G) := by
-  rw [GSub.gbcaSide, System.family_step_iff]
-  exact Or.inr (Or.inr (Or.inr ⟨hτ, hown, hf, rfl⟩))
-
-/-- Corruption is broadcast to every round's fabric. -/
-theorem gbcaSide_fail (P : Params) (G : ℕ → GBCA.ImplState P.n) (k : Fin P.n) :
-    (GSub.gbcaSide P).step G (Sum.inl (Lab.fail k))
-      (PMF.pure (fun r => GSub.gAct P (Sum.inl (Lab.fail k)) (G r))) := by
-  rw [GSub.gbcaSide, System.family_step_iff]
-  exact Or.inr (Or.inr (Or.inl ⟨by simp, rfl, trivial, rfl⟩))
-
-/-- An owned label is answered by its round alone. -/
-theorem gbcaSide_owned_inv (P : Params) {G : ℕ → GBCA.ImplState P.n}
-    {L : NLab P.n} {r : ℕ} (hL : GSub.gOwns L = some r) (hτ : L ≠ Silent.τ)
-    {μ : PMF (ℕ → GBCA.ImplState P.n)} (h : (GSub.gbcaSide P).step G L μ) :
-    ∃ X, (GSub.sub P r).step (G r) L (PMF.pure X) ∧
-      μ = PMF.pure (Function.update G r X) := by
-  rw [GSub.gbcaSide, System.family_step_iff] at h
-  rcases h with ⟨habs, -⟩ | ⟨r', hown, μr, hstep, rfl⟩ | ⟨-, hown, -, -⟩ | ⟨-, hown, -, -⟩
-  · exact absurd habs hτ
-  · obtain rfl : r' = r := by rw [hL] at hown; exact (Option.some.inj hown).symm
-    obtain ⟨X, rfl⟩ := GSub.sub_isLTS P r' _ _ _ hstep
-    exact ⟨X, hstep, by rw [PMF.pure_map]⟩
-  · rw [hL] at hown; exact absurd hown (by simp)
-  · rw [hL] at hown; exact absurd hown (by simp)
-
-/-- The family idles on a label no round owns and no broadcast. -/
-theorem gbcaSide_idle_inv (P : Params) {G : ℕ → GBCA.ImplState P.n} {L : NLab P.n}
-    (hτ : L ≠ Silent.τ) (hown : GSub.gOwns L = none) (hf : ¬ GSub.isFailN L)
-    {μ : PMF (ℕ → GBCA.ImplState P.n)} (h : (GSub.gbcaSide P).step G L μ) :
-    μ = PMF.pure G := by
-  rw [GSub.gbcaSide, System.family_step_iff] at h
-  rcases h with ⟨habs, -⟩ | ⟨r, hr, -⟩ | ⟨-, -, hglob, -⟩ | ⟨-, -, -, rfl⟩
-  · exact absurd habs hτ
-  · rw [hown] at hr; exact absurd hr (by simp)
-  · exact absurd hglob hf
-  · rfl
-
-/-- Corruption is broadcast to every round. -/
-theorem gbcaSide_fail_inv (P : Params) {G : ℕ → GBCA.ImplState P.n} (k : Fin P.n)
-    {μ : PMF (ℕ → GBCA.ImplState P.n)}
-    (h : (GSub.gbcaSide P).step G (Sum.inl (Lab.fail k)) μ) :
-    μ = PMF.pure (fun r => GSub.gAct P (Sum.inl (Lab.fail k)) (G r)) := by
-  rw [GSub.gbcaSide, System.family_step_iff] at h
-  rcases h with ⟨habs, -⟩ | ⟨r, hr, -⟩ | ⟨-, -, -, rfl⟩ | ⟨-, -, hglob, -⟩
-  · exact absurd habs (by simp)
-  · exact absurd hr (by simp)
-  · rfl
-  · exact absurd trivial hglob
-
-/-- A silent transition of the family is one round's own silent rule. -/
-theorem gbcaSide_tau_inv (P : Params) {G : ℕ → GBCA.ImplState P.n}
-    {μ : PMF (ℕ → GBCA.ImplState P.n)}
-    (h : (GSub.gbcaSide P).step G (Sum.inl Lab.tau) μ) :
-    ∃ (r : ℕ) (X : GBCA.ImplState P.n),
-      (GSub.sub P r).step (G r) (Sum.inl Lab.tau) (PMF.pure X) ∧
-      μ = PMF.pure (Function.update G r X) := by
-  rw [GSub.gbcaSide, System.family_step_iff] at h
-  rcases h with ⟨-, r, μr, hstep, rfl⟩ | ⟨r, hr, -⟩ | ⟨habs, -, -, -⟩ | ⟨habs, -, -, -⟩
-  · obtain ⟨X, rfl⟩ := GSub.sub_isLTS P r _ _ _ hstep
-    exact ⟨r, X, hstep, by rw [PMF.pure_map]⟩
-  · exact absurd hr (by simp)
-  · exact absurd rfl habs
-  · exact absurd rfl habs
-
-/-! ### Pinning the stage-record tuple of one round -/
-
-theorem gprocs_update {P : Params}
-    {u x : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n} {id : Fin P.n}
-    {nd : GBCA.ProcNodeN P.n}
-    (hown : (PMF.pure (x id) : PMF (GBCA.ProcNodeN P.n)) = PMF.pure nd)
-    (hfor : ∀ i, i ≠ id →
-      (PMF.pure (x i) : PMF (GBCA.ProcNodeN P.n)) = PMF.pure (u i)) :
-    x = Function.update u id nd := by
-  funext i
-  by_cases hi : i = id
-  · subst hi; rw [Function.update_self]; exact GSub.pure_inj hown
-  · rw [Function.update_of_ne hi]; exact GSub.pure_inj (hfor i hi)
-
-theorem gprocs_id {P : Params} {u x : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n}
-    (hall : ∀ i, (PMF.pure (x i) : PMF (GBCA.ProcNodeN P.n)) = PMF.pure (u i)) :
-    x = u :=
-  funext fun i => GSub.pure_inj (hall i)
-
-/-- One stage program moves and every other idles. -/
-theorem gprocs_family {P : Params} {r : ℕ}
-    {u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n} {L : GSub.GLab P.n} (id : Fin P.n)
-    (nd : GBCA.ProcNodeN P.n)
-    (hown : GSub.GProcStep P r id (u id) L (PMF.pure nd))
-    (hfor : ∀ i, i ≠ id → GSub.GProcStep P r i (u i) L (PMF.pure (u i))) :
-    ∀ i, GSub.GProcStep P r i (u i) L (PMF.pure (Function.update u id nd i)) := by
-  intro i
-  by_cases hi : i = id
-  · subst hi; rw [Function.update_self]; exact hown
-  · rw [Function.update_of_ne hi]; exact hfor i hi
-
-/-! ### Hiding the rendezvous alphabet
-
-The composition hides `NetEvt n`, so a transition of `layeredPre` on a
-rendezvous label is a silent transition of `layeredGroup`, as is one on `τ`.
-The two stage rendezvous never reach this point. They are internal to a round
-subsystem, hidden inside `GSub.sub`, and reach the composite as the family's
-own `τ`. -/
-
-theorem layeredGroup_of_event (P : Params) {q : LayeredState P} (e : NetEvt P.n)
-    {μ : PMF (LayeredState P)} (h : (layeredPre P).step q (Sum.inr e) μ) :
-    (layeredGroup P).step q Lab.tau μ :=
-  (layeredGroup_step_iff P _ _ _).mpr (Or.inl ⟨rfl, e, h⟩)
-
-theorem layeredGroup_of_tau (P : Params) {q : LayeredState P} {μ : PMF (LayeredState P)}
-    (h : (layeredPre P).step q (Sum.inl Lab.tau) μ) :
-    (layeredGroup P).step q Lab.tau μ :=
-  (layeredGroup_step_iff P _ _ _).mpr (Or.inr h)
 
 end Layer
 
