@@ -23,23 +23,23 @@ kinds of message pool. The composed reading reads the same protocol as a
 composition of components:
 
 * the graded-agreement side is the round-indexed family `GSub.gbcaSide`. Its
-  round-`r` factor is a parallel component in its own right: the stage
+  round-`r` instance is a parallel component in its own right: the stage
   programs of round `r` beside the message fabric of round `r`, which that
-  component owns outright;
+  instance owns outright;
 * the round loops are `n` separate automata (`coreProcN`), synchronised;
 * what is left of the network adversary is the DECIDED pools beside the
   corrupted set (`aNet`);
 * the coin oracle enters through the same label pullback as in the protocol
   reading (`Net.wccLift`).
 
-The four factors speak the extended alphabet `Net.NLab n`, the rendezvous
+The four components speak the extended alphabet `Net.NLab n`, the rendezvous
 labels are hidden, and the result is read back over `Lab n`. The round loops,
 the ABA-side network and the lifted oracle are defined in `ABA/Components.lean`,
-the round subsystems in `ABA/GBCAInstances.lean`; the composition pipeline
+the round instances in `ABA/GBCAInstances.lean`; the composition pipeline
 `composedPre` / `composedGroup` / `composed` is the first section below.
 
 The second link is the substitution, which replaces each round's
-graded-agreement subsystem by that round's specification. `hybrid` is the
+graded-agreement instance by that round's specification. `hybrid` is the
 system that results, read at the protocol shape. The substitution is one
 application of `ProbabilisticForwardSimulation.parallel_right` under a
 syntactically identical context, followed by the three congruences the protocol
@@ -50,19 +50,19 @@ composed system's achievable trace distributions in the specification's.
 
 ## Per-round memory
 
-A round subsystem is a factor of the composite from the start, not an object
+A round instance is a component of the composite from the start, not an object
 created by the round's first call, and it keeps its stage records and its
 fabric for the whole run. The graded-agreement coordinate of a composed state
 is therefore `ℕ → GBCA.ImplState n`: every round is present at every moment,
 whichever round each process is in. That retained memory is specification-side
-state. No process holds it. A protocol node carries the stage record of the
-round its round loop is in and nothing else (D20).
+state. No process holds it. A process record of the protocol carries the stage
+record of the round its round loop is in and nothing else (D20).
 
 ## The authorisation relocation (D11)
 
-A round subsystem carries no `k ∈ F` guard on the drive labels `byzCallG`,
+A round instance carries no `k ∈ F` guard on the drive labels `byzCallG`,
 `byzCallGLoop` and `byzRetG` (`GBCAInstances.lean`, D11). A drive label stays
-visible at the subsystem boundary and is authorised outside it. Here `aNet` is
+visible at the instance boundary and is authorised outside it. Here `aNet` is
 that outside, and it carries the guard on its own copy of the corrupted set.
 The two copies are written by one broadcast: `fail` reaches every round's
 fabric through the family (`gbcaSide_fail`) and `aNet` on its own `fail` row,
@@ -73,14 +73,14 @@ budget-guarded insertion.
 
 The composed system and its rows, the protocol-shaped specification and its
 rows, and the substitution between them. The builders assemble a transition of
-a composite out of transitions of its factors (`composedPre_vis_step`,
+a composite out of transitions of its components (`composedPre_vis_step`,
 `composedPre_tau_gbca`, `composedPre_tau_aNet`, `composedPre_tau_wcc`,
 `gbcaSide_owned`, `gbcaSide_idle`, `gbcaSide_tau`, `gbcaSide_fail`,
 `composedGroup_of_event`, `composedGroup_of_tau`, and their counterparts on the
 specification side). On the specification side the reading also runs in the
-inverse direction, from a composite transition back into the rows its factors
-contributed, and a labelled transition takes one of three routes through the
-two hiding frames. The per-factor rows these consume and produce are the tables
+inverse direction, from a composite transition back into the rows its
+components contributed, and a labelled transition takes one of three routes through the
+two hiding frames. The per-component rows these consume and produce are the tables
 of `ABA/Components.lean` and `ABA/GBCAInstances.lean`.
 
 The core simulation of `ABA/CoreSim.lean` runs from `hybrid` on this
@@ -98,16 +98,16 @@ open Net
 /-! ## The composed reading
 
 The protocol cut into its components: the graded-agreement side as a
-round-indexed family of subsystems, the round loops as `n` synchronised
+round-indexed family of instances, the round loops as `n` synchronised
 automata, the DECIDED pools beside the corrupted set, and the lifted coin
 oracle. This section
-composes the four factors and reads the rows of the composite. -/
+composes the four components and reads the rows of the composite. -/
 
 namespace Comp
 
 /-! ### The composition pipeline -/
 
-/-- The state of the composed system: the round subsystems, the round loops,
+/-- The state of the composed system: the round instances, the round loops,
 the ABA-side network and the coin oracle. -/
 abbrev ComposedState (P : Params) : Type :=
   (ℕ → GBCA.ImplState P.n) ×
@@ -115,7 +115,7 @@ abbrev ComposedState (P : Params) : Type :=
 
 end Comp
 
-/-- The four factors side by side, over the extended alphabet. -/
+/-- The four components side by side, over the extended alphabet. -/
 noncomputable def composedPre (P : Params) : System (Comp.ComposedState P) (NLab P.n) :=
   (GSub.gbcaSide P).parallel
     ((System.syncProduct (Comp.coreProcN P)).parallel
@@ -150,7 +150,7 @@ theorem composedGroup_step_iff (P : Params) (q : ComposedState P) (l : Lab P.n)
     · exact Or.inl ⟨rfl, _, inr_mem_netEvtLabels e, hstep⟩
     · exact Or.inr ⟨inl_notMem_netEvtLabels l, hstep⟩
 
-/-- Build a joint transition of the four factors on a visible label, the
+/-- Build a joint transition of the four components on a visible label, the
 oracle's successor left arbitrary. -/
 theorem composedPre_vis_step (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
     {C C' : ∀ _ : Fin P.n, CoreRec P.n} {A A' : ANetState P.n}
@@ -170,7 +170,7 @@ theorem composedPre_vis_step (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
   rw [System.parallel_step]
   exact Or.inl ⟨hL, PMF.pure A', ω, hA, hW, rfl⟩
 
-/-- Build a silent transition of the four factors from a graded-agreement-side
+/-- Build a silent transition of the four components from a graded-agreement-side
 one. -/
 theorem composedPre_tau_gbca (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
     {C : ∀ _ : Fin P.n, CoreRec P.n} {A : ANetState P.n}
@@ -181,7 +181,7 @@ theorem composedPre_tau_gbca (P : Params) {G G' : ℕ → GBCA.ImplState P.n}
   refine Or.inr (Or.inl ⟨rfl, PMF.pure G', hG, ?_⟩)
   rw [prodPMF_pure_pure]
 
-/-- Build a silent transition of the four factors from an ABA-side network
+/-- Build a silent transition of the four components from an ABA-side network
 injection. -/
 theorem composedPre_tau_aNet (P : Params) {G : ℕ → GBCA.ImplState P.n}
     {C : ∀ _ : Fin P.n, CoreRec P.n} {A A' : ANetState P.n}
@@ -197,7 +197,7 @@ theorem composedPre_tau_aNet (P : Params) {G : ℕ → GBCA.ImplState P.n}
     exact Or.inr (Or.inl ⟨rfl, PMF.pure A', hA, rfl⟩)
   · rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure]
 
-/-- Build a silent transition of the four factors from the coin resolution —
+/-- Build a silent transition of the four components from the coin resolution —
 the one transition of the composite that is not Dirac. -/
 theorem composedPre_tau_wcc (P : Params) {G : ℕ → GBCA.ImplState P.n}
     {C : ∀ _ : Fin P.n, CoreRec P.n} {A : ANetState P.n}
@@ -217,7 +217,7 @@ theorem composedPre_tau_wcc (P : Params) {G : ℕ → GBCA.ImplState P.n}
 The family routes a round-tagged label to its round, takes `τ` at any round,
 broadcasts `fail`, and idles on everything else. -/
 
-/-- The round-`r` subsystem moves on a label it owns. -/
+/-- The round-`r` instance moves on a label it owns. -/
 theorem gbcaSide_owned (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
     {L : NLab P.n} (hL : GSub.gOwns L = some r) {X : GBCA.ImplState P.n}
     (h : (GSub.sub P r).step (G r) L (PMF.pure X)) :
@@ -225,7 +225,7 @@ theorem gbcaSide_owned (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
   rw [GSub.gbcaSide, System.family_step_iff]
   exact Or.inr (Or.inl ⟨r, hL, PMF.pure X, h, by rw [PMF.pure_map]⟩)
 
-/-- An owned label whose subsystem stands still. -/
+/-- An owned label whose instance stands still. -/
 theorem gbcaSide_owned_id (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
     {L : NLab P.n} (hL : GSub.gOwns L = some r)
     (h : (GSub.sub P r).step (G r) L (PMF.pure (G r))) :
@@ -233,7 +233,7 @@ theorem gbcaSide_owned_id (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ
   have hstep := gbcaSide_owned P G r hL h
   rwa [Function.update_eq_self] at hstep
 
-/-- The round-`r` subsystem takes one of its own silent rules. -/
+/-- The round-`r` instance takes one of its own silent rules. -/
 theorem gbcaSide_tau (P : Params) (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
     {X : GBCA.ImplState P.n}
     (h : (GSub.sub P r).step (G r) (Sum.inl Lab.tau) (PMF.pure X)) :
@@ -274,7 +274,7 @@ theorem gprocs_family {P : Params} {r : ℕ}
 The composition hides `NetEvt n`, so a transition of `composedPre` on a
 rendezvous label is a silent transition of `composedGroup`, as is one on `τ`.
 The two stage rendezvous never reach this point. They are internal to a round
-subsystem, hidden inside `GSub.sub`, and reach the composite as the family's
+instance, hidden inside `GSub.sub`, and reach the composite as the family's
 own `τ`. -/
 
 theorem composedGroup_of_event (P : Params) {q : ComposedState P} (e : NetEvt P.n)
@@ -293,9 +293,10 @@ open Comp
 
 /-! ## The protocol-shaped specification side
 
-The composed system replaces its graded-agreement factor `GSub.gbcaSide` — the
-family of round subsystems — by `specSide`, the family of round specifications
-read over the protocol alphabet. The other three factors are reused verbatim,
+The composed system replaces its graded-agreement component `GSub.gbcaSide` —
+the family of round instances — by `specSide`, the family of round
+specifications read over the protocol alphabet. The other three components are
+reused verbatim,
 so the substitution is `ProbabilisticForwardSimulation.parallel_right` applied
 under the syntactically identical context, followed by the three remaining
 congruences: `abstract` for the rendezvous alphabet, `relabel` for the read-back
@@ -318,33 +319,34 @@ theorem specSide_isLTS (P : Params) : (specSide P).IsLTS :=
   System.family_isLTS (GSub.liftedSpecG_isLTS P) _ _ _
 
 /-- The state of the protocol-shaped specification: the round
-specifications beside the composed system's other three factors. -/
+specifications beside the composed system's other three components. -/
 abbrev HybridState (P : Params) : Type :=
   (ℕ → GBCA.SpecState P.n) ×
     ((∀ _ : Fin P.n, CoreRec P.n) × (ANetState P.n × (ℕ → WCC.SpecState P.n)))
 
-/-- The four factors side by side, over the extended alphabet: `composedPre`
-with its graded-agreement factor replaced. -/
+/-- The four components side by side, over the extended alphabet:
+`composedPre` with its graded-agreement component replaced. -/
 noncomputable def hybridPre (P : Params) : System (HybridState P) (NLab P.n) :=
   (specSide P).parallel
     ((System.syncProduct (coreProcN P)).parallel ((aNet P).parallel (wccLift P)))
 
 /-- **The protocol-shaped specification**: the rendezvous alphabet hidden,
 the result read back over `Lab n`, the sub-protocol API hidden — the pipeline
-of `composed`, factor for factor. -/
+of `composed`, component for component. -/
 noncomputable def hybrid (P : Params) : System (HybridState P) (Lab P.n) :=
   (((hybridPre P).abstract (netEvtLabels P.n)).relabel).abstract (Lab.hiddenAPI P.n)
 
 /-! ### The substitution -/
 
-/-- The pointwise round relation: every round's subsystem state is related to
+/-- The pointwise round relation: every round's instance state is related to
 that round's specification state. -/
 def RsubAll (P : Params) (s : ℕ → GBCA.ImplState P.n)
     (t : ℕ → GBCA.SpecState P.n) : Prop :=
   ∀ r, GSub.Rsub P r (s r) (t r)
 
-/-- **The family substitution**: the graded-agreement side of the protocol is forward simulated by the specification side, round by round. The
-per-round simulation is `GSub.subSim`; the broadcast compatibility is
+/-- **The family substitution**: the graded-agreement side of the protocol is
+forward simulated by the specification side, round by round. The per-round
+simulation is `GSub.subSim`; the broadcast compatibility is
 `GSub.subSim_failAct`. -/
 theorem famSubSim (P : Params) :
     ForwardSimulation (GSub.gbcaSide P) (specSide P) (RsubAll P) :=
@@ -361,7 +363,7 @@ theorem famSubSimProb (P : Params) :
 
 /-- **The substitution simulation at the protocol shape**: the four
 congruences applied to the family substitution under the composed system's own
-context — `parallel_right` for the three untouched factors, `abstract` for the
+context — `parallel_right` for the three untouched components, `abstract` for the
 rendezvous alphabet, `relabel` for the read-back over `Lab n`, and `abstract`
 for the sub-protocol API. -/
 noncomputable def substSim (P : Params) :
@@ -373,8 +375,7 @@ noncomputable def substSim (P : Params) :
         (netEvtLabels P.n)).relabel).abstract (Lab.hiddenAPI P.n)
 
 /-- **The substitution inclusion**: every trace distribution achievable by the
-composed system is achievable by the protocol-shaped
-specification. -/
+composed system is achievable by the protocol-shaped specification. -/
 theorem substitution (P : Params) :
     achievableTraceDists (composed P) ⊆ achievableTraceDists (hybrid P) :=
   (substSim P).achievableTraceDists_subset
@@ -383,7 +384,7 @@ theorem substitution (P : Params) :
 
 The family routes a round-tagged label to its round, takes `τ` at any round,
 broadcasts `fail`, and idles on everything else — `GSub.gbcaSide`'s rows with
-the round subsystem replaced by its specification. -/
+the round instance replaced by its specification. -/
 
 /-- The specification side idles on a label no round owns and no broadcast. -/
 theorem specSide_idle (P : Params) (G : ℕ → GBCA.SpecState P.n) {L : NLab P.n}
@@ -552,9 +553,9 @@ theorem wccFamily_fail_inv (P : Params) {o : ℕ → WCC.SpecState P.n} (k : Fin
   · rfl
   · exact absurd trivial hglob
 
-/-! ### Reading a protocol-shaped transition into its four factors -/
+/-! ### Reading a protocol-shaped transition into its four components -/
 
-/-- Build a joint transition of the four factors on a visible label, the
+/-- Build a joint transition of the four components on a visible label, the
 oracle's successor left arbitrary. -/
 theorem hybridPre_vis_step (P : Params) {G G' : ℕ → GBCA.SpecState P.n}
     {C C' : ∀ _ : Fin P.n, CoreRec P.n} {A A' : ANetState P.n}
@@ -574,7 +575,7 @@ theorem hybridPre_vis_step (P : Params) {G G' : ℕ → GBCA.SpecState P.n}
   rw [System.parallel_step]
   exact Or.inl ⟨hL, PMF.pure A', ω, hA, hW, rfl⟩
 
-/-- A visible transition of the four factors: all of them move together, and
+/-- A visible transition of the four components: all of them move together, and
 only the oracle's successor can fail to be a Dirac. -/
 theorem hybridPre_vis_inv (P : Params) {G : ℕ → GBCA.SpecState P.n}
     {C : ∀ _ : Fin P.n, CoreRec P.n} {A : ANetState P.n}
@@ -603,7 +604,7 @@ theorem hybridPre_vis_inv (P : Params) {G : ℕ → GBCA.SpecState P.n}
   · exact absurd habs hL
   · exact absurd habs hL
 
-/-- Build a silent transition of the four factors from a specification-side
+/-- Build a silent transition of the four components from a specification-side
 one. -/
 theorem hybridPre_tau_spec (P : Params) {G G' : ℕ → GBCA.SpecState P.n}
     {C : ∀ _ : Fin P.n, CoreRec P.n} {A : ANetState P.n}
@@ -614,7 +615,7 @@ theorem hybridPre_tau_spec (P : Params) {G G' : ℕ → GBCA.SpecState P.n}
   refine Or.inr (Or.inl ⟨rfl, PMF.pure G', hG, ?_⟩)
   rw [prodPMF_pure_pure]
 
-/-- Build a silent transition of the four factors from a coin resolution. -/
+/-- Build a silent transition of the four components from a coin resolution. -/
 theorem hybridPre_tau_wcc (P : Params) {G : ℕ → GBCA.SpecState P.n}
     {C : ∀ _ : Fin P.n, CoreRec P.n} {A : ANetState P.n}
     {o : ℕ → WCC.SpecState P.n} {ω : PMF (ℕ → WCC.SpecState P.n)}
@@ -629,7 +630,7 @@ theorem hybridPre_tau_wcc (P : Params) {G : ℕ → GBCA.SpecState P.n}
   exact Or.inr (Or.inr ⟨rfl, ω,
     (System.mapIdle_step_some (wccPull_inl Lab.tau) ω).mpr hW, rfl⟩)
 
-/-- A silent transition of the four factors: no round loop has a `τ` row, so it
+/-- A silent transition of the four components: no round loop has a `τ` row, so it
 is the specification family's binding kill, the ABA-side network's own
 injection, or the coin resolution. -/
 theorem hybridPre_tau_inv (P : Params) {G : ℕ → GBCA.SpecState P.n}
@@ -668,9 +669,6 @@ outside this file names it. -/
 private noncomputable def hybridGroup (P : Params) : System (HybridState P) (Lab P.n) :=
   ((hybridPre P).abstract (netEvtLabels P.n)).relabel
 
-theorem hybrid_eqS (P : Params) :
-    hybrid P = (hybridGroup P).abstract (Lab.hiddenAPI P.n) := rfl
-
 /-- The group's step relation, unfolded to the hidden rendezvous case and the
 shared-label case. -/
 theorem hybridGroup_step_iff (P : Params) (q : HybridState P) (l : Lab P.n)
@@ -697,7 +695,7 @@ theorem hybrid_step_iff (P : Params) (q : HybridState P) (l : Lab P.n)
 
 /-! ### Building a transition through the two hiding frames
 
-A transition of the four factors reaches the protocol-shaped specification
+A transition of the four components reaches the protocol-shaped specification
 along one of three routes, according to its label: a rendezvous label and a
 sub-protocol API label are both hidden to `τ`, and every remaining label
 survives both hidings. -/

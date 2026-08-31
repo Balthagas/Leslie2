@@ -111,17 +111,6 @@ namespace GBCA
 
 /-! ### Counting kit: any-payload monotonicity and harvest variants -/
 
-/-- Deliveries only grow the any-payload `ECHO` count. One of the four
-`*Count_le_recvMsg` lemmas — `echo`, `vote`, `bind`, `seal` — kept as a
-symmetric per-level kit: the statement is the same at every level, and the
-kit is complete whether or not each level's instance is currently invoked. -/
-theorem ImplState.echoCount_le_recvMsg {n : ℕ} (s : ImplState n) (i j : Fin n)
-    (m : Msg) (i' : Fin n) : s.echoCount i' ≤ (s.recvMsg i j m).echoCount i' := by
-  refine Finset.card_le_card fun k hk => ?_
-  rw [Finset.mem_filter] at hk ⊢
-  obtain ⟨b, hb⟩ := hk.2
-  exact ⟨hk.1, b, ImplState.mem_recvMsg_recv.mpr (Or.inr hb)⟩
-
 /-- Deliveries only grow the any-payload `VOTE` count. -/
 theorem ImplState.voteCount_le_recvMsg {n : ℕ} (s : ImplState n) (i j : Fin n)
     (m : Msg) (i' : Fin n) : s.voteCount i' ≤ (s.recvMsg i j m).voteCount i' := by
@@ -133,17 +122,6 @@ theorem ImplState.voteCount_le_recvMsg {n : ℕ} (s : ImplState n) (i j : Fin n)
 /-- Deliveries only grow the any-payload `BIND` count. -/
 theorem ImplState.bindCount_le_recvMsg {n : ℕ} (s : ImplState n) (i j : Fin n)
     (m : Msg) (i' : Fin n) : s.bindCount i' ≤ (s.recvMsg i j m).bindCount i' := by
-  refine Finset.card_le_card fun k hk => ?_
-  rw [Finset.mem_filter] at hk ⊢
-  obtain ⟨v, hv⟩ := hk.2
-  exact ⟨hk.1, v, ImplState.mem_recvMsg_recv.mpr (Or.inr hv)⟩
-
-/-- Deliveries only grow the any-payload `SEAL` count. One of the four
-`*Count_le_recvMsg` lemmas — `echo`, `vote`, `bind`, `seal` — kept as a
-symmetric per-level kit: the statement is the same at every level, and the
-kit is complete whether or not each level's instance is currently invoked. -/
-theorem ImplState.sealCount_le_recvMsg {n : ℕ} (s : ImplState n) (i j : Fin n)
-    (m : Msg) (i' : Fin n) : s.sealCount i' ≤ (s.recvMsg i j m).sealCount i' := by
   refine Finset.card_le_card fun k hk => ?_
   rw [Finset.mem_filter] at hk ⊢
   obtain ⟨v, hv⟩ := hk.2
@@ -1789,7 +1767,7 @@ preserved by that act. The spec-side corruption projections
 `ABA/GBCASpec.lean`; the two `corrupt` functions stay in lockstep by
 `implSpec_corrupt_F_eq`. The statement is proved directly rather than through
 `implRefines`, whose `fail` case only yields an existential match. Its
-consumer is the round subsystem's family lifting (`ABA/GBCAInstances.lean`). -/
+consumer is the round instance's family lifting (`ABA/GBCAInstances.lean`). -/
 
 /-- **Broadcast compatibility**: `instRel` is preserved by the synchronized
 corruption of both sides. The two `corrupt`s share the guard

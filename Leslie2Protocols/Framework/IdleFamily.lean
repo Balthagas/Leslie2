@@ -66,11 +66,6 @@ def System.withIdle (sys : System State Label) (busy : Label → Prop) :
 @[simp] theorem System.withIdle_init (sys : System State Label) (busy : Label → Prop) :
     (sys.withIdle busy).init = sys.init := rfl
 
-theorem System.withIdle_step_iff (sys : System State Label) (busy : Label → Prop)
-    {s : State} {l : Label} {μ : PMF State} :
-    (sys.withIdle busy).step s l μ ↔
-      sys.step s l μ ∨ (¬ busy l ∧ μ = PMF.pure s) := Iff.rfl
-
 /-- Idle padding preserves the LTS property. -/
 theorem System.IsLTS.withIdle {sys : System State Label} (h : sys.IsLTS)
     (busy : Label → Prop) : (sys.withIdle busy).IsLTS := by

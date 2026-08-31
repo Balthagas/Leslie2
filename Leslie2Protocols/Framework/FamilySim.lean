@@ -21,9 +21,9 @@ The proof transports the abstract instance's weak-transition witness execution
 into the family via `AlterSeq.map (Function.update t r)` — the non-moving
 coordinates just carry the ambient joint state along:
 
-* `System.weakLSilent_of_step` / `System.weakLStep_of_step` — a single Dirac
-  step is a (one-transition) weak run; `weakLStep_tauThen` is the two-step
-  burst, a silent step followed by an external one;
+* `System.weakLStep_of_step` — a single Dirac step is a (one-transition) weak
+  run; `weakLStep_tauThen` is the two-step burst, a silent step followed by an
+  external one;
 * `AlterSeq.stateAt_map`, `AlterSeq.endState_map`, `System.trace_map_state` —
   `AlterSeq.map` glue: pointwise state maps commute with `stateAt`/`endState`
   and leave the trace unchanged (the trace only reads labels);
@@ -91,18 +91,6 @@ private theorem endState₂ (q₀ : State) (l₀ : Label) (q₁ : State) (l₁ :
   exact (Option.some.inj hstate).symm
 
 variable [Silent Label]
-
-/-- A single internal Dirac step is a silent weak transition. -/
-theorem System.weakLSilent_of_step {q q' : State}
-    (h : sys.step q Silent.τ (PMF.pure q')) : sys.weakLSilent q q' :=
-  ⟨⟨q, Seq.cons (Silent.τ, q') Seq.nil⟩,
-    Stream'.Seq.terminates_cons_iff.mpr Stream'.Seq.terminates_nil,
-    singleStep_partial_exec h, rfl,
-    AlterSeq.endState_singleton_cons q Silent.τ q',
-    by
-      unfold System.trace
-      rw [Stream'.Seq.filter_cons_neg _ _ (by simp)]
-      exact sys.trace_init q'⟩
 
 /-- A single external Dirac step is a weak transition. -/
 theorem System.weakLStep_of_step {q q' : State} {l : Label}

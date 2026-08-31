@@ -7,10 +7,10 @@
     \mathrm{ProcRec}(n) \;=\;
       \mathrm{CoreRec}(n) \times \mathrm{StageRec}(n),
   \]
-  its round-loop node --- the control record of Definition~\ref{def:aba-core-vocab} together with the DECIDED receipt rows $decIn(k)$ --- beside one stage node, the stage record of Definition~\ref{def:aba-gbca-vocab} together with the inbox rows $inbox(k)$.
-  The stage node is the record of the round the round loop is in, and the round advance resets it to the initial stage record, so a process holds nothing of a round it has left (D20).
+  its round-loop record --- the control record of Definition~\ref{def:aba-core-vocab} together with the DECIDED receipt rows $decIn(k)$ --- beside one stage record, that of Definition~\ref{def:aba-gbca-vocab} together with the inbox rows $inbox(k)$.
+  The stage record is that of the round the round loop is in, and the round advance resets it to the initial stage record, so a process holds nothing of a round it has left (D20).
   Every stage-side row is accordingly guarded by $round = r$: a label whose round tag is not $j$'s round has no row at $j$, and a stage message addressed to a round $j$ has left is not filed.
-  There is no outbox, no copy of the corrupted set and no corruption flag, so every guard of the automaton $\mathrm{ABAProcN}(P,j)$ reads $j$'s own node.
+  There is no outbox, no copy of the corrupted set and no corruption flag, so every guard of the automaton $\mathrm{ABAProcN}(P,j)$ reads $j$'s own record.
   It runs over the extended alphabet $\mathrm{NLab}(n) = \mathrm{Lab}(n) \oplus \mathrm{NetEvt}(n)$, where $\mathrm{NetEvt}$ names the rendezvous the shared alphabet cannot: the stage multicast $\mathrm{gsnd}(r,j,m)$ and the stage delivery $\mathrm{gdlv}(r,i,j,m)$; the DECIDED relay $\mathrm{dsnd}(j,b)$ and the DECIDED delivery $\mathrm{ddlv}(i,j,b)$; the fused coin return $\mathrm{retWPub}(r,id,c,b)$, which carries beside the coin the payload to be published (D10); the graded-agreement call $\mathrm{gcallLoop}(r,id,b)$ against an already-opened stage record; and the five Byzantine drives $\mathrm{byzCallG}$, $\mathrm{byzCallGLoop}$, $\mathrm{byzRetG}$, $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ (D11).
   The set $\mathrm{netEvtLabels}(n)$ of these labels is what the composition hides, the silent label of $\mathrm{NLab}(n)$ being that of $\mathrm{Lab}(n)$.
   Every transition is Dirac and no row fires on $\tau$.

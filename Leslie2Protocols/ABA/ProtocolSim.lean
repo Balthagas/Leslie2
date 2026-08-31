@@ -11,10 +11,11 @@ import Leslie2Protocols.ABA.Hybrid
 # The protocol under its composed reading
 
 The protocol reading of `ABA/Protocol.lean` and the composed reading of
-`ABA/Hybrid.lean` present one protocol at two cuts. A protocol process node
-carries the round-loop record and the stage record of the round the loop is in,
-and nothing else (D20). A composed state carries one graded-agreement subsystem
-per round, at every moment. The round subsystems a process has left keep their
+`ABA/Hybrid.lean` present one protocol at two cuts. A process record of the
+protocol carries the round-loop record and the stage record of the round the
+loop is in, and nothing else (D20). A composed state carries one
+graded-agreement instance per round, at every moment. The round instances a
+process has left keep their
 stage records; no protocol state holds them. The composed reading therefore
 holds strictly more state than the protocol one, and the two are related by a
 relation, not by a map.
@@ -23,15 +24,15 @@ relation, not by a map.
 
 `ProtocolRel` pins, of a composed state, everything a protocol state determines.
 
-* The round loops are the first components of the process nodes.
-* The coin oracle is the same factor on both sides.
+* The round loops are the first components of the process records.
+* The coin oracle is the same component on both sides.
 * The ABA-side network is the protocol adversary's DECIDED pools beside its
   corrupted set.
 * The fabric of round `r` is the adversary's round-`r` message pools beside the
   same corrupted set. Corruption is one broadcast on both sides, so every copy
   of the corrupted set is the adversary's.
 * The stage record of a process is the *live column*: the entry, at that
-  process, of the subsystem of the round its round loop is in.
+  process, of the instance of the round its round loop is in.
 * Above a process's round the composed columns are pristine: a round the process
   has not reached holds the initial stage record at that process. This is what
   the round advance consumes. A protocol advance resets the stage record, and
@@ -155,7 +156,7 @@ private theorem match_prod (P : Params) {x : ∀ _ : Fin P.n, ProcRec P.n}
 
 /-! ### Updating one round
 
-A label owned by round `r` moves that round's subsystem and no other. The two
+A label owned by round `r` moves that round's instance and no other. The two
 lemmas below read the stage columns and the fabrics of the updated family. -/
 
 /-- Updating round `r` by a state whose stage columns are the ones it already
@@ -262,8 +263,8 @@ private theorem rel_none (P : Params) {procs x : ∀ _ : Fin P.n, ProcRec P.n}
 /-! ### Assembling a composed transition
 
 Two shapes of answer. A label the composed system takes on the nose is
-answered by the rows of its four factors. A stage rendezvous has no row at
-three of them: it is internal to a round subsystem, and the family carries it
+answered by the rows of its four components. A stage rendezvous has no row at
+three of them: it is internal to a round instance, and the family carries it
 as its own silent rule. -/
 
 /-- A visible label of the extended alphabet answered by the four composed
@@ -286,7 +287,7 @@ private theorem match_vis (P : Params) {x : ∀ _ : Fin P.n, ProcRec P.n}
   exact ⟨Ω, hr, hbind ▸ composedPre_vis_step P hL hGs hCs hAs hWs⟩
 
 /-- A rendezvous the composed reading answers inside one round: the
-subsystem of round `r` takes it as its own silent rule. -/
+instance of round `r` takes it as its own silent rule. -/
 private theorem match_round (P : Params) {x : ∀ _ : Fin P.n, ProcRec P.n}
     {w' : NetState P.n} {o : ℕ → WCC.SpecState P.n} {ν : PMF (ℕ → WCC.SpecState P.n)}
     {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreRec P.n}
@@ -330,7 +331,7 @@ private theorem stepN_byzRetG_dead {P : Params} {j : Fin P.n} {q : ProcRec P.n}
 
 A transition of the protocol group is a hidden rendezvous, a visible shared
 label, or the silent label. Each is answered by a transition of the composed
-group on the same label, built from the rows of the four composed factors. -/
+group on the same label, built from the rows of the four composed components. -/
 
 /-- The matching on the rendezvous alphabet. -/
 theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}

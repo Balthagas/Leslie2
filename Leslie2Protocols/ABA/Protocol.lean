@@ -13,14 +13,14 @@ The protocol reading of the protocol: `n` automata, each running one process's
 code and nothing else, beside two boxes that are not processes — the network
 adversary and the coin oracle.
 
-A process node is exactly the data the program of that process may read: its
+A process record is exactly the data the program of that process may read: its
 round-loop record, the graded-agreement stage record of the round it is in,
 and the messages that have been delivered to it. It holds no copy of
 the corrupted set, no corruption flag, and no record of what it has sent. A
 program is therefore *corruption-blind*: no guard of its rule table can ask
 whether the process is honest, and no guard can ask what the process has
 multicast. Its sub-protocol ports are input-enabled — a return arrives when
-the evidence for it is on the node, whoever asked for it.
+the evidence for it is on the record, whoever asked for it.
 
 Everything a process may not see lives in the network adversary
 `NetState`: the round-tagged message pools `pool r j`, the DECIDED pools
@@ -32,7 +32,7 @@ pool, and the receiver, which files it under that sender's inbox row. Whether
 a process may be driven off-protocol is decided by the network's `k ∈ F`
 guard on the Byzantine labels, never by the process.
 
-The coin oracle `WCC.specFamily` is the third factor and the only box whose
+The coin oracle `WCC.specFamily` is the third component and the only box whose
 transitions are not Dirac. It enters as `Net.wccLift`, the oracle read over
 the extended alphabet along the label pullback `Net.wccPull`
 (`ABA/Components.lean`).
@@ -46,21 +46,22 @@ The composition hides it, so `protocolGroup` speaks exactly `Lab n`.
 ## Model and deviations
 
 * **D1 (determinised `fail`).** `NetState.corrupt` is the total Dirac
-  function guarded by `k ∉ F ∧ |F| < f`; no process node records corruption,
+  function guarded by `k ∉ F ∧ |F| < f`; no process record carries a
+  corruption flag,
   and the processes take the `fail` broadcast without moving. The coin oracle
   enters unchanged, keeping its own copy of the corrupted set and its
   budget-guarded `corrupt` — its resolution threshold reads it.
 * **D5 (set-based network).** Multicasts are idempotent: `pool r j` is the
-  set of messages `j` has multicast in stage `r`, and `inbox k` at a node is
+  set of messages `j` has multicast in stage `r`, and `inbox k` at a process record is
   the set of messages from `k` the adversary has delivered there. Thresholds
   count distinct senders. A corrupted sender's injections enter its pool
   through the network's own `byzG` transition.
-* **D8 (participation gating).** Stage sends require the node's stage record
+* **D8 (participation gating).** Stage sends require the process's stage record
   to have received its input.
 * **D9 (0-based rounds).** `round : ℕ` starts at `0`.
 * **D10 (fused DECIDED-send).** The coin return performs the round advance
   and, when the round's grade was `A b`, the `⟨DECIDED, b⟩` multicast, in one
-  transition. The published payload is dictated by the node's own grade, so
+  transition. The published payload is dictated by the process's own grade, so
   the fused case travels on its own rendezvous label `retWPub`, which carries
   the payload the network is to pool; the unfused case travels on the shared
   `retW` label.
@@ -70,10 +71,10 @@ The composition hides it, so `protocolGroup` speaks exactly `Lab n`.
   a round-loop write. The coin drives reach the oracle through the pullback;
   the stage drives have no process row at all (D20).
 * **D12′ (per-process DECIDED pools, equivocation-capable).** The DECIDED
-  state is the pool family `dpool j` beside the per-node receipt rows
+  state is the pool family `dpool j` beside the per-process receipt rows
   `decIn k`. The relay's write-once condition is a condition on the pool, so
   it is the network's conjunct of the relay rendezvous; the quorum condition
-  is a condition on the node, so it is the process's. A corrupted process's
+  is a condition on the record, so it is the process's. A corrupted process's
   injections (`byzD`) may put either or both bits into its pool, so the
   DECIDED pools admit equivocation.
 * **D17 (δ-mass failure outcome).** Inherited from the coin oracle: a failed
@@ -81,7 +82,7 @@ The composition hides it, so `protocolGroup` speaks exactly `Lab n`.
 * **D18 (the five-level ladder).** The stage rules are the five levels
   `INPUT / ECHO / VOTE / BIND / SEAL` and the three graded returns of the
   cited algorithm, not the four-round compression.
-* **D20 (instance forgetting).** A process node carries one graded-agreement
+* **D20 (instance forgetting).** A process record carries one graded-agreement
   stage record, the record of the round the process is in, and the round
   advance resets it to `GBCA.StageRec.initial`. Every stage-side rule is
   therefore guarded by `c.proc.round = r`, so a label whose round tag is not
@@ -158,9 +159,10 @@ end NetState
 
 /-! ### The rule table
 
-Process `j`'s program. Every guard reads the node and nothing else: no guard
-asks whether the process is honest, and none asks what it has multicast. The
-node carries a single stage record, so every stage-side row is guarded by
+Process `j`'s program. Every guard reads the process's own record and nothing
+else: no guard asks whether the process is honest, and none asks what it has
+multicast. A process record carries the stage record of one round only, so
+every stage-side row is guarded by
 `c.proc.round = r` and a label whose round tag is not `j`'s round has no row
 at `j` (D20). A rendezvous row carries the process's half of a joint step with
 the network: on a send the record write, on a delivery the inbox write. The
@@ -496,7 +498,7 @@ inductive NetStep (P : Params) :
   | retWIdle (s : NetState P.n) (r : ℕ) (id : Fin P.n) (c : Bool) :
       NetStep P s (Sum.inl (.retW r id c)) (PMF.pure s)
   /-- Corruption (deviation D1): total, Dirac, budget-guarded; no process
-  node keeps a copy. -/
+  record keeps a copy. -/
   | fail (s : NetState P.n) (k : Fin P.n) :
       NetStep P s (Sum.inl (.fail k)) (PMF.pure (s.corrupt P k))
   /-- Byzantine stage injection (D5, D11): the network multicasts on behalf of
@@ -540,7 +542,7 @@ the coin oracle. -/
 abbrev ProtocolState (P : Params) : Type :=
   (∀ _ : Fin P.n, Net.ProcRec P.n) × (Net.NetState P.n × (ℕ → WCC.SpecState P.n))
 
-/-- The three factors side by side, over the extended alphabet: the
+/-- The three components side by side, over the extended alphabet: the
 synchronised process group, the network adversary and the lifted oracle. -/
 noncomputable def protocolPre (P : Params) : System (ProtocolState P) (Net.NLab P.n) :=
   (System.syncProduct (Net.ABAProcN P)).parallel
@@ -573,18 +575,6 @@ theorem netStep_dirac {P : Params} {s : NetState P.n} {l : NLab P.n}
     {μ : PMF (NetState P.n)} (h : NetStep P s l μ) : ∃ s', μ = PMF.pure s' := by
   cases h <;> exact ⟨_, rfl⟩
 
-/-- The program of a process is an LTS. -/
-theorem ABAProcN_isLTS (P : Params) (j : Fin P.n) : (ABAProcN P j).IsLTS :=
-  fun _ _ _ h => procStepN_dirac h
-
-/-- The network adversary is an LTS. -/
-theorem netAdv_isLTS (P : Params) : (netAdv P).IsLTS :=
-  fun _ _ _ h => netStep_dirac h
-
-/-- The synchronised process group is an LTS. -/
-theorem syncN_isLTS (P : Params) : (System.syncProduct (ABAProcN P)).IsLTS :=
-  System.syncProduct_isLTS (ABAProcN_isLTS P)
-
 /-- No process rule fires on `τ`: a program only ever moves in a rendezvous or
 on a shared API label. -/
 theorem procStepN_no_tau {P : Params} {j : Fin P.n} {q : ProcRec P.n}
@@ -592,10 +582,10 @@ theorem procStepN_no_tau {P : Params} {j : Fin P.n} {q : ProcRec P.n}
     False := by
   rw [nlab_tau] at h; cases h
 
-/-! ### Reading and building composite transitions
+/-! ### Reading composite transitions
 
 The pipeline is `relabel ∘ abstract ∘ parallel ∘ parallel ∘ syncProduct`; the
-lemmas below unfold it once and for all, in both directions. -/
+lemmas below unfold it once and for all. -/
 
 /-- A synchronised transition of the process group on a visible label: every
 process steps, and the joint distribution is Dirac. -/
@@ -614,29 +604,6 @@ theorem syncN_inv {P : Params} {u : ∀ _ : Fin P.n, ProcRec P.n} {l : NLab P.n}
     · rw [← hx i]; exact hall i
   · exact absurd hstep procStepN_no_tau
 
-/-- Build a synchronised transition of the process group from per-process
-Dirac steps. -/
-theorem syncN_pure {P : Params} {u x : ∀ _ : Fin P.n, ProcRec P.n} {l : NLab P.n}
-    (hl : l ≠ Silent.τ)
-    (h : ∀ i, ABAProcStepN P i (u i) l (PMF.pure (x i))) :
-    (System.syncProduct (ABAProcN P)).step u l (PMF.pure x) := by
-  rw [System.syncProduct_step]
-  exact Or.inl ⟨hl, fun i => PMF.pure (x i), h, (piPMF_pure x).symm⟩
-
-/-- A synchronised transition on a visible label, as a per-process family. -/
-theorem syncN_visible_iff (P : Params) (u : ∀ _ : Fin P.n, ProcRec P.n)
-    (l : NLab P.n) (hl : l ≠ Silent.τ)
-    (μ : PMF (∀ _ : Fin P.n, ProcRec P.n)) :
-    (System.syncProduct (ABAProcN P)).step u l μ ↔
-      ∃ μ_ : Fin P.n → PMF (ProcRec P.n),
-        (∀ m, ABAProcStepN P m (u m) l (μ_ m)) ∧ μ = piPMF μ_ := by
-  constructor
-  · rintro (⟨-, μ_, hall, rfl⟩ | ⟨hτ, -⟩)
-    · exact ⟨μ_, hall, rfl⟩
-    · exact absurd hτ hl
-  · rintro ⟨μ_, hall, rfl⟩
-    exact Or.inl ⟨hl, μ_, hall, rfl⟩
-
 /-- The process group has no silent transition: no program has a `τ` row. -/
 theorem syncN_no_tau {P : Params} {u : ∀ _ : Fin P.n, ProcRec P.n}
     {μ : PMF (∀ _ : Fin P.n, ProcRec P.n)}
@@ -645,63 +612,6 @@ theorem syncN_no_tau {P : Params} {u : ∀ _ : Fin P.n, ProcRec P.n}
   rcases h with ⟨hτ, -⟩ | ⟨-, i, μ_i, hstep, -⟩
   · exact hτ rfl
   · exact procStepN_no_tau hstep
-
-/-- Build a joint transition of the three factors on a rendezvous label. -/
-theorem protocolPre_event_step (P : Params) {u x : ∀ _ : Fin P.n, ProcRec P.n}
-    {w w' : NetState P.n} {o o' : ℕ → WCC.SpecState P.n} (e : NetEvt P.n)
-    (hall : ∀ i, ABAProcStepN P i (u i) (Sum.inr e) (PMF.pure (x i)))
-    (hn : NetStep P w (Sum.inr e) (PMF.pure w'))
-    (ho : (wccLift P).step o (Sum.inr e) (PMF.pure o')) :
-    (protocolPre P).step (u, w, o) (Sum.inr e) (PMF.pure (x, w', o')) := by
-  rw [protocolPre, System.parallel_step]
-  refine Or.inl ⟨by simp, PMF.pure x, PMF.pure (w', o'),
-    syncN_pure (by simp) hall, ?_, (prodPMF_pure_pure _ _).symm⟩
-  rw [System.parallel_step]
-  exact Or.inl ⟨by simp, PMF.pure w', PMF.pure o', hn, ho,
-    (prodPMF_pure_pure _ _).symm⟩
-
-/-- Build a joint transition of the three factors on a visible shared label. -/
-theorem protocolPre_lab_step (P : Params) {u x : ∀ _ : Fin P.n, ProcRec P.n}
-    {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    {ω : PMF (ℕ → WCC.SpecState P.n)} {l : Lab P.n} (hl : l ≠ Lab.tau)
-    (hall : ∀ i, ABAProcStepN P i (u i) (Sum.inl l) (PMF.pure (x i)))
-    (hn : NetStep P w (Sum.inl l) (PMF.pure w'))
-    (ho : (WCC.specFamily P).step o l ω) :
-    (protocolPre P).step (u, w, o) (Sum.inl l)
-      (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω)) := by
-  have hne : (Sum.inl l : NLab P.n) ≠ Silent.τ := by simpa using hl
-  rw [protocolPre, System.parallel_step]
-  refine Or.inl ⟨hne, PMF.pure x, prodPMF (PMF.pure w') ω,
-    syncN_pure hne hall, ?_, rfl⟩
-  rw [System.parallel_step]
-  exact Or.inl ⟨hne, PMF.pure w', ω, hn,
-    (System.mapIdle_step_some (by simp) ω).mpr ho, rfl⟩
-
-/-- Build a silent transition of the three factors from a network-local one. -/
-theorem protocolPre_tau_net (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
-    {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    (hn : NetStep P w (Sum.inl .tau) (PMF.pure w')) :
-    (protocolPre P).step (u, w, o) (Sum.inl .tau) (PMF.pure (u, w', o)) := by
-  rw [protocolPre, System.parallel_step]
-  refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure w') (PMF.pure o), ?_, ?_⟩)
-  · rw [System.parallel_step]
-    exact Or.inr (Or.inl ⟨rfl, PMF.pure w', hn, rfl⟩)
-  · rw [prodPMF_pure_pure, prodPMF_pure_pure]
-
-/-- Build a silent transition of the three factors from an oracle-local one
-(the coin resolution — the one transition of the composite that is not
-Dirac). -/
-theorem protocolPre_tau_wcc (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
-    {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    {ω : PMF (ℕ → WCC.SpecState P.n)}
-    (ho : (WCC.specFamily P).step o Lab.tau ω) :
-    (protocolPre P).step (u, w, o) (Sum.inl .tau)
-      (prodPMF (PMF.pure u) (prodPMF (PMF.pure w) ω)) := by
-  rw [protocolPre, System.parallel_step]
-  refine Or.inr (Or.inr ⟨rfl, prodPMF (PMF.pure w) ω, ?_, rfl⟩)
-  rw [System.parallel_step]
-  exact Or.inr (Or.inr ⟨rfl, ω,
-    (System.mapIdle_step_some (by simp) ω).mpr ho, rfl⟩)
 
 /-- The composite step relation of the protocol group, unfolded to the hidden
 rendezvous case and the shared-label case. -/
@@ -733,49 +643,12 @@ theorem protocol_step_iff (P : Params)
       (l ∉ Lab.hiddenAPI P.n ∧ (protocolGroup P).step q l μ) :=
   System.abstract_step _ _ _ _ _
 
-/-- A hidden rendezvous is a silent transition of the protocol group. -/
-theorem protocolGroup_event_step (P : Params) {u x : ∀ _ : Fin P.n, ProcRec P.n}
-    {w w' : NetState P.n} {o o' : ℕ → WCC.SpecState P.n} (e : NetEvt P.n)
-    (hall : ∀ i, ABAProcStepN P i (u i) (Sum.inr e) (PMF.pure (x i)))
-    (hn : NetStep P w (Sum.inr e) (PMF.pure w'))
-    (ho : (wccLift P).step o (Sum.inr e) (PMF.pure o')) :
-    (protocolGroup P).step (u, w, o) Lab.tau (PMF.pure (x, w', o')) :=
-  (protocolGroup_step_iff P _ _ _).mpr
-    (Or.inl ⟨rfl, e, protocolPre_event_step P e hall hn ho⟩)
-
-/-- A shared visible label is a transition of the protocol group. -/
-theorem protocolGroup_lab_step (P : Params) {u x : ∀ _ : Fin P.n, ProcRec P.n}
-    {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    {ω : PMF (ℕ → WCC.SpecState P.n)} {l : Lab P.n} (hl : l ≠ Lab.tau)
-    (hall : ∀ i, ABAProcStepN P i (u i) (Sum.inl l) (PMF.pure (x i)))
-    (hn : NetStep P w (Sum.inl l) (PMF.pure w'))
-    (ho : (WCC.specFamily P).step o l ω) :
-    (protocolGroup P).step (u, w, o) l
-      (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω)) :=
-  (protocolGroup_step_iff P _ _ _).mpr (Or.inr (protocolPre_lab_step P hl hall hn ho))
-
-/-- A network-local injection is a silent transition of the protocol group. -/
-theorem protocolGroup_tau_net (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
-    {w w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    (hn : NetStep P w (Sum.inl .tau) (PMF.pure w')) :
-    (protocolGroup P).step (u, w, o) Lab.tau (PMF.pure (u, w', o)) :=
-  (protocolGroup_step_iff P _ _ _).mpr (Or.inr (protocolPre_tau_net P hn))
-
-/-- The coin resolution is a silent transition of the protocol group. -/
-theorem protocolGroup_tau_wcc (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
-    {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    {ω : PMF (ℕ → WCC.SpecState P.n)}
-    (ho : (WCC.specFamily P).step o Lab.tau ω) :
-    (protocolGroup P).step (u, w, o) Lab.tau
-      (prodPMF (PMF.pure u) (prodPMF (PMF.pure w) ω)) :=
-  (protocolGroup_step_iff P _ _ _).mpr (Or.inr (protocolPre_tau_wcc P ho))
-
 /-! ### One process's rules, by label class
 
 Each lemma reads a row of the table off its label: the participant's row as
 its guards together with the Dirac it produces, and the idle row of a
 non-participant as the identity. The state and the distribution are
-variables, so `cases` unifies against any node. -/
+variables, so `cases` unifies against any record. -/
 
 section ProcInversion
 
@@ -1098,16 +971,8 @@ theorem stepN_gcallLoop_foreign {r : ℕ} {id : Fin P.n} {b : Bool} (hid : id �
   case gcallLoop => exact absurd rfl hid
   case gcallLoopIdle => rfl
 
-theorem stepN_byzCallG {r : ℕ} {k : Fin P.n} {b : Bool}
-    (h : ABAProcStepN P j q (Sum.inr (.byzCallG r k b)) ν) : ν = PMF.pure q := by
-  cases h; rfl
-
 theorem stepN_byzCallGLoop {r : ℕ} {k : Fin P.n} {b : Bool}
     (h : ABAProcStepN P j q (Sum.inr (.byzCallGLoop r k b)) ν) : ν = PMF.pure q := by
-  cases h; rfl
-
-theorem stepN_byzRetG {r : ℕ} {k : Fin P.n} {out : GbcaOut}
-    (h : ABAProcStepN P j q (Sum.inr (.byzRetG r k out)) ν) : ν = PMF.pure q := by
   cases h; rfl
 
 theorem stepN_byzCallW {r : ℕ} {k : Fin P.n}
@@ -1154,18 +1019,8 @@ theorem netStep_gcallLoop {r : ℕ} {id : Fin P.n} {b : Bool}
     (h : NetStep P s (Sum.inr (.gcallLoop r id b)) μ) : μ = PMF.pure s := by
   cases h; rfl
 
-theorem netStep_byzCallG {r : ℕ} {k : Fin P.n} {b : Bool}
-    (h : NetStep P s (Sum.inr (.byzCallG r k b)) μ) :
-    k ∈ s.F ∧ μ = PMF.pure (s.gpool r k (.input b)) := by
-  cases h; exact ⟨by assumption, rfl⟩
-
 theorem netStep_byzCallGLoop {r : ℕ} {k : Fin P.n} {b : Bool}
     (h : NetStep P s (Sum.inr (.byzCallGLoop r k b)) μ) :
-    k ∈ s.F ∧ μ = PMF.pure s := by
-  cases h; exact ⟨by assumption, rfl⟩
-
-theorem netStep_byzRetG {r : ℕ} {k : Fin P.n} {out : GbcaOut}
-    (h : NetStep P s (Sum.inr (.byzRetG r k out)) μ) :
     k ∈ s.F ∧ μ = PMF.pure s := by
   cases h; exact ⟨by assumption, rfl⟩
 
@@ -1256,12 +1111,7 @@ theorem gpool_pool_ne {n : ℕ} (s : NetState n) (r : ℕ) (j : Fin n) (m : GBCA
     (NetState.corrupt P k s).dpool = s.dpool := by
   unfold NetState.corrupt; split <;> rfl
 
-theorem netCorrupt_F {P : Params} (s : NetState P.n) (k : Fin P.n) :
-    (NetState.corrupt P k s).F =
-      if k ∉ s.F ∧ s.F.card < P.f then insert k s.F else s.F := by
-  unfold NetState.corrupt; split <;> rfl
-
-/-! ### Reading a protocol transition into its three factors -/
+/-! ### Reading a protocol transition into its three components -/
 
 /-- A rendezvous transition: every process, the network and the lifted oracle
 move together, and only the oracle's successor can fail to be a Dirac. -/
@@ -1334,36 +1184,6 @@ theorem protocolPre_tau_inv (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
       exact Or.inl ⟨w', hN, by rw [prodPMF_pure_pure, prodPMF_pure_pure]⟩
     · exact Or.inr ⟨μ₃,
         (System.mapIdle_step_some (wccPull_inl Lab.tau) μ₃).mp hO, rfl⟩
-
-/-! ### Pinning the process tuple -/
-
-theorem procsN_update {P : Params} {u x : ∀ _ : Fin P.n, ProcRec P.n}
-    {id : Fin P.n} {nd : ProcRec P.n}
-    (hown : (PMF.pure (x id) : PMF (ProcRec P.n)) = PMF.pure nd)
-    (hfor : ∀ i, i ≠ id → (PMF.pure (x i) : PMF (ProcRec P.n)) = PMF.pure (u i)) :
-    x = Function.update u id nd := by
-  funext i
-  by_cases hi : i = id
-  · subst hi; rw [Function.update_self]; exact pureN_inj hown
-  · rw [Function.update_of_ne hi]; exact pureN_inj (hfor i hi)
-
-theorem procsN_id {P : Params} {u x : ∀ _ : Fin P.n, ProcRec P.n}
-    (hall : ∀ i, (PMF.pure (x i) : PMF (ProcRec P.n)) = PMF.pure (u i)) : x = u :=
-  funext fun i => pureN_inj (hall i)
-
-/-! ### The per-process family of a one-mover joint step -/
-
-/-- One process moves and every other idles: the per-process family of a
-one-mover joint step. -/
-theorem procsN_family {P : Params} {u : ∀ _ : Fin P.n, ProcRec P.n}
-    {l : NLab P.n} (id : Fin P.n) (nd : ProcRec P.n)
-    (hown : ABAProcStepN P id (u id) l (PMF.pure nd))
-    (hfor : ∀ i, i ≠ id → ABAProcStepN P i (u i) l (PMF.pure (u i))) :
-    ∀ i, ABAProcStepN P i (u i) l (PMF.pure (Function.update u id nd i)) := by
-  intro i
-  by_cases hi : i = id
-  · subst hi; rw [Function.update_self]; exact hown
-  · rw [Function.update_of_ne hi]; exact hfor i hi
 
 end Net
 

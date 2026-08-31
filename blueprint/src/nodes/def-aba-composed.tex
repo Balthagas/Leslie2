@@ -2,15 +2,15 @@
   \label{def:aba-composed}
   \lean{PLTS.ABA.Comp.CoreProcStepN}\lean{PLTS.ABA.Comp.coreProcN}\lean{PLTS.ABA.Comp.ANetState}\lean{PLTS.ABA.Comp.ANetState.corrupt}\lean{PLTS.ABA.Comp.ANetStep}\lean{PLTS.ABA.Comp.aNet}\lean{PLTS.ABA.Comp.ComposedState}\lean{PLTS.ABA.composedPre}\lean{PLTS.ABA.composedGroup}\lean{PLTS.ABA.composed}\leanok
   \uses{def:aba-gbcasub, def:aba-procnet, def:aba-netadv, def:aba-protocol, def:aba-core-vocab, def:relabel, def:syncproduct, def:process-algebra}
-  The protocol read as a composition of four factors over the extended alphabet $\mathrm{NLab}(n)$: the family $\mathrm{gbcaSide}(P)$ of round subsystems, the round loop $\mathrm{coreProcN}(P,j)$ of each process, the ABA-side network $\mathrm{aNet}(P)$ holding the DECIDED pools (D12$'$) and the corrupted set with its budget, and the coin oracle joined through $\mathrm{wccPull}$.
+  The protocol read as a composition of four components over the extended alphabet $\mathrm{NLab}(n)$: the family $\mathrm{gbcaSide}(P)$ of round instances, the round loop $\mathrm{coreProcN}(P,j)$ of each process, the ABA-side network $\mathrm{aNet}(P)$ holding the DECIDED pools (D12$'$) and the corrupted set with its budget, and the coin oracle joined through $\mathrm{wccPull}$.
   \[
     \mathrm{composedPre}(P) \;=\;
       \mathrm{gbcaSide}(P) \parallel \bigl(\mathrm{syncProduct}_{j}\ \mathrm{coreProcN}(P,j)
         \parallel (\mathrm{aNet}(P) \parallel \mathrm{wccLift}(P))\bigr)
   \]
-  runs through the pipeline of Definition~\ref{def:aba-protocol} factor for factor, giving $\mathrm{composedGroup}(P)$ inside the inner frame and $\mathrm{composed}(P)$ inside the outer.
+  runs through the pipeline of Definition~\ref{def:aba-protocol} component for component, giving $\mathrm{composedGroup}(P)$ inside the inner frame and $\mathrm{composed}(P)$ inside the outer.
   A round loop is not round-filtered: it answers every round's $\mathrm{callG}$, its own as a participant and every other process's as a bystander.
-  A round subsystem is a factor of the composite at every moment, so the graded-agreement coordinate of a composed state is $\mathbb{N} \to \mathrm{ImplState}(n)$: every round keeps its stage records and its fabric for the whole run, whichever round each process is in.
+  A round instance is a component of the composite at every moment, so the graded-agreement coordinate of a composed state is $\mathbb{N} \to \mathrm{ImplState}(n)$: every round keeps its stage records and its fabric for the whole run, whichever round each process is in.
   That retained per-round memory is specification-side state, held by no process (D20).
   The graded-agreement family occupies the left argument of the outer parallel composition, which is the refinable slot.
   Full construction: \leandecl{PLTS.ABA.composed}, over \leandecl{PLTS.ABA.Comp.coreProcN} and \leandecl{PLTS.ABA.Comp.aNet}.

@@ -21,7 +21,7 @@ that the other bit be dead, and the `C`-return demands that some bit be dead.
 Binding and graded agreement rest on one fact: `dead` only grows. The single
 writer is the internal `bindUnset`, which inserts, and `corrupt` does not touch
 the field — so `Step.dead_mono` holds rule by rule, and `is_exec_stable` lifts
-it to whole executions (`dead_mem_stable`, `dead_subset_of_le`). Binding is
+it to whole executions (`dead_mem_stable`). Binding is
 therefore structural: a bit killed at any point of a run is killed at every
 later point, and a guard reading `∉ dead` can never be re-enabled. That writer
 also fires only from `dead = ∅`, so the exclusion set never holds more than one
@@ -107,14 +107,6 @@ theorem dead_mem_stable {e : AlterSeq (SpecState P.n) (Lab P.n)}
   is_exec_stable (sys := specInst P r) (fun s => b ∈ s.dead)
     (fun _ _ _ _ hmem hstep hs' => Step.dead_mono hstep hs' hmem)
     he k₁ k₂ s₁ s₂ hk hst₁ hst₂ hb
-
-/-- **The exclusion set is monotone along a run.** -/
-theorem dead_subset_of_le {e : AlterSeq (SpecState P.n) (Lab P.n)}
-    (he : is_exec e (specInst P r)) {k₁ k₂ : ℕ} (hk : k₁ ≤ k₂)
-    {s₁ s₂ : SpecState P.n}
-    (hst₁ : e.stateAt k₁ = some s₁) (hst₂ : e.stateAt k₂ = some s₂) :
-    s₁.dead ⊆ s₂.dead :=
-  fun _ hb => dead_mem_stable he hk hst₁ hst₂ hb
 
 /-! ### The exclusion set holds at most one bit -/
 

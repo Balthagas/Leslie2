@@ -508,28 +508,6 @@ def AlterSeq.labelsUpTo (e : AlterSeq State Label) : ℕ → List Label
   | n + 1 => e.labelsUpTo n ++ ((e.trans.get? n).map Prod.fst).toList
 
 omit [Silent Label] in
-/-- Every label in `labelsUpTo e n` is the label of an event of `e` (before
-position `n`). -/
-theorem AlterSeq.mem_labelsUpTo {e : AlterSeq State Label} {l : Label} :
-    ∀ {n : ℕ}, l ∈ e.labelsUpTo n → ∃ k, k < n ∧ ∃ s', e.trans.get? k = some (l, s') := by
-  intro n
-  induction n with
-  | zero => intro h; exact absurd h (List.not_mem_nil)
-  | succ k ih =>
-    intro h
-    rcases List.mem_append.mp h with h_pre | h_last
-    · obtain ⟨k', hk', hs⟩ := ih h_pre
-      exact ⟨k', by omega, hs⟩
-    · cases hg : e.trans.get? k with
-      | none =>
-        rw [hg] at h_last
-        simp at h_last
-      | some p =>
-        rw [hg] at h_last
-        simp only [Option.map_some, Option.toList_some, List.mem_singleton] at h_last
-        exact ⟨k, by omega, p.2, by rw [hg, h_last]⟩
-
-omit [Silent Label] in
 /-- `labelsUpTo` is the `take`-prefix of the execution's label list. -/
 theorem AlterSeq.labelsUpTo_eq_take {e : AlterSeq State Label}
     {labs : List Label} (h : e.trans.map Prod.fst = Seq.ofList labs) :

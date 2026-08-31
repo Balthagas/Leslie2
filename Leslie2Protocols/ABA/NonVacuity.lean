@@ -41,7 +41,7 @@ complete decision — starting from its initial state:
   (a rendezvous on `ddlv`, *hidden*), meeting the `n − f = 3` return quorum;
 * `step_retABA` — process `0` fires `retABA 0 true`: the decision.
 
-Plus `step_fail` — a `fail` broadcast synchronising all four factors.
+Plus `step_fail` — a `fail` broadcast synchronising all four components.
 
 Because every step but the flip is a Dirac and the flip's chosen branch has mass
 `ε > 0`, the whole path is a positive-probability execution: a product of Diracs
@@ -50,10 +50,10 @@ times one `ε` factor. Every guard on these closed numeric states discharges by
 `prodPMF_pure_pure` and `PMF.pure_map`, and the flip's branch mass through
 `prodPMF_pure_left_apply` and `map_apply_inj`.
 
-The ABA-side factors are named through the view of `ABA/ABAState.lean`: a state
-of the run is a triple — the round specifications, one `ABAState` holding the
-round loops beside the ABA-side network, and the coin oracle — assembled into
-the four-factor state by `st`.
+The ABA-side components are named through the view of `ABA/ABAState.lean`: a
+state of the run is a triple — the round specifications, one `ABAState` holding
+the round loops beside the ABA-side network, and the coin oracle — assembled
+into the four-component state by `st`.
 -/
 
 namespace PLTS
@@ -71,7 +71,7 @@ noncomputable abbrev P4 : Params := ⟨4, 1, by omega, 1 / 2, 0, by
 
 namespace NonVacuity
 
-/-! ### Assembling and moving the four factors -/
+/-! ### Assembling and moving the four components -/
 
 /-- A state of the protocol-shaped specification, assembled from the round
 specifications, the ABA-side pair and the coin oracle. -/
@@ -213,7 +213,7 @@ noncomputable def Sd2 : ABAState P4 := Sd1.deliverDecided 0 2 true
 /-- The ABA-side state after process `0` fires `retABA 0 true`. -/
 noncomputable def Sfin : ABAState P4 := Sd2.setProc 0 { Sd2.procs 0 with returned := true }
 
-/-- The four factors after a synchronised `fail 0` broadcast. -/
+/-- The four components after a synchronised `fail 0` broadcast. -/
 noncomputable def Gf : ℕ → GBCA.SpecState 4 := fun r => (G0 r).corrupt P4 (0 : Fin 4)
 noncomputable def Wf : ℕ → WCC.SpecState 4 := fun r => (W0 r).corrupt P4 (0 : Fin 4)
 noncomputable def Sf : ABAState P4 := ABAState.corrupt P4 (0 : Fin 4) S0
@@ -224,7 +224,7 @@ theorem hybrid_init : (hybrid P4).init = st G0 S0 W0 := rfl
 /-! ### Step 1–3: the external input handshakes (`callABA`, visible) -/
 
 /-- First input: process `0` receives `callABA 0 true`. Visible label; process
-`0`'s round loop takes `input`, the other three and the remaining factors
+`0`'s round loop takes `input`, the other three and the remaining components
 idle. -/
 theorem step_callABA₀ :
     (hybrid P4).step (st G0 S0 W0) (Lab.callABA (0 : Fin 4) true)
@@ -325,7 +325,7 @@ specification (family `τ`, interleaved) -/
 /-- With three of four processes having called, the round-`0` quorum `n − f = 3`
 is met, so `bindUnset` kills the bit `false` (the three callers of `true` supply
 the `f + 1` support for the surviving bit). This is a family `τ`, interleaved on
-the specification side while the other three factors hold. -/
+the specification side while the other three components hold. -/
 theorem step_bindUnset :
     (hybrid P4).step (st G3 Sc3 W0) Lab.tau (PMF.pure (st Gb Sc3 W0)) := by
   refine hybrid_vis P4 (by simp) ?_
@@ -438,14 +438,14 @@ noncomputable def flipWr : PMF (ℕ → WCC.SpecState 4) :=
   (P4.wccPMF.map (fun o => { Wc2 0 with val := o.toTVal })).map
     (Function.update Wc2 0)
 
-/-- The successor distribution of the coin flip: the three other factors stay
-put (Dirac), the coin oracle resolves. -/
+/-- The successor distribution of the coin flip: the three other components
+stay put (Dirac), the coin oracle resolves. -/
 noncomputable def flipμ : PMF (HybridState P4) :=
   prodPMF (PMF.pure Ga2) (prodPMF (PMF.pure Sw2.1) (prodPMF (PMF.pure Sw2.2) flipWr))
 
 /-- The coin `flip` is a legal silent transition of the composed system: the
 round-`0` coin resolves `val` by `wccPMF` (threshold met by the three callers),
-the other three factors interleave. -/
+the other three components interleave. -/
 theorem step_flip : (hybrid P4).step (st Ga2 Sw2 Wc2) Lab.tau flipμ := by
   refine hybrid_vis P4 (by simp) ?_
   exact hybridPre_tau_wcc P4 (wccFamily_tau P4 Wc2
@@ -597,9 +597,9 @@ theorem step_retABA :
   rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
   exact h
 
-/-! ### A `fail` broadcast: all four factors corrupt in sync -/
+/-! ### A `fail` broadcast: all four components corrupt in sync -/
 
-/-- Corruption of process `0`: the visible `fail 0` synchronises every factor —
+/-- Corruption of process `0`: the visible `fail 0` synchronises every component —
 the round specifications and the coin oracle by global broadcast, the ABA-side
 network by its own `fail` row, which carries the budget guard, and the round
 loops by standing still (deviation D1). -/

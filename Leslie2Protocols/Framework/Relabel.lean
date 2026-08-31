@@ -111,9 +111,6 @@ def relDown : Label ⊕ Extra → Label :=
 @[simp] theorem relDown_inr (e : Extra) :
     (relDown (Sum.inr e : Label ⊕ Extra)) = (Silent.τ : Label) := rfl
 
-/-- The extended alphabet's silent label is the base one on the left. -/
-theorem sum_tau_eq : (Silent.τ : Label ⊕ Extra) = Sum.inl (Silent.τ : Label) := rfl
-
 /-- `Sum.inl` reflects the silent label. -/
 theorem inl_eq_tau_iff (l : Label) :
     (Sum.inl l : Label ⊕ Extra) = (Silent.τ : Label ⊕ Extra) ↔ l = (Silent.τ : Label) :=

@@ -376,7 +376,7 @@ The labels D2, D6 and D7 are unused.
     (Theorem~\ref{thm:gbca-spec-binding}) and carries the safety half of
     Validity (Theorem~\ref{thm:gbca-spec-validity}).
   \item D20: instance forgetting at the round advance.
-    A process node carries one graded-agreement stage record, that of the round
+    A process record carries one graded-agreement stage record, that of the round
     the process is in, and the round advance resets it to the initial stage
     record.
     Every stage-side rule is accordingly guarded by $round = r$, so a label
@@ -454,7 +454,7 @@ What runs is $n$ programs, a network adversary and a coin oracle.
 Each program is one process: its round loop, the graded-agreement stage record
 of the round that loop is in, and the messages that have been delivered to it.
 It is corruption-blind.
-No field of its node is a copy of the corrupted set, none is a corruption flag,
+No field of its record is a copy of the corrupted set, none is a corruption flag,
 and none records what the process has multicast, so no guard of its rule table
 can ask whether the process is honest or what it has sent.
 The network adversary holds exactly what a process may not see: the message
@@ -467,20 +467,20 @@ specification level (Transition System~3).
 The round loop and the graded-agreement stage make up the programs, and this
 section gives them in the form they run in: the pseudocode of one process, then
 the automaton of one process, every guard of which reads that process's own
-node, and then the adversary that holds the rest.
+record, and then the adversary that holds the rest.
 The two subsections after this one give the same two a second time, as rule
 inventories in which a guard is read against the line of pseudocode it
 transcribes.
 Each inventory enters the argument at a named point.
-Each is one automaton read on the pair of factors that hold its own state.
+Each is one automaton read on the pair of components that hold its own state.
 The graded-agreement inventory is read on the $n$ stage records beside the
-round's message fabric, which is the state one round subsystem runs on, and
+round's message fabric, which is the state one round instance runs on, and
 that is how the refinement proved of it transports
 (Theorem~\ref{thm:aba-subsim}).
-The round-loop inventory is read on the round-loop nodes beside the DECIDED
+The round-loop inventory is read on the round-loop records beside the DECIDED
 network, which is the state the core simulation's relation is defined on
 (Theorem~\ref{thm:aba-hybrid-spec}).
-In both cases the network is a factor of the state and not a field of a record,
+In both cases the network is a component of the state and not a field of a record,
 so a rule of the inventory and a rule of the composition are written against the
 same object.
 
@@ -601,9 +601,8 @@ through send, delivery and drive labels that the composition hides.
 The programs are composed by the product of Definition~\ref{def:syncproduct},
 taken over the extended alphabet of Definition~\ref{def:relabel} and read back
 along the restriction that definition supplies.
-The node of one automaton holds that process's records and its inbox rows and
-nothing further, so locality sits in the state shape and not in the guards
-alone.
+The record of one automaton holds that process's own rows and nothing further,
+so locality sits in the state shape and not in the guards alone.
 
 \input{nodes/def-aba-procnet}
 
@@ -612,7 +611,7 @@ alone.
 \input{nodes/def-aba-protocol}
 
 \blueprintfig{fig-protocol}{The protocol \leandecl{PLTS.ABA.protocol}: the $n$ programs $\mathrm{ABAProcN}(P,j)$, \leandecl{PLTS.ABA.Net.ABAProcN}, under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} and the coin oracle beside the group.
-Each program holds one process's round loop and the stage record of the round that loop is in, which the round advance resets (D20); every guard of its forty rules reads that program's own node, and none of them names corruption.
+Each program holds one process's round loop and the stage record of the round that loop is in, which the round advance resets (D20); every guard of its forty rules reads that program's own record, and none of them names corruption.
 Its state \leandecl{PLTS.ABA.Net.NetState} holds the pools $pool(r,j)$ and $dpool(j)$ and the corrupted set $F$, and its twenty rules supply the other half of every send, every delivery and every Byzantine drive; the corruption budget is the guard on its own $\mathrm{fail}$ row.
 The inner dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netEvtLabels}$: every $\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$, $\mathrm{retWPub}$, $\mathrm{gcallLoop}$ and Byzantine drive becomes $\tau$.
 The coin oracle is joined through the partial map $\mathrm{wccPull}$, so the drives $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ and the fused return $\mathrm{retWPub}$ reach it as coin handshakes while the network labels leave it idle.
@@ -625,10 +624,10 @@ rule is allowed to read, and the presentation states it in its sharpest form.
 Every implemented part of the protocol is $n$ programs: the round loop, the
 graded-agreement stage of each round, the DECIDED gossip and the receipt
 bookkeeping of both sit inside $\mathrm{ABAProcN}(P,j)$, and every guard
-of its forty rules is a function of $j$'s node.
+of its forty rules is a function of $j$'s record.
 Nothing of the protocol is shared.
 The receipt rows and the control records each belong to one process, every
-quorum count is taken over one node's rows, and a process knows nothing at all
+quorum count is taken over one process's rows, and a process knows nothing at all
 about corruption --- not even its own status, which no guard of its table can
 name.
 Two components are not programs, and each is centralized for its own reason.
@@ -650,7 +649,7 @@ the oracle's transitions to per-process rules expresses it.
 Writing the oracle as $n$ programs would mean supplying the protocol that
 produces the correlation, which is the sub-protocol this development assumes
 rather than proves.
-It is also the one factor whose transitions are not Dirac, and it occupies the
+It is also the one component whose transitions are not Dirac, and it occupies the
 same coordinate in every system of the argument, from the protocol to the
 composition the core simulation runs on.
 }
@@ -874,7 +873,7 @@ $\mathrm{gdlv}$ rendezvous, the fabric supplying the guard $m \in
 \mathit{sent}(j)$ and the receiver performing the row update.
 No rule reads a second process, and
 Definitions~\ref{def:aba-procnet} and~\ref{def:aba-netadv} are where each guard
-is written against one node.
+is written against one process record.
 
 \subsection{The round loop}
 
@@ -930,10 +929,10 @@ The state a rule of the inventory moves is $\mathrm{ABAState}(P)$,
 \leandecl{PLTS.ABA.ABAState}, read by the four accessors
 \begin{itemize}
   \item $\mathit{procs} : [n] \to \mathrm{ProcCore}$ --- the control records,
-    each at its own process's round-loop node.
+    each at its own process's round-loop record.
   \item $\mathit{decidedRecv} : [n] \times [n] \to \mathcal{P}(\{0,1\})$ ---
     $\mathit{decidedRecv}(i,j)$ is the set of $j$'s payloads delivered to $i$,
-    held at $i$'s own node (D12$'$).
+    held at $i$'s own record (D12$'$).
   \item $\mathit{decidedSent} : [n] \to \mathcal{P}(\{0,1\})$ ---
     $\mathit{decidedSent}_j$ is the set of $\mathrm{DECIDED}$ payloads $j$ has
     multicast, held at the network (D12$'$).
@@ -1099,14 +1098,14 @@ the GBCA family rules that pair out; the round loop alone guarantees only that
 each process returns at most once, by the flag its return rule sets.
 }
 
-The round-loop inventory is read on a pair of factors, as the one above is,
+The round-loop inventory is read on a pair of components, as the one above is,
 and every guard in the table is read at one component: the counts of
 \leandeclnamed{dsndRelay}{PLTS.ABA.Comp.CoreProcStepN.dsndRelay} and \leandeclnamed{ret}{PLTS.ABA.Comp.CoreProcStepN.ret} range over one receiver's own rows, and the
 soundness guard $b \in dpool(j)$ that licenses a delivery is the network's,
 split from the freshness guard $b \notin decIn(i)$ and the write at the
 receiver.
 Definitions~\ref{def:aba-procnet} and~\ref{def:aba-netadv} write the same rules
-at the finer cut, where the round loop shares a node with the stage records and
+at the finer cut, where the round loop shares a record with the stage records and
 the DECIDED pools share a component with the stage pools.
 
 \subsection{The ABA specification and its safety}
@@ -1310,10 +1309,10 @@ slot to be empty.
 \input{nodes/def-aba-gbca-spec}
 
 \blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance \leandecl{PLTS.ABA.GBCA.specInst} (Transition System 2): the reachable states quotiented to the pair $(|dead|, grade)$, the single kill under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
-The bit-labelled reachable states are $(\emptyset,\bot)$, $(\{b\},\bot)$, $(\{b\},\mathrm A)$ and $(\{b\},\mathrm C)$ for each bit $b$, seven in all, and the four nodes are their quotient by the exchange of $0$ and $1$.
+The bit-labelled reachable states are $(\emptyset,\bot)$, $(\{b\},\bot)$, $(\{b\},\mathrm A)$ and $(\{b\},\mathrm C)$ for each bit $b$, seven in all, and the four drawn states are their quotient by the exchange of $0$ and $1$.
 The pairs $(\emptyset,\mathrm A)$ and $(\emptyset,\mathrm C)$ are unreachable, since every graded return requires $dead \neq \emptyset$.
 The exclusion set never holds two bits: \leandeclnamed{bindUnset}{PLTS.ABA.GBCA.Step.bindUnset} is its only writer and is enabled from $dead = \emptyset$ alone, so no second kill appears anywhere in the figure.
-The kill edge names the bit it kills, so $1{-}b$ is the surviving bit at every node to its right.
+The kill edge names the bit it kills, so $1{-}b$ is the surviving bit at every state to its right.
 The abstraction does not track $ret$, so a repeat return is a self-loop.
 Binding (rule~3, \leandeclnamed{bindUnset}{PLTS.ABA.GBCA.Step.bindUnset}) fires under a quorum with $f{+}1$ $\mathrm{SuppOK}$ support for the surviving bit and kills the other.
 \leandeclnamed{retA}{PLTS.ABA.GBCA.Step.retA} (rule~5) hands out the surviving bit and latches the A-side; it loops on $(1,\mathrm A)$.
@@ -1612,7 +1611,7 @@ Termination and fairness are out of scope.
 
 Graded agreement is carried to implementation level, and the work that carries
 it is done once, on one round instance.
-Everything after it transports that single result: first to the round subsystem
+Everything after it transports that single result: first to the round instance
 of the protocol, then to the family of rounds, and then into the composed
 system.
 
@@ -1635,21 +1634,21 @@ stage record being that of the round the loop is in, and the single network
 adversary holds the message pools of both.
 This subsection reads the same protocol as a composition of components, and
 Theorem~\ref{thm:aba-protocol-composed} carries the protocol into it.
-The link is an inclusion, and the factor boundary is where the chain passes
+The link is an inclusion, and the component boundary is where the chain passes
 from implementation to specification: below it is the system that runs,
 and above it everything is specification.
-A composed state carries one graded-agreement subsystem per round at every
+A composed state carries one graded-agreement instance per round at every
 moment, so the stage records and the fabric of a round a process has left
 survive there as specification-side state that no process holds (D20).
-Graded agreement is a parallel factor of that reading, and that is what the
+Graded agreement is a parallel component of that reading, and that is what the
 substitution congruence consumes.
 
-The cut is decided by one question: which network does a factor own?
-A round of graded agreement is a replaceable factor exactly when the round's
-message fabric belongs to that factor --- the pools its stage messages sit in,
+The cut is decided by one question: which network does a component own?
+A round of graded agreement is a replaceable component exactly when the round's
+message fabric belongs to that component --- the pools its stage messages sit in,
 the guard that lets one be delivered, and the injections a corrupted sender
 makes into it.
-The subsystem of Definition~\ref{def:aba-gbcasub} is drawn to own it.
+The instance of Definition~\ref{def:aba-gbcasub} is drawn to own it.
 
 \input{nodes/def-aba-gbcasub}
 
@@ -1657,10 +1656,10 @@ The subsystem of Definition~\ref{def:aba-gbcasub} is drawn to own it.
 
 \input{nodes/def-aba-composed}
 
-\blueprintfig{fig-composed}{The composed system \leandecl{PLTS.ABA.composed} and the substitution: the four factors of Definition~\ref{def:aba-composed} inside the two hiding frames of the protocol's pipeline.
-The round subsystem $\mathrm{sub}(P,r)$, \leandecl{PLTS.ABA.GSub.sub}, is drawn open: the $n$ stage programs of round $r$ beside that round's own message fabric, with the multicast and the delivery hidden inside the subsystem's own frame.
-The left slot is the refinable one: Theorem~\ref{thm:aba-substitution} replaces the family of round subsystems by the family of round specifications and leaves the other three factors as they stand.
-Everything the round's message fabric holds --- the stage pools, the delivery guard, the injection $\mathrm{byzG}$ --- is inside the replaced factor.
+\blueprintfig{fig-composed}{The composed system \leandecl{PLTS.ABA.composed} and the substitution: the four components of Definition~\ref{def:aba-composed} inside the two hiding frames of the protocol's pipeline.
+The round instance $\mathrm{sub}(P,r)$, \leandecl{PLTS.ABA.GSub.sub}, is drawn open: the $n$ stage programs of round $r$ beside that round's own message fabric, with the multicast and the delivery hidden inside the instance's own frame.
+The left slot is the refinable one: Theorem~\ref{thm:aba-substitution} replaces the family of round instances by the family of round specifications and leaves the other three components as they stand.
+Everything the round's message fabric holds --- the stage pools, the delivery guard, the injection $\mathrm{byzG}$ --- is inside the replaced component.
 The DECIDED pools, the corrupted set with its budget, and the authorisation $k \in F$ of every Byzantine drive are outside it, at $\mathrm{aNet}(P)$, and survive the replacement unchanged.}
 
 \input{nodes/thm-aba-protocol-composed}
@@ -1680,7 +1679,7 @@ No transitivity of simulations enters.
 \input{nodes/thm-aba-substitution}
 
 \dynamics{What the idealisation removes and what it leaves}{%
-The substitution replaces one factor, and the factor is a round of graded
+The substitution replaces one component, and the component is a round of graded
 agreement together with that round's message fabric.
 Everything the fabric holds goes with it.
 The stage pools disappear, and with them the guard $m \in pool(j)$ that made a
@@ -1689,16 +1688,16 @@ injection $\mathrm{byzG}$ by which a corrupted sender put an arbitrary stage
 message into circulation.
 The round specification has none of these: it has call slots, an exclusion set,
 and graded returns.
-What survives is everything the other three factors hold.
+What survives is everything the other three components hold.
 The DECIDED pools keep their own delivery guard and their own Byzantine
 injection, at the ABA-side network.
 The corrupted set survives there too, with the budget $|F| < f$ as the guard on
 the $\mathrm{fail}$ row, and so does the authorisation $k \in F$ of every
 Byzantine drive --- including the drives of the graded-agreement handshake,
-whose effect is inside the replaced factor and whose authorisation is not.
+whose effect is inside the replaced component and whose authorisation is not.
 The asymmetry is decided by the cut and not by the argument: a Byzantine power
 vanishes under an idealisation exactly when it is a power over the network the
-idealised factor owns.
+idealised component owns.
 This also fixes what it would take to vary the network's power.
 A weaker message fabric --- lossy delivery, a bound on injection, authenticated
 channels of a different strength --- is a different system in the same slot,
@@ -1714,7 +1713,7 @@ The simulation onto the ABA specification is hand-built, and it is written in
 the hybrid's own coordinates.
 Its relation is defined on the state of $\mathrm{hybrid}(P)$ itself, where
 the round specifications, the $n$ round loops, the ABA-side network and the
-coin oracle are four factors; the two ABA-side factors are read through the
+coin oracle are four components; the two ABA-side components are read through the
 accessors of Definition~\ref{def:aba-core}, so no change of system precedes the
 simulation and every guard the relation quotes is a guard of a named component.
 
@@ -1766,7 +1765,7 @@ coordinates throughout, the relation of (3) included.
 The corruption budget is thus a constraint on the adversary and not a mechanism
 of the processes, and it is stated where it belongs: as the guard on the
 $\mathrm{fail}$ row of the component that owns the corrupted set.
-No process node records it, no restriction of the transition relation enforces
+No process record carries it, no restriction of the transition relation enforces
 it, and no theorem assumes it of a trace.
 
 \subsection{Non-vacuity}

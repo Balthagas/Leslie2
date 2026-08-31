@@ -34,8 +34,8 @@ Each process runs the message pattern
   `n − f` any-`SEAL` quorum containing `b` with `f + 1` `BIND b`s and
   `|Valid| > 1`, and `C` after an `n − f` `SEAL ⊥` quorum with `|Valid| > 1`.
 
-Every transition is Dirac (`implInst_isLTS`); asynchrony and Byzantine
-behaviour are modelled by nondeterministic `τ`-transitions.
+Every transition is Dirac; asynchrony and Byzantine behaviour are modelled
+by nondeterministic `τ`-transitions.
 
 ## Why the cited algorithm and not the blueprint's `alg:GBCA` (D18)
 
@@ -81,8 +81,8 @@ pseudocode (`n − f`).
 The state is exactly the protocol's own data, held in two boxes: each process
 keeps its own local state beside the messages delivered to it, and the round's
 message fabric keeps the per-sender pools and the corrupted set. `ImplState` is
-their pair, so the network is a factor of the state and not a field of it — a
-weaker fabric is a different second factor and leaves the rest of the round
+their pair, so the network is a component of the state and not a field of it — a
+weaker fabric is a different second component and leaves the rest of the round
 alone. The three return transitions are cases
 (1), (2), (3) of Algorithm 6's lines 23–29 and read nothing beyond the receipts
 those cases name — case (1) an `n − f` `SEAL v` quorum, case (2) an `n − f`
@@ -149,7 +149,7 @@ no record there of what it has multicast. The round's message fabric holds the
 per-sender pools and the corrupted set. The instance's state below is their
 pair, so every field of the algorithm is a field of one box or the other.
 
-The fabric carries the name of the subsystem that composes it beside the
+The fabric carries the name of the instance that composes it beside the
 programs (`ABA/GBCAInstances.lean`). -/
 
 /-- The stage record of one process: its own local state and the messages
@@ -298,7 +298,7 @@ example (s : ImplState n) (i j : Fin n) : s.recv i j = (s.1 i).inbox j := rfl
 def initial (n : ℕ) : ImplState n :=
   (fun _ => StageRec.initial n, GSub.GNetState.initial n)
 
-/-! The two factors' own initial states project componentwise, so unfolding
+/-! The two components' own initial states project componentwise, so unfolding
 `initial` leaves no residue. -/
 
 @[simp] theorem _root_.PLTS.ABA.GBCA.StageRec.initial_proc (n : ℕ) :
@@ -696,11 +696,6 @@ noncomputable def implInst (P : Params) (r : ℕ) : System (ImplState P.n) (Lab 
 @[simp] theorem implInst_step (P : Params) (r : ℕ) (s : ImplState P.n)
     (l : Lab P.n) (μ : PMF (ImplState P.n)) :
     (implInst P r).step s l μ ↔ ImplStep P r s l μ := Iff.rfl
-
-/-- Every GBCA implementation transition is Dirac: the instance is an LTS. -/
-theorem implInst_isLTS (P : Params) (r : ℕ) : (implInst P r).IsLTS := by
-  rintro s l μ hstep
-  cases hstep <;> exact ⟨_, rfl⟩
 
 end GBCA
 end ABA

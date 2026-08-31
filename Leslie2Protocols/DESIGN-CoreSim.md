@@ -17,7 +17,7 @@ hybrid    := ((hybridPre.abstract netEvtLabels).relabel).abstract hiddenAPI
 target    : ProbabilisticForwardSimulation hybrid (ABA.spec P) coreRel
 ```
 
-The four factors are the round specifications, the `n` round loops, the ABA-side
+The four components are the round specifications, the `n` round loops, the ABA-side
 network and the coin oracle, and they speak the extended alphabet of the protocol;
 the rendezvous labels are hidden, the result is read back over `Lab n`, and
 the sub-protocol API is hidden in turn (`Hybrid.lean`). Corrupted-process
@@ -28,7 +28,7 @@ per-process DECIDED pools — see § D12′ below).
 
 Concrete state: `(g, (C, (A, w)))` with `g : ℕ → GBCA.SpecState`,
 `C : ∀ j, CoreRec`, `A : ANetState`, `w : ℕ → WCC.SpecState`. The two ABA-side
-factors are read as one object `c : ABAState := (C, A)` through the accessors of
+components are read as one object `c : ABAState := (C, A)` through the accessors of
 `ABAState.lean` — `procs`, `decidedSent`, `decidedRecv`, `F` — and every clause below
 names them, so the relation reads the hybrid state with no change of system.
 Abstract state: `a : ABA.SpecState`.
@@ -141,7 +141,7 @@ certificate form needs no reachability argument of its own.
 
 Concrete steps are read through the Stage-A inversion lemmas of `CoreSimInv.lean`,
 which take a `hybrid` transition back through the two hiding frames to the rows of
-its four factors; each class is one row of `CoreSim.lean`.
+its four components; each class is one row of `CoreSim.lean`.
 
 | concrete row | label | abstract answer |
 |---|---|---|
@@ -310,7 +310,7 @@ state; every return row runs the same decidable case split on `dead`.
 D12 models DECIDED gossip as a single per-process slot, which cannot send `DECIDED 0`
 to X and `DECIDED 1` to Y — an under-approximation inconsistent with the equivocating
 D5 sent-pool of graded agreement. D12′ mirrors D5 in the DECIDED pools: the network's
-`dpool` and the round-loop nodes' receipt rows, read as one object (`ABAState.lean`)
+`dpool` and the round-loop records' receipt rows, read as one object (`ABAState.lean`)
 as `decidedSent : Fin n → Finset Bool` and
 `decidedRecv : Fin n → Fin n → Finset Bool`, pools that only grow. `sendDecided`
 inserts; delivery is the `ddlv` rendezvous, per (receiver, sender, bit), with soundness
@@ -367,8 +367,7 @@ fields), grouped:
   routes into the previous round's `bind_supp` or into its `clock_supp` count, a smaller
   instance of the same statement — and that is what supplies `decide_burst`'s `f + 1`
   material through phase 1's call/ghost sync. The both-bit shape of `clock_supp` is also
-  what keeps a `C`-lock incompatible with an `A`-lock below it
-  (`no_alock_below_both_supports`) and with an agreeing coin underneath it
+  what keeps a `C`-lock incompatible with an agreeing coin underneath it
   (`no_cgrade_succ_of_supp`), and what forces a `C`-lock one round down
   (`c_chain_of_both_supports`): `exists_honest_caller` turns the two counts into honest
   round-`(r + 1)` callers of opposite bits, which are opposite-valued carriers of round

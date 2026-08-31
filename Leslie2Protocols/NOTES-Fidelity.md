@@ -78,7 +78,7 @@ receiving `echo4` messages from `2t + 1` parties" where the pseudocode's lines 1
 received once". `ImplStep.retB` reads this as *from at least one sender*: `honce : ∃ k,
 Msg.seal (some v) ∈ s.recv id k`, not as a cardinality constraint of exactly one
 receipt. The hypothesis is a genuine part of the rule, carried through the protocol's
-rendering by `ABAProcStepN.retG_B` and through the round subsystem's Byzantine-drive
+rendering by `ABAProcStepN.retG_B` and through the round instance's Byzantine-drive
 twin `GProcStep.byzRetB`, but no proof
 consumes it: the refinement's `retB` rows bind it and leave it unused, discharging the
 `B`-return's specification-side guards from the `f + 1` `BIND v` receipts and `hval`
@@ -154,7 +154,7 @@ Unpredictability, inexpressible once the guess is dropped.
 - **Instance memory past the round advance.** ABDY22 separates deciding from terminating:
   a process decides and then eventually terminates (Definitions 3.1 and 3.2), and the
   liveness argument counts the amplification echoes a decided process keeps sending
-  (Lemma E.5). A process node of the encoding carries one graded-agreement stage record,
+  (Lemma E.5). A process record of the encoding carries one graded-agreement stage record,
   that of the round its round loop is in, and the round advance resets it to
   `GBCA.StageRec.initial` — `ABAProcStepN.retW` and `ABAProcStepN.retWPub` in
   `Protocol.lean`. That is deviation **D20**, and its effect is that a process sends

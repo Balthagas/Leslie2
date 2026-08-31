@@ -69,7 +69,7 @@ over the trace distributions of the including system.
   (`Results.lean`; the ω-composition `weakTau_flatten` closed 2026-07-22).
 - The full ABA safety chain, stated in the protocol's own coordinates: the protocol
   carried into its reading as a composition of components, the substitution of each
-  round's graded-agreement subsystem by its specification (`GBCA impl ⊑ spec` under one
+  round's graded-agreement instance by its specification (`GBCA impl ⊑ spec` under one
   family congruence), and the core simulation of the hybrid against the ABA
   specification.
 - `Leslie2Extra/Fairness`: fairness-marked PLTS + ranked **strong** probabilistic

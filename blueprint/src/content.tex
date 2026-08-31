@@ -86,7 +86,7 @@ No reasoning about schedulers, path measures or infinite executions survives int
 
 Safety properties are stated on the supports of achievable trace distributions, and the trace-support bridge below carries such a property from a system to every system it simulates.
 The bridge is in \leanmodule{Leslie2Protocols/Framework/TraceSupport} and the composition operators are in \leanmodule{Leslie2/ProcessAlgebra/Composition} and \leanmodule{Leslie2/ProcessAlgebra/Abstract}.
-The synchronised product of the nodes is in \leanmodule{Leslie2Protocols/Framework/SyncProduct} and the idle-padded instance families are in \leanmodule{Leslie2Protocols/Framework/IdleFamily}.
+The synchronised product of the components is in \leanmodule{Leslie2Protocols/Framework/SyncProduct} and the idle-padded instance families are in \leanmodule{Leslie2Protocols/Framework/IdleFamily}.
 The restriction along the left embedding and the precongruence it enjoys are both in \leanmodule{Leslie2Protocols/Framework/Relabel}.
 
 \input{nodes-min/thm-trace-support}
@@ -205,7 +205,7 @@ The dashed vertical is Theorem~\ref{thm:aba-protocol-composed}, along the Dirac 
 Graded agreement is the one sub-protocol carried to implementation level, and its messages form a five-level ladder.
 The depth of the ladder is what the grade-$1$ evidence buys (D18): $f{+}1$ $\mathrm{BIND}\,v$ receipts exceed the corruption budget, so an honest sender stands behind every grade-$1$ output, and that sender's own wait condition is the $n{-}f$ $\mathrm{VOTE}\,v$ quorum the binding argument of~\cite{ABDY22} counts.
 The definition below reads it as one per-round PLTS, which is the form Theorem~\ref{thm:gbca-inst-refines} is proved against.
-Its state is the pair of the $n$ stage records and the round's own message fabric, so the network is a factor of it and not a field, and its guards read that pair through four accessors; Definitions~\ref{def:aba-procnet} and~\ref{def:aba-netadv} are where each guard is written against one node.
+Its state is the pair of the $n$ stage records and the round's own message fabric, so the network is a component of it and not a field, and its guards read that pair through four accessors; Definitions~\ref{def:aba-procnet} and~\ref{def:aba-netadv} are where each guard is written against one process record.
 See \leanmodule{Leslie2Protocols/ABA/GBCAImpl}.
 
 \input{nodes-min/def-aba-gbca-impl}
@@ -216,7 +216,7 @@ See \leanmodule{Leslie2Protocols/ABA/GBCAImpl}.
 
 The round loop is the core algorithm of ABA, and it is what calls the other two.
 Its external return is gated on an $n-f$ DECIDED quorum, and that count is what excludes disagreement: two returns of different bits would need two sender sets of size $n-f$, and any two such sets meet in an honest process.
-Its rules are written against one process's own node in Definition~\ref{def:aba-procnet}, and the state below is what those rules move, read across the two factors that hold it.
+Its rules are written against one process's own record in Definition~\ref{def:aba-procnet}, and the state below is what those rules move, read across the two components that hold it.
 See \leanmodule{Leslie2Protocols/ABA/Core} and \leanmodule{Leslie2Protocols/ABA/ABAState}.
 
 \input{nodes-min/def-aba-core}
@@ -249,7 +249,7 @@ See \leanmodule{Leslie2Protocols/ABA/GBCASpec}.
 \input{nodes-min/def-aba-gbca-spec}
 
 \blueprintfig{fig-gbca-lifecycle}{The GBCA specification instance \leandecl{PLTS.ABA.GBCA.specInst} (Transition System 2): the reachable states quotiented to the pair $(|dead|, grade)$, the single kill \leandeclnamed{bindUnset}{PLTS.ABA.GBCA.Step.bindUnset} under an $f{+}1$ support guard, and the mutually exclusive A/C grade latch.
-The seven bit-labelled reachable states are drawn as their four-node quotient by the exchange of $0$ and $1$; $(\emptyset,\mathrm A)$ and $(\emptyset,\mathrm C)$ are unreachable, every graded return requiring $dead \neq \emptyset$.
+The seven bit-labelled reachable states are drawn as their four-state quotient by the exchange of $0$ and $1$; $(\emptyset,\mathrm A)$ and $(\emptyset,\mathrm C)$ are unreachable, every graded return requiring $dead \neq \emptyset$.
 The graded returns are \leandeclnamed{retA}{PLTS.ABA.GBCA.Step.retA}, \leandeclnamed{retB}{PLTS.ABA.GBCA.Step.retB} and \leandeclnamed{retC}{PLTS.ABA.GBCA.Step.retC}, and every $\mathrm{SuppOK}$ count in their guards is $f{+}1$ distinct callers-or-corrupted (D15).}
 
 The guard $dead = \emptyset$ on the kill is what keeps every round completable: a second kill, of the surviving bit after an $A$-return of it, would leave the processes yet to return with no return available, the value-bearing returns needing a live bit and the $C$-return being blocked by the $A$-latch.
@@ -281,26 +281,26 @@ A return whose bit the specification has not yet excluded is a burst, mapping to
 \subsection{The composed reading}
 
 A sub-protocol may be exchanged for its specification where it is a component of a composition, and the protocol does not present graded agreement as one.
-This subsection reads the same protocol as a composition of components, the cut being decided by which factor owns the round's message fabric.
-The factor boundary is where the chain passes from implementation to specification: $\mathrm{protocol}(P)$ is the system that runs, everything above it is specification, and the first link is accordingly an inclusion.
-The composed reading holds one graded-agreement subsystem per round at every moment, where a process node of the protocol holds the stage record of the round it is in and nothing else (D20), so the per-round memory it retains is specification-side state.
-Graded agreement is a parallel factor of that reading, which is what the substitution congruence consumes.
+This subsection reads the same protocol as a composition of components, the cut being decided by which component owns the round's message fabric.
+The component boundary is where the chain passes from implementation to specification: $\mathrm{protocol}(P)$ is the system that runs, everything above it is specification, and the first link is accordingly an inclusion.
+The composed reading holds one graded-agreement instance per round at every moment, where a process record of the protocol holds the stage record of the round it is in and nothing else (D20), so the per-round memory it retains is specification-side state.
+Graded agreement is a parallel component of that reading, which is what the substitution congruence consumes.
 See \leanmodule{Leslie2Protocols/ABA/GBCAInstances} and \leanmodule{Leslie2Protocols/ABA/Hybrid}.
 
 \input{nodes-min/def-aba-gbcasub}
 \input{nodes-min/thm-aba-subsim}
 \input{nodes-min/def-aba-composed}
 
-\blueprintfig{fig-composed}{The composed system \leandecl{PLTS.ABA.composed} and the substitution: the four factors of Definition~\ref{def:aba-composed} inside the two hiding frames of the protocol's pipeline.
-The round subsystem \leandecl{PLTS.ABA.GSub.sub} is drawn open, the $n$ stage programs of round $r$ beside that round's own message fabric, with the multicast and the delivery hidden inside its own frame.
-The left slot is the refinable one: Theorem~\ref{thm:aba-substitution} replaces the family of round subsystems by the family of round specifications and leaves the other three factors as they stand.}
+\blueprintfig{fig-composed}{The composed system \leandecl{PLTS.ABA.composed} and the substitution: the four components of Definition~\ref{def:aba-composed} inside the two hiding frames of the protocol's pipeline.
+The round instance \leandecl{PLTS.ABA.GSub.sub} is drawn open, the $n$ stage programs of round $r$ beside that round's own message fabric, with the multicast and the delivery hidden inside its own frame.
+The left slot is the refinable one: Theorem~\ref{thm:aba-substitution} replaces the family of round instances by the family of round specifications and leaves the other three components as they stand.}
 
 \input{nodes-min/thm-aba-protocol-composed}
 
 \subsection{The substitution}
 
 The graded-agreement family occupies the refinable slot of the composed system, so exchanging it for its specification is one family congruence followed by the precongruences of the pipeline, and no transitivity of simulations enters.
-What the idealisation removes is the round's message fabric and every Byzantine power over it; the DECIDED pools, the corrupted set with the budget $|F| < f$ as the guard on the $\mathrm{fail}$ row, and the authorisation of every Byzantine drive are outside the exchanged factor and survive unchanged.
+What the idealisation removes is the round's message fabric and every Byzantine power over it; the DECIDED pools, the corrupted set with the budget $|F| < f$ as the guard on the $\mathrm{fail}$ row, and the authorisation of every Byzantine drive are outside the exchanged component and survive unchanged.
 See \leanmodule{Leslie2Protocols/Framework/FamilySim} and \leanmodule{Leslie2Protocols/ABA/Hybrid}.
 
 \input{nodes-min/thm-gbca-family-refines}
@@ -310,7 +310,7 @@ See \leanmodule{Leslie2Protocols/Framework/FamilySim} and \leanmodule{Leslie2Pro
 \subsection{From the hybrid to the ABA specification}
 
 The proof is one hand-built simulation, run in the hybrid's own coordinates.
-The round specifications, the $n$ round loops, the ABA-side network and the coin oracle are each a factor of the system, and each is a factor of the state the simulation relation is defined on.
+The round specifications, the $n$ round loops, the ABA-side network and the coin oracle are each a component of the system, and each is a component of the state the simulation relation is defined on.
 The simulation's abstract twin is lazy and two-phase (D16), deferring the decision to a single weak step under the first visible return, which is what a forward simulation permits and a strong one does not.
 See \leanmodule{Leslie2Protocols/ABA/ABAState} and \leanmodule{Leslie2Protocols/ABA/CoreSim}.
 

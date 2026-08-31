@@ -13,21 +13,21 @@ import Leslie2Protocols.Framework.Relabel
 import Leslie2Protocols.Framework.SyncProduct
 
 /-!
-# The extended alphabet and the factors composed over it
+# The extended alphabet and the components composed over it
 
 The protocol is composed twice in this development. The protocol reading
 (`ABA/Protocol.lean`) puts `n` corruption-blind programs beside a network
 adversary and the coin oracle. The composed reading (`ABA/Hybrid.lean`) cuts
 the same protocol into its components. Both compositions speak one
 alphabet, and some of what they compose is the same object on both sides.
-This file holds that alphabet and those factors.
+This file holds that alphabet and those components.
 
 ## The extended alphabet
 
 `Lab n` is the shared alphabet of the protocol and of its specification. It
 cannot name the two message networks, the Byzantine drives, or the branches of
 a handshake that it does not distinguish. `NetEvt n` names them, and
-`NLab n = Lab n ⊕ NetEvt n` is the alphabet every factor speaks. Its silent
+`NLab n = Lab n ⊕ NetEvt n` is the alphabet every component speaks. Its silent
 label is `Sum.inl τ`, so every `Sum.inr` label is observable, and
 `netEvtLabels n` — the set of all of them — is what both compositions hide
 before reading the result back over `Lab n`.
@@ -38,7 +38,7 @@ The coin oracle `WCC.specFamily` speaks `Lab n`, so it is joined to the
 extended alphabet through a label pullback. `wccPull` sends a shared label to
 itself, the Byzantine handshake drives and the fused coin return to the
 oracle's own handshake rows, and every other rendezvous label out of the
-domain. `wccLift` is the oracle read along that pullback. It is a factor of
+domain. `wccLift` is the oracle read along that pullback. It is a component of
 both compositions, unchanged.
 
 ## The round loop of one process
@@ -49,7 +49,7 @@ relay and its delivery, and an idle row for every label the process does not
 act on. It writes no stage record. The composed system runs `n` of these
 automata (`coreProcN`) under a full-synchronisation product. The protocol
 composition fuses each round loop with a stage record into one program
-(`Net.ABAProcStepN`), whose node is the pair.
+(`Net.ABAProcStepN`), whose record is the pair.
 
 ## The ABA-side network
 
@@ -179,12 +179,6 @@ noncomputable def wccLift (P : Params) : System (ℕ → WCC.SpecState P.n) (NLa
 @[simp] theorem wccLift_init (P : Params) :
     (wccLift P).init = (WCC.specFamily P).init := rfl
 
-/-- The oracle idles on a rendezvous label outside the pullback's domain. -/
-theorem wccLift_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {e : NetEvt P.n}
-    (hφ : wccPull P.n (Sum.inr e) = none) :
-    (wccLift P).step o (Sum.inr e) (PMF.pure o) :=
-  (System.mapIdle_step_none hφ (PMF.pure o)).mpr rfl
-
 /-! ### The coin oracle's idle row over the shared alphabet -/
 
 /-- The coin oracle idles on a shared label that is neither `τ`, nor a
@@ -221,9 +215,9 @@ namespace Comp
 
 /-! ### The round-loop program of one process
 
-The automaton that calls a round's graded-agreement subsystem and the coin, and
+The automaton that calls a round's graded-agreement instance and the coin, and
 decides. It writes no stage record: the five multicast levels and the stage
-delivery are internal to a round subsystem, so they leave no row here, and the
+delivery are internal to a round instance, so they leave no row here, and the
 three Byzantine graded-agreement drives change no round-loop data, which is
 why they appear below only as idle rows.
 
@@ -257,7 +251,7 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
   | retABAIdle (c : CoreRec P.n) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.retABA id b)) (PMF.pure c)
   /-- The graded-agreement call, round-loop half: hand the estimate over and
-  wait. Opening the stage record is the round subsystem's half. -/
+  wait. Opening the stage record is the round instance's half. -/
   | callG (c : CoreRec P.n) (r : ℕ) (b : Bool)
       (hph : c.proc.phase = .toCallG) (hr : c.proc.round = r)
       (hest : c.proc.est = some b) :
@@ -267,7 +261,7 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
   | callGIdle (c : CoreRec P.n) (r : ℕ) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.callG r id b)) (PMF.pure c)
   /-- The graded-agreement return, round-loop half: record the grade and head
-  for the coin. The evidence for the grade is the round subsystem's conjunct. -/
+  for the coin. The evidence for the grade is the round instance's conjunct. -/
   | retG (c : CoreRec P.n) (r : ℕ) (out : GbcaOut)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r) :
       CoreProcStepN P j c (Sum.inl (.retG r j out))
@@ -298,7 +292,7 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
   | failIdle (c : CoreRec P.n) (k : Fin P.n) :
       CoreProcStepN P j c (Sum.inl (.fail k)) (PMF.pure c)
   /-- The DECIDED relay on an `f + 1` quorum (D12′): the quorum is a condition
-  on the node, the write-once condition and the pool insert are `aNet`'s. -/
+  on the record, the write-once condition and the pool insert are `aNet`'s. -/
   | dsndRelay (c : CoreRec P.n) (b : Bool)
       (hcnt : P.f + 1 ≤ c.decidedCount b) :
       CoreProcStepN P j c (Sum.inr (.dsnd j b)) (PMF.pure c)
@@ -410,7 +404,7 @@ inductive ANetStep (P : Params) :
   | gcallLoop (a : ANetState P.n) (r : ℕ) (id : Fin P.n) (b : Bool) :
       ANetStep P a (Sum.inr (.gcallLoop r id b)) (PMF.pure a)
   /-- The authorisation of a Byzantine graded-agreement call (D11): the round
-  subsystem carries the effect, this component carries the guard. -/
+  instance carries the effect, this component carries the guard. -/
   | byzCallG (a : ANetState P.n) (r : ℕ) (k : Fin P.n) (b : Bool) (hF : k ∈ a.F) :
       ANetStep P a (Sum.inr (.byzCallG r k b)) (PMF.pure a)
   /-- The authorisation of a Byzantine call against an already-called stage
@@ -494,17 +488,6 @@ theorem coreProcStepN_dirac {P : Params} {j : Fin P.n} {c : CoreRec P.n}
 theorem aNetStep_dirac {P : Params} {a : ANetState P.n} {l : NLab P.n}
     {μ : PMF (ANetState P.n)} (h : ANetStep P a l μ) : ∃ a', μ = PMF.pure a' := by
   cases h <;> exact ⟨_, rfl⟩
-
-/-- A round-loop program is an LTS. -/
-theorem coreProcN_isLTS (P : Params) (j : Fin P.n) : (coreProcN P j).IsLTS :=
-  fun _ _ _ h => coreProcStepN_dirac h
-
-/-- The ABA-side network is an LTS. -/
-theorem aNet_isLTS (P : Params) : (aNet P).IsLTS := fun _ _ _ h => aNetStep_dirac h
-
-/-- The synchronised group of round loops is an LTS. -/
-theorem syncCore_isLTS (P : Params) : (System.syncProduct (coreProcN P)).IsLTS :=
-  System.syncProduct_isLTS (coreProcN_isLTS P)
 
 /-- No round-loop rule fires on `τ`: a round loop only ever moves in a
 rendezvous or on a shared API label. -/
@@ -726,15 +709,6 @@ theorem stepC_byzCallW {r : ℕ} {k : Fin P.n}
 theorem stepC_byzRetW {r : ℕ} {k : Fin P.n} {b : Bool}
     (h : CoreProcStepN P j c (Sum.inr (.byzRetW r k b)) ν) : ν = PMF.pure c := by
   cases h; rfl
-
-/-! The two stage rendezvous are internal to a round subsystem: no round loop
-offers them. -/
-
-theorem stepC_gsnd_dead {r : ℕ} {k : Fin P.n} {m : GBCA.Msg}
-    (h : CoreProcStepN P j c (Sum.inr (.gsnd r k m)) ν) : False := by cases h
-
-theorem stepC_gdlv_dead {r : ℕ} {i k : Fin P.n} {m : GBCA.Msg}
-    (h : CoreProcStepN P j c (Sum.inr (.gdlv r i k m)) ν) : False := by cases h
 
 end CoreInversion
 

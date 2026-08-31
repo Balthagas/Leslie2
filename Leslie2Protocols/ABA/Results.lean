@@ -14,7 +14,7 @@ import Leslie2Protocols.ABA.Hybrid
 The subject is the protocol `protocol P`: `n` corruption-blind
 programs, one per process, beside two boxes that are not processes — the
 network adversary, which owns the message pools, the DECIDED pools and the
-corrupted set with its budget, and the common-coin oracle, the only factor
+corrupted set with its budget, and the common-coin oracle, the only component
 whose transitions are not Dirac. A program reads nothing but its own records
 and its own inbox; whether a process may be driven off-protocol is decided by
 the network's `k ∈ F` guard, never by the program. A program holds one
@@ -31,18 +31,18 @@ specification:
 
 1. `protocolSim` (`ProtocolSim.lean`) — the protocol into the composed
    reading, along the Dirac lift of `ProtocolRel`. A composed state carries one
-   graded-agreement subsystem per round at every moment, where a protocol
-   process node carries only the stage record of the round it is in (D20), so
+   graded-agreement instance per round at every moment, where a process record
+   of the protocol carries only the stage record of the round it is in (D20), so
    the composed side holds strictly more state and the two are related by a
    relation rather than by a map.
 2. `substSim` (`Hybrid.lean`) — replace each round's graded-agreement
-   subsystem by its specification, the other three factors untouched: the
+   instance by its specification, the other three components untouched: the
    family substitution carried by four congruences (`parallel_right`,
    `abstract`, `relabel`, `abstract`).
 3. `coreSim` (`CoreSim.lean`) — the hand-built simulation of the
    protocol-shaped specification against the ABA specification, read in the
    composed coordinates: the round specifications, the `n` round loops, the
-   ABA-side network and the coin oracle, each still a factor of the state the
+   ABA-side network and the coin oracle, each still a component of the state the
    relation is defined on.
 
 `refines` chains the soundness inclusions of the three (Result 1) by
@@ -79,7 +79,7 @@ open Net Comp
 /-! ### The chain, link by link
 
 Carry the protocol reading into the composed reading (`protocol_composed`),
-substitute each round's graded-agreement subsystem by its specification at the
+substitute each round's graded-agreement instance by its specification at the
 protocol shape (`substitution`), then take the core simulation (`coreSim`).
 Every step is a simulation between systems the protocol reading itself
 names. -/

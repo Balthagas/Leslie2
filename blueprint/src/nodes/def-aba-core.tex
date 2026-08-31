@@ -1,16 +1,16 @@
-\begin{definition}[The per-process nodes beside the ABA-side network]
+\begin{definition}[The per-process records beside the ABA-side network]
   \label{def:aba-core}
   \lean{PLTS.ABA.ABAState}\lean{PLTS.ABA.ABAState.procs}\lean{PLTS.ABA.ABAState.decidedSent}\lean{PLTS.ABA.ABAState.decidedRecv}\lean{PLTS.ABA.ABAState.F}\lean{PLTS.ABA.ABAState.decidedCount}\lean{PLTS.ABA.ABAState.setProc}\lean{PLTS.ABA.ABAState.stepRound}\lean{PLTS.ABA.ABAState.sendDecided}\lean{PLTS.ABA.ABAState.deliverDecided}\lean{PLTS.ABA.ABAState.corrupt}\leanok
   \uses{def:aba-labels, def:aba-core-vocab, def:aba-procnet, def:aba-composed}
-  The round loop is carried by two factors, and $\mathrm{ABAState}$ reads them as one object:
+  The round loop is carried by two components, and $\mathrm{ABAState}$ reads them as one object:
   \[
     \mathrm{ABAState}(P) \;=\;
       \bigl([n] \to \mathrm{CoreRec}(n)\bigr) \times \mathrm{ANetState}(n),
   \]
-  the round-loop node of each process --- the control record of Definition~\ref{def:aba-core-vocab} together with its DECIDED receipt rows --- beside the ABA-side network of Definition~\ref{def:aba-composed}, which holds the DECIDED pools and the corrupted set with its budget.
-  Four accessors gather what the two factors hold apart.
-  $\mathrm{procs}$ reads a process's control record and $\mathrm{decidedRecv}$ its receipt rows, both at that process's node; $\mathrm{decidedSent}$ reads the multicast pools and $F$ the corrupted set, both at the network.
+  the round-loop record of each process --- the control record of Definition~\ref{def:aba-core-vocab} together with its DECIDED receipt rows --- beside the ABA-side network of Definition~\ref{def:aba-composed}, which holds the DECIDED pools and the corrupted set with its budget.
+  Four accessors gather what the two components hold apart.
+  $\mathrm{procs}$ reads a process's control record and $\mathrm{decidedRecv}$ its receipt rows, both at that process's record; $\mathrm{decidedSent}$ reads the multicast pools and $F$ the corrupted set, both at the network.
   Read through them, $\mathrm{decidedCount}\,i\,b$ is the number of distinct senders whose $\langle\mathrm{DECIDED},b\rangle$ has been delivered to $i$, which is the count the return guard reads, and the operations $\mathrm{setProc}$, $\mathrm{stepRound}$, $\mathrm{sendDecided}$, $\mathrm{deliverDecided}$ and $\mathrm{corrupt}$ name the effects of the rules below.
-  An accessor is a projection of one factor, so nothing of the two factors is identified: the object is a reading of the pair and not a coarser state.
+  An accessor is a projection of one component, so nothing of the two components is identified: the object is a reading of the pair and not a coarser state.
   Full record: \leandecl{PLTS.ABA.ABAState}.
 \end{definition}

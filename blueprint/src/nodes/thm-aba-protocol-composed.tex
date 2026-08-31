@@ -8,12 +8,12 @@
     \operatorname{ATD}(\mathrm{composed}(P)).
   \]
   The two presentations are related by a relation and not by a map.
-  A composed state carries one graded-agreement subsystem per round at every moment, where a process node of the protocol carries the stage record of the round its round loop is in and nothing else (D20), so the composed reading holds strictly more state than the protocol.
+  A composed state carries one graded-agreement instance per round at every moment, where a process record of the protocol carries the stage record of the round its round loop is in and nothing else (D20), so the composed reading holds strictly more state than the protocol.
   $\mathrm{ProtocolRel}(P)$ pins, of a composed state, everything a state of the protocol determines, and it has seven conjuncts.
   The round loops agree.
-  The coin oracle is the same factor on both sides.
+  The coin oracle is the same component on both sides.
   The ABA-side network is the network adversary's DECIDED pools beside its corrupted set, and the fabric of round $r$ is that adversary's round-$r$ pools beside the same corrupted set, corruption being one broadcast on both sides.
-  The stage record of a process is the entry, at that process, of the subsystem of the round its round loop is in.
+  The stage record of a process is the entry, at that process, of the instance of the round its round loop is in.
   A round above a process's round holds the initial stage record at that process.
   A process with no input is idle in round $0$.
   The columns below a process's round are unconstrained: they are specification-side state, and no rule of the protocol reads them.

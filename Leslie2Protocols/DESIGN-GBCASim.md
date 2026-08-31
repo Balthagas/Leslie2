@@ -18,7 +18,7 @@ target       : ForwardSimulation (implInst P r) (specInst P r) (instRel P r)
 ```
 
 Both systems are Dirac-transition LTSs. The instance refinement reaches the
-ℕ-indexed families through the round subsystem (`ABA/GBCAInstances.lean`), whose
+ℕ-indexed families through the round instance (`ABA/GBCAInstances.lean`), whose
 family lifting takes its broadcast ingredient from
 `GBCASim.instRel_corrupt`.
 
@@ -440,8 +440,7 @@ the development; the `SEAL`-level τ-rows (`sealBit`/`sealBot`) are frame cases
 identical in shape to `bindBit`/`bindBot` and need nothing beyond it:
 
 * the weak-transition kit of `Framework/FamilySim.lean`:
-  `System.weakLStep_of_step`, `System.weakLSilent_of_step`,
-  `weakLStep_tauThen`;
+  `System.weakLStep_of_step` and `weakLStep_tauThen`;
 * network plumbing: `recv_sub`, `recvCount_le_recvMsg`, `mem_mcast_sent`,
   `mem_recvMsg_recv`, `exists_sender_notMem`, `exists_honest_recv₂`,
   `corrupt_*` frame lemmas, `corrupt_F_eq`;
@@ -488,11 +487,10 @@ any-payload analogues of `recvCount_le_recvMsg`:
 ```lean
 theorem voteCount_le_recvMsg (s : ImplState n) (i j : Fin n) (m : Msg) (i' : Fin n) :
     s.voteCount i' ≤ (s.recvMsg i j m).voteCount i'
--- likewise bindCount_le_recvMsg, sealCount_le_recvMsg, echoCount_le_recvMsg
+-- likewise bindCount_le_recvMsg
 ```
 
-(same one-line `Finset.card_le_card` proof; the four together cover every
-level of the ladder).
+(same one-line `Finset.card_le_card` proof at both levels).
 
 ### Certificate and harvest lemmas
 
@@ -593,20 +591,20 @@ with `bind ≠ none` rendered as `dead ≠ ∅`. `GBCASim.instRel_corrupt`
 carries the `dead_cert` row through `DeadCert.mono`, whose three hypotheses it
 discharges by `corrupt_recv`, `corrupt_proc` and `corrupt_F_subset`.
 `Protocol.lean`'s rendering carries the same ladder inside one
-process: the stage node `GBCA.StageRec` keeps the write-once `sentSeal` slot in
+process: the stage record `GBCA.StageRec` keeps the write-once `sentSeal` slot in
 its `proc` record and carries its own `sealCount` over its inbox rows, the
 rendezvous rows `gsndSealBit`/`gsndSealBot` are the seal multicasts read off
-that node, and the three `retG` rows (and their `byzRetG` twins) read the seal
+that record, and the three `retG` rows (and their `byzRetG` twins) read the seal
 level off it. No bridge is needed to the global view: the round-`r` `ImplState`
-*is* the round subsystem's own state — the stage records with their inbox rows
+*is* the round instance's own state — the stage records with their inbox rows
 beside the round's message fabric, which holds the per-sender pools and the
 corrupted set — and `ImplState.sealCount` reads the receiving program's inbox
 rows directly. So `GSub.subSim` consumes `implRefines` as it stands: the
-projection `sub_projects` (`ABA/GBCAInstances.lean`) matches every subsystem
-transition with the instance's at that same state, one step for one step, and
-this file's refinement answers it, its weak answer read back at the subsystem's
-interface — which is what licenses replacing a round's subsystem by the graded
-agreement specification.
+projection `sub_projects` (`ABA/GBCAInstances.lean`) matches every round-instance
+transition with the implementation instance's at that same state, one step for
+one step, and this file's refinement answers it, its weak answer read back at the
+round instance's interface — which is what licenses replacing a round's instance
+by the graded agreement specification.
 
 ## Risks and open points
 
@@ -643,7 +641,7 @@ agreement specification.
    therefore be read through the same accessors as the other `proc`-field
    predicates — `ImplState.proc` for the slot and `ImplState.F` for the
    corrupted set, the latter reading the set held by the round's own message
-   fabric, which is the state's second factor.
+   fabric, which is the state's second component.
 6. **Vacuous-fill hazard in `deadCert_of_sealBot_quorum`.** The Case B branch
    needs the global classical split "some honest bit-voter exists"; its
    **no**-branch uses `bindBot_conf` on a *specific* honest `BIND` sender

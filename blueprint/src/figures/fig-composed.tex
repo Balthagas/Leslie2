@@ -17,11 +17,11 @@
     {$\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netEvtLabels}$};
   % the shared bus
   \draw[thick] (-0.5,2.3) -- (10.6,2.3);
-  \node[ann] at (1.1,2.6) {$\mathrm{NLab}(n)$: every factor steps};
+  \node[ann] at (1.1,2.6) {$\mathrm{NLab}(n)$: every component steps};
   \draw[->] (10.6,2.3) -- (11.1,2.3) -- (11.1,4.1);
   \node[ann, anchor=north east] at (11.25,4.55)
     {visible $\mathrm{callABA}$,\\ $\mathrm{retABA}$, $\mathrm{fail}$};
-  % ---- factor 1: the round subsystem, drawn open
+  % ---- component 1: the round instance, drawn open
   \draw[dashed, rounded corners] (-0.4,-2.1) rectangle (5.5,1.6);
   \node[font=\scriptsize] at (2.55,1.35)
     {$\mathrm{sub}(P,r)$: $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{GEvt}(n)$};
@@ -40,8 +40,8 @@
   \node[ann, anchor=west] at (2.7,1.97)
     {$\mathrm{callG}\,r$, $\mathrm{retG}\,r$, the drives of round $r$};
   \node[ann] at (2.55,-2.45)
-    {one subsystem per round $r \in \mathbb{N}$; $\mathrm{fail}$ broadcast to all};
-  % ---- factors 2 to 4
+    {one instance per round $r \in \mathbb{N}$; $\mathrm{fail}$ broadcast to all};
+  % ---- components 2 to 4
   \node[box] (cores) at (8.55,1.1)
     {the $n$ round loops\\ $\mathrm{syncProduct}_{j}\ \mathrm{coreProcN}(P,j)$};
   \node[box] (anet) at (8.55,-0.7)
@@ -50,12 +50,12 @@
      every drive's guard $k \in F$};
   \node[box] (w) at (8.55,-2.5)
     {$\mathrm{WCC.specFamily}(P)$ along $\mathrm{wccPull}$\\
-     the one non-Dirac factor};
+     the one non-Dirac component};
   \foreach \y in {1.1,-0.7,-2.5} \draw[<->] (5.95,2.3) -- (5.95,\y) -- (6.3,\y);
   % ---- the substitution
   \node[box, minimum width=5.2cm] (spec) at (2.55,-4.45)
     {$\mathrm{specSide}(P)$: the round specifications};
   \draw[->, dashed] (2.55,-3.45) -- (2.55,-3.95);
   \node[lbl, anchor=west, align=left] at (2.75,-3.7)
-    {this factor alone is replaced};
+    {this component alone is replaced};
 \end{tikzpicture}

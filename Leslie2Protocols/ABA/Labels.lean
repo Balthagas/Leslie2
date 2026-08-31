@@ -89,11 +89,6 @@ def wccRound : Lab n → Option ℕ
   | retW r _ _ => some r
   | _ => none
 
-/-- The corrupted process, for a `fail` label. -/
-def failId : Lab n → Option (Fin n)
-  | fail id => some id
-  | _ => none
-
 /-- A label is global iff it is a corruption event: every component of the
 composition (and every instance of a family) steps on it simultaneously. -/
 def isFail : Lab n → Prop

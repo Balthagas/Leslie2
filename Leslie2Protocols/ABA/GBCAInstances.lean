@@ -10,11 +10,11 @@ import Leslie2Protocols.Framework.FamilySim
 import Leslie2Protocols.Framework.IdleFamily
 
 /-!
-# The round's graded-agreement subsystem
+# The round's graded-agreement instance
 
 One round of the protocol, taken apart into the pieces that run it:
 `n` corruption-blind local programs, one per process, beside the round's own
-message fabric. The subsystem is the unit the analysis replaces by the graded
+message fabric. The instance is the unit the analysis replaces by the graded
 agreement specification, so it is drawn to be exactly what that replacement
 may see — the round's handshake ports and nothing else.
 
@@ -32,15 +32,15 @@ which checks that the message is pooled under the named sender, and the
 receiver, which files it under that sender's inbox row.
 
 The two rendezvous — the multicast and the delivery — are labels of the
-subsystem-internal alphabet `GLab n = NLab n ⊕ GEvt n`, and they are hidden
-before anything outside sees the subsystem: `sub` speaks the shared extended
+instance-internal alphabet `GLab n = NLab n ⊕ GEvt n`, and they are hidden
+before anything outside sees the instance: `sub` speaks the shared extended
 alphabet `NLab n`, in which the round's interface is `callG r`, `retG r`,
 `gcallLoop r` and the three Byzantine graded-agreement drives of round `r`.
 The stage-multicast and stage-delivery constructors of `NetEvt` are therefore
 not part of that interface — no component offers them, so they carry no
-transition of the subsystem (`sub_gsnd_dead`, `sub_gdlv_dead`).
+transition of the instance.
 
-`gbcaSide` is the ℕ-indexed family of these subsystems: `System.family`
+`gbcaSide` is the ℕ-indexed family of these instances: `System.family`
 routes a round-tagged label to its round, takes `τ` at any round, and
 broadcasts `fail` to every round at once.
 
@@ -60,11 +60,11 @@ broadcasts `fail` to every round at once.
   have received its input: the algorithm's handlers only run inside a called
   instance.
 * **D11 (Byzantine handshake drives), split.** A drive is authorised by a
-  `k ∈ F` guard and has an effect on the round's data. The subsystem carries
+  `k ∈ F` guard and has an effect on the round's data. The instance carries
   the effect and not the authorisation: `byzCallG` opens the stage record and
   pools its `⟨INPUT, b⟩` without any `k ∈ F` guard, and `byzRetG` sets the
   `returned` flag on the same evidence an honest return needs. The guard
-  belongs to the network that surrounds the subsystem, where it applies to
+  belongs to the network that surrounds the instance, where it applies to
   the drive label that stays visible at this boundary.
 * **D18 (the five-level ladder).** The send rows are the five levels
   `INPUT / ECHO / VOTE / BIND / SEAL` and the three graded returns of the
@@ -72,35 +72,37 @@ broadcasts `fail` to every round at once.
 
 ## The interface
 
-Every row mirrors the stage-visible half of one rule of the round instance
-(`ABA/GBCAImpl.lean`), split between the program that owns the record and the
-fabric that owns the pool. What the instance's rule writes on the core slice —
-the round loop's phase, estimate and grade — appears nowhere here: that slice
-is a different component of the protocol system.
+Every row mirrors the stage-visible half of one rule of the implementation
+instance (`ABA/GBCAImpl.lean`), split between the program that owns the record
+and the fabric that owns the pool. What the implementation's rule writes on the
+core slice — the round loop's phase, estimate and grade — appears nowhere here:
+that slice is a different component of the protocol system.
 
 ## The replacement
 
-`subSim` is what licenses replacing the round subsystem by the graded
-agreement specification. It runs through the round instance in two legs.
+`subSim` is what licenses replacing the round instance by the graded
+agreement specification. It runs through the implementation instance of
+`ABA/GBCAImpl.lean` in two legs.
 
-The first leg is strong and functional. The subsystem and the instance run on
-the same state: `GBCA.ImplState` is the pair of the stage records and the
-fabric, which are exactly the boxes composed here. `sub_projects` says that
-every transition of the subsystem is a transition of the instance at that same
-state, one step for one step, with no stuttering: a joint call is the
-instance's call, a hidden multicast or delivery is the protocol rule or the
-delivery it carries, a fabric injection is the instance's Byzantine row. The
-two are one round under two presentations — a single rule table on one side,
-`n` programs beside a fabric on the other.
+The first leg is strong and functional. The round instance and the
+implementation run on the same state: `GBCA.ImplState` is the pair of the stage
+records and the fabric, which are exactly the boxes composed here.
+`sub_projects` says that every transition of the round instance is a transition
+of the implementation at that same state, one step for one step, with no
+stuttering: a joint call is the implementation's call, a hidden multicast or
+delivery is the protocol rule or the delivery it carries, a fabric injection is
+the implementation's Byzantine row. The two are one round under two
+presentations — a single rule table on one side, `n` programs beside a fabric
+on the other.
 
 The second leg is the per-instance refinement `GBCA.implRefines`
 (`ABA/GBCASim.lean`), used as it stands. Its answer is a weak run of the
 specification over the shared alphabet `Lab n`, which is lifted to the
-subsystem's interface along `gPull`: the projection that reads a Byzantine
+instance's interface along `gPull`: the projection that reads a Byzantine
 call drive as a call, a Byzantine return drive as a return, and the two call
 loops as calls, which the specification takes on its input-enabledness row
 (D11). The lifted specification `liftedSpecG` — the specification read back
-along `gPull` — is the system that replaces the subsystem, and `gActSpec` is
+along `gPull` — is the system that replaces the instance, and `gActSpec` is
 the broadcast corruption act it carries at that alphabet.
 -/
 
@@ -114,11 +116,11 @@ namespace GSub
 
 open Net
 
-/-! ### The subsystem-internal alphabet
+/-! ### The instance-internal alphabet
 
 The two rendezvous the shared alphabet cannot name. They are untagged: the
 round is the identity of the instance they belong to, and they are hidden
-before the family sees the subsystem at all. -/
+before the family sees the instance at all. -/
 
 /-- The internal rendezvous of one round: the multicast and the delivery. -/
 inductive GEvt (n : ℕ) : Type
@@ -128,12 +130,12 @@ inductive GEvt (n : ℕ) : Type
   | dlv (i j : Fin n) (m : GBCA.Msg)
   deriving DecidableEq
 
-/-- The subsystem-internal alphabet: the shared extended alphabet plus the two
+/-- The instance-internal alphabet: the shared extended alphabet plus the two
 rendezvous. Its silent label is `Sum.inl τ`, so every `Sum.inr` label is
 observable and hence hideable. -/
 abbrev GLab (n : ℕ) : Type := NLab n ⊕ GEvt n
 
-/-- The rendezvous labels, hidden by the subsystem. -/
+/-- The rendezvous labels, hidden by the instance. -/
 def gEvents (n : ℕ) : Set (GLab n) := {l | ∃ e : GEvt n, l = Sum.inr e}
 
 @[simp] theorem inl_notMem_gEvents {n : ℕ} (l : NLab n) :
@@ -316,12 +318,12 @@ inductive GProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
 
 /-! ### The round's message fabric
 
-The one box of the subsystem that holds what no program may see: the per-sender
+The one box of the instance that holds what no program may see: the per-sender
 pools and the corrupted set. It participates in every send by pooling the
 message and in every delivery by checking that the message is pooled, and it
 is where a corrupted sender's injections enter (D5). Its state record
 `GNetState` stands beside the stage record in `ABA/GBCAImpl.lean`, the two of
-them being the factors of a round's state; what follows is its rule table. -/
+them being the components of a round's state; what follows is its rule table. -/
 
 /-- The step relation of the round's message fabric. All transitions are
 Dirac. -/
@@ -353,7 +355,7 @@ inductive GNetStep (P : Params) (r : ℕ) :
       GNetStep P r w (Sum.inl (Sum.inr (.gcallLoop r id b))) (PMF.pure w)
   /-- A driven call (D11): its `⟨INPUT, b⟩` is pooled here, and there is no
   `k ∈ F` guard on this row — the authorisation of the drive belongs to the
-  network outside the subsystem, where the drive label stays visible. -/
+  network outside the instance, where the drive label stays visible. -/
   | byzCallG (w : GNetState P.n) (k : Fin P.n) (b : Bool) :
       GNetStep P r w (Sum.inl (Sum.inr (.byzCallG r k b)))
         (PMF.pure (w.gpool k (.input b)))
@@ -365,7 +367,7 @@ inductive GNetStep (P : Params) (r : ℕ) :
   | byzRetG (w : GNetState P.n) (k : Fin P.n) (out : GbcaOut) :
       GNetStep P r w (Sum.inl (Sum.inr (.byzRetG r k out))) (PMF.pure w)
 
-/-! ### The subsystem and its family -/
+/-! ### The instance and its family -/
 
 /-- The local graded-agreement program of process `j` in round `r`. -/
 noncomputable def gbcaProc (P : Params) (r : ℕ) (j : Fin P.n) :
@@ -393,12 +395,12 @@ noncomputable def gNet (P : Params) (r : ℕ) :
     (l : GLab P.n) (μ : PMF (GNetState P.n)) :
     (gNet P r).step w l μ ↔ GNetStep P r w l μ := Iff.rfl
 
-/-- The programs beside the fabric, over the subsystem-internal alphabet. -/
+/-- The programs beside the fabric, over the instance-internal alphabet. -/
 noncomputable def subPre (P : Params) (r : ℕ) :
     System (GBCA.ImplState P.n) (GLab P.n) :=
   (System.syncProduct (gbcaProc P r)).parallel (gNet P r)
 
-/-- **The round-`r` subsystem**: the programs beside the fabric, the two
+/-- **The round-`r` instance**: the programs beside the fabric, the two
 rendezvous hidden, the result read back over the shared extended alphabet. Its
 interface is the round's ports — `callG r`, `retG r`, `gcallLoop r` and the
 three graded-agreement drives of round `r`. -/
@@ -406,7 +408,7 @@ noncomputable def sub (P : Params) (r : ℕ) :
     System (GBCA.ImplState P.n) (NLab P.n) :=
   ((subPre P r).abstract (gEvents P.n)).relabel
 
-/-- The round a label of the subsystem interface belongs to. Every other label
+/-- The round a label of the instance interface belongs to. Every other label
 of the shared extended alphabet — the ABA API, the coin ports, `fail`, the
 DECIDED pools, and the stage rendezvous of the protocol network — is owned by
 no round. -/
@@ -429,14 +431,14 @@ instance {n : ℕ} : DecidablePred (isFailN (n := n)) := fun l => by
   | inl l => cases l <;> simp only [isFailN] <;> infer_instance
   | inr e => cases e <;> simp only [isFailN] <;> infer_instance
 
-/-- The broadcast corruption act on a subsystem state: the round's fabric
+/-- The broadcast corruption act on an instance state: the round's fabric
 records it, the stage records do not (D1). -/
 def gAct (P : Params) : NLab P.n → GBCA.ImplState P.n → GBCA.ImplState P.n
   | Sum.inl (.fail k), (u, w) => (u, w.corrupt P k)
   | _, s => s
 
 /-- **The graded-agreement side of the protocol**: the ℕ-indexed
-family of round subsystems. A round-tagged label moves its round alone, `τ`
+family of round instances. A round-tagged label moves its round alone, `τ`
 moves one round, and `fail` is the broadcast that keeps every round's copy of
 the corrupted set in lockstep. -/
 noncomputable def gbcaSide (P : Params) :
@@ -445,7 +447,7 @@ noncomputable def gbcaSide (P : Params) :
 
 /-! ### Determinacy
 
-Both rule tables written here are Dirac, so the subsystem and its family are
+Both rule tables written here are Dirac, so the instance and its family are
 LTS: the probabilistic transition of the protocol is the coin
 resolution, which is not part of a graded-agreement round. -/
 
@@ -479,23 +481,23 @@ theorem syncG_isLTS (P : Params) (r : ℕ) :
 theorem subPre_isLTS (P : Params) (r : ℕ) : (subPre P r).IsLTS :=
   System.parallel_isLTS (syncG_isLTS P r) (gNet_isLTS P r)
 
-/-- The subsystem is an LTS. -/
+/-- The instance is an LTS. -/
 theorem sub_isLTS (P : Params) (r : ℕ) : (sub P r).IsLTS :=
   System.relabel_isLTS (System.abstract_isLTS (subPre_isLTS P r) _)
 
-/-- The family of subsystems is an LTS. -/
+/-- The family of instances is an LTS. -/
 theorem gbcaSide_isLTS (P : Params) : (gbcaSide P).IsLTS :=
   System.family_isLTS (sub_isLTS P) gOwns isFailN (gAct P)
 
 /-- No program rule fires on `τ`: a program only ever moves in a rendezvous or
-on one of the round's ports. The subsystem's silent transitions are therefore
+on one of the round's ports. The instance's silent transitions are therefore
 exactly the fabric's injections and the hidden rendezvous. -/
 theorem gProcStep_no_tau {P : Params} {r : ℕ} {j : Fin P.n}
     {p : GBCA.StageRec P.n} {ν : PMF (GBCA.StageRec P.n)}
     (h : GProcStep P r j p (Silent.τ : GLab P.n) ν) : False := by
   rw [glab_tau] at h; cases h
 
-/-! ### Reading and building subsystem transitions
+/-! ### Reading and building instance transitions
 
 The pipeline is `relabel ∘ abstract ∘ parallel ∘ syncProduct`; the lemmas
 below unfold it once and for all, in both directions. -/
@@ -537,7 +539,7 @@ theorem syncG_no_tau {P : Params} {r : ℕ}
   · exact hτ rfl
   · exact gProcStep_no_tau hstep
 
-/-- The subsystem's step relation, unfolded to the hidden-rendezvous case and
+/-- The instance's step relation, unfolded to the hidden-rendezvous case and
 the shared-label case. -/
 theorem sub_step_iff (P : Params) (r : ℕ) (q : GBCA.ImplState P.n) (l : NLab P.n)
     (μ : PMF (GBCA.ImplState P.n)) :
@@ -587,7 +589,7 @@ theorem subPre_tau_net (P : Params) (r : ℕ)
   rw [subPre, System.parallel_step]
   exact Or.inr (Or.inr ⟨rfl, PMF.pure w', hn, (prodPMF_pure_pure _ _).symm⟩)
 
-/-- A hidden rendezvous is a silent transition of the subsystem. -/
+/-- A hidden rendezvous is a silent transition of the instance. -/
 theorem sub_event_step (P : Params) (r : ℕ)
     {u x : ∀ _ : Fin P.n, GBCA.StageRec P.n} {w w' : GNetState P.n}
     (e : GEvt P.n)
@@ -597,7 +599,7 @@ theorem sub_event_step (P : Params) (r : ℕ)
   (sub_step_iff P r _ _ _).mpr
     (Or.inl ⟨rfl, e, subPre_event_step P r e hall hn⟩)
 
-/-- A visible shared label is a transition of the subsystem. -/
+/-- A visible shared label is a transition of the instance. -/
 theorem sub_lab_step (P : Params) (r : ℕ)
     {u x : ∀ _ : Fin P.n, GBCA.StageRec P.n} {w w' : GNetState P.n}
     {l : NLab P.n} (hl : l ≠ Sum.inl Lab.tau)
@@ -606,7 +608,7 @@ theorem sub_lab_step (P : Params) (r : ℕ)
     (sub P r).step (u, w) l (PMF.pure (x, w')) :=
   (sub_step_iff P r _ _ _).mpr (Or.inr (subPre_lab_step P r hl hall hn))
 
-/-- A fabric-local injection is a silent transition of the subsystem. -/
+/-- A fabric-local injection is a silent transition of the instance. -/
 theorem sub_tau_net (P : Params) (r : ℕ)
     {u : ∀ _ : Fin P.n, GBCA.StageRec P.n} {w w' : GNetState P.n}
     (hn : GNetStep P r w (Sum.inl (Sum.inl .tau)) (PMF.pure w')) :
@@ -862,70 +864,12 @@ theorem netG_tau (h : GNetStep P r w (Sum.inl (Sum.inl .tau)) μ) :
   cases h
   case byzG k m hF => exact ⟨k, m, hF, rfl⟩
 
-theorem netG_callG {id : Fin P.n} {b : Bool}
-    (h : GNetStep P r w (Sum.inl (Sum.inl (.callG r id b))) μ) :
-    μ = PMF.pure (w.gpool id (.input b)) := by
-  cases h; rfl
-
-theorem netG_retG {id : Fin P.n} {out : GbcaOut}
-    (h : GNetStep P r w (Sum.inl (Sum.inl (.retG r id out))) μ) :
-    μ = PMF.pure w := by
-  cases h; rfl
-
-theorem netG_gcallLoop {id : Fin P.n} {b : Bool}
-    (h : GNetStep P r w (Sum.inl (Sum.inr (.gcallLoop r id b))) μ) :
-    μ = PMF.pure w := by
-  cases h; rfl
-
-theorem netG_byzCallG {k : Fin P.n} {b : Bool}
-    (h : GNetStep P r w (Sum.inl (Sum.inr (.byzCallG r k b))) μ) :
-    μ = PMF.pure (w.gpool k (.input b)) := by
-  cases h; rfl
-
-theorem netG_byzCallGLoop {k : Fin P.n} {b : Bool}
-    (h : GNetStep P r w (Sum.inl (Sum.inr (.byzCallGLoop r k b))) μ) :
-    μ = PMF.pure w := by
-  cases h; rfl
-
-theorem netG_byzRetG {k : Fin P.n} {out : GbcaOut}
-    (h : GNetStep P r w (Sum.inl (Sum.inr (.byzRetG r k out))) μ) :
-    μ = PMF.pure w := by
-  cases h; rfl
-
 end NetInversion
 
-/-! ### The labels that carry no transition
-
-The stage rendezvous of the protocol network are not part of the subsystem's
-interface: no component of the subsystem offers them, so under full
-synchronisation the conjunction over the components is unsatisfiable. -/
-
-theorem sub_gsnd_dead (P : Params) (r r' : ℕ) (j : Fin P.n) (m : GBCA.Msg)
-    {q : GBCA.ImplState P.n} {μ : PMF (GBCA.ImplState P.n)}
-    (h : (sub P r).step q (Sum.inr (.gsnd r' j m)) μ) : False := by
-  rcases (sub_step_iff P r q _ μ).mp h with ⟨hτ, -⟩ | hstep
-  · exact absurd hτ (by simp)
-  · rw [subPre, System.parallel_step] at hstep
-    rcases hstep with ⟨-, _μ₁, _μ₂, -, hn, -⟩ | ⟨hτ, -⟩ | ⟨hτ, -⟩
-    · cases hn
-    · exact absurd hτ (by simp)
-    · exact absurd hτ (by simp)
-
-theorem sub_gdlv_dead (P : Params) (r r' : ℕ) (i j : Fin P.n) (m : GBCA.Msg)
-    {q : GBCA.ImplState P.n} {μ : PMF (GBCA.ImplState P.n)}
-    (h : (sub P r).step q (Sum.inr (.gdlv r' i j m)) μ) : False := by
-  rcases (sub_step_iff P r q _ μ).mp h with ⟨hτ, -⟩ | hstep
-  · exact absurd hτ (by simp)
-  · rw [subPre, System.parallel_step] at hstep
-    rcases hstep with ⟨-, _μ₁, _μ₂, -, hn, -⟩ | ⟨hτ, -⟩ | ⟨hτ, -⟩
-    · cases hn
-    · exact absurd hτ (by simp)
-    · exact absurd hτ (by simp)
-
-/-! ### The specification read over the subsystem's interface
+/-! ### The specification read over the instance's interface
 
 The graded agreement specification speaks the shared alphabet `Lab n`; the
-subsystem speaks the extended alphabet `NLab n`, in which the three Byzantine
+instance speaks the extended alphabet `NLab n`, in which the three Byzantine
 drives and the call loop of round `r` are separate labels. `gPull` is the
 projection that identifies them with the specification labels they stand for:
 a drive of the call is a call, a drive of the return is a return, and the two
@@ -934,7 +878,7 @@ row. Every other extended label — the protocol network's rendezvous, the coin
 drives — is off the specification's interface and idles.
 
 The lifted specification `liftedSpecG` is the specification read back along
-`gPull`. It is what the subsystem is replaced by: the drive labels stay visible
+`gPull`. It is what the instance is replaced by: the drive labels stay visible
 at this boundary, and their authorisation is the surrounding network's business
 (D11). -/
 
@@ -996,7 +940,7 @@ theorem gPull_eq_tau {n : ℕ} {l : NLab n} (h : gPull n l = some Lab.tau) :
   | inr e => cases e <;> simp at h
 
 /-- **The lifted specification**: the round-`r` graded agreement specification
-read over the subsystem's interface. -/
+read over the instance's interface. -/
 noncomputable def liftedSpecG (P : Params) (r : ℕ) :
     System (GBCA.SpecState P.n) (NLab P.n) :=
   (GBCA.specInst P r).mapIdle (gPull P.n)
@@ -1013,8 +957,8 @@ theorem liftedSpecG_isLTS (P : Params) (r : ℕ) : (liftedSpecG P r).IsLTS :=
 
 A weak run of the specification is read back along a section of `gPull`. The
 section sends every label to its own copy on the left, except the one label the
-subsystem's step projects from, which is sent to the interface label the
-subsystem actually took — this is what turns a specification `callG` run into
+instance's step projects from, which is sent to the interface label the
+instance actually took — this is what turns a specification `callG` run into
 the answer to a Byzantine call drive. -/
 
 /-- The section of `gPull` that answers the interface label `l` over the
@@ -1061,13 +1005,13 @@ theorem weakLStep_liftedSpecG (P : Params) (r : ℕ) {s s' : GBCA.SpecState P.n}
 
 /-! ### One state, two presentations
 
-The stage records and the fabric are the two factors of `GBCA.ImplState`
-(`ABA/GBCAImpl.lean`), so the subsystem and the round instance run on the same
-state and every rule of the one is a rule of the other read in the instance's
-accessors. What the joint steps deliver, though, is a program function pinned
-pointwise — its value at the acting process, and its agreement with the old one
-elsewhere — where the instance's rules write with `Function.update`. The lemmas
-here close that gap. -/
+The stage records and the fabric are the two components of `GBCA.ImplState`
+(`ABA/GBCAImpl.lean`), so the round instance and the implementation instance
+run on the same state and every rule of the one is a rule of the other read in
+the implementation's accessors. What the joint steps deliver, though, is a
+program function pinned pointwise — its value at the acting process, and its
+agreement with the old one elsewhere — where the implementation's rules write
+with `Function.update`. The lemmas here close that gap. -/
 
 section Frame
 
@@ -1116,14 +1060,14 @@ theorem sub_gpool {k : Fin P.n} {m : GBCA.Msg} :
     ((u, w.gpool k m) : GBCA.ImplState P.n)
       = GBCA.ImplState.mcast (u, w) k m := rfl
 
-/-- Corruption is the fabric's own write, which is the instance's (D1). -/
+/-- Corruption is the fabric's own write, which is the implementation's (D1). -/
 theorem sub_corrupt (k : Fin P.n) :
     ((u, w.corrupt P k) : GBCA.ImplState P.n)
       = GBCA.ImplState.corrupt P k (u, w) := rfl
 
 end Frame
 
-/-! ### Reading a subsystem transition backwards
+/-! ### Reading an instance transition backwards
 
 Two inversions of the composition, the counterparts of `subPre_event_step` /
 `subPre_lab_step` / `subPre_tau_net`: on a visible label of the internal
@@ -1173,7 +1117,7 @@ theorem subPre_tau_inv {P : Params} {r : ℕ}
 /-! ### The fabric's rules read off a round-tagged label
 
 The fabric has a row only for its own round: a handshake label of another round
-carries no transition of the subsystem at all. These readers therefore return
+carries no transition of the instance at all. These readers therefore return
 the round equation together with the fabric's move. -/
 
 section NetRound
@@ -1251,14 +1195,14 @@ theorem netG_byzRetW_dead {r' : ℕ} {k : Fin P.n} {b : Bool}
 
 end NetRound
 
-/-! ### The subsystem projects onto the round instance
+/-! ### The round instance projects onto the implementation
 
-Every rule of the subsystem is one rule of the round-`r` instance at the same
-state, and the correspondence is strong — one step answers one step, at the
-specification label the interface label projects to, with no stuttering
+Every rule of the round instance is one rule of the round-`r` implementation at
+the same state, and the correspondence is strong — one step answers one step,
+at the specification label the interface label projects to, with no stuttering
 anywhere:
 
-| subsystem | round instance |
+| round instance | implementation |
 | --- | --- |
 | `callG` (caller writes, fabric pools) | `ImplStep.call` |
 | `gcallLoop`, `byzCallGLoop` | `ImplStep.callLoop` |
@@ -1279,7 +1223,7 @@ theorem sub_projects (P : Params) (r : ℕ) :
         (GBCA.implInst P r).step σ l₀ μ := by
   rintro ⟨u, w⟩ l μ hstep
   rcases (sub_step_iff P r (u, w) l μ).mp hstep with ⟨rfl, e, hev⟩ | hlab
-  · -- a hidden rendezvous: an internal step of the instance
+  · -- a hidden rendezvous: an internal step of the implementation
     obtain ⟨x, w', rfl, hall, hn⟩ := subPre_joint_inv (by simp) hev
     refine ⟨Lab.tau, rfl, ?_⟩
     cases e with
@@ -1442,23 +1386,24 @@ theorem sub_projects (P : Params) (r : ℕ) :
             rw [sub_setProc (pure_inj hx) hfor]
             exact GBCA.ImplStep.retC _ k hcnt hval hret
 
-/-! ### The round subsystem is refined by the graded agreement specification
+/-! ### The round instance is refined by the graded agreement specification
 
-The subsystem's answer to a step is the round instance's answer, read through
-the per-instance refinement (`GBCA.implRefines`, `ABA/GBCASim.lean`): the first
-leg is strong and functional, so nothing of that refinement is reproved here. The specification's
-weak answer is finally lifted to the subsystem's interface along a section of
-`gPull` — which is where a Byzantine drive is answered by the specification's
-own call or return row (D11). -/
+The round instance's answer to a step is the implementation's answer, read
+through the per-instance refinement (`GBCA.implRefines`, `ABA/GBCASim.lean`):
+the first leg is strong and functional, so nothing of that refinement is
+reproved here. The specification's weak answer is finally lifted to the round
+instance's interface along a section of `gPull` — which is where a Byzantine
+drive is answered by the specification's own call or return row (D11). -/
 
-/-- **The simulation relation of the round subsystem**: the instance relation,
-which the shared state lets it be verbatim. -/
+/-- **The simulation relation of the round instance**: the relation
+`GBCA.instRel` of the implementation, which the shared state lets it be
+verbatim. -/
 def Rsub (P : Params) (r : ℕ) (σ : GBCA.ImplState P.n) (s : GBCA.SpecState P.n) : Prop :=
   GBCA.instRel P r σ s
 
-/-- **The per-round subsystem simulation**: the round-`r` subsystem is forward
+/-- **The per-round instance simulation**: the round-`r` instance is forward
 simulated by the round-`r` graded agreement specification, read over the
-subsystem's interface. -/
+instance's interface. -/
 theorem subSim (P : Params) (r : ℕ) :
     ForwardSimulation (sub P r) (liftedSpecG P r) (Rsub P r) := by
   constructor
@@ -1480,8 +1425,8 @@ theorem subSim (P : Params) (r : ℕ) :
 
 The two side conditions of `ForwardSimulation.family` for the round-indexed
 family: the relation holds at the initial states, and it survives the broadcast
-corruption. Both are the round instance's own facts, which the shared state
-lets stand verbatim. -/
+corruption. Both are the implementation instance's own facts, which the shared
+state lets stand verbatim. -/
 
 /-- The broadcast corruption act on a specification state, over the extended
 alphabet: `GBCA.failAct` taken on the extended `fail` label. -/
@@ -1489,15 +1434,15 @@ def gActSpec (P : Params) : NLab P.n → GBCA.SpecState P.n → GBCA.SpecState P
   | Sum.inl (.fail k), s => s.corrupt P k
   | _, s => s
 
-/-- The initial states of the subsystem and of its specification are
+/-- The initial states of the instance and of its specification are
 related. -/
 theorem subSim_init (P : Params) (r : ℕ) :
     Rsub P r (sub P r).init (GBCA.specInst P r).init :=
   GBCA.instRel_init P r
 
-/-- **Broadcast compatibility**: corruption preserves the subsystem relation.
-The fabric's corrupted set is the instance's, so the two guards
-`k ∉ F ∧ |F| < f` agree and the instance-level statement
+/-- **Broadcast compatibility**: corruption preserves the instance relation.
+The fabric's corrupted set is the implementation's, so the two guards
+`k ∉ F ∧ |F| < f` agree and the implementation-level statement
 (`GBCA.instRel_corrupt`) applies verbatim (D1). -/
 theorem subSim_failAct (P : Params) :
     ∀ l : NLab P.n, isFailN l → ∀ (r : ℕ) (σ : GBCA.ImplState P.n)

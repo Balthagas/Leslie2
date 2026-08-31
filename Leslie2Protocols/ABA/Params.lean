@@ -113,9 +113,6 @@ noncomputable def wccPMF (P : Params) : PMF CoinOutcome :=
     P.wccPMF .dead = P.δ := by
   simp [wccPMF, wccMass]
 
-/-- `n` is positive (from `3f < n`). -/
-theorem n_pos (P : Params) : 0 < P.n := lt_of_le_of_lt (Nat.zero_le _) P.hf
-
 /-- The quorum size `n - f` exceeds `f`: any `n - f` processes contain a
 correct one even after removing `f` corrupted ones. -/
 theorem f_lt_n_sub_f (P : Params) : P.f < P.n - P.f := by

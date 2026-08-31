@@ -2,7 +2,7 @@
   \label{def:aba-hybrid}
   \lean{PLTS.ABA.HybridState}\lean{PLTS.ABA.hybridPre}\lean{PLTS.ABA.hybrid}\leanok
   \uses{def:aba-composed, def:aba-gbcasub, def:aba-gbca-spec, def:idle-family, def:relabel, def:process-algebra}
-  The composed system of Definition~\ref{def:aba-composed} with its graded-agreement factor replaced by the family $\mathrm{specSide}(P)$ of round specifications, the other three factors and the whole pipeline unchanged:
+  The composed system of Definition~\ref{def:aba-composed} with its graded-agreement component replaced by the family $\mathrm{specSide}(P)$ of round specifications, the other three components and the whole pipeline unchanged:
   \[
     \mathrm{hybridPre}(P) \;=\;
       \mathrm{specSide}(P) \parallel \bigl(\mathrm{syncProduct}_{j}\ \mathrm{coreProcN}(P,j)

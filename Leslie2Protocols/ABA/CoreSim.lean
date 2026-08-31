@@ -82,9 +82,10 @@ theorem ABAState.corrupt_F_subset {P : Params} (c : ABAState P) (id : Fin P.n) :
 theorem SpecState.corrupt_input {P : Params} (id : Fin P.n) (s : SpecState P.n) :
     (s.corrupt P id).input = s.input := by unfold SpecState.corrupt; split <;> rfl
 
-/-- The outcome of a visible row collapses to a single Dirac: the specification side stands,
-the ABA-side pair lands on one state and the coin oracle stands, so the four factors' joint
-outcome is the point mass `dirac_step` expects. -/
+/-- The outcome of a visible row collapses to a single Dirac: the specification
+side stands, the ABA-side pair lands on one state and the coin oracle stands,
+so the four components' joint outcome is the point mass `dirac_step`
+expects. -/
 private theorem prodPMF_pure_abaRow {P : Params} (G : ℕ → GBCA.SpecState P.n)
     (c : ABAState P) (o : ℕ → WCC.SpecState P.n) :
     prodPMF (PMF.pure G) ((PMF.pure c).map fun x => (x.1, x.2, o))

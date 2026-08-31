@@ -38,7 +38,7 @@ variable {P : Params}
 /-! ### Stage A: step inversion for `hybrid`
 
 Each lemma reads a transition of the protocol-shaped specification back into
-the rows of its four factors, delivering the ABA-side content in the view's own
+the rows of its four components, delivering the ABA-side content in the view's own
 coordinates: the pair `(C, A)` of the round loops beside the ABA-side network,
 read through `ABAState`'s accessors. -/
 
@@ -169,7 +169,7 @@ theorem hybrid_step_retABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
     exact h
 
 /-- `hybrid` inversion, `fail`: a genuine synchronisation of all four
-factors. Corruption is the round loops' one blind spot (D1): the round
+components. Corruption is the round loops' one blind spot (D1): the round
 specifications and the coin oracle each corrupt their own copy of `F`, the
 ABA-side network corrupts the view's, and the round loops stand still. -/
 theorem hybrid_step_fail (P : Params) (G : ℕ → GBCA.SpecState P.n)

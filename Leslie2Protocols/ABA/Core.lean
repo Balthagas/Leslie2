@@ -4,7 +4,6 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2.Systems.LTS
 import Leslie2Protocols.ABA.Labels
 
 /-!
@@ -41,11 +40,11 @@ labels, advancing the process's `phase` and recording the returned data, while
 the sub-protocol state itself lives in the round specifications and the coin
 oracle — and no network state: the DECIDED pools and the corrupted set belong
 to the network. The transitions themselves are `CoreProcStepN`
-(`ABA/Components.lean`), the rows of a round-loop node `CoreRec` over the
+(`ABA/Components.lean`), the rows of a round-loop record `CoreRec` over the
 extended alphabet, and `Net.ABAProcStepN` (`ABA/Protocol.lean`), the rows of
 the protocol program that carries a round loop beside the graded-agreement
-stage record of the round it is in. This file realises the Core-side assumptions of
-`DESIGN-CoreSim.md`: the phase machine (invariant conjunct 4), the DECIDED
+stage record of the round it is in. This file realises the Core-side
+assumptions of `DESIGN-CoreSim.md`: the phase machine (invariant conjunct 4), the DECIDED
 diffusion state (conjunct 6), and input coherence (conjunct 5 — the honest
 `callG` guard ties the emitted bit to the current estimate).
 
@@ -174,7 +173,7 @@ end ProcCore
 
 A process's control record is not by itself what the composition moves: a
 round loop also holds the DECIDED payloads delivered to it. The record below
-pairs the two, and is one factor of the ABA-side state the core simulation
+pairs the two, and is one component of the ABA-side state the core simulation
 reads (`ABA/ABAState.lean`). -/
 
 /-- The round-loop record of one process: its own control record and the

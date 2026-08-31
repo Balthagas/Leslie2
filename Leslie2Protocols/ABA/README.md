@@ -14,19 +14,19 @@ protocol  ⊑  composed  ⊑  hybrid  ⊑  ABA.spec
 
 - `protocol` — the protocol as it runs: `n` corruption-blind programs beside the network
   adversary, which owns the message pools and the corrupted set, and the coin oracle,
-  the only factor whose transitions are not Dirac. A program holds its round loop and one
+  the only component whose transitions are not Dirac. A program holds its round loop and one
   graded-agreement stage record, that of the round the loop is in, which the round advance
   resets (D20).
 - `composed` — the same protocol read as a composition of components: the round
-  subsystems, the `n` round loops, the ABA-side network holding the DECIDED pools, and the
+  instances, the `n` round loops, the ABA-side network holding the DECIDED pools, and the
   coin oracle. `protocolSim` carries `protocol` into it along the Dirac lift of
   `ProtocolRel`, and `protocol_composed` is the inclusion it yields. The link is
-  one-directional: a composed state holds one graded-agreement subsystem per round at every
-  moment, where a process node of the protocol holds the stage record of the round it is in
+  one-directional: a composed state holds one graded-agreement instance per round at every
+  moment, where a process record of the protocol holds the stage record of the round it is in
   and nothing else (D20), so the retained per-round memory is specification-side state. This
   is where the chain passes from implementation to specification.
-- `hybrid` — each round's subsystem replaced by the graded agreement specification
-  (`substSim`), the other three factors untouched. This is what the core simulation runs on.
+- `hybrid` — each round's instance replaced by the graded agreement specification
+  (`substSim`), the other three components untouched. This is what the core simulation runs on.
 - `ABA.spec` — the single-automaton reading of agreement, reached by `coreSim`.
 
 Components talk only through synchronized labels, and no component reads another's state.
@@ -55,33 +55,33 @@ the file is. The order is the dependency order.
 
 | file | lines | what it is |
 |---|---|---|
-| `Params.lean` | 127 | The parameters `P` — `n`, `f` with `n > 3f`, and the coin distribution `wccPMF` with its ε/δ bounds. |
-| `Labels.lean` | 146 | The shared label alphabet `Lab n`: the visible API, the hidden sub-protocol handshakes, `τ`. |
+| `Params.lean` | 124 | The parameters `P` — `n`, `f` with `n > 3f`, and the coin distribution `wccPMF` with its ε/δ bounds. |
+| `Labels.lean` | 141 | The shared label alphabet `Lab n`: the visible API, the hidden sub-protocol handshakes, `τ`. |
 | `Spec.lean` | 263 | **The top-level ABA specification**, the system all safety is measured against. Ten rules over `SpecState`. |
 | `WCCSpec.lean` | 131 | The weak common coin specification, per round. Held at specification level by design. |
 | `GBCASpec.lean` | 267 | The graded binding crusader agreement specification, per round. Binding is negative (D19). |
 | `SpecSafety.lean` | 929 | `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. The trace predicates live here. |
-| `GBCASafety.lean` | 598 | Binding, graded agreement and Validity's safety half for the GBCA specification instance. |
-| `GBCAImpl.lean` | 707 | **The GBCA implementation**, ABDY22's Algorithm 6 in full (D18). Its state is the stage records beside the round's fabric. |
-| `GBCASim.lean` | 1830 | The per-instance refinement `implRefines`, by kill-on-demand: `dead` carried as a receipt-pattern certificate; and the broadcast compatibility of its relation with the `fail` act (`instRel_corrupt`), which the family lifting consumes. |
-| `Core.lean` | 225 | **The ABA round loop**, per process and nothing else: the phase machine, the control record, the round-loop node. |
-| `Components.lean` | 864 | The extended alphabet `NLab n`, the coin oracle read along its label pullback, the round loop of one process, and the ABA-side network — the pieces the two compositions are built from. |
-| `ABAState.lean` | 331 | The ABA-side state as one object: the round-loop nodes beside the DECIDED network, with the accessors the invariant is stated in. |
-| `Protocol.lean` | 1371 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, and the pipeline that composes them beside the coin oracle. |
-| `GBCAInstances.lean` | 1605 | **The round's graded-agreement subsystem** and the licence to replace it, `subSim`. |
-| `Hybrid.lean` | 729 | **`composed`**, **`substSim`**: the same protocol read as four factors, one round subsystem per round retained at every moment, and that graded-agreement factor then replaced by its specification under the four congruences. |
-| `CoreSimRel.lean` | 700 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
+| `GBCASafety.lean` | 590 | Binding, graded agreement and Validity's safety half for the GBCA specification instance. |
+| `GBCAImpl.lean` | 702 | **The GBCA implementation**, ABDY22's Algorithm 6 in full (D18). Its state is the stage records beside the round's fabric. |
+| `GBCASim.lean` | 1808 | The per-instance refinement `implRefines`, by kill-on-demand: `dead` carried as a receipt-pattern certificate; and the broadcast compatibility of its relation with the `fail` act (`instRel_corrupt`), which the family lifting consumes. |
+| `Core.lean` | 224 | **The ABA round loop**, per process and nothing else: the phase machine, the control record, the round-loop record. |
+| `Components.lean` | 838 | The extended alphabet `NLab n`, the coin oracle read along its label pullback, the round loop of one process, and the ABA-side network — the pieces the two compositions are built from. |
+| `ABAState.lean` | 327 | The ABA-side state as one object: the round-loop records beside the DECIDED network, with the accessors the invariant is stated in. |
+| `Protocol.lean` | 1191 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, and the pipeline that composes them beside the coin oracle. |
+| `GBCAInstances.lean` | 1550 | **The round's graded-agreement instance** and the licence to replace it, `subSim`. |
+| `Hybrid.lean` | 728 | **`composed`**, **`substSim`**: the same protocol read as four components, one round instance per round retained at every moment, and that graded-agreement component then replaced by its specification under the four congruences. |
+| `CoreSimRel.lean` | 679 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
 | `CoreSimInv.lean` | 3809 | Step inversion for `hybrid`, then preservation of `Inv` across every row. The bulk of the proof text. |
 | `CoreSimAbs.lean` | 336 | `Abs` preservation for the stutter rows, and the assembly `Inv.step`. |
 | `CoreSimBurst.lean` | 187 | The abstract-twin burst kit: how the twin catches up in one weak step. |
-| `CoreSim.lean` | 698 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
-| `ProtocolSim.lean` | 1087 | **`protocolSim`**, **`protocol_composed`**: the protocol carried into the composed reading along `ProtocolRel`. |
+| `CoreSim.lean` | 699 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
+| `ProtocolSim.lean` | 1088 | **`protocolSim`**, **`protocol_composed`**: the protocol carried into the composed reading along `ProtocolRel`. |
 | `Results.lean` | 209 | The deliverables, gathered so every citable statement is in one file. Twelve `#guard_msgs` axiom firewalls. |
 | `NonVacuity.lean` | 623 | A concrete 21-step run of `hybrid P4` to a `retABA` decision, so the simulation about it is not vacuous. |
 
 The pieces both compositions are built from are in `Components.lean`. `Protocol.lean` and
 `GBCAInstances.lean` each import it and neither imports the other, so the two readings of
-the protocol are assembled independently over one set of factors. The specification side —
+the protocol are assembled independently over one set of components. The specification side —
 `GBCAInstances.lean`, `Hybrid.lean` and the core simulation above them — never imports
 `Protocol.lean`; the protocol enters only at `ProtocolSim.lean`, which is where the two
 readings meet, and `Results.lean` reaches it through that file.

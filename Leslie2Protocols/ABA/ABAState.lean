@@ -9,11 +9,11 @@ import Leslie2Protocols.ABA.Components
 /-!
 # The ABA-side state of the composed reading
 
-The round-loop nodes beside the ABA-side network, read as one object.
+The round-loop records beside the ABA-side network, read as one object.
 
 `ABAState` is the pair `(∀ j, CoreRec) × ANetState`. Its accessors gather the
-data the two factors hold apart: `procs` reads each node's control record,
-`decidedRecv` each node's receipts, and `decidedSent` and `F` the network's
+data the two components hold apart: `procs` reads each process's control
+record, `decidedRecv` its receipts, and `decidedSent` and `F` the network's
 sent pools and corrupted set. The invariant of the core simulation is stated
 through these accessors, so it reads the composed state without a change of
 system.
@@ -26,7 +26,7 @@ open Net Comp
 
 variable {P : Params}
 
-/-- **The ABA-side state**: the `n` round-loop nodes beside the ABA-side
+/-- **The ABA-side state**: the `n` round-loop records beside the ABA-side
 network. -/
 abbrev ABAState (P : Params) : Type :=
   (∀ _ : Fin P.n, CoreRec P.n) × ANetState P.n
@@ -66,7 +66,7 @@ nobody corrupted. -/
 def initial (P : Params) : ABAState P :=
   (fun _ => CoreRec.initial P.n, ANetState.initial P.n)
 
-/-! The two factors' own initial states project componentwise, so unfolding
+/-! The two components' own initial states project componentwise, so unfolding
 `initial` leaves no residue. -/
 
 @[simp] theorem _root_.PLTS.ABA.CoreRec.initial_proc (n : ℕ) :
@@ -90,10 +90,6 @@ def initial (P : Params) : ABAState P :=
 receiver `id`. -/
 def decidedCount (s : ABAState P) (id : Fin P.n) (b : Bool) : ℕ :=
   (Finset.univ.filter (fun j => b ∈ s.decidedRecv id j)).card
-
-/-- The receiver's own count is the round-loop node's. -/
-theorem decidedCount_node (s : ABAState P) (id : Fin P.n) (b : Bool) :
-    s.decidedCount id b = (s.1 id).decidedCount b := rfl
 
 @[simp] theorem initial_decidedCount (id : Fin P.n) (b : Bool) :
     (initial P).decidedCount id b = 0 := by
@@ -169,7 +165,7 @@ theorem mem_sendDecided_decidedSent_iff (s : ABAState P) (id : Fin P.n) (b : Boo
   · simp [sendDecided_decidedSent, hk]
 
 /-- The adversary delivers `⟨DECIDED, b⟩` from sender `j` to receiver `i`:
-the receiver's node files `b` under `j` (per-(receiver, sender, bit),
+the receiver's record files `b` under `j` (per-(receiver, sender, bit),
 deviation D12′). -/
 def deliverDecided (s : ABAState P) (i j : Fin P.n) (b : Bool) : ABAState P :=
   (Function.update s.1 i ((s.1 i).recvDec j b), s.2)
@@ -317,7 +313,7 @@ def corrupt (P : Params) (id : Fin P.n) (s : ABAState P) : ABAState P :=
     (s.corrupt P id).decidedCount i b = s.decidedCount i b := rfl
 
 /-- The corrupted set after a corruption. `F` is the one field corruption
-writes, and the budget guard sits in the network factor, so the reading is
+writes, and the budget guard sits in the network component, so the reading is
 stated here rather than reached by unfolding. Not a simp lemma: it introduces
 an `ite`. -/
 theorem corrupt_F (P : Params) (id : Fin P.n) (s : ABAState P) :

@@ -43,11 +43,11 @@ open Net Comp
 
 variable {P : Params}
 
-/-- The ABA-side factors of a protocol-shaped state, read as one state: the
+/-- The ABA-side components of a protocol-shaped state, read as one state: the
 round loops beside the network they share. -/
 abbrev HybridState.aba (s : HybridState P) : ABAState P := (s.2.1, s.2.2.1)
 
-/-- The coin oracle's factor. -/
+/-- The coin oracle's component. -/
 abbrev HybridState.wcc (s : HybridState P) : ℕ → WCC.SpecState P.n := s.2.2.2
 
 /-- The last-bound-round reading of a family: round `r`'s exclusion set is non-empty
@@ -581,27 +581,6 @@ theorem Inv.c_chain_of_both_supports {P : Params} {g : ℕ → GBCA.SpecState P.
       ((hI.F_g (r + 1)) ▸ hidFF) (Or.inl hcallT) (Or.inl hcallF) with h | h
   · exact absurd h (by simp)
   · exact h
-
-/-- **No `A`-lock below both-bit support.** An `A`-lock at `r₀ < r` commits every honest
-round-`r` caller to `b₀` (`a_commit`), so `f + 1` F-blind support for *each* bit at round `r`
-— which produces honest callers of both bits — is impossible. -/
-theorem Inv.no_alock_below_both_supports {P : Params} {g : ℕ → GBCA.SpecState P.n}
-    {c : ABAState P} {w : ℕ → WCC.SpecState P.n} (hI : Inv P g c w) (r : ℕ)
-    (hwT : P.f + 1 ≤ (Finset.univ.filter
-      (fun id' => (g r).call id' = some true ∨ id' ∈ (g r).F)).card)
-    (hwF : P.f + 1 ≤ (Finset.univ.filter
-      (fun id' => (g r).call id' = some false ∨ id' ∈ (g r).F)).card)
-    (r₀ : ℕ) (b₀ : Bool) (hlt : r₀ < r)
-    (hg₀ : (g r₀).grade = some true)
-    (hb₀ : (!b₀) ∈ (g r₀).dead ∧ b₀ ∉ (g r₀).dead) : False := by
-  obtain ⟨-, h2, -⟩ := hI.a_commit r₀ b₀ hg₀ hb₀
-  obtain ⟨idT, hidTF, hcallT⟩ :=
-    GBCA.exists_honest_caller hwT (by rw [hI.F_g r]; exact hI.F_card)
-  obtain ⟨idF, hidFF, hcallF⟩ :=
-    GBCA.exists_honest_caller hwF (by rw [hI.F_g r]; exact hI.F_card)
-  have eT := h2 r idT true hlt ((hI.F_g r) ▸ hidTF) hcallT
-  have eF := h2 r idF false hlt ((hI.F_g r) ▸ hidFF) hcallF
-  rw [← eT] at eF; simp at eF
 
 /-- **An agreeing coin blocks the next round's `C`-lock.** Once round `r`'s coin has resolved
 to `.bit v` and `!v` is not round `r`'s surviving bit, `call_prov` pins every honest
