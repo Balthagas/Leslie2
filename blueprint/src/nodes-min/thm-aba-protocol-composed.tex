@@ -1,0 +1,11 @@
+\begin{theorem}[The protocol under its composed reading]
+  \label{thm:aba-protocol-composed}
+  \lean{PLTS.ABA.ProtocolState}\lean{PLTS.ABA.ProtocolRel}\lean{PLTS.ABA.protocolRel_mk}\lean{PLTS.ABA.protocolRel_init}\lean{PLTS.ABA.protocolSim}\lean{PLTS.ABA.protocol_composed}\leanok
+  \uses{def:aba-composed, def:aba-procnet, def:aba-netadv, def:aba-protocol, def:forwardsim, def:pmfrel, def:achievable, thm:forward-sound}
+  The protocol is forward-simulated by its composed reading along the Dirac lift of $\mathrm{ProtocolRel}(P)$, the relation that pins of a composed state everything a state of the protocol determines and leaves the stage records of the rounds a process has left free (D20), and hence $\operatorname{ATD}(\mathrm{protocol}(P)) \subseteq \operatorname{ATD}(\mathrm{composed}(P))$: \leandecl{PLTS.ABA.protocolSim}, \leandecl{PLTS.ABA.protocol_composed}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-composed, def:aba-procnet, def:aba-netadv, def:aba-protocol, def:forwardsim, def:pmfrel, def:achievable, thm:forward-sound}
+  See the Lean proof of \leandecl{PLTS.ABA.protocolSim}, then soundness (Theorem~\ref{thm:forward-sound}).
+\end{proof}

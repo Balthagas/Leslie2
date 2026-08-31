@@ -4,18 +4,18 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.LayeredSpec
-import Leslie2Protocols.ABA.CoreView
+import Leslie2Protocols.ABA.Hybrid
+import Leslie2Protocols.ABA.ABAState
 
 /-!
-# Non-vacuity witnesses for the deployment-shaped specification
+# Non-vacuity witnesses for the protocol-shaped specification
 
-Machine-checked evidence that the composed system `layeredSpec P` can actually
+Machine-checked evidence that the composed system `hybrid P` can actually
 execute a nontrivial prefix: the core simulation `ABA.coreSim` about it is not
 vacuously true through an immediate deadlock.
 
 We fix the small parameter set `P4` (`n = 4`, `f = 1`, `ε = 1/2`) and exhibit a
-concrete **21-step run of `layeredSpec P4` that reaches a genuine `retABA`** — a
+concrete **21-step run of `hybrid P4` that reaches a genuine `retABA`** — a
 complete decision — starting from its initial state:
 
 * `step_callABA₀/₁/₂` — three external input handshakes (`callABA`, *visible*:
@@ -50,7 +50,7 @@ times one `ε` factor. Every guard on these closed numeric states discharges by
 `prodPMF_pure_pure` and `PMF.pure_map`, and the flip's branch mass through
 `prodPMF_pure_left_apply` and `map_apply_inj`.
 
-The ABA-side factors are named through the view of `ABA/CoreView.lean`: a state
+The ABA-side factors are named through the view of `ABA/ABAState.lean`: a state
 of the run is a triple — the round specifications, one `ABAState` holding the
 round loops beside the ABA-side network, and the coin oracle — assembled into
 the four-factor state by `st`.
@@ -59,7 +59,7 @@ the four-factor state by `st`.
 namespace PLTS
 namespace ABA
 
-open Net Layer
+open Net Comp
 
 /-- A concrete parameter set: four processes, corruption budget one, and a
 never-failing `ε = 1/2` coin, so that each bit outcome carries positive mass
@@ -69,18 +69,20 @@ outcome and the failure outcome then both have mass `0`. -/
 noncomputable abbrev P4 : Params := ⟨4, 1, by omega, 1 / 2, 0, by
   rw [add_zero, one_div, ENNReal.mul_inv_cancel] <;> simp⟩
 
+namespace NonVacuity
+
 /-! ### Assembling and moving the four factors -/
 
-/-- A state of the deployment-shaped specification, assembled from the round
+/-- A state of the protocol-shaped specification, assembled from the round
 specifications, the ABA-side pair and the coin oracle. -/
 def st (G : ℕ → GBCA.SpecState 4) (s : ABAState P4) (o : ℕ → WCC.SpecState 4) :
-    LayeredSpecState P4 := (G, s.1, s.2, o)
+    HybridState P4 := (G, s.1, s.2, o)
 
 /-- The round loops on a label one of them owns: the addressed loop takes its
 row, the others stand still, and the group's successor is the pointwise
 update. -/
-theorem coreLoops_at {C : ∀ _ : Fin 4, CoreNodeN 4} (id : Fin 4) {L : NLab 4}
-    {c' : CoreNodeN 4} (hown : CoreProcStepN P4 id (C id) L (PMF.pure c'))
+theorem coreLoops_at {C : ∀ _ : Fin 4, CoreRec 4} (id : Fin 4) {L : NLab 4}
+    {c' : CoreRec 4} (hown : CoreProcStepN P4 id (C id) L (PMF.pure c'))
     (hidle : ∀ j, j ≠ id → CoreProcStepN P4 j (C j) L (PMF.pure (C j))) (i : Fin 4) :
     CoreProcStepN P4 i (C i) L (PMF.pure (Function.update C id c' i)) := by
   by_cases h : i = id
@@ -216,8 +218,8 @@ noncomputable def Gf : ℕ → GBCA.SpecState 4 := fun r => (G0 r).corrupt P4 (0
 noncomputable def Wf : ℕ → WCC.SpecState 4 := fun r => (W0 r).corrupt P4 (0 : Fin 4)
 noncomputable def Sf : ABAState P4 := ABAState.corrupt P4 (0 : Fin 4) S0
 
-/-- The initial deployment-shaped state is `(G0, S0, W0)`. -/
-theorem layeredSpec_init : (layeredSpec P4).init = st G0 S0 W0 := rfl
+/-- The initial protocol-shaped state is `(G0, S0, W0)`. -/
+theorem hybrid_init : (hybrid P4).init = st G0 S0 W0 := rfl
 
 /-! ### Step 1–3: the external input handshakes (`callABA`, visible) -/
 
@@ -225,10 +227,10 @@ theorem layeredSpec_init : (layeredSpec P4).init = st G0 S0 W0 := rfl
 `0`'s round loop takes `input`, the other three and the remaining factors
 idle. -/
 theorem step_callABA₀ :
-    (layeredSpec P4).step (st G0 S0 W0) (Lab.callABA (0 : Fin 4) true)
+    (hybrid P4).step (st G0 S0 W0) (Lab.callABA (0 : Fin 4) true)
       (PMF.pure (st G0 S1 W0)) := by
-  refine layeredSpec_vis P4 (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S0.1) (A := S0.2) (o := W0)
+  refine hybrid_vis P4 (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := G0) (C := S0.1) (A := S0.2) (o := W0)
     (L := Sum.inl (Lab.callABA (0 : Fin 4) true)) (by simp)
     (specSide_idle P4 G0 (by simp) rfl not_false)
     (coreLoops_at 0 (CoreProcStepN.input (P := P4) (S0.1 0) true rfl)
@@ -240,10 +242,10 @@ theorem step_callABA₀ :
 
 /-- Second input: process `1`. -/
 theorem step_callABA₁ :
-    (layeredSpec P4).step (st G0 S1 W0) (Lab.callABA (1 : Fin 4) true)
+    (hybrid P4).step (st G0 S1 W0) (Lab.callABA (1 : Fin 4) true)
       (PMF.pure (st G0 S2 W0)) := by
-  refine layeredSpec_vis P4 (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S1.1) (A := S1.2) (o := W0)
+  refine hybrid_vis P4 (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := G0) (C := S1.1) (A := S1.2) (o := W0)
     (L := Sum.inl (Lab.callABA (1 : Fin 4) true)) (by simp)
     (specSide_idle P4 G0 (by simp) rfl not_false)
     (coreLoops_at 1 (CoreProcStepN.input (P := P4) (S1.1 1) true (by decide))
@@ -255,10 +257,10 @@ theorem step_callABA₁ :
 
 /-- Third input: process `2`. -/
 theorem step_callABA₂ :
-    (layeredSpec P4).step (st G0 S2 W0) (Lab.callABA (2 : Fin 4) true)
+    (hybrid P4).step (st G0 S2 W0) (Lab.callABA (2 : Fin 4) true)
       (PMF.pure (st G0 S3 W0)) := by
-  refine layeredSpec_vis P4 (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S2.1) (A := S2.2) (o := W0)
+  refine hybrid_vis P4 (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := G0) (C := S2.1) (A := S2.2) (o := W0)
     (L := Sum.inl (Lab.callABA (2 : Fin 4) true)) (by simp)
     (specSide_idle P4 G0 (by simp) rfl not_false)
     (coreLoops_at 2 (CoreProcStepN.input (P := P4) (S2.1 2) true (by decide))
@@ -273,9 +275,9 @@ theorem step_callABA₂ :
 /-- First graded-agreement call: process `0`'s round loop hands over its
 estimate and the round-`0` specification takes its owned `call`. -/
 theorem step_callG₀ :
-    (layeredSpec P4).step (st G0 S3 W0) Lab.tau (PMF.pure (st G1 Sc1 W0)) := by
-  refine layeredSpec_hidden P4 (l := Lab.callG 0 (0 : Fin 4) true) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S3.1) (A := S3.2) (o := W0)
+    (hybrid P4).step (st G0 S3 W0) Lab.tau (PMF.pure (st G1 Sc1 W0)) := by
+  refine hybrid_hidden P4 (l := Lab.callG 0 (0 : Fin 4) true) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := G0) (C := S3.1) (A := S3.2) (o := W0)
     (L := Sum.inl (Lab.callG 0 (0 : Fin 4) true)) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G0 0) 0 true rfl))
     (coreLoops_at 0 (CoreProcStepN.callG (P := P4) (S3.1 0) 0 true (by decide) (by decide)
@@ -288,9 +290,9 @@ theorem step_callG₀ :
 
 /-- Second graded-agreement call: process `1`. -/
 theorem step_callG₁ :
-    (layeredSpec P4).step (st G1 Sc1 W0) Lab.tau (PMF.pure (st G2 Sc2 W0)) := by
-  refine layeredSpec_hidden P4 (l := Lab.callG 0 (1 : Fin 4) true) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := G1) (C := Sc1.1) (A := Sc1.2) (o := W0)
+    (hybrid P4).step (st G1 Sc1 W0) Lab.tau (PMF.pure (st G2 Sc2 W0)) := by
+  refine hybrid_hidden P4 (l := Lab.callG 0 (1 : Fin 4) true) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := G1) (C := Sc1.1) (A := Sc1.2) (o := W0)
     (L := Sum.inl (Lab.callG 0 (1 : Fin 4) true)) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G1 0) 1 true (by decide)))
     (coreLoops_at 1 (CoreProcStepN.callG (P := P4) (Sc1.1 1) 0 true (by decide) (by decide)
@@ -304,9 +306,9 @@ theorem step_callG₁ :
 /-- Third graded-agreement call: process `2`. The round-`0` specification now
 holds three inputs. -/
 theorem step_callG₂ :
-    (layeredSpec P4).step (st G2 Sc2 W0) Lab.tau (PMF.pure (st G3 Sc3 W0)) := by
-  refine layeredSpec_hidden P4 (l := Lab.callG 0 (2 : Fin 4) true) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := G2) (C := Sc2.1) (A := Sc2.2) (o := W0)
+    (hybrid P4).step (st G2 Sc2 W0) Lab.tau (PMF.pure (st G3 Sc3 W0)) := by
+  refine hybrid_hidden P4 (l := Lab.callG 0 (2 : Fin 4) true) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := G2) (C := Sc2.1) (A := Sc2.2) (o := W0)
     (L := Sum.inl (Lab.callG 0 (2 : Fin 4) true)) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G2 0) 2 true (by decide)))
     (coreLoops_at 2 (CoreProcStepN.callG (P := P4) (Sc2.1 2) 0 true (by decide) (by decide)
@@ -325,9 +327,9 @@ is met, so `bindUnset` kills the bit `false` (the three callers of `true` supply
 the `f + 1` support for the surviving bit). This is a family `τ`, interleaved on
 the specification side while the other three factors hold. -/
 theorem step_bindUnset :
-    (layeredSpec P4).step (st G3 Sc3 W0) Lab.tau (PMF.pure (st Gb Sc3 W0)) := by
-  refine layeredSpec_vis P4 (by simp) ?_
-  exact layeredSpecPre_tau_spec P4 (specSide_tau P4
+    (hybrid P4).step (st G3 Sc3 W0) Lab.tau (PMF.pure (st Gb Sc3 W0)) := by
+  refine hybrid_vis P4 (by simp) ?_
+  exact hybridPre_tau_spec P4 (specSide_tau P4
     (GBCA.Step.bindUnset (P := P4) (r := 0) (G3 0) false
       (by unfold GBCA.SpecState.quorum; decide) (by decide) (by decide)))
 
@@ -337,9 +339,9 @@ theorem step_bindUnset :
 specification locks the grade and records the return, the round loop adopts the
 estimate and heads for the coin. -/
 theorem step_retG₀ :
-    (layeredSpec P4).step (st Gb Sc3 W0) Lab.tau (PMF.pure (st Gr Sr W0)) := by
-  refine layeredSpec_hidden P4 (l := Lab.retG 0 (0 : Fin 4) (.A true)) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Gb) (C := Sc3.1) (A := Sc3.2) (o := W0)
+    (hybrid P4).step (st Gb Sc3 W0) Lab.tau (PMF.pure (st Gr Sr W0)) := by
+  refine hybrid_hidden P4 (l := Lab.retG 0 (0 : Fin 4) (.A true)) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := Gb) (C := Sc3.1) (A := Sc3.2) (o := W0)
     (L := Sum.inl (Lab.retG 0 (0 : Fin 4) (.A true))) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Gb 0) 0 true
       (by decide) (by decide) (Or.inl rfl) rfl))
@@ -352,9 +354,9 @@ theorem step_retG₀ :
 
 /-- Process `1`'s round-`0` `A`-return. -/
 theorem step_retG₁ :
-    (layeredSpec P4).step (st Gr Sr W0) Lab.tau (PMF.pure (st Ga1 Sq1 W0)) := by
-  refine layeredSpec_hidden P4 (l := Lab.retG 0 (1 : Fin 4) (.A true)) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Gr) (C := Sr.1) (A := Sr.2) (o := W0)
+    (hybrid P4).step (st Gr Sr W0) Lab.tau (PMF.pure (st Ga1 Sq1 W0)) := by
+  refine hybrid_hidden P4 (l := Lab.retG 0 (1 : Fin 4) (.A true)) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := Gr) (C := Sr.1) (A := Sr.2) (o := W0)
     (L := Sum.inl (Lab.retG 0 (1 : Fin 4) (.A true))) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Gr 0) 1 true
       (by decide) (by decide) (Or.inr rfl) (by decide)))
@@ -367,9 +369,9 @@ theorem step_retG₁ :
 
 /-- Process `2`'s round-`0` `A`-return. -/
 theorem step_retG₂ :
-    (layeredSpec P4).step (st Ga1 Sq1 W0) Lab.tau (PMF.pure (st Ga2 Sq2 W0)) := by
-  refine layeredSpec_hidden P4 (l := Lab.retG 0 (2 : Fin 4) (.A true)) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga1) (C := Sq1.1) (A := Sq1.2) (o := W0)
+    (hybrid P4).step (st Ga1 Sq1 W0) Lab.tau (PMF.pure (st Ga2 Sq2 W0)) := by
+  refine hybrid_hidden P4 (l := Lab.retG 0 (2 : Fin 4) (.A true)) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := Ga1) (C := Sq1.1) (A := Sq1.2) (o := W0)
     (L := Sum.inl (Lab.retG 0 (2 : Fin 4) (.A true))) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Ga1 0) 2 true
       (by decide) (by decide) (Or.inr rfl) (by decide)))
@@ -384,9 +386,9 @@ theorem step_retG₂ :
 
 /-- Process `0` calls the round-`0` coin. -/
 theorem step_callW₀ :
-    (layeredSpec P4).step (st Ga2 Sq2 W0) Lab.tau (PMF.pure (st Ga2 Sw0 Wc0)) := by
-  refine layeredSpec_hidden P4 (l := Lab.callW 0 (0 : Fin 4)) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sq2.1) (A := Sq2.2) (o := W0)
+    (hybrid P4).step (st Ga2 Sq2 W0) Lab.tau (PMF.pure (st Ga2 Sw0 Wc0)) := by
+  refine hybrid_hidden P4 (l := Lab.callW 0 (0 : Fin 4)) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Sq2.1) (A := Sq2.2) (o := W0)
     (L := Sum.inl (Lab.callW 0 (0 : Fin 4))) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 0 (CoreProcStepN.callW (P := P4) (Sq2.1 0) 0 (by decide) (by decide))
@@ -399,9 +401,9 @@ theorem step_callW₀ :
 
 /-- Process `1` calls the round-`0` coin. -/
 theorem step_callW₁ :
-    (layeredSpec P4).step (st Ga2 Sw0 Wc0) Lab.tau (PMF.pure (st Ga2 Sw1 Wc1)) := by
-  refine layeredSpec_hidden P4 (l := Lab.callW 0 (1 : Fin 4)) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sw0.1) (A := Sw0.2) (o := Wc0)
+    (hybrid P4).step (st Ga2 Sw0 Wc0) Lab.tau (PMF.pure (st Ga2 Sw1 Wc1)) := by
+  refine hybrid_hidden P4 (l := Lab.callW 0 (1 : Fin 4)) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Sw0.1) (A := Sw0.2) (o := Wc0)
     (L := Sum.inl (Lab.callW 0 (1 : Fin 4))) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 1 (CoreProcStepN.callW (P := P4) (Sw0.1 1) 0 (by decide) (by decide))
@@ -415,9 +417,9 @@ theorem step_callW₁ :
 /-- Process `2` calls the round-`0` coin; three callers now meet the `> f`
 resolution threshold. -/
 theorem step_callW₂ :
-    (layeredSpec P4).step (st Ga2 Sw1 Wc1) Lab.tau (PMF.pure (st Ga2 Sw2 Wc2)) := by
-  refine layeredSpec_hidden P4 (l := Lab.callW 0 (2 : Fin 4)) (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sw1.1) (A := Sw1.2) (o := Wc1)
+    (hybrid P4).step (st Ga2 Sw1 Wc1) Lab.tau (PMF.pure (st Ga2 Sw2 Wc2)) := by
+  refine hybrid_hidden P4 (l := Lab.callW 0 (2 : Fin 4)) (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Sw1.1) (A := Sw1.2) (o := Wc1)
     (L := Sum.inl (Lab.callW 0 (2 : Fin 4))) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 2 (CoreProcStepN.callW (P := P4) (Sw1.1 2) 0 (by decide) (by decide))
@@ -438,15 +440,15 @@ noncomputable def flipWr : PMF (ℕ → WCC.SpecState 4) :=
 
 /-- The successor distribution of the coin flip: the three other factors stay
 put (Dirac), the coin oracle resolves. -/
-noncomputable def flipμ : PMF (LayeredSpecState P4) :=
+noncomputable def flipμ : PMF (HybridState P4) :=
   prodPMF (PMF.pure Ga2) (prodPMF (PMF.pure Sw2.1) (prodPMF (PMF.pure Sw2.2) flipWr))
 
 /-- The coin `flip` is a legal silent transition of the composed system: the
 round-`0` coin resolves `val` by `wccPMF` (threshold met by the three callers),
 the other three factors interleave. -/
-theorem step_flip : (layeredSpec P4).step (st Ga2 Sw2 Wc2) Lab.tau flipμ := by
-  refine layeredSpec_vis P4 (by simp) ?_
-  exact layeredSpecPre_tau_wcc P4 (wccFamily_tau P4 Wc2
+theorem step_flip : (hybrid P4).step (st Ga2 Sw2 Wc2) Lab.tau flipμ := by
+  refine hybrid_vis P4 (by simp) ?_
+  exact hybridPre_tau_wcc P4 (wccFamily_tau P4 Wc2
     (WCC.Step.flip (P := P4) (r := 0) (Wc2 0)
       (by unfold WCC.SpecState.threshold; decide) (by decide)))
 
@@ -477,9 +479,9 @@ of `⟨DECIDED, true⟩`. -/
 
 /-- Process `0` receives the coin and multicasts `⟨DECIDED, true⟩`. -/
 theorem step_retW₀ :
-    (layeredSpec P4).step (st Ga2 Sw2 Wfl) Lab.tau (PMF.pure (st Ga2 Ss0 Wr0)) := by
-  refine layeredSpec_rendezvous P4 (e := .retWPub 0 (0 : Fin 4) true true) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sw2.1) (A := Sw2.2) (o := Wfl)
+    (hybrid P4).step (st Ga2 Sw2 Wfl) Lab.tau (PMF.pure (st Ga2 Ss0 Wr0)) := by
+  refine hybrid_rendezvous P4 (e := .retWPub 0 (0 : Fin 4) true true) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Sw2.1) (A := Sw2.2) (o := Wfl)
     (L := Sum.inr (.retWPub 0 (0 : Fin 4) true true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 0 (CoreProcStepN.retWPub (P := P4) (Sw2.1 0) 0 true true (by decide)
@@ -494,9 +496,9 @@ theorem step_retW₀ :
 
 /-- Process `1` receives the coin and multicasts `⟨DECIDED, true⟩`. -/
 theorem step_retW₁ :
-    (layeredSpec P4).step (st Ga2 Ss0 Wr0) Lab.tau (PMF.pure (st Ga2 Ss1 Wr1)) := by
-  refine layeredSpec_rendezvous P4 (e := .retWPub 0 (1 : Fin 4) true true) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Ss0.1) (A := Ss0.2) (o := Wr0)
+    (hybrid P4).step (st Ga2 Ss0 Wr0) Lab.tau (PMF.pure (st Ga2 Ss1 Wr1)) := by
+  refine hybrid_rendezvous P4 (e := .retWPub 0 (1 : Fin 4) true true) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Ss0.1) (A := Ss0.2) (o := Wr0)
     (L := Sum.inr (.retWPub 0 (1 : Fin 4) true true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 1 (CoreProcStepN.retWPub (P := P4) (Ss0.1 1) 0 true true (by decide)
@@ -512,9 +514,9 @@ theorem step_retW₁ :
 /-- Process `2` receives the coin and multicasts `⟨DECIDED, true⟩`; three
 distinct senders now hold `⟨DECIDED, true⟩`. -/
 theorem step_retW₂ :
-    (layeredSpec P4).step (st Ga2 Ss1 Wr1) Lab.tau (PMF.pure (st Ga2 Ss2 Wr2)) := by
-  refine layeredSpec_rendezvous P4 (e := .retWPub 0 (2 : Fin 4) true true) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Ss1.1) (A := Ss1.2) (o := Wr1)
+    (hybrid P4).step (st Ga2 Ss1 Wr1) Lab.tau (PMF.pure (st Ga2 Ss2 Wr2)) := by
+  refine hybrid_rendezvous P4 (e := .retWPub 0 (2 : Fin 4) true true) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Ss1.1) (A := Ss1.2) (o := Wr1)
     (L := Sum.inr (.retWPub 0 (2 : Fin 4) true true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 2 (CoreProcStepN.retWPub (P := P4) (Ss1.1 2) 0 true true (by decide)
@@ -533,9 +535,9 @@ network). -/
 
 /-- Deliver process `0`'s own `⟨DECIDED, true⟩`. -/
 theorem step_deliver₀ :
-    (layeredSpec P4).step (st Ga2 Ss2 Wr2) Lab.tau (PMF.pure (st Ga2 Sd0 Wr2)) := by
-  refine layeredSpec_rendezvous P4 (e := .ddlv (0 : Fin 4) (0 : Fin 4) true) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Ss2.1) (A := Ss2.2) (o := Wr2)
+    (hybrid P4).step (st Ga2 Ss2 Wr2) Lab.tau (PMF.pure (st Ga2 Sd0 Wr2)) := by
+  refine hybrid_rendezvous P4 (e := .ddlv (0 : Fin 4) (0 : Fin 4) true) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Ss2.1) (A := Ss2.2) (o := Wr2)
     (L := Sum.inr (.ddlv (0 : Fin 4) (0 : Fin 4) true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Ss2.1 0) 0 true (by decide))
@@ -547,9 +549,9 @@ theorem step_deliver₀ :
 
 /-- Deliver process `1`'s `⟨DECIDED, true⟩` to process `0`. -/
 theorem step_deliver₁ :
-    (layeredSpec P4).step (st Ga2 Sd0 Wr2) Lab.tau (PMF.pure (st Ga2 Sd1 Wr2)) := by
-  refine layeredSpec_rendezvous P4 (e := .ddlv (0 : Fin 4) (1 : Fin 4) true) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sd0.1) (A := Sd0.2) (o := Wr2)
+    (hybrid P4).step (st Ga2 Sd0 Wr2) Lab.tau (PMF.pure (st Ga2 Sd1 Wr2)) := by
+  refine hybrid_rendezvous P4 (e := .ddlv (0 : Fin 4) (1 : Fin 4) true) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Sd0.1) (A := Sd0.2) (o := Wr2)
     (L := Sum.inr (.ddlv (0 : Fin 4) (1 : Fin 4) true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Sd0.1 0) 1 true (by decide))
@@ -562,9 +564,9 @@ theorem step_deliver₁ :
 /-- Deliver process `2`'s `⟨DECIDED, true⟩` to process `0`; process `0` now has
 the `n − f = 3` distinct senders it needs. -/
 theorem step_deliver₂ :
-    (layeredSpec P4).step (st Ga2 Sd1 Wr2) Lab.tau (PMF.pure (st Ga2 Sd2 Wr2)) := by
-  refine layeredSpec_rendezvous P4 (e := .ddlv (0 : Fin 4) (2 : Fin 4) true) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sd1.1) (A := Sd1.2) (o := Wr2)
+    (hybrid P4).step (st Ga2 Sd1 Wr2) Lab.tau (PMF.pure (st Ga2 Sd2 Wr2)) := by
+  refine hybrid_rendezvous P4 (e := .ddlv (0 : Fin 4) (2 : Fin 4) true) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Sd1.1) (A := Sd1.2) (o := Wr2)
     (L := Sum.inr (.ddlv (0 : Fin 4) (2 : Fin 4) true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Sd1.1 0) 2 true (by decide))
@@ -582,10 +584,10 @@ round loop's. The whole 21-step run, every step a Dirac except the single
 `ε`-mass coin flip, carries positive probability and ends in a genuine
 `retABA`. -/
 theorem step_retABA :
-    (layeredSpec P4).step (st Ga2 Sd2 Wr2) (Lab.retABA (0 : Fin 4) true)
+    (hybrid P4).step (st Ga2 Sd2 Wr2) (Lab.retABA (0 : Fin 4) true)
       (PMF.pure (st Ga2 Sfin Wr2)) := by
-  refine layeredSpec_vis P4 (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := Ga2) (C := Sd2.1) (A := Sd2.2) (o := Wr2)
+  refine hybrid_vis P4 (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := Ga2) (C := Sd2.1) (A := Sd2.2) (o := Wr2)
     (L := Sum.inl (Lab.retABA (0 : Fin 4) true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 0 (CoreProcStepN.ret (P := P4) (Sd2.1 0) true (by decide) (by decide))
@@ -602,10 +604,10 @@ the round specifications and the coin oracle by global broadcast, the ABA-side
 network by its own `fail` row, which carries the budget guard, and the round
 loops by standing still (deviation D1). -/
 theorem step_fail :
-    (layeredSpec P4).step (st G0 S0 W0) (Lab.fail (0 : Fin 4))
+    (hybrid P4).step (st G0 S0 W0) (Lab.fail (0 : Fin 4))
       (PMF.pure (st Gf Sf Wf)) := by
-  refine layeredSpec_vis P4 (by simp) ?_
-  have h := layeredSpecPre_vis_step P4 (G := G0) (C := S0.1) (A := S0.2) (o := W0)
+  refine hybrid_vis P4 (by simp) ?_
+  have h := hybridPre_vis_step P4 (G := G0) (C := S0.1) (A := S0.2) (o := W0)
     (L := Sum.inl (Lab.fail (0 : Fin 4))) (by simp)
     (specSide_fail P4 G0 0)
     (fun i => CoreProcStepN.failIdle (P := P4) (S0.1 i) 0)
@@ -614,6 +616,8 @@ theorem step_fail :
       (wccFamily_fail P4 W0 0))
   rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h
   exact h
+
+end NonVacuity
 
 end ABA
 end PLTS

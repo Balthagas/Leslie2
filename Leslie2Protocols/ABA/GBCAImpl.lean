@@ -150,60 +150,60 @@ per-sender pools and the corrupted set. The instance's state below is their
 pair, so every field of the algorithm is a field of one box or the other.
 
 The fabric carries the name of the subsystem that composes it beside the
-programs (`ABA/GBCASubsystem.lean`). -/
+programs (`ABA/GBCAInstances.lean`). -/
 
 /-- The stage record of one process: its own local state and the messages
 delivered to it, indexed by sender. There is no record of what it has sent —
 the sender's pool lives in the network. -/
-structure ProcNodeN (n : ℕ) : Type where
+structure StageRec (n : ℕ) : Type where
   /-- The process's own protocol state. -/
   proc : ProcState
   /-- `inbox k` — the messages from sender `k` delivered here. -/
   inbox : Fin n → Finset Msg
   deriving DecidableEq
 
-namespace ProcNodeN
+namespace StageRec
 
 variable {n : ℕ}
 
 /-- The initial stage record: nothing received, nothing done. -/
-def initial (n : ℕ) : ProcNodeN n where
+def initial (n : ℕ) : StageRec n where
   proc := ProcState.initial
   inbox := fun _ => ∅
 
 /-- The number of distinct senders from which this process has received `m`. -/
-def recvCount (p : ProcNodeN n) (m : Msg) : ℕ :=
+def recvCount (p : StageRec n) (m : Msg) : ℕ :=
   (Finset.univ.filter (fun k => m ∈ p.inbox k)).card
 
 /-- The number of distinct senders of some received `ECHO`. -/
-def echoCount (p : ProcNodeN n) : ℕ :=
+def echoCount (p : StageRec n) : ℕ :=
   (Finset.univ.filter (fun k => ∃ b, Msg.echo b ∈ p.inbox k)).card
 
 /-- The number of distinct senders of some received `VOTE`. -/
-def voteCount (p : ProcNodeN n) : ℕ :=
+def voteCount (p : StageRec n) : ℕ :=
   (Finset.univ.filter (fun k => ∃ v, Msg.vote v ∈ p.inbox k)).card
 
 /-- The number of distinct senders of some received `BIND`. -/
-def bindCount (p : ProcNodeN n) : ℕ :=
+def bindCount (p : StageRec n) : ℕ :=
   (Finset.univ.filter (fun k => ∃ v, Msg.bind v ∈ p.inbox k)).card
 
 /-- The number of distinct senders of some received `SEAL`. -/
-def sealCount (p : ProcNodeN n) : ℕ :=
+def sealCount (p : StageRec n) : ℕ :=
   (Finset.univ.filter (fun k => ∃ v, Msg.seal v ∈ p.inbox k)).card
 
 /-- Both bits are backed by an `n − f` `INPUT` quorum among the delivered
 messages. -/
-def bothValid (P : Params) (p : ProcNodeN P.n) : Prop :=
+def bothValid (P : Params) (p : StageRec P.n) : Prop :=
   P.n - P.f ≤ p.recvCount (.input true) ∧ P.n - P.f ≤ p.recvCount (.input false)
 
 /-- Overwrite the local record. -/
-def setP (p : ProcNodeN n) (pr : ProcState) : ProcNodeN n := { p with proc := pr }
+def setP (p : StageRec n) (pr : ProcState) : StageRec n := { p with proc := pr }
 
 /-- File `m` under the inbox row of sender `k`. -/
-def deliverTo (p : ProcNodeN n) (k : Fin n) (m : Msg) : ProcNodeN n :=
+def deliverTo (p : StageRec n) (k : Fin n) (m : Msg) : StageRec n :=
   { p with inbox := Function.update p.inbox k (insert m (p.inbox k)) }
 
-end ProcNodeN
+end StageRec
 
 end GBCA
 
@@ -263,7 +263,7 @@ namespace GBCA
 
 /-- **The state of one GBCA implementation instance**: the `n` stage records
 beside the round's message fabric. -/
-abbrev ImplState (n : ℕ) : Type := (∀ _ : Fin n, ProcNodeN n) × GSub.GNetState n
+abbrev ImplState (n : ℕ) : Type := (∀ _ : Fin n, StageRec n) × GSub.GNetState n
 
 namespace ImplState
 
@@ -281,13 +281,13 @@ def recv (s : ImplState n) : Fin n → Fin n → Finset Msg := fun i => (s.1 i).
 /-- The corrupted set (the fabric's, kept in lockstep by `fail` broadcast). -/
 def F (s : ImplState n) : Finset (Fin n) := s.2.F
 
-@[simp] theorem proc_apply (u : ∀ _ : Fin n, ProcNodeN n) (w : GSub.GNetState n)
+@[simp] theorem proc_apply (u : ∀ _ : Fin n, StageRec n) (w : GSub.GNetState n)
     (j : Fin n) : proc (u, w) j = (u j).proc := rfl
-@[simp] theorem sent_apply (u : ∀ _ : Fin n, ProcNodeN n) (w : GSub.GNetState n) :
+@[simp] theorem sent_apply (u : ∀ _ : Fin n, StageRec n) (w : GSub.GNetState n) :
     sent (u, w) = w.pool := rfl
-@[simp] theorem recv_apply (u : ∀ _ : Fin n, ProcNodeN n) (w : GSub.GNetState n)
+@[simp] theorem recv_apply (u : ∀ _ : Fin n, StageRec n) (w : GSub.GNetState n)
     (i : Fin n) : recv (u, w) i = (u i).inbox := rfl
-@[simp] theorem F_apply (u : ∀ _ : Fin n, ProcNodeN n) (w : GSub.GNetState n) :
+@[simp] theorem F_apply (u : ∀ _ : Fin n, StageRec n) (w : GSub.GNetState n) :
     F (u, w) = w.F := rfl
 
 /-- Dot notation resolves against `ImplState`, so the rule table and the
@@ -296,15 +296,15 @@ example (s : ImplState n) (i j : Fin n) : s.recv i j = (s.1 i).inbox j := rfl
 
 /-- The initial implementation state. -/
 def initial (n : ℕ) : ImplState n :=
-  (fun _ => ProcNodeN.initial n, GSub.GNetState.initial n)
+  (fun _ => StageRec.initial n, GSub.GNetState.initial n)
 
 /-! The two factors' own initial states project componentwise, so unfolding
 `initial` leaves no residue. -/
 
-@[simp] theorem _root_.PLTS.ABA.GBCA.ProcNodeN.initial_proc (n : ℕ) :
-    (ProcNodeN.initial n).proc = ProcState.initial := rfl
-@[simp] theorem _root_.PLTS.ABA.GBCA.ProcNodeN.initial_inbox (n : ℕ) (k : Fin n) :
-    (ProcNodeN.initial n).inbox k = ∅ := rfl
+@[simp] theorem _root_.PLTS.ABA.GBCA.StageRec.initial_proc (n : ℕ) :
+    (StageRec.initial n).proc = ProcState.initial := rfl
+@[simp] theorem _root_.PLTS.ABA.GBCA.StageRec.initial_inbox (n : ℕ) (k : Fin n) :
+    (StageRec.initial n).inbox k = ∅ := rfl
 @[simp] theorem _root_.PLTS.ABA.GSub.GNetState.initial_pool (n : ℕ) (j : Fin n) :
     (GSub.GNetState.initial n).pool j = ∅ := rfl
 @[simp] theorem _root_.PLTS.ABA.GSub.GNetState.initial_F (n : ℕ) :
@@ -362,12 +362,12 @@ def setProc (s : ImplState n) (j : Fin n) (p : ProcState) : ImplState n :=
     (s.setProc j p).recv = s.recv := by
   funext i
   by_cases hi : i = j
-  · subst hi; simp [setProc, recv, ProcNodeN.setP]
+  · subst hi; simp [setProc, recv, StageRec.setP]
   · simp [setProc, recv, Function.update_of_ne hi]
 
 @[simp] theorem setProc_proc_self (s : ImplState n) (j : Fin n) (p : ProcState) :
     (s.setProc j p).proc j = p := by
-  simp [setProc, proc, ProcNodeN.setP]
+  simp [setProc, proc, StageRec.setP]
 
 theorem setProc_proc_ne (s : ImplState n) (j : Fin n) (p : ProcState)
     {k : Fin n} (h : k ≠ j) : (s.setProc j p).proc k = s.proc k := by
@@ -446,7 +446,7 @@ def recvMsg (s : ImplState n) (i j : Fin n) (m : Msg) : ImplState n :=
     (s.recvMsg i j m).proc = s.proc := by
   funext k
   by_cases hk : k = i
-  · subst hk; simp [recvMsg, proc, ProcNodeN.deliverTo]
+  · subst hk; simp [recvMsg, proc, StageRec.deliverTo]
   · simp [recvMsg, proc, Function.update_of_ne hk]
 
 /-- Membership in a delivered set after a delivery. -/

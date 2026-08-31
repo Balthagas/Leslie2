@@ -442,7 +442,7 @@ theorem hyperStep_relabel {μ ν : PMF State} {l : Label}
   obtain ⟨p, hp, hν⟩ := h
   exact ⟨p, hp, hν⟩
 
-/-- **A weak `l`-step survives the restriction**, layer by layer. -/
+/-- **A weak `l`-step survives the restriction**, segment by segment. -/
 theorem weakStep_relabel {μ ν : PMF State} {l : Label}
     (h : weakStep sys μ (Sum.inl l) ν) : weakStep sys.relabel μ l ν := by
   obtain ⟨a, b, h1, h2, h3⟩ := h

@@ -4,40 +4,40 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Deployed
-import Leslie2Protocols.ABA.LayeredSpec
+import Leslie2Protocols.ABA.Protocol
+import Leslie2Protocols.ABA.Hybrid
 
 /-!
-# The deployed protocol under its layered presentation
+# The protocol under its composed reading
 
-The deployed reading of `ABA/Deployed.lean` and the layered reading of
-`ABA/LayeredSpec.lean` present one protocol at two cuts. A deployed process node
+The protocol reading of `ABA/Protocol.lean` and the composed reading of
+`ABA/Hybrid.lean` present one protocol at two cuts. A protocol process node
 carries the round-loop record and the stage record of the round the loop is in,
-and nothing else (D20). A layered state carries one graded-agreement subsystem
+and nothing else (D20). A composed state carries one graded-agreement subsystem
 per round, at every moment. The round subsystems a process has left keep their
-stage records; no deployed state holds them. The layered presentation therefore
-holds strictly more state than the deployed one, and the two are related by a
+stage records; no protocol state holds them. The composed reading therefore
+holds strictly more state than the protocol one, and the two are related by a
 relation, not by a map.
 
 ## The relation
 
-`DepRel` pins, of a layered state, everything a deployed state determines.
+`ProtocolRel` pins, of a composed state, everything a protocol state determines.
 
 * The round loops are the first components of the process nodes.
 * The coin oracle is the same factor on both sides.
-* The ABA-side network is the deployed adversary's DECIDED pools beside its
+* The ABA-side network is the protocol adversary's DECIDED pools beside its
   corrupted set.
 * The fabric of round `r` is the adversary's round-`r` message pools beside the
   same corrupted set. Corruption is one broadcast on both sides, so every copy
   of the corrupted set is the adversary's.
 * The stage record of a process is the *live column*: the entry, at that
   process, of the subsystem of the round its round loop is in.
-* Above a process's round the layered columns are pristine: a round the process
+* Above a process's round the composed columns are pristine: a round the process
   has not reached holds the initial stage record at that process. This is what
-  the round advance consumes. A deployed advance resets the stage record, and
-  the layered side answers with the pristine column of the round just opened.
-* Below a process's round the layered columns are unconstrained. Frozen history
-  is specification-side state, and nothing in the deployed system reads it.
+  the round advance consumes. A protocol advance resets the stage record, and
+  the composed side answers with the pristine column of the round just opened.
+* Below a process's round the composed columns are unconstrained. Frozen history
+  is specification-side state, and nothing in the protocol system reads it.
 
 The last conjunct records that a process which has not been called is idle in
 round `0`. It is what the external input row consumes: that row opens round `0`,
@@ -46,63 +46,58 @@ because the predecessor was already in round `0`.
 
 ## What this file supplies
 
-`deployedSim`, a probabilistic forward simulation of `layered P` by
-`deployed P` along the Dirac lift of `DepRel P`, and the trace-distribution
-inclusion `deployed_layered` it yields. The inclusion is one-directional: the
-layered presentation can retain a stage record no deployed state carries, so
+`protocolSim`, a probabilistic forward simulation of `composed P` by
+`protocol P` along the Dirac lift of `ProtocolRel P`, and the trace-distribution
+inclusion `protocol_composed` it yields. The inclusion is one-directional: the
+composed reading can retain a stage record no protocol state carries, so
 the converse reading does not hold.
 -/
 
 namespace PLTS
 namespace ABA
 
-open Net Layer
+open Net Comp
 
-/-- The state of the deployed system: the process family, the network
-adversary and the coin oracle. -/
-abbrev DeployedState (P : Params) : Type :=
-  (∀ _ : Fin P.n, ABANodeN P.n) × (NetState P.n × (ℕ → WCC.SpecState P.n))
-
-/-- **The relation of the deployed presentation to the layered one.** Writing
+/-- **The relation of the protocol presentation to the composed one.** Writing
 `u = (procs, w, o)` and `t = (G, C, A, o')`, the seven conjuncts are: the round
 loops agree; the oracle is shared; the ABA-side network is the adversary's
-DECIDED layer; each round's fabric is that round's slice of the adversary's
+DECIDED pools; each round's fabric is that round's slice of the adversary's
 pools beside the adversary's corrupted set; the live column of a process is its
 stage record; the columns above a process's round are pristine at that process;
 and a process with no input is idle in round `0`. Columns below a process's
 round are unconstrained (D20). -/
-def DepRel (P : Params) (u : DeployedState P) (t : LayeredState P) : Prop :=
+def ProtocolRel (P : Params) (u : ProtocolState P) (t : ComposedState P) : Prop :=
   (∀ j, (u.1 j).1 = t.2.1 j) ∧
   u.2.2 = t.2.2.2 ∧
   t.2.2.1 = ⟨u.2.1.dpool, u.2.1.F⟩ ∧
   (∀ r, (t.1 r).2 = ⟨u.2.1.pool r, u.2.1.F⟩) ∧
   (∀ j, (t.1 (u.1 j).1.proc.round).1 j = (u.1 j).2) ∧
-  (∀ j r, (u.1 j).1.proc.round < r → (t.1 r).1 j = GBCA.ProcNodeN.initial P.n) ∧
+  (∀ j r, (u.1 j).1.proc.round < r → (t.1 r).1 j = GBCA.StageRec.initial P.n) ∧
   (∀ j, (u.1 j).1.proc.input = none →
     (u.1 j).1.proc.phase = Phase.idle ∧ (u.1 j).1.proc.round = 0)
 
 /-- The relation, read at an explicit pair of states. -/
-theorem depRel_mk (P : Params) (procs : ∀ _ : Fin P.n, ABANodeN P.n) (w : NetState P.n)
+theorem protocolRel_mk (P : Params) (procs : ∀ _ : Fin P.n, ProcRec P.n) (w : NetState P.n)
     (o : ℕ → WCC.SpecState P.n) (G : ℕ → GBCA.ImplState P.n)
-    (C : ∀ _ : Fin P.n, CoreNodeN P.n) (A : ANetState P.n)
+    (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
     (o' : ℕ → WCC.SpecState P.n) :
-    DepRel P (procs, w, o) (G, C, A, o') ↔
+    ProtocolRel P (procs, w, o) (G, C, A, o') ↔
       (∀ j, (procs j).1 = C j) ∧
       o = o' ∧
       A = ⟨w.dpool, w.F⟩ ∧
       (∀ r, (G r).2 = ⟨w.pool r, w.F⟩) ∧
       (∀ j, (G (procs j).1.proc.round).1 j = (procs j).2) ∧
-      (∀ j r, (procs j).1.proc.round < r → (G r).1 j = GBCA.ProcNodeN.initial P.n) ∧
+      (∀ j r, (procs j).1.proc.round < r → (G r).1 j = GBCA.StageRec.initial P.n) ∧
       (∀ j, (procs j).1.proc.input = none →
         (procs j).1.proc.phase = Phase.idle ∧ (procs j).1.proc.round = 0) :=
   Iff.rfl
 
 /-! ### Couplings
 
-Every deployed transition is a product of Dirac factors beside the oracle's
-successor distribution, and so is the layered transition that answers it. The
+Every protocol transition is a product of Dirac factors beside the oracle's
+successor distribution, and so is the composed transition that answers it. The
 coupling is functional in the oracle coordinate: the two presentations carry the
-same oracle, so a deployed outcome and the layered outcome that matches it
+same oracle, so a protocol outcome and the composed outcome that matches it
 differ in no coordinate the relation constrains. -/
 
 /-- A product of two Dirac factors beside a third distribution. -/
@@ -118,11 +113,11 @@ private theorem prodPMF_pure₃ {α β γ δ : Type*} (a : α) (b : β) (c : γ)
   rw [prodPMF_pure_left, prodPMF_pure₂, PMF.map_comp]
   rfl
 
-/-- A Dirac deployed outcome matched by a single related layered state. -/
-private theorem match_pure (P : Params) {s : DeployedState P} {t : LayeredState P}
-    (h : DepRel P s t) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P)) (PMF.pure s) Ω ∧ Ω.bind id = PMF.pure t := by
+/-- A Dirac protocol outcome matched by a single related composed state. -/
+private theorem match_pure (P : Params) {s : ProtocolState P} {t : ComposedState P}
+    (h : ProtocolRel P s t) :
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P)) (PMF.pure s) Ω ∧ Ω.bind id = PMF.pure t := by
   refine ⟨PMF.pure (PMF.pure t), ⟨PMF.pure (s, PMF.pure t), ?_, ?_, ?_⟩, ?_⟩
   · rw [PMF.pure_map]
   · rw [PMF.pure_map]
@@ -133,20 +128,20 @@ private theorem match_pure (P : Params) {s : DeployedState P} {t : LayeredState 
   · rw [PMF.pure_bind]
     rfl
 
-/-- A deployed outcome whose only free coordinate is the oracle's, matched
+/-- A protocol outcome whose only free coordinate is the oracle's, matched
 outcome by outcome. -/
-private theorem match_prod (P : Params) {x : ∀ _ : Fin P.n, ABANodeN P.n}
+private theorem match_prod (P : Params) {x : ∀ _ : Fin P.n, ProcRec P.n}
     {w : NetState P.n} {G : ℕ → GBCA.ImplState P.n}
-    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
+    {C : ∀ _ : Fin P.n, CoreRec P.n} {A : ANetState P.n}
     {ν : PMF (ℕ → WCC.SpecState P.n)}
-    (h : ∀ o ∈ ν.support, DepRel P (x, w, o) (G, C, A, o)) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P)) (prodPMF (PMF.pure x) (prodPMF (PMF.pure w) ν)) Ω ∧
+    (h : ∀ o ∈ ν.support, ProtocolRel P (x, w, o) (G, C, A, o)) :
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P)) (prodPMF (PMF.pure x) (prodPMF (PMF.pure w) ν)) Ω ∧
       Ω.bind id =
         prodPMF (PMF.pure G) (prodPMF (PMF.pure C) (prodPMF (PMF.pure A) ν)) := by
-  refine ⟨ν.map (fun o => PMF.pure ((G, C, A, o) : LayeredState P)),
-    ⟨ν.map (fun o => (((x, w, o) : DeployedState P),
-      PMF.pure ((G, C, A, o) : LayeredState P))), ?_, ?_, ?_⟩, ?_⟩
+  refine ⟨ν.map (fun o => PMF.pure ((G, C, A, o) : ComposedState P)),
+    ⟨ν.map (fun o => (((x, w, o) : ProtocolState P),
+      PMF.pure ((G, C, A, o) : ComposedState P))), ?_, ?_, ?_⟩, ?_⟩
   · rw [PMF.map_comp, prodPMF_pure₂]
     rfl
   · rw [PMF.map_comp]
@@ -175,7 +170,7 @@ private theorem update_fst {P : Params} (G : ℕ → GBCA.ImplState P.n) (r : �
 /-- Updating round `r` by a state whose fabric is the one it already had leaves
 every fabric where it was. -/
 private theorem update_snd {P : Params} (G : ℕ → GBCA.ImplState P.n) (r : ℕ)
-    (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n) (r' : ℕ) :
+    (u : ∀ _ : Fin P.n, GBCA.StageRec P.n) (r' : ℕ) :
     (Function.update G r (u, (G r).2) r').2 = (G r').2 := by
   by_cases h : r' = r
   · subst h; rw [Function.update_self]
@@ -184,7 +179,7 @@ private theorem update_snd {P : Params} (G : ℕ → GBCA.ImplState P.n) (r : �
 /-- The fabric conjunct after a stage multicast in round `r`. -/
 private theorem rel_gpool {P : Params} {G : ℕ → GBCA.ImplState P.n}
     {w : NetState P.n} (hG : ∀ r, (G r).2 = ⟨w.pool r, w.F⟩)
-    (r : ℕ) (k : Fin P.n) (m : GBCA.Msg) (u : ∀ _ : Fin P.n, GBCA.ProcNodeN P.n)
+    (r : ℕ) (k : Fin P.n) (m : GBCA.Msg) (u : ∀ _ : Fin P.n, GBCA.StageRec P.n)
     (r' : ℕ) :
     ((Function.update G r (u, ((G r).2).gpool k m)) r').2 =
       ⟨(w.gpool r k m).pool r', (w.gpool r k m).F⟩ := by
@@ -214,25 +209,25 @@ private theorem corrupt_anet {P : Params} (w : NetState P.n) (k : Fin P.n) :
 /-! ### Transporting the stage conjuncts
 
 The three conjuncts that speak of the stage columns are read process by
-process. Under a transition at which one process writes and the layered family
+process. Under a transition at which one process writes and the composed family
 leaves every other column alone, they follow from the mover's own three facts
 and from the conjuncts before the step. -/
 
 /-- The stage conjuncts under a write at one process. -/
-private theorem rel_one (P : Params) {procs x : ∀ _ : Fin P.n, ABANodeN P.n}
+private theorem rel_one (P : Params) {procs x : ∀ _ : Fin P.n, ProcRec P.n}
     {G G' : ℕ → GBCA.ImplState P.n} (id : Fin P.n)
     (hlive : ∀ j, (G (procs j).1.proc.round).1 j = (procs j).2)
-    (hfut : ∀ j r, (procs j).1.proc.round < r → (G r).1 j = GBCA.ProcNodeN.initial P.n)
+    (hfut : ∀ j r, (procs j).1.proc.round < r → (G r).1 j = GBCA.StageRec.initial P.n)
     (hidle : ∀ j, (procs j).1.proc.input = none →
       (procs j).1.proc.phase = Phase.idle ∧ (procs j).1.proc.round = 0)
     (hfor : ∀ i, i ≠ id → x i = procs i)
     (hGfor : ∀ j r, j ≠ id → (G' r).1 j = (G r).1 j)
     (hown : (G' (x id).1.proc.round).1 id = (x id).2)
-    (hownf : ∀ r, (x id).1.proc.round < r → (G' r).1 id = GBCA.ProcNodeN.initial P.n)
+    (hownf : ∀ r, (x id).1.proc.round < r → (G' r).1 id = GBCA.StageRec.initial P.n)
     (howni : (x id).1.proc.input = none →
       (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0) :
     (∀ j, (G' (x j).1.proc.round).1 j = (x j).2) ∧
-    (∀ j r, (x j).1.proc.round < r → (G' r).1 j = GBCA.ProcNodeN.initial P.n) ∧
+    (∀ j r, (x j).1.proc.round < r → (G' r).1 j = GBCA.StageRec.initial P.n) ∧
     (∀ j, (x j).1.proc.input = none →
       (x j).1.proc.phase = Phase.idle ∧ (x j).1.proc.round = 0) := by
   refine ⟨fun j => ?_, fun j r hr => ?_, fun j hj => ?_⟩
@@ -247,16 +242,16 @@ private theorem rel_one (P : Params) {procs x : ∀ _ : Fin P.n, ABANodeN P.n}
     · rw [hfor j h] at hj ⊢; exact hidle j hj
 
 /-- The stage conjuncts under a transition at which no process writes. -/
-private theorem rel_none (P : Params) {procs x : ∀ _ : Fin P.n, ABANodeN P.n}
+private theorem rel_none (P : Params) {procs x : ∀ _ : Fin P.n, ProcRec P.n}
     {G G' : ℕ → GBCA.ImplState P.n}
     (hlive : ∀ j, (G (procs j).1.proc.round).1 j = (procs j).2)
-    (hfut : ∀ j r, (procs j).1.proc.round < r → (G r).1 j = GBCA.ProcNodeN.initial P.n)
+    (hfut : ∀ j r, (procs j).1.proc.round < r → (G r).1 j = GBCA.StageRec.initial P.n)
     (hidle : ∀ j, (procs j).1.proc.input = none →
       (procs j).1.proc.phase = Phase.idle ∧ (procs j).1.proc.round = 0)
     (hfor : ∀ i, x i = procs i)
     (hGfor : ∀ j r, (G' r).1 j = (G r).1 j) :
     (∀ j, (G' (x j).1.proc.round).1 j = (x j).2) ∧
-    (∀ j r, (x j).1.proc.round < r → (G' r).1 j = GBCA.ProcNodeN.initial P.n) ∧
+    (∀ j r, (x j).1.proc.round < r → (G' r).1 j = GBCA.StageRec.initial P.n) ∧
     (∀ j, (x j).1.proc.input = none →
       (x j).1.proc.phase = Phase.idle ∧ (x j).1.proc.round = 0) := by
   refine ⟨fun j => ?_, fun j r hr => ?_, fun j hj => ?_⟩
@@ -264,105 +259,105 @@ private theorem rel_none (P : Params) {procs x : ∀ _ : Fin P.n, ABANodeN P.n}
   · rw [hfor j] at hr; rw [hGfor j r]; exact hfut j r hr
   · rw [hfor j] at hj ⊢; exact hidle j hj
 
-/-! ### Assembling a layered transition
+/-! ### Assembling a composed transition
 
-Two shapes of answer. A label the layered composition takes on the nose is
+Two shapes of answer. A label the composed system takes on the nose is
 answered by the rows of its four factors. A stage rendezvous has no row at
 three of them: it is internal to a round subsystem, and the family carries it
 as its own silent rule. -/
 
-/-- A visible label of the extended alphabet answered by the four layered
+/-- A visible label of the extended alphabet answered by the four composed
 rows, the oracle's successor carried across. -/
-private theorem match_vis (P : Params) {x : ∀ _ : Fin P.n, ABANodeN P.n}
+private theorem match_vis (P : Params) {x : ∀ _ : Fin P.n, ProcRec P.n}
     {w' : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     {ω : PMF (ℕ → WCC.SpecState P.n)}
-    {G G' : ℕ → GBCA.ImplState P.n} {C C' : ∀ _ : Fin P.n, CoreNodeN P.n}
+    {G G' : ℕ → GBCA.ImplState P.n} {C C' : ∀ _ : Fin P.n, CoreRec P.n}
     {A A' : ANetState P.n} {L : NLab P.n} (hL : L ≠ Silent.τ)
-    (hrel : ∀ o' ∈ ω.support, DepRel P (x, w', o') (G', C', A', o'))
+    (hrel : ∀ o' ∈ ω.support, ProtocolRel P (x, w', o') (G', C', A', o'))
     (hGs : (GSub.gbcaSide P).step G L (PMF.pure G'))
     (hCs : ∀ i, CoreProcStepN P i (C i) L (PMF.pure (C' i)))
     (hAs : ANetStep P A L (PMF.pure A'))
     (hWs : (wccLift P).step o L ω) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P))
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P))
         (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω)) Ω ∧
-      (layeredPre P).step (G, C, A, o) L (Ω.bind id) := by
+      (composedPre P).step (G, C, A, o) L (Ω.bind id) := by
   obtain ⟨Ω, hr, hbind⟩ := match_prod P hrel
-  exact ⟨Ω, hr, hbind ▸ layeredPre_vis_step P hL hGs hCs hAs hWs⟩
+  exact ⟨Ω, hr, hbind ▸ composedPre_vis_step P hL hGs hCs hAs hWs⟩
 
-/-- A rendezvous the layered presentation answers inside one round: the
+/-- A rendezvous the composed reading answers inside one round: the
 subsystem of round `r` takes it as its own silent rule. -/
-private theorem match_round (P : Params) {x : ∀ _ : Fin P.n, ABANodeN P.n}
+private theorem match_round (P : Params) {x : ∀ _ : Fin P.n, ProcRec P.n}
     {w' : NetState P.n} {o : ℕ → WCC.SpecState P.n} {ν : PMF (ℕ → WCC.SpecState P.n)}
-    {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
+    {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreRec P.n}
     {A : ANetState P.n} {r : ℕ} {X : GBCA.ImplState P.n} (hν : ν = PMF.pure o)
-    (hrel : DepRel P (x, w', o) (Function.update G r X, C, A, o))
+    (hrel : ProtocolRel P (x, w', o) (Function.update G r X, C, A, o))
     (hsub : (GSub.sub P r).step (G r) (Sum.inl Lab.tau) (PMF.pure X)) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P))
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P))
         (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ν)) Ω ∧
-      (layeredGroup P).step (G, C, A, o) Lab.tau (Ω.bind id) := by
+      (composedGroup P).step (G, C, A, o) Lab.tau (Ω.bind id) := by
   subst hν
   obtain ⟨Ω, hr, hbind⟩ := match_pure P hrel
   refine ⟨Ω, ?_, ?_⟩
   · rw [prodPMF_pure_pure, prodPMF_pure_pure]; exact hr
   · rw [hbind]
-    exact layeredGroup_of_tau P (layeredPre_tau_gbca P (gbcaSide_tau P G r hsub))
+    exact composedGroup_of_tau P (composedPre_tau_gbca P (gbcaSide_tau P G r hsub))
 
-/-! ### The drive rows the deployed process group cannot take
+/-! ### The drive rows the protocol process group cannot take
 
-A Byzantine graded-agreement call or return names a process, and the deployed
+A Byzantine graded-agreement call or return names a process, and the protocol
 program of that process has no row for it (D11, D20). The process group is a
-full synchronisation, so no deployed transition carries either label. -/
+full synchronisation, so no protocol transition carries either label. -/
 
 /-- The Byzantine graded-agreement call has no row at the process it names
 (D11, D20). -/
-private theorem stepN_byzCallG_dead {P : Params} {j : Fin P.n} {q : ABANodeN P.n}
-    {ν : PMF (ABANodeN P.n)} {r : ℕ} {b : Bool}
+private theorem stepN_byzCallG_dead {P : Params} {j : Fin P.n} {q : ProcRec P.n}
+    {ν : PMF (ProcRec P.n)} {r : ℕ} {b : Bool}
     (h : ABAProcStepN P j q (Sum.inr (.byzCallG r j b)) ν) : False := by
   cases h with
   | byzCallGIdle _ _ _ _ _ hk => exact hk rfl
 
 /-- The Byzantine graded-agreement return has no row at the process it names
 (D11, D20). -/
-private theorem stepN_byzRetG_dead {P : Params} {j : Fin P.n} {q : ABANodeN P.n}
-    {ν : PMF (ABANodeN P.n)} {r : ℕ} {out : GbcaOut}
+private theorem stepN_byzRetG_dead {P : Params} {j : Fin P.n} {q : ProcRec P.n}
+    {ν : PMF (ProcRec P.n)} {r : ℕ} {out : GbcaOut}
     (h : ABAProcStepN P j q (Sum.inr (.byzRetG r j out)) ν) : False := by
   cases h with
   | byzRetGIdle _ _ _ _ _ hk => exact hk rfl
 
 /-! ### The matching, by label class
 
-A transition of the deployed group is a hidden rendezvous, a visible shared
-label, or the silent label. Each is answered by a transition of the layered
-group on the same label, built from the rows of the four layered factors. -/
+A transition of the protocol group is a hidden rendezvous, a visible shared
+label, or the silent label. Each is answered by a transition of the composed
+group on the same label, built from the rows of the four composed factors. -/
 
 /-- The matching on the rendezvous alphabet. -/
-theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
-    {A : ANetState P.n} (hR : DepRel P (procs, w, o) (G, C, A, o))
-    (e : NetEvt P.n) {μ : PMF (DeployedState P)}
-    (h : (deployedPre P).step (procs, w, o) (Sum.inr e) μ) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P)) μ Ω ∧
-      (layeredGroup P).step (G, C, A, o) Lab.tau (Ω.bind id) := by
-  obtain ⟨hC, -, hA, hG, hlive, hfut, hidle⟩ := (depRel_mk P _ _ _ _ _ _ _).mp hR
+    {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreRec P.n}
+    {A : ANetState P.n} (hR : ProtocolRel P (procs, w, o) (G, C, A, o))
+    (e : NetEvt P.n) {μ : PMF (ProtocolState P)}
+    (h : (protocolPre P).step (procs, w, o) (Sum.inr e) μ) :
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P)) μ Ω ∧
+      (composedGroup P).step (G, C, A, o) Lab.tau (Ω.bind id) := by
+  obtain ⟨hC, -, hA, hG, hlive, hfut, hidle⟩ := (protocolRel_mk P _ _ _ _ _ _ _).mp hR
   have hCeq : ∀ i, C i = (procs i).1 := fun i => (hC i).symm
-  obtain ⟨x, w', ν, hall, hn, hWs, rfl⟩ := deployedPre_event_inv P h
+  obtain ⟨x, w', ν, hall, hn, hWs, rfl⟩ := protocolPre_event_inv P h
   have hLne : (Sum.inr e : NLab P.n) ≠ Silent.τ := by simp
   have hvis : ∀ {G' : ℕ → GBCA.ImplState P.n} {A' : ANetState P.n},
-      (∀ o' ∈ ν.support, DepRel P (x, w', o') (G', fun i => (x i).1, A', o')) →
+      (∀ o' ∈ ν.support, ProtocolRel P (x, w', o') (G', fun i => (x i).1, A', o')) →
       (GSub.gbcaSide P).step G (Sum.inr e) (PMF.pure G') →
       (∀ i, CoreProcStepN P i (C i) (Sum.inr e) (PMF.pure ((x i).1))) →
       ANetStep P A (Sum.inr e) (PMF.pure A') →
-      ∃ Ω : PMF (PMF (LayeredState P)),
-        PMFRel (diracRel (DepRel P))
+      ∃ Ω : PMF (PMF (ComposedState P)),
+        PMFRel (diracRel (ProtocolRel P))
           (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ν)) Ω ∧
-        (layeredGroup P).step (G, C, A, o) Lab.tau (Ω.bind id) := by
+        (composedGroup P).step (G, C, A, o) Lab.tau (Ω.bind id) := by
     intro G' A' hrel hGs hCs hAs
     obtain ⟨Ω, hr, hs⟩ := match_vis P hLne hrel hGs hCs hAs hWs
-    exact ⟨Ω, hr, layeredGroup_of_event P e hs⟩
+    exact ⟨Ω, hr, composedGroup_of_event P e hs⟩
   cases e with
   | gsnd r j m =>
     obtain rfl : ν = PMF.pure o :=
@@ -370,7 +365,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain rfl : w' = w.gpool r j m := pureN_inj (netStep_gsnd hn)
     have hcolr : ∀ _ : (procs j).1.proc.round = r, (G r).1 j = (procs j).2 :=
       fun hrr => by rw [← hrr]; exact hlive j
-    have hstage : ∃ nd : GBCA.ProcNodeN P.n,
+    have hstage : ∃ nd : GBCA.StageRec P.n,
         (procs j).1.proc.round = r ∧
         GSub.GProcStep P r j ((G r).1 j) (Sum.inr (GSub.GEvt.snd j m)) (PMF.pure nd) ∧
         x j = ((procs j).1, nd) := by
@@ -442,7 +437,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     have hownf : ∀ r', (x j).1.proc.round < r' →
         ((Function.update G r
           (Function.update ((G r).1) j nd, ((G r).2).gpool j m)) r').1 j =
-            GBCA.ProcNodeN.initial P.n := by
+            GBCA.StageRec.initial P.n := by
       intro r' hr'
       simp only [hx, hrr] at hr'
       rw [Function.update_of_ne (Nat.ne_of_gt hr')]
@@ -456,7 +451,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
       · subst hi; rw [hx]; exact hC i
       · rw [hfor i hi]; exact hC i
     obtain ⟨h5, h6, h7⟩ := rel_one P j hlive hfut hidle hfor hGfor hown hownf howni
-    exact match_round P rfl ((depRel_mk P _ _ _ _ _ _ _).mpr
+    exact match_round P rfl ((protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨hxcore, rfl, by simpa using hA, rel_gpool hG r j m _, h5, h6, h7⟩)
       (GSub.sub_event_step P r (GSub.GEvt.snd j m)
         (gprocs_family j nd hrow
@@ -488,7 +483,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     have hownf : ∀ r', (x i).1.proc.round < r' →
         ((Function.update G r
           (Function.update ((G r).1) i (((G r).1 i).deliverTo k m), (G r).2)) r').1 i =
-            GBCA.ProcNodeN.initial P.n := by
+            GBCA.StageRec.initial P.n := by
       intro r' hr'
       simp only [hx, hrr] at hr'
       rw [Function.update_of_ne (Nat.ne_of_gt hr')]
@@ -502,7 +497,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
       · subst hi'; rw [hx]; exact hC i'
       · rw [hfor i' hi']; exact hC i'
     obtain ⟨h5, h6, h7⟩ := rel_one P i hlive hfut hidle hfor hGfor hown hownf howni
-    exact match_round P rfl ((depRel_mk P _ _ _ _ _ _ _).mpr
+    exact match_round P rfl ((protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨hxcore, rfl, hA, fun r' => by rw [update_snd G r _ r']; exact hG r',
         h5, h6, h7⟩)
       (GSub.sub_event_step P r (GSub.GEvt.dlv i k m)
@@ -518,7 +513,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
       · subst hi; exact pureN_inj (stepN_dsnd_self (hall i)).2
       · exact pureN_inj (stepN_dsnd_foreign (Ne.symm hi) (hall i))
     obtain ⟨h5, h6, h7⟩ := rel_none P (G' := G) hlive hfut hidle hx (fun _ _ => rfl)
-    refine hvis (A' := A.dput j b) (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine hvis (A' := A.dput j b) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, by rw [hA]; simp [ANetState.dput, NetState.dput],
         fun r => by rw [hG r]; simp [NetState.dput], h5, h6, h7⟩)
       (gbcaSide_idle P G hLne (by simp) not_false) (fun i => ?_)
@@ -535,16 +530,16 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     have hfor : ∀ i', i' ≠ i → x i' = procs i' := fun i' hi' =>
       pureN_inj (stepN_ddlv_foreign (Ne.symm hi') (hall i'))
     have hown : (G (x i).1.proc.round).1 i = (x i).2 := by
-      simp only [hx, CoreNodeN.recvDec]; exact hlive i
+      simp only [hx, CoreRec.recvDec]; exact hlive i
     have hownf : ∀ r', (x i).1.proc.round < r' →
-        (G r').1 i = GBCA.ProcNodeN.initial P.n := by
-      intro r' hr'; simp only [hx, CoreNodeN.recvDec] at hr'; exact hfut i r' hr'
+        (G r').1 i = GBCA.StageRec.initial P.n := by
+      intro r' hr'; simp only [hx, CoreRec.recvDec] at hr'; exact hfut i r' hr'
     have howni : (x i).1.proc.input = none →
         (x i).1.proc.phase = Phase.idle ∧ (x i).1.proc.round = 0 := by
-      simp only [hx, CoreNodeN.recvDec]; exact hidle i
+      simp only [hx, CoreRec.recvDec]; exact hidle i
     obtain ⟨h5, h6, h7⟩ :=
       rel_one P i hlive hfut hidle hfor (fun _ _ _ => rfl) hown hownf howni
-    refine hvis (A' := A) (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine hvis (A' := A) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩)
       (gbcaSide_idle P G hLne (by simp) not_false) (fun i' => ?_)
       (ANetStep.ddlv A i k b (by rw [hA]; exact hdp))
@@ -554,26 +549,26 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
   | retWPub r id co b =>
     obtain rfl : w' = w.dput id b := pureN_inj (netStep_retWPub hn)
     obtain ⟨hph, hrr, hgr, hxid⟩ := stepN_retWPub_self (hall id)
-    have hx : x id = ((procs id).1.stepRound co, GBCA.ProcNodeN.initial P.n) :=
+    have hx : x id = ((procs id).1.stepRound co, GBCA.StageRec.initial P.n) :=
       pureN_inj hxid
     have hfor : ∀ i, i ≠ id → x i = procs i := fun i hi =>
       pureN_inj (stepN_retWPub_foreign (Ne.symm hi) (hall i))
     have hown : (G (x id).1.proc.round).1 id = (x id).2 := by
-      simp only [hx, CoreNodeN.stepRound, CoreNodeN.setProc]
+      simp only [hx, CoreRec.stepRound, CoreRec.setProc]
       exact hfut id _ (Nat.lt_succ_self _)
     have hownf : ∀ r', (x id).1.proc.round < r' →
-        (G r').1 id = GBCA.ProcNodeN.initial P.n := by
+        (G r').1 id = GBCA.StageRec.initial P.n := by
       intro r' hr'
-      simp only [hx, CoreNodeN.stepRound, CoreNodeN.setProc] at hr'
+      simp only [hx, CoreRec.stepRound, CoreRec.setProc] at hr'
       exact hfut id r' (Nat.lt_of_succ_lt hr')
     have howni : (x id).1.proc.input = none →
         (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0 := by
       intro hcon
-      simp only [hx, CoreNodeN.stepRound, CoreNodeN.setProc] at hcon
+      simp only [hx, CoreRec.stepRound, CoreRec.setProc] at hcon
       simp [(hidle id hcon).1] at hph
     obtain ⟨h5, h6, h7⟩ :=
       rel_one P id hlive hfut hidle hfor (fun _ _ _ => rfl) hown hownf howni
-    refine hvis (A' := A.dput id b) (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine hvis (A' := A.dput id b) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, by rw [hA]; simp [ANetState.dput, NetState.dput],
         fun r' => by rw [hG r']; simp [NetState.dput], h5, h6, h7⟩)
       (gbcaSide_idle P G hLne (by simp) not_false) (fun i => ?_)
@@ -590,18 +585,18 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     have hfor : ∀ i, i ≠ id → x i = procs i := fun i hi =>
       pureN_inj (stepN_gcallLoop_foreign (Ne.symm hi) (hall i))
     have hown : (G (x id).1.proc.round).1 id = (x id).2 := by
-      simp only [hx, CoreNodeN.setProc]; exact hlive id
+      simp only [hx, CoreRec.setProc]; exact hlive id
     have hownf : ∀ r', (x id).1.proc.round < r' →
-        (G r').1 id = GBCA.ProcNodeN.initial P.n := by
-      intro r' hr'; simp only [hx, CoreNodeN.setProc] at hr'; exact hfut id r' hr'
+        (G r').1 id = GBCA.StageRec.initial P.n := by
+      intro r' hr'; simp only [hx, CoreRec.setProc] at hr'; exact hfut id r' hr'
     have howni : (x id).1.proc.input = none →
         (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0 := by
       intro hcon
-      simp only [hx, CoreNodeN.setProc] at hcon
+      simp only [hx, CoreRec.setProc] at hcon
       simp [(hidle id hcon).1] at hph
     obtain ⟨h5, h6, h7⟩ :=
       rel_one P id hlive hfut hidle hfor (fun _ _ _ => rfl) hown hownf howni
-    refine hvis (A' := A) (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine hvis (A' := A) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩)
       (gbcaSide_owned_id P G r (by simp)
         (GSub.sub_lab_step P r (by simp)
@@ -619,7 +614,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain rfl : w' = w := pureN_inj hw
     have hx : ∀ i, x i = procs i := fun i => pureN_inj (stepN_byzCallGLoop (hall i))
     obtain ⟨h5, h6, h7⟩ := rel_none P (G' := G) hlive hfut hidle hx (fun _ _ => rfl)
-    refine hvis (A' := A) (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine hvis (A' := A) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩)
       (gbcaSide_owned_id P G r (by simp)
         (GSub.sub_lab_step P r (by simp)
@@ -632,7 +627,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain rfl : w' = w := pureN_inj hw
     have hx : ∀ i, x i = procs i := fun i => pureN_inj (stepN_byzCallW (hall i))
     obtain ⟨h5, h6, h7⟩ := rel_none P (G' := G) hlive hfut hidle hx (fun _ _ => rfl)
-    refine hvis (A' := A) (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine hvis (A' := A) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩)
       (gbcaSide_idle P G hLne (by simp) not_false) (fun i => ?_)
       (ANetStep.byzCallW A r k (by rw [hA]; exact hF))
@@ -642,34 +637,34 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     obtain rfl : w' = w := pureN_inj hw
     have hx : ∀ i, x i = procs i := fun i => pureN_inj (stepN_byzRetW (hall i))
     obtain ⟨h5, h6, h7⟩ := rel_none P (G' := G) hlive hfut hidle hx (fun _ _ => rfl)
-    refine hvis (A' := A) (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine hvis (A' := A) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩)
       (gbcaSide_idle P G hLne (by simp) not_false) (fun i => ?_)
       (ANetStep.byzRetW A r k b (by rw [hA]; exact hF))
     rw [hCeq i, hx i]; exact CoreProcStepN.byzRetWIdle _ r k b
 
 /-- The matching on a visible shared label. -/
-theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
-    {A : ANetState P.n} (hR : DepRel P (procs, w, o) (G, C, A, o))
-    {l : Lab P.n} (hl : l ≠ Lab.tau) {μ : PMF (DeployedState P)}
-    (h : (deployedPre P).step (procs, w, o) (Sum.inl l) μ) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P)) μ Ω ∧
-      (layeredGroup P).step (G, C, A, o) l (Ω.bind id) := by
-  obtain ⟨hC, -, hA, hG, hlive, hfut, hidle⟩ := (depRel_mk P _ _ _ _ _ _ _).mp hR
+    {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreRec P.n}
+    {A : ANetState P.n} (hR : ProtocolRel P (procs, w, o) (G, C, A, o))
+    {l : Lab P.n} (hl : l ≠ Lab.tau) {μ : PMF (ProtocolState P)}
+    (h : (protocolPre P).step (procs, w, o) (Sum.inl l) μ) :
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P)) μ Ω ∧
+      (composedGroup P).step (G, C, A, o) l (Ω.bind id) := by
+  obtain ⟨hC, -, hA, hG, hlive, hfut, hidle⟩ := (protocolRel_mk P _ _ _ _ _ _ _).mp hR
   have hCeq : ∀ i, C i = (procs i).1 := fun i => (hC i).symm
-  obtain ⟨x, w', ω, hall, hn, hOr, rfl⟩ := deployedPre_lab_inv P hl h
+  obtain ⟨x, w', ω, hall, hn, hOr, rfl⟩ := protocolPre_lab_inv P hl h
   have hWl : (wccLift P).step o (Sum.inl l) ω :=
     (System.mapIdle_step_some (wccPull_inl l) ω).mpr hOr
   have hLne : (Sum.inl l : NLab P.n) ≠ Silent.τ := by simpa using hl
-  suffices hsuf : ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P))
+  suffices hsuf : ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P))
         (prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω)) Ω ∧
-      (layeredPre P).step (G, C, A, o) (Sum.inl l) (Ω.bind id) by
+      (composedPre P).step (G, C, A, o) (Sum.inl l) (Ω.bind id) by
     obtain ⟨Ω, hr, hs⟩ := hsuf
-    exact ⟨Ω, hr, (layeredGroup_step_iff P _ _ _).mpr (Or.inr hs)⟩
+    exact ⟨Ω, hr, (composedGroup_step_iff P _ _ _).mpr (Or.inr hs)⟩
   cases l with
   | tau => exact absurd rfl hl
   | callABA id b =>
@@ -684,19 +679,19 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
           (procs id).2) := pureN_inj hxid
       have hr0 : (procs id).1.proc.round = 0 := (hidle id hin).2
       have hown : (G (x id).1.proc.round).1 id = (x id).2 := by
-        simp only [hx, CoreNodeN.setProc]
+        simp only [hx, CoreRec.setProc]
         rw [← hr0]; exact hlive id
       have hownf : ∀ r, (x id).1.proc.round < r →
-          (G r).1 id = GBCA.ProcNodeN.initial P.n := by
+          (G r).1 id = GBCA.StageRec.initial P.n := by
         intro r hr
-        simp only [hx, CoreNodeN.setProc] at hr
+        simp only [hx, CoreRec.setProc] at hr
         exact hfut id r (by rw [hr0]; exact hr)
       have howni : (x id).1.proc.input = none →
           (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0 := by
-        intro hcon; simp [hx, CoreNodeN.setProc] at hcon
+        intro hcon; simp [hx, CoreRec.setProc] at hcon
       obtain ⟨h5, h6, h7⟩ :=
         rel_one P id hlive hfut hidle hfor (fun _ _ _ => rfl) hown hownf howni
-      refine match_vis P hLne (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+      refine match_vis P hLne (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
         ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩) hGs (fun i => ?_)
         (ANetStep.callABAIdle A id b) hWl
       by_cases hi : i = id
@@ -708,7 +703,7 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
         · subst hi; exact pureN_inj hxid
         · exact hfor i hi
       obtain ⟨h5, h6, h7⟩ := rel_none P hlive hfut hidle hx (fun _ _ => rfl)
-      refine match_vis P hLne (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+      refine match_vis P hLne (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
         ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩) hGs (fun i => ?_)
         (ANetStep.callABAIdle A id b) hWl
       rw [hCeq i, hx i]
@@ -727,16 +722,16 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     have hGs : (GSub.gbcaSide P).step G (Sum.inl (Lab.retABA id b)) (PMF.pure G) :=
       gbcaSide_idle P G hLne (by simp) not_false
     have hown : (G (x id).1.proc.round).1 id = (x id).2 := by
-      simp only [hx, CoreNodeN.setProc]; exact hlive id
+      simp only [hx, CoreRec.setProc]; exact hlive id
     have hownf : ∀ r, (x id).1.proc.round < r →
-        (G r).1 id = GBCA.ProcNodeN.initial P.n := by
-      intro r hr; simp only [hx, CoreNodeN.setProc] at hr; exact hfut id r hr
+        (G r).1 id = GBCA.StageRec.initial P.n := by
+      intro r hr; simp only [hx, CoreRec.setProc] at hr; exact hfut id r hr
     have howni : (x id).1.proc.input = none →
         (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0 := by
-      intro hcon; simp only [hx, CoreNodeN.setProc] at hcon ⊢; exact hidle id hcon
+      intro hcon; simp only [hx, CoreRec.setProc] at hcon ⊢; exact hidle id hcon
     obtain ⟨h5, h6, h7⟩ :=
       rel_one P id hlive hfut hidle hfor (fun _ _ _ => rfl) hown hownf howni
-    refine match_vis P hLne (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine match_vis P hLne (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩) hGs (fun i => ?_)
       (ANetStep.retABA A id b (by rw [hA]; exact hdp)) hWl
     by_cases hi : i = id
@@ -753,17 +748,17 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     have hGs : (GSub.gbcaSide P).step G (Sum.inl (Lab.callW r id)) (PMF.pure G) :=
       gbcaSide_idle P G hLne (by simp) not_false
     have hown : (G (x id).1.proc.round).1 id = (x id).2 := by
-      simp only [hx, CoreNodeN.setProc]; exact hlive id
+      simp only [hx, CoreRec.setProc]; exact hlive id
     have hownf : ∀ r', (x id).1.proc.round < r' →
-        (G r').1 id = GBCA.ProcNodeN.initial P.n := by
-      intro r' hr'; simp only [hx, CoreNodeN.setProc] at hr'; exact hfut id r' hr'
+        (G r').1 id = GBCA.StageRec.initial P.n := by
+      intro r' hr'; simp only [hx, CoreRec.setProc] at hr'; exact hfut id r' hr'
     have howni : (x id).1.proc.input = none →
         (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0 := by
-      intro hcon; simp only [hx, CoreNodeN.setProc] at hcon
+      intro hcon; simp only [hx, CoreRec.setProc] at hcon
       simp [(hidle id hcon).1] at hph
     obtain ⟨h5, h6, h7⟩ :=
       rel_one P id hlive hfut hidle hfor (fun _ _ _ => rfl) hown hownf howni
-    refine match_vis P hLne (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine match_vis P hLne (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩) hGs (fun i => ?_)
       (ANetStep.callWIdle A r id) hWl
     by_cases hi : i = id
@@ -774,26 +769,26 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     have hfor : ∀ i, i ≠ id → x i = procs i := fun i hi =>
       pureN_inj (stepN_retW_foreign (Ne.symm hi) (hall i))
     obtain ⟨hph, hrr, hgr, hxid⟩ := stepN_retW_own (hall id)
-    have hx : x id = ((procs id).1.stepRound co, GBCA.ProcNodeN.initial P.n) :=
+    have hx : x id = ((procs id).1.stepRound co, GBCA.StageRec.initial P.n) :=
       pureN_inj hxid
     have hGs : (GSub.gbcaSide P).step G (Sum.inl (Lab.retW r id co)) (PMF.pure G) :=
       gbcaSide_idle P G hLne (by simp) not_false
     have hown : (G (x id).1.proc.round).1 id = (x id).2 := by
-      simp only [hx, CoreNodeN.stepRound, CoreNodeN.setProc]
+      simp only [hx, CoreRec.stepRound, CoreRec.setProc]
       exact hfut id _ (Nat.lt_succ_self _)
     have hownf : ∀ r', (x id).1.proc.round < r' →
-        (G r').1 id = GBCA.ProcNodeN.initial P.n := by
+        (G r').1 id = GBCA.StageRec.initial P.n := by
       intro r' hr'
-      simp only [hx, CoreNodeN.stepRound, CoreNodeN.setProc] at hr'
+      simp only [hx, CoreRec.stepRound, CoreRec.setProc] at hr'
       exact hfut id r' (Nat.lt_of_succ_lt hr')
     have howni : (x id).1.proc.input = none →
         (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0 := by
       intro hcon
-      simp only [hx, CoreNodeN.stepRound, CoreNodeN.setProc] at hcon
+      simp only [hx, CoreRec.stepRound, CoreRec.setProc] at hcon
       simp [(hidle id hcon).1] at hph
     obtain ⟨h5, h6, h7⟩ :=
       rel_one P id hlive hfut hidle hfor (fun _ _ _ => rfl) hown hownf howni
-    refine match_vis P hLne (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine match_vis P hLne (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, hG, h5, h6, h7⟩) hGs (fun i => ?_)
       (ANetStep.retWIdle A r id co) hWl
     by_cases hi : i = id
@@ -806,11 +801,11 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
       GSub.gAct P (Sum.inl (Lab.fail k)) (G r)) hlive hfut hidle hx
       (fun _ _ => by simp only [gAct_fail])
     have hrel : ∀ o' : ℕ → WCC.SpecState P.n,
-        DepRel P ((x, NetState.corrupt P k w, o') : DeployedState P)
+        ProtocolRel P ((x, NetState.corrupt P k w, o') : ProtocolState P)
           (((fun r => GSub.gAct P (Sum.inl (Lab.fail k)) (G r)),
-            (fun i => (x i).1), ANetState.corrupt P k A, o') : LayeredState P) := by
+            (fun i => (x i).1), ANetState.corrupt P k A, o') : ComposedState P) := by
       intro o'
-      refine (depRel_mk P _ _ _ _ _ _ _).mpr ⟨fun _ => rfl, rfl, ?_, ?_, h5, h6, h7⟩
+      refine (protocolRel_mk P _ _ _ _ _ _ _).mpr ⟨fun _ => rfl, rfl, ?_, ?_, h5, h6, h7⟩
       · rw [hA]; exact corrupt_anet w k
       · intro r
         simp only [gAct_fail]
@@ -857,25 +852,25 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
           input := some b,
           sentInput := Function.update ((G r).1 id).proc.sentInput b true }),
         ((G r).2).gpool id (.input b))) (x id).1.proc.round).1 id = (x id).2 := by
-      simp only [hx, CoreNodeN.setProc, hrr, Function.update_self, hcol]
+      simp only [hx, CoreRec.setProc, hrr, Function.update_self, hcol]
     have hownf : ∀ r', (x id).1.proc.round < r' →
         ((Function.update G r
           (Function.update ((G r).1) id (((G r).1 id).setP { ((G r).1 id).proc with
             input := some b,
             sentInput := Function.update ((G r).1 id).proc.sentInput b true }),
           ((G r).2).gpool id (.input b))) r').1 id =
-            GBCA.ProcNodeN.initial P.n := by
+            GBCA.StageRec.initial P.n := by
       intro r' hr'
-      simp only [hx, CoreNodeN.setProc, hrr] at hr'
+      simp only [hx, CoreRec.setProc, hrr] at hr'
       rw [Function.update_of_ne (Nat.ne_of_gt hr')]
       exact hfut id r' (by rw [hrr]; exact hr')
     have howni : (x id).1.proc.input = none →
         (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0 := by
       intro hcon
-      simp only [hx, CoreNodeN.setProc] at hcon
+      simp only [hx, CoreRec.setProc] at hcon
       simp [(hidle id hcon).1] at hph
     obtain ⟨h5, h6, h7⟩ := rel_one P id hlive hfut hidle hfor hGfor hown hownf howni
-    refine match_vis P hLne (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine match_vis P hLne (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, by simpa using hA, rel_gpool hG r id (.input b) _,
         h5, h6, h7⟩) hGs (fun i => ?_) (ANetStep.callGIdle A r id b) hWl
     by_cases hi : i = id
@@ -936,23 +931,23 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
         (Function.update ((G r).1) id
           (((G r).1 id).setP { ((G r).1 id).proc with returned := true }),
         (G r).2)) (x id).1.proc.round).1 id = (x id).2 := by
-      simp only [hx, CoreNodeN.setProc, hrr, Function.update_self, hcol]
+      simp only [hx, CoreRec.setProc, hrr, Function.update_self, hcol]
     have hownf : ∀ r', (x id).1.proc.round < r' →
         ((Function.update G r
           (Function.update ((G r).1) id
             (((G r).1 id).setP { ((G r).1 id).proc with returned := true }),
-          (G r).2)) r').1 id = GBCA.ProcNodeN.initial P.n := by
+          (G r).2)) r').1 id = GBCA.StageRec.initial P.n := by
       intro r' hr'
-      simp only [hx, CoreNodeN.setProc, hrr] at hr'
+      simp only [hx, CoreRec.setProc, hrr] at hr'
       rw [Function.update_of_ne (Nat.ne_of_gt hr')]
       exact hfut id r' (by rw [hrr]; exact hr')
     have howni : (x id).1.proc.input = none →
         (x id).1.proc.phase = Phase.idle ∧ (x id).1.proc.round = 0 := by
       intro hcon
-      simp only [hx, CoreNodeN.setProc] at hcon
+      simp only [hx, CoreRec.setProc] at hcon
       simp [(hidle id hcon).1] at hph
     obtain ⟨h5, h6, h7⟩ := rel_one P id hlive hfut hidle hfor hGfor hown hownf howni
-    refine match_vis P hLne (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+    refine match_vis P hLne (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
       ⟨fun _ => rfl, rfl, hA, fun r' => by
         rw [update_snd G r _ r']; exact hG r', h5, h6, h7⟩) hGs (fun i => ?_)
       (ANetStep.retGIdle A r id out) hWl
@@ -961,25 +956,25 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
     · rw [hCeq i, hfor i hi]; exact CoreProcStepN.retGIdle _ r id out (Ne.symm hi)
 
 /-- The matching on the silent label. -/
-theorem match_tau (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
+theorem match_tau (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
-    {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
-    {A : ANetState P.n} (hR : DepRel P (procs, w, o) (G, C, A, o))
-    {μ : PMF (DeployedState P)}
-    (h : (deployedPre P).step (procs, w, o) (Sum.inl Lab.tau) μ) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P)) μ Ω ∧
-      (layeredGroup P).step (G, C, A, o) Lab.tau (Ω.bind id) := by
-  obtain ⟨hC, -, hA, hG, hlive, hfut, hidle⟩ := (depRel_mk P _ _ _ _ _ _ _).mp hR
-  rcases deployedPre_tau_inv P h with ⟨w', hn, rfl⟩ | ⟨ω, hW, rfl⟩
+    {G : ℕ → GBCA.ImplState P.n} {C : ∀ _ : Fin P.n, CoreRec P.n}
+    {A : ANetState P.n} (hR : ProtocolRel P (procs, w, o) (G, C, A, o))
+    {μ : PMF (ProtocolState P)}
+    (h : (protocolPre P).step (procs, w, o) (Sum.inl Lab.tau) μ) :
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P)) μ Ω ∧
+      (composedGroup P).step (G, C, A, o) Lab.tau (Ω.bind id) := by
+  obtain ⟨hC, -, hA, hG, hlive, hfut, hidle⟩ := (protocolRel_mk P _ _ _ _ _ _ _).mp hR
+  rcases protocolPre_tau_inv P h with ⟨w', hn, rfl⟩ | ⟨ω, hW, rfl⟩
   · rcases netStep_tau hn with ⟨r, k, m, hF, hw⟩ | ⟨k, b, hF, hw⟩
     · obtain rfl : w' = w.gpool r k m := pureN_inj hw
       have hFG : k ∈ ((G r).2).F := by rw [hG r]; exact hF
       have hfst := update_fst G r (X := ((G r).1, ((G r).2).gpool k m)) rfl
-      have hrel' : DepRel P ((procs, w.gpool r k m, o) : DeployedState P)
+      have hrel' : ProtocolRel P ((procs, w.gpool r k m, o) : ProtocolState P)
           ((Function.update G r ((G r).1, ((G r).2).gpool k m), C, A, o) :
-            LayeredState P) := by
-        refine (depRel_mk P _ _ _ _ _ _ _).mpr ⟨hC, rfl, by simpa using hA, ?_, ?_, ?_, hidle⟩
+            ComposedState P) := by
+        refine (protocolRel_mk P _ _ _ _ _ _ _).mpr ⟨hC, rfl, by simpa using hA, ?_, ?_, ?_, hidle⟩
         · intro r'
           by_cases hr : r' = r
           · subst hr
@@ -994,43 +989,43 @@ theorem match_tau (P : Params) {procs : ∀ _ : Fin P.n, ABANodeN P.n}
       obtain ⟨Ω, hrel, hbind⟩ := match_pure P hrel'
       refine ⟨Ω, hrel, ?_⟩
       rw [hbind]
-      exact layeredGroup_of_tau P (layeredPre_tau_gbca P (gbcaSide_tau P G r
+      exact composedGroup_of_tau P (composedPre_tau_gbca P (gbcaSide_tau P G r
         (GSub.sub_tau_net P r (GSub.GNetStep.byzG _ k m hFG))))
     · obtain rfl : w' = w.dput k b := pureN_inj hw
       have hFA : k ∈ A.F := by rw [hA]; exact hF
-      have hrel' : DepRel P ((procs, w.dput k b, o) : DeployedState P)
-          ((G, C, A.dput k b, o) : LayeredState P) := by
-        refine (depRel_mk P _ _ _ _ _ _ _).mpr ⟨hC, rfl, ?_, ?_, hlive, hfut, hidle⟩
+      have hrel' : ProtocolRel P ((procs, w.dput k b, o) : ProtocolState P)
+          ((G, C, A.dput k b, o) : ComposedState P) := by
+        refine (protocolRel_mk P _ _ _ _ _ _ _).mpr ⟨hC, rfl, ?_, ?_, hlive, hfut, hidle⟩
         · rw [hA]; simp [ANetState.dput, NetState.dput]
         · intro r; rw [hG r]; simp [NetState.dput]
       obtain ⟨Ω, hrel, hbind⟩ := match_pure P hrel'
       refine ⟨Ω, hrel, ?_⟩
       rw [hbind]
-      exact layeredGroup_of_tau P (layeredPre_tau_aNet P (ANetStep.byzD A k b hFA))
+      exact composedGroup_of_tau P (composedPre_tau_aNet P (ANetStep.byzD A k b hFA))
   · obtain ⟨Ω, hrel, hbind⟩ := match_prod P (x := procs) (w := w) (G := G) (C := C)
-      (A := A) (ν := ω) (fun o' _ => (depRel_mk P _ _ _ _ _ _ _).mpr
+      (A := A) (ν := ω) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
         ⟨hC, rfl, hA, hG, hlive, hfut, hidle⟩)
     refine ⟨Ω, hrel, ?_⟩
     rw [hbind]
-    exact layeredGroup_of_tau P (layeredPre_tau_wcc P hW)
+    exact composedGroup_of_tau P (composedPre_tau_wcc P hW)
 
 /-! ### The simulation -/
 
 /-- The matching at the group level: the rendezvous alphabet is hidden on both
-sides, so a hidden deployed rendezvous is answered by a silent transition of
-the layered group. -/
-theorem match_group (P : Params) {u : DeployedState P} {t : LayeredState P}
-    (hR : DepRel P u t) {l : Lab P.n} {μ : PMF (DeployedState P)}
-    (h : (deployedGroup P).step u l μ) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P)) μ Ω ∧ (layeredGroup P).step t l (Ω.bind id) := by
+sides, so a hidden protocol rendezvous is answered by a silent transition of
+the composed group. -/
+theorem match_group (P : Params) {u : ProtocolState P} {t : ComposedState P}
+    (hR : ProtocolRel P u t) {l : Lab P.n} {μ : PMF (ProtocolState P)}
+    (h : (protocolGroup P).step u l μ) :
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P)) μ Ω ∧ (composedGroup P).step t l (Ω.bind id) := by
   obtain ⟨procs, w, o⟩ := u
   obtain ⟨G, C, A, o'⟩ := t
-  obtain ⟨hC, ho, hA, hG, hlive, hfut, hidle⟩ := (depRel_mk P _ _ _ _ _ _ _).mp hR
+  obtain ⟨hC, ho, hA, hG, hlive, hfut, hidle⟩ := (protocolRel_mk P _ _ _ _ _ _ _).mp hR
   subst ho
-  have hR : DepRel P (procs, w, o) (G, C, A, o) :=
-    (depRel_mk P _ _ _ _ _ _ _).mpr ⟨hC, rfl, hA, hG, hlive, hfut, hidle⟩
-  rcases (deployedGroup_step_iff P _ _ _).mp h with ⟨rfl, e, hstep⟩ | hstep
+  have hR : ProtocolRel P (procs, w, o) (G, C, A, o) :=
+    (protocolRel_mk P _ _ _ _ _ _ _).mpr ⟨hC, rfl, hA, hG, hlive, hfut, hidle⟩
+  rcases (protocolGroup_step_iff P _ _ _).mp h with ⟨rfl, e, hstep⟩ | hstep
   · exact match_event P hR e hstep
   · by_cases hl : l = Lab.tau
     · subst hl; exact match_tau P hR hstep
@@ -1038,19 +1033,19 @@ theorem match_group (P : Params) {u : DeployedState P} {t : LayeredState P}
 
 /-- The matching at the system level: a hidden sub-protocol label is silent on
 both sides, and every other label is answered on the nose. -/
-theorem match_step (P : Params) {u : DeployedState P} {t : LayeredState P}
-    (hR : DepRel P u t) {l : Lab P.n} {μ : PMF (DeployedState P)}
-    (h : (deployed P).step u l μ) :
-    ∃ Ω : PMF (PMF (LayeredState P)),
-      PMFRel (diracRel (DepRel P)) μ Ω ∧
-        ((l = Silent.τ ∧ weakTau (layered P) (PMF.pure t) (Ω.bind id)) ∨
-         (¬ (l = Silent.τ) ∧ weakStep (layered P) (PMF.pure t) l (Ω.bind id))) := by
-  rcases (deployed_step_iff P u l μ).mp h with ⟨rfl, l', hmem, hg⟩ | ⟨hnm, hg⟩
+theorem match_step (P : Params) {u : ProtocolState P} {t : ComposedState P}
+    (hR : ProtocolRel P u t) {l : Lab P.n} {μ : PMF (ProtocolState P)}
+    (h : (protocol P).step u l μ) :
+    ∃ Ω : PMF (PMF (ComposedState P)),
+      PMFRel (diracRel (ProtocolRel P)) μ Ω ∧
+        ((l = Silent.τ ∧ weakTau (composed P) (PMF.pure t) (Ω.bind id)) ∨
+         (¬ (l = Silent.τ) ∧ weakStep (composed P) (PMF.pure t) l (Ω.bind id))) := by
+  rcases (protocol_step_iff P u l μ).mp h with ⟨rfl, l', hmem, hg⟩ | ⟨hnm, hg⟩
   · obtain ⟨Ω, hrel, hlay⟩ := match_group P hR hg
     exact ⟨Ω, hrel, Or.inl ⟨rfl, weakTau_of_step rfl
       ((System.abstract_step _ _ _ _ _).mpr (Or.inl ⟨rfl, l', hmem, hlay⟩))⟩⟩
   · obtain ⟨Ω, hrel, hlay⟩ := match_group P hR hg
-    have hstep : (layered P).step t l (Ω.bind id) :=
+    have hstep : (composed P).step t l (Ω.bind id) :=
       (System.abstract_step _ _ _ _ _).mpr (Or.inr ⟨hnm, hlay⟩)
     by_cases hτ : l = Silent.τ
     · exact ⟨Ω, hrel, Or.inl ⟨hτ, weakTau_of_step hτ hstep⟩⟩
@@ -1059,34 +1054,34 @@ theorem match_step (P : Params) {u : DeployedState P} {t : LayeredState P}
 /-- The two initial states are related: everything is initial, so the live
 column is the initial stage record and every column above round `0` is
 pristine. -/
-theorem depRel_init (P : Params) : DepRel P (deployed P).init (layered P).init :=
+theorem protocolRel_init (P : Params) : ProtocolRel P (protocol P).init (composed P).init :=
   ⟨fun _ => rfl, rfl, rfl, fun _ => rfl, fun _ => rfl, fun _ _ _ => rfl,
     fun _ _ => ⟨rfl, rfl⟩⟩
 
-/-- **The deployed protocol forward-simulates into its layered presentation**
-along the Dirac lift of `DepRel`. -/
-theorem deployedSim (P : Params) :
-    ProbabilisticForwardSimulation (deployed P) (layered P) (diracRel (DepRel P)) where
-  init := ⟨PMF.pure (layered P).init,
+/-- **The protocol forward-simulates into its composed reading**
+along the Dirac lift of `ProtocolRel`. -/
+theorem protocolSim (P : Params) :
+    ProbabilisticForwardSimulation (protocol P) (composed P) (diracRel (ProtocolRel P)) where
+  init := ⟨PMF.pure (composed P).init,
     fun _ hs => by rwa [PMF.mem_support_pure_iff] at hs,
-    (layered P).init, rfl, depRel_init P⟩
+    (composed P).init, rfl, protocolRel_init P⟩
   step := by
     rintro s_C μ_A ⟨t, rfl, hR⟩ l μ_C hstep
     exact match_step P hR hstep
 
-/-- **The layering inclusion**: every trace distribution the deployed protocol
-achieves is achieved by its layered presentation. -/
-theorem deployed_layered (P : Params) :
-    achievableTraceDists (deployed P) ⊆ achievableTraceDists (layered P) :=
-  (deployedSim P).achievableTraceDists_subset
+/-- **The composition inclusion**: every trace distribution the protocol
+achieves is achieved by its composed reading. -/
+theorem protocol_composed (P : Params) :
+    achievableTraceDists (protocol P) ⊆ achievableTraceDists (composed P) :=
+  (protocolSim P).achievableTraceDists_subset
 
 /-! ### Mechanical axiom firewall
 
-The layering step of the chain may not acquire a `sorryAx` dependence. -/
+The composition step of the chain may not acquire a `sorryAx` dependence. -/
 
-/-- info: 'PLTS.ABA.deployed_layered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'PLTS.ABA.protocol_composed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms deployed_layered
+#print axioms protocol_composed
 
 end ABA
 end PLTS

@@ -1,0 +1,34 @@
+\begin{theorem}[The protocol under its composed reading]
+  \label{thm:aba-protocol-composed}
+  \lean{PLTS.ABA.ProtocolState}\lean{PLTS.ABA.ProtocolRel}\lean{PLTS.ABA.protocolRel_mk}\lean{PLTS.ABA.protocolRel_init}\lean{PLTS.ABA.protocolSim}\lean{PLTS.ABA.protocol_composed}\leanok
+  \uses{def:aba-composed, def:aba-procnet, def:aba-netadv, def:aba-protocol, def:forwardsim, def:pmfrel, def:achievable, thm:forward-sound}
+  For all parameters $P$, the protocol is forward-simulated by its composed reading along the Dirac lift of the relation $\mathrm{ProtocolRel}(P)$, and hence
+  \[
+    \operatorname{ATD}(\mathrm{protocol}(P)) \;\subseteq\;
+    \operatorname{ATD}(\mathrm{composed}(P)).
+  \]
+  The two presentations are related by a relation and not by a map.
+  A composed state carries one graded-agreement subsystem per round at every moment, where a process node of the protocol carries the stage record of the round its round loop is in and nothing else (D20), so the composed reading holds strictly more state than the protocol.
+  $\mathrm{ProtocolRel}(P)$ pins, of a composed state, everything a state of the protocol determines, and it has seven conjuncts.
+  The round loops agree.
+  The coin oracle is the same factor on both sides.
+  The ABA-side network is the network adversary's DECIDED pools beside its corrupted set, and the fabric of round $r$ is that adversary's round-$r$ pools beside the same corrupted set, corruption being one broadcast on both sides.
+  The stage record of a process is the entry, at that process, of the subsystem of the round its round loop is in.
+  A round above a process's round holds the initial stage record at that process.
+  A process with no input is idle in round $0$.
+  The columns below a process's round are unconstrained: they are specification-side state, and no rule of the protocol reads them.
+  Headline: \leandecl{PLTS.ABA.protocol_composed}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-composed, def:aba-procnet, def:aba-netadv, def:aba-protocol, def:forwardsim, def:pmfrel, def:achievable, thm:forward-sound}
+  The initial states are related, \leandecl{PLTS.ABA.protocolRel_init}: everything is initial, so the live column is the initial stage record and every column above round $0$ is pristine.
+  For the step condition, take a state of the protocol, a composed state related to it, and a row out of that protocol state.
+  Every transition of the protocol is a product of Dirac factors beside the coin oracle's successor distribution, and so is the composed transition that answers it.
+  The two presentations carry the same oracle, so the coupling is functional in the oracle coordinate and the matched outcomes differ in no coordinate the relation constrains.
+  The rows are answered by label class: the rendezvous labels of the two networks and of the drives, the visible labels of the ABA interface, and the silent label.
+  The round advance is the row the sixth conjunct is written for.
+  A round advance of the protocol resets the stage record to $\mathrm{StageRec.initial}$, and the composed side answers with the column of the round just opened, which that conjunct holds pristine.
+  The Byzantine graded-agreement call and return name a process whose program has no row for them (D11, D20), and the process group is a full synchronisation, so no transition of the protocol carries either label and neither needs an answer.
+  Soundness (Theorem~\ref{thm:forward-sound}) turns the simulation \leandecl{PLTS.ABA.protocolSim} into the stated inclusion.
+\end{proof}

@@ -4,14 +4,14 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.CoreView
-import Leslie2Protocols.ABA.LayeredSpec
+import Leslie2Protocols.ABA.ABAState
+import Leslie2Protocols.ABA.Hybrid
 import Leslie2Protocols.ABA.GBCASafety
 
 /-!
 # The core-simulation relation: the lazy abstract twin
 
-The relation and invariant for `coreSim : layeredSpec ⊑ ABA.spec`, following
+The relation and invariant for `coreSim : hybrid ⊑ ABA.spec`, following
 `DESIGN-CoreSim.md`. The abstract twin is *ultra-lazy* (D16): it answers
 every hidden (τ) row and the probabilistic coin row by stuttering under a
 constant coupling; the single τ-burst fires at the first `retABA` row, where
@@ -29,7 +29,7 @@ the twin binds, fills the board, decides, and returns within one weak step.
 
 This file holds the two predicates, their frame and reader lemmas, and the
 initial states. The proof that `coreR` is a simulation relation runs in the two
-files above it: step inversion for `layeredSpec` and preservation of `Inv` in
+files above it: step inversion for `hybrid` and preservation of `Inv` in
 `CoreSimInv.lean`, `Abs` preservation for the stutter rows and the assembly in
 `CoreSimAbs.lean`.
 -/
@@ -39,16 +39,16 @@ open Stream'
 namespace PLTS
 namespace ABA
 
-open Net Layer
+open Net Comp
 
 variable {P : Params}
 
-/-- The ABA-side factors of a deployment-shaped state, read as one state: the
+/-- The ABA-side factors of a protocol-shaped state, read as one state: the
 round loops beside the network they share. -/
-abbrev LayeredSpecState.aba (s : LayeredSpecState P) : ABAState P := (s.2.1, s.2.2.1)
+abbrev HybridState.aba (s : HybridState P) : ABAState P := (s.2.1, s.2.2.1)
 
 /-- The coin oracle's factor. -/
-abbrev LayeredSpecState.wcc (s : LayeredSpecState P) : ℕ → WCC.SpecState P.n := s.2.2.2
+abbrev HybridState.wcc (s : HybridState P) : ℕ → WCC.SpecState P.n := s.2.2.2
 
 /-- The last-bound-round reading of a family: round `r`'s exclusion set is non-empty
 and round `r + 1`'s is still empty.
@@ -260,7 +260,7 @@ theorem AbsFrame.refl (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAStat
 
 /-! ### Inv: the concrete invariant (I1–I7) -/
 
-/-- The concrete invariant of `layeredSpec`-reachable states. All conjuncts are
+/-- The concrete invariant of `hybrid`-reachable states. All conjuncts are
 about the concrete `(g, c, w)` only. -/
 structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAState P)
     (w : ℕ → WCC.SpecState P.n) : Prop where
@@ -460,7 +460,7 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAState P)
 
 /-- The core simulation relation (pre-`diracRel`): the concrete invariant
 plus the abstract-twin constraints. -/
-def coreR (P : Params) (s : LayeredSpecState P) (a : SpecState P.n) : Prop :=
+def coreR (P : Params) (s : HybridState P) (a : SpecState P.n) : Prop :=
   Inv P s.1 s.aba s.wcc ∧ Abs P s.1 s.aba s.wcc a
 
 /-- The GBCA quorum guard is monotone: enlarging `F` and preserving non-`⊥` calls only

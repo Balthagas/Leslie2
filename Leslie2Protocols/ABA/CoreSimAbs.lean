@@ -16,7 +16,7 @@ Stage C of the proof that `coreR` is a simulation relation
   ultra-lazy (D16): it is untouched by every hidden row and moves only at the
   visible ones (`callABA`/`retABA`/`fail`, handled in `CoreSim.lean`). All six
   lemmas are instances of one frame argument, `Abs.frame`.
-* **Assembly** — `Inv.step`: `Inv` is preserved by every `layeredSpec` step,
+* **Assembly** — `Inv.step`: `Inv` is preserved by every `hybrid` step,
   dispatching on the label class through Stage A's inversion lemmas and calling
   the matching Stage B helper (`CoreSimInv.lean`) in each case.
 -/
@@ -24,13 +24,13 @@ Stage C of the proof that `coreR` is a simulation relation
 namespace PLTS
 namespace ABA
 
-open Net Layer
+open Net Comp
 
 variable {P : Params}
 
 /-! ### Stage C: `Abs` preservation for the stutter rows
 
-Every one of `layered_step_tau`'s seven disjuncts is answered by a stutter — the
+Every one of `hybrid_step_tau`'s seven disjuncts is answered by a stutter — the
 ultra-lazy twin (D16) is untouched by every hidden row and only moves at the
 visible rows (`callABA`/`retABA`/`fail`), handled in `CoreSim.lean`. All six
 lemmas below are instances of a single frame argument: `Abs` inspects only `F`,
@@ -192,12 +192,12 @@ theorem Abs.step_retW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAStat
       · rw [ABAState.stepRound_procs_ne _ _ _ h]; exact ⟨rfl, rfl⟩
     · exact ⟨rfl, fun id' => ⟨rfl, rfl⟩⟩
   exact hA.frame hCFrame.1 (fun id' => (hCFrame.2 id').1) (fun id' => (hCFrame.2 id').2) hAF
-/-! ### Assembly: `Inv` is preserved by every `layeredSpec` step -/
+/-! ### Assembly: `Inv` is preserved by every `hybrid` step -/
 
 /-- Reading a row where the ABA-side pair moves alone: the pair's own outcome,
 the coin oracle standing still. -/
 theorem mem_support_abaRow {P : Params} {μc : PMF (ABAState P)}
-    {o w' : ℕ → WCC.SpecState P.n} {C' : ∀ _ : Fin P.n, CoreNodeN P.n} {A' : ANetState P.n}
+    {o w' : ℕ → WCC.SpecState P.n} {C' : ∀ _ : Fin P.n, CoreRec P.n} {A' : ANetState P.n}
     (h : (C', A', w') ∈ (μc.map fun c => (c.1, c.2, o)).support) :
     (C', A') ∈ μc.support ∧ w' = o := by
   rw [PMF.mem_support_map_iff] at h
@@ -209,7 +209,7 @@ theorem mem_support_abaRow {P : Params} {μc : PMF (ABAState P)}
 /-- Reading a row where the ABA-side pair and the coin oracle move together. -/
 theorem mem_support_coinRow {P : Params} {μc : PMF (ABAState P)}
     {μw' : PMF (WCC.SpecState P.n)} {o w' : ℕ → WCC.SpecState P.n} {r : ℕ}
-    {C' : ∀ _ : Fin P.n, CoreNodeN P.n} {A' : ANetState P.n}
+    {C' : ∀ _ : Fin P.n, CoreRec P.n} {A' : ANetState P.n}
     (h : (C', A', w') ∈ (μc.bind fun c => prodPMF (PMF.pure c.1)
       (prodPMF (PMF.pure c.2) (μw'.map (Function.update o r)))).support) :
     (C', A') ∈ μc.support ∧ ∃ wr' ∈ μw'.support, w' = Function.update o r wr' := by
@@ -219,20 +219,20 @@ theorem mem_support_coinRow {P : Params} {μc : PMF (ABAState P)}
   obtain ⟨rfl, rfl, wr', hwr', heq⟩ := hmem
   exact ⟨hc, wr', hwr', heq.symm⟩
 
-/-- **`Inv` is preserved.** Dispatches on the label class via `layered_step_callABA`/
-`layered_step_retABA`/`layered_step_fail` (Stage A1) and `layered_step_tau` (Stage A2), calling
+/-- **`Inv` is preserved.** Dispatches on the label class via `hybrid_step_callABA`/
+`hybrid_step_retABA`/`hybrid_step_fail` (Stage A1) and `hybrid_step_tau` (Stage A2), calling
 the matching `Inv.step_*` helper (Stage B) in each case. -/
 theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
-    {C : ∀ _ : Fin P.n, CoreNodeN P.n} {A : ANetState P.n}
-    {w : ℕ → WCC.SpecState P.n} (hI : Inv P g (C, A) w) {l : Lab P.n} {μ : PMF (LayeredSpecState P)}
-    (hstep : (layeredSpec P).step (g, C, A, w) l μ)
-    {g' : ℕ → GBCA.SpecState P.n} {C' : ∀ _ : Fin P.n, CoreNodeN P.n} {A' : ANetState P.n}
+    {C : ∀ _ : Fin P.n, CoreRec P.n} {A : ANetState P.n}
+    {w : ℕ → WCC.SpecState P.n} (hI : Inv P g (C, A) w) {l : Lab P.n} {μ : PMF (HybridState P)}
+    (hstep : (hybrid P).step (g, C, A, w) l μ)
+    {g' : ℕ → GBCA.SpecState P.n} {C' : ∀ _ : Fin P.n, CoreRec P.n} {A' : ANetState P.n}
     {w' : ℕ → WCC.SpecState P.n}
     (hmem : (g', C', A', w') ∈ μ.support) :
     Inv P g' (C', A') w' := by
   cases l with
   | tau =>
-    rcases layered_step_tau P g C A w μ hstep with
+    rcases hybrid_step_tau P g C A w μ hstep with
       ⟨r, μr, hstepG, rfl⟩ | ⟨μc, hstepC, rfl⟩ | ⟨r, μw', hstepW, rfl⟩ |
       ⟨r, id, b, μr, μc, hstepG, hstepC, rfl⟩ |
       ⟨r, id, out, μr, μc, hstepG, hstepC, rfl⟩ |
@@ -284,7 +284,7 @@ theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
       rw [h1]
       exact (Inv.step_retW hI r id b hstepW hstepC hwr' hc2).1
   | callABA id b =>
-    rw [layered_step_callABA] at hstep
+    rw [hybrid_step_callABA] at hstep
     obtain ⟨μc, hstepC, rfl⟩ := hstep
     simp only [mem_support_prodPMF] at hmem
     obtain ⟨h1, h2⟩ := hmem
@@ -293,7 +293,7 @@ theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
     rw [h1]
     exact (Inv.step_callABA hI id b hstepC hc2).1
   | retABA id b =>
-    rw [layered_step_retABA] at hstep
+    rw [hybrid_step_retABA] at hstep
     obtain ⟨μc, hstepC, rfl⟩ := hstep
     simp only [mem_support_prodPMF] at hmem
     obtain ⟨h1, h2⟩ := hmem
@@ -302,7 +302,7 @@ theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
     rw [h1]
     exact (Inv.step_retABA hI id b hstepC hc2).1
   | fail id =>
-    rw [layered_step_fail] at hstep
+    rw [hybrid_step_fail] at hstep
     subst hstep
     simp only [mem_support_prodPMF] at hmem
     obtain ⟨h1, h2⟩ := hmem
@@ -312,22 +312,22 @@ theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
     rw [h1, hc2]
     exact (Inv.step_fail hI id).1
   | callG r id b =>
-    exfalso; rw [layeredSpec_step_iff] at hstep
+    exfalso; rw [hybrid_step_iff] at hstep
     rcases hstep with ⟨hτ, -⟩ | ⟨hnotmem, -⟩
     · exact absurd hτ (by simp)
     · exact hnotmem (Lab.callG_mem_hiddenAPI r id b)
   | retG r id out =>
-    exfalso; rw [layeredSpec_step_iff] at hstep
+    exfalso; rw [hybrid_step_iff] at hstep
     rcases hstep with ⟨hτ, -⟩ | ⟨hnotmem, -⟩
     · exact absurd hτ (by simp)
     · exact hnotmem (Lab.retG_mem_hiddenAPI r id out)
   | callW r id =>
-    exfalso; rw [layeredSpec_step_iff] at hstep
+    exfalso; rw [hybrid_step_iff] at hstep
     rcases hstep with ⟨hτ, -⟩ | ⟨hnotmem, -⟩
     · exact absurd hτ (by simp)
     · exact hnotmem (Lab.callW_mem_hiddenAPI r id)
   | retW r id b =>
-    exfalso; rw [layeredSpec_step_iff] at hstep
+    exfalso; rw [hybrid_step_iff] at hstep
     rcases hstep with ⟨hτ, -⟩ | ⟨hnotmem, -⟩
     · exact absurd hτ (by simp)
     · exact hnotmem (Lab.retW_mem_hiddenAPI r id b)

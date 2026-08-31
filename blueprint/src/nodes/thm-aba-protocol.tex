@@ -1,0 +1,19 @@
+\begin{theorem}[Safety of the protocol]
+  \label{thm:aba-protocol}
+  \lean{PLTS.ABA.hybrid_spec}\lean{PLTS.ABA.protocol_safe}\lean{PLTS.ABA.protocol_traces}\lean{PLTS.ABA.composed_safe}\leanok
+  \uses{def:aba-procnet, def:aba-protocol, thm:aba-protocol-composed, thm:aba-substitution, thm:aba-hybrid-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
+  Let $P$ be parameters.
+  Then $\operatorname{ATD}(\mathrm{protocol}(P)) \subseteq \operatorname{ATD}(\mathrm{spec}(P))$, and every trace $t$ of positive probability under an achievable trace distribution of $\mathrm{protocol}(P)$ satisfies Validity and Agreement.
+  Such a $t$ also has positive probability under an achievable trace distribution of $\mathrm{hybrid}(P)$.
+  Every trace of positive probability under an achievable trace distribution of $\mathrm{composed}(P)$ satisfies Validity and Agreement as well.
+  The statement carries no hypothesis on $t$ beyond positive probability, the corruption budget included: that budget is a guard of the network adversary, which every execution of $\mathrm{protocol}(P)$ respects by construction.
+  Headline: \leandecl{PLTS.ABA.refines} and \leandecl{PLTS.ABA.protocol_safe}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{thm:aba-protocol-composed, thm:aba-substitution, thm:aba-hybrid-spec, thm:aba-spec-safe, thm:trace-support, thm:forward-sound, def:achievable}
+  Theorem~\ref{thm:aba-protocol-composed} and Theorem~\ref{thm:aba-substitution} chain to $\operatorname{ATD}(\mathrm{protocol}(P)) \subseteq \operatorname{ATD}(\mathrm{hybrid}(P))$, which is the third conclusion.
+  Theorem~\ref{thm:aba-hybrid-spec} carries that on to $\operatorname{ATD}(\mathrm{spec}(P))$, the three inclusions chained by transitivity of set inclusion, which is the first conclusion.
+  The trace-support bridge (Theorem~\ref{thm:trace-support}) transfers safety of the specification's trace supports (Theorem~\ref{thm:aba-spec-safe}) along that inclusion, which is the second.
+  For the last, Theorems~\ref{thm:aba-substitution} and~\ref{thm:aba-hybrid-spec} chain to $\operatorname{ATD}(\mathrm{composed}(P)) \subseteq \operatorname{ATD}(\mathrm{spec}(P))$ without the first link, and the same bridge transfers safety along that inclusion.
+\end{proof}

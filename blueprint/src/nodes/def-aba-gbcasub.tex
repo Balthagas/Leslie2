@@ -12,6 +12,6 @@
   \]
   is read over $\mathrm{GLab}(n) = \mathrm{NLab}(n) \oplus \mathrm{GEvt}(n)$ and then over $\mathrm{NLab}(n)$, where $\mathrm{GEvt}(n)$ is the alphabet of the two rendezvous of one round, the multicast and the delivery.
   They carry no round tag, the round being the identity of the instance they belong to, and they are hidden before anything outside the subsystem sees it, so its interface is the round's ports alone: $\mathrm{callG}(r,\cdot,\cdot)$, $\mathrm{retG}(r,\cdot,\cdot)$, $\mathrm{gcallLoop}(r,\cdot,\cdot)$ and the three Byzantine graded-agreement drives of round $r$, whose effect the subsystem carries and whose authorisation $k \in F$ is read outside it (D11).
-  The graded-agreement side of the deployed protocol is the $\mathbb{N}$-indexed family $\mathrm{gbcaSide}(P)$ over $\mathrm{sub}(P,\cdot)$, in which the ownership map $\mathrm{gOwns}$ sends each interface label class to its round tag, a round-tagged label moves its round alone, and $\mathrm{fail}(k)$ is the broadcast that keeps every round's copy of the corrupted set in lockstep (D1).
+  The graded-agreement side of the protocol is the $\mathbb{N}$-indexed family $\mathrm{gbcaSide}(P)$ over $\mathrm{sub}(P,\cdot)$, in which the ownership map $\mathrm{gOwns}$ sends each interface label class to its round tag, a round-tagged label moves its round alone, and $\mathrm{fail}(k)$ is the broadcast that keeps every round's copy of the corrupted set in lockstep (D1).
   Full construction: \leandecl{PLTS.ABA.GSub.sub} and \leandecl{PLTS.ABA.GSub.gbcaSide}.
 \end{definition}

@@ -18,7 +18,7 @@ target       : ForwardSimulation (implInst P r) (specInst P r) (instRel P r)
 ```
 
 Both systems are Dirac-transition LTSs. The instance refinement reaches the
-ℕ-indexed families through the round subsystem (`ABA/GBCASubsystem.lean`), whose
+ℕ-indexed families through the round subsystem (`ABA/GBCAInstances.lean`), whose
 family lifting takes its broadcast ingredient from
 `GBCASim.instRel_corrupt`.
 
@@ -583,8 +583,8 @@ consumes, and exactly why no later receipt pattern can contradict the kill.
 
 ## Where the shapes surface downstream
 
-The exclusion set and the kill certificate are read directly by the layers
-above this file. The `CoreSimRel.lean` chain and `CoreSim.lean` phrase the round skeleton
+The exclusion set and the kill certificate are read directly by the files
+above this one. The `CoreSimRel.lean` chain and `CoreSim.lean` phrase the round skeleton
 over `dead`: `IsLastBound g r` is `(g r).dead ≠ ∅ ∧ (g (r + 1)).dead = ∅`,
 `Closed g r` is `(g r).dead ≠ ∅ ∨ (g r).grade = some false`, and `a_commit`,
 `gradeA_needs_bind`, `bind_supp` and the A-lock certificates are keyed on the
@@ -592,8 +592,8 @@ guard pair `(!b) ∈ dead ∧ b ∉ dead` — the D19 rendering of `bind = some 
 with `bind ≠ none` rendered as `dead ≠ ∅`. `GBCASim.instRel_corrupt`
 carries the `dead_cert` row through `DeadCert.mono`, whose three hypotheses it
 discharges by `corrupt_recv`, `corrupt_proc` and `corrupt_F_subset`.
-`Deployed.lean`'s rendering carries the same ladder inside one
-process: the stage node `GBCA.ProcNodeN` keeps the write-once `sentSeal` slot in
+`Protocol.lean`'s rendering carries the same ladder inside one
+process: the stage node `GBCA.StageRec` keeps the write-once `sentSeal` slot in
 its `proc` record and carries its own `sealCount` over its inbox rows, the
 rendezvous rows `gsndSealBit`/`gsndSealBot` are the seal multicasts read off
 that node, and the three `retG` rows (and their `byzRetG` twins) read the seal
@@ -602,7 +602,7 @@ level off it. No bridge is needed to the global view: the round-`r` `ImplState`
 beside the round's message fabric, which holds the per-sender pools and the
 corrupted set — and `ImplState.sealCount` reads the receiving program's inbox
 rows directly. So `GSub.subSim` consumes `implRefines` as it stands: the
-projection `sub_projects` (`ABA/GBCASubsystem.lean`) matches every subsystem
+projection `sub_projects` (`ABA/GBCAInstances.lean`) matches every subsystem
 transition with the instance's at that same state, one step for one step, and
 this file's refinement answers it, its weak answer read back at the subsystem's
 interface — which is what licenses replacing a round's subsystem by the graded

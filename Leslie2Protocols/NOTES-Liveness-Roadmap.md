@@ -67,11 +67,11 @@ over the trace distributions of the including system.
 **Leslie2 (this repo)** — probabilistic simulation, *complete*:
 - Weak probabilistic forward simulation with proven soundness AND transitivity
   (`Results.lean`; the ω-composition `weakTau_flatten` closed 2026-07-22).
-- The full ABA safety chain, stated in deployment coordinates: the deployed protocol
-  carried into its reading with a layer boundary as a component boundary, the
-  substitution of each round's graded-agreement subsystem by its specification
-  (`GBCA impl ⊑ spec` under one family congruence), and the core simulation of the
-  deployment-shaped specification against the ABA specification.
+- The full ABA safety chain, stated in the protocol's own coordinates: the protocol
+  carried into its reading as a composition of components, the substitution of each
+  round's graded-agreement subsystem by its specification (`GBCA impl ⊑ spec` under one
+  family congruence), and the core simulation of the hybrid against the ABA
+  specification.
 - `Leslie2Extra/Fairness`: fairness-marked PLTS + ranked **strong** probabilistic
   simulation, sound for surely-fair achievable trace distributions
   (`fairAchievableTraceDists_subset`, needs `ImageFinite` for a König lift). Proven.
@@ -130,7 +130,7 @@ unprovable; ideal-side fair weak divergence *genuinely fails*. Both protocols in
 prove liveness **directly** on the concrete system via `assumes_fair_wf` + WF1/leads-to
 chains (sorry-free), keeping simulation for safety only. ABA has the same corruption
 structure (Byzantine processes, adversarial delivery), so the same mismatch should be
-expected at the `deployed ↔ ABA.spec` boundary.
+expected at the `protocol ↔ ABA.spec` boundary.
 
 ## 4. Recommended shape of an ABA liveness effort
 
@@ -151,11 +151,11 @@ Ordered by expected value-for-effort:
    `WeakDivPreserving`'s stutter-ranking with `Leslie2Extra/Fairness`'s probabilistic
    descent/König machinery over Leslie2's weak simulation. Sound transfer of fair
    trace-distribution inclusion would push the spec-level mass bound down the chain to
-   `deployed`, which is where a fair-scheduling statement about this protocol belongs.
-   All three steps are inclusions in the same direction, `deployed ⊑ layered ⊑
-   layeredSpec ⊑ ABA.spec`, so a mass bound established at `ABA.spec` has to be
-   transported down all three, the layering link (`deployedSim`,
-   `ABA/DeployedSim.lean`) included. Budget the instance forgetting of D20 as a
+   `protocol`, which is where a fair-scheduling statement about this protocol belongs.
+   All three steps are inclusions in the same direction, `protocol ⊑ composed ⊑
+   hybrid ⊑ ABA.spec`, so a mass bound established at `ABA.spec` has to be
+   transported down all three, the composition link (`protocolSim`,
+   `ABA/ProtocolSim.lean`) included. Budget the instance forgetting of D20 as a
    constraint on that link: a process sends nothing in a round it has left, so a
    fairness marking that expects post-decision amplification echoes has no concrete
    counterpart.
@@ -265,11 +265,11 @@ the sub-protocol slot.
 - PLTS + adapters in Leslie: `Leslie_LTS/Framework/Probabilistic.lean:34-70`
 - Certificates: `Leslie/Prob/Liveness.lean` (`FairASTCertificate`, `sound` at :1719)
 - This repo's fairness line: `Leslie2Extra/Fairness/Simulation/{Defs,Soundness}.lean`
-- Corruption-blind deployed model: `ABA/Deployed.lean` (`deployed`, `netAdv`), with its
-  reading along the layer boundaries in `ABA/LayeredSpec.lean` (`layered`) and the inclusion
-  into it in `ABA/DeployedSim.lean` (`DepRel`, `deployedSim`, `deployed_layered`) — the
-  presentation to state fair
-  termination over if it is to be stated of the deployed system: the `fail` row belongs
+- Corruption-blind model of the protocol: `ABA/Protocol.lean` (`protocol`, `netAdv`), with
+  its reading as a composition of components in `ABA/Hybrid.lean` (`composed`) and the
+  inclusion into it in `ABA/ProtocolSim.lean` (`ProtocolRel`, `protocolSim`,
+  `protocol_composed`) — the presentation to state fair
+  termination over if it is to be stated of the protocol: the `fail` row belongs
   to the network adversary and is guarded by `k ∉ F ∧ |F| < f`, so `fail` is enabled
   exactly while budget remains and the marking of `fail` is read off that component's
   own state.

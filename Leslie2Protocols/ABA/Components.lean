@@ -15,10 +15,10 @@ import Leslie2Protocols.Framework.SyncProduct
 /-!
 # The extended alphabet and the factors composed over it
 
-The protocol is composed twice in this development. The deployed reading
-(`ABA/Deployed.lean`) puts `n` corruption-blind programs beside a network
-adversary and the coin oracle. The layered reading (`ABA/LayeredSpec.lean`) cuts
-the same protocol along its layer boundaries. Both compositions speak one
+The protocol is composed twice in this development. The protocol reading
+(`ABA/Protocol.lean`) puts `n` corruption-blind programs beside a network
+adversary and the coin oracle. The composed reading (`ABA/Hybrid.lean`) cuts
+the same protocol into its components. Both compositions speak one
 alphabet, and some of what they compose is the same object on both sides.
 This file holds that alphabet and those factors.
 
@@ -46,8 +46,8 @@ both compositions, unchanged.
 `CoreProcStepN` is the rule table of one process's round loop: the API rows
 `callABA` and `retABA`, the graded-agreement and coin handshakes, the DECIDED
 relay and its delivery, and an idle row for every label the process does not
-act on. It writes no stage record. The layered composition runs `n` of these
-automata (`coreProcN`) under a full-synchronisation product. The deployed
+act on. It writes no stage record. The composed system runs `n` of these
+automata (`coreProcN`) under a full-synchronisation product. The protocol
 composition fuses each round loop with a stage record into one program
 (`Net.ABAProcStepN`), whose node is the pair.
 
@@ -190,8 +190,8 @@ theorem wccLift_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {e : NetEvt P.
 /-- The coin oracle idles on a shared label that is neither `τ`, nor a
 handshake of one of its own rounds, nor `fail`. Read through the pullback
 `wccPull`, this is the oracle's row in every joint transition — of the
-deployed system, of its layered presentation, and of the deployment-shaped
-specification (`ABA/LayeredSpec.lean`) — that leaves the coin standing still. -/
+protocol system, of its composed reading, and of the protocol-shaped
+specification (`ABA/Hybrid.lean`) — that leaves the coin standing still. -/
 theorem wccFamilyN_idle (P : Params) (o : ℕ → WCC.SpecState P.n) {l : Lab P.n}
     (hl : l ≠ Lab.tau) (hr : Lab.wccRound l = none) (hf : ¬ Lab.isFail l) :
     (WCC.specFamily P).step o l (PMF.pure o) := by
@@ -211,17 +211,17 @@ end Net
 
 open Net
 
-/-! ## The `Layer` namespace
+/-! ## The `Comp` namespace
 
-Everything the layer cut names lives under `PLTS.ABA.Layer`, so that `PLTS.ABA`
-itself carries only what the chain cites. `Net` is the deployed reading's own
-namespace; this is its layer-cut counterpart. -/
+Everything the component boundary names lives under `PLTS.ABA.Comp`, so that
+`PLTS.ABA` itself carries only what the chain cites. `Net` is the protocol's
+own namespace; `Comp` is the components'. -/
 
-namespace Layer
+namespace Comp
 
 /-! ### The round-loop program of one process
 
-The layer that calls a round's graded-agreement subsystem and the coin, and
+The automaton that calls a round's graded-agreement subsystem and the coin, and
 decides. It writes no stage record: the five multicast levels and the stage
 delivery are internal to a round subsystem, so they leave no row here, and the
 three Byzantine graded-agreement drives change no round-loop data, which is
@@ -235,125 +235,125 @@ process's as a bystander. -/
 
 /-- The step relation of the round-loop program of process `j`. -/
 inductive CoreProcStepN (P : Params) (j : Fin P.n) :
-    CoreNodeN P.n → NLab P.n → PMF (CoreNodeN P.n) → Prop
+    CoreRec P.n → NLab P.n → PMF (CoreRec P.n) → Prop
   /-- `upon ABA(b)`: record input and estimate, open round `0`. -/
-  | input (c : CoreNodeN P.n) (b : Bool) (h : c.proc.input = none) :
+  | input (c : CoreRec P.n) (b : Bool) (h : c.proc.input = none) :
       CoreProcStepN P j c (Sum.inl (.callABA j b))
         (PMF.pure (c.setProc { c.proc with
           input := some b, est := some b, round := 0, phase := .toCallG }))
   /-- Input-enabledness loop on `j`'s own `callABA`. -/
-  | inputLoop (c : CoreNodeN P.n) (b : Bool) :
+  | inputLoop (c : CoreRec P.n) (b : Bool) :
       CoreProcStepN P j c (Sum.inl (.callABA j b)) (PMF.pure c)
   /-- An input addressed elsewhere: not `j`'s business. -/
-  | callABAIdle (c : CoreNodeN P.n) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
+  | callABAIdle (c : CoreRec P.n) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.callABA id b)) (PMF.pure c)
   /-- Return `b` on an `n − f` DECIDED quorum. Having multicast `b` oneself is
   a condition on the DECIDED pools, hence `aNet`'s conjunct. -/
-  | ret (c : CoreNodeN P.n) (b : Bool)
+  | ret (c : CoreRec P.n) (b : Bool)
       (hcnt : P.n - P.f ≤ c.decidedCount b) (hret : c.proc.returned = false) :
       CoreProcStepN P j c (Sum.inl (.retABA j b))
         (PMF.pure (c.setProc { c.proc with returned := true }))
   /-- A return by another process: not `j`'s business. -/
-  | retABAIdle (c : CoreNodeN P.n) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
+  | retABAIdle (c : CoreRec P.n) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.retABA id b)) (PMF.pure c)
   /-- The graded-agreement call, round-loop half: hand the estimate over and
   wait. Opening the stage record is the round subsystem's half. -/
-  | callG (c : CoreNodeN P.n) (r : ℕ) (b : Bool)
+  | callG (c : CoreRec P.n) (r : ℕ) (b : Bool)
       (hph : c.proc.phase = .toCallG) (hr : c.proc.round = r)
       (hest : c.proc.est = some b) :
       CoreProcStepN P j c (Sum.inl (.callG r j b))
         (PMF.pure (c.setProc { c.proc with phase := .awaitG }))
   /-- A graded-agreement call by another process: not `j`'s business. -/
-  | callGIdle (c : CoreNodeN P.n) (r : ℕ) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
+  | callGIdle (c : CoreRec P.n) (r : ℕ) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.callG r id b)) (PMF.pure c)
   /-- The graded-agreement return, round-loop half: record the grade and head
   for the coin. The evidence for the grade is the round subsystem's conjunct. -/
-  | retG (c : CoreNodeN P.n) (r : ℕ) (out : GbcaOut)
+  | retG (c : CoreRec P.n) (r : ℕ) (out : GbcaOut)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r) :
       CoreProcStepN P j c (Sum.inl (.retG r j out))
         (PMF.pure (c.setProc { c.proc with
           est := out.est, lastGrade := some out, phase := .toCallW }))
   /-- A graded-agreement return to another process: not `j`'s business. -/
-  | retGIdle (c : CoreNodeN P.n) (r : ℕ) (id : Fin P.n) (out : GbcaOut)
+  | retGIdle (c : CoreRec P.n) (r : ℕ) (id : Fin P.n) (out : GbcaOut)
       (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.retG r id out)) (PMF.pure c)
   /-- `c ← WCC_r()`, the call half. -/
-  | callW (c : CoreNodeN P.n) (r : ℕ)
+  | callW (c : CoreRec P.n) (r : ℕ)
       (hph : c.proc.phase = .toCallW) (hr : c.proc.round = r) :
       CoreProcStepN P j c (Sum.inl (.callW r j))
         (PMF.pure (c.setProc { c.proc with phase := .awaitW }))
   /-- A coin call by another process: not `j`'s business. -/
-  | callWIdle (c : CoreNodeN P.n) (r : ℕ) (id : Fin P.n) (hid : id ≠ j) :
+  | callWIdle (c : CoreRec P.n) (r : ℕ) (id : Fin P.n) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.callW r id)) (PMF.pure c)
   /-- The coin return without a publication: the round advances and nothing is
   multicast, the round's grade not being an `A` (D10). -/
-  | retW (c : CoreNodeN P.n) (r : ℕ) (co : Bool)
+  | retW (c : CoreRec P.n) (r : ℕ) (co : Bool)
       (hph : c.proc.phase = .awaitW) (hr : c.proc.round = r)
       (hgr : ∀ v : Bool, c.proc.lastGrade ≠ some (.A v)) :
       CoreProcStepN P j c (Sum.inl (.retW r j co)) (PMF.pure (c.stepRound co))
   /-- A coin return to another process: not `j`'s business. -/
-  | retWIdle (c : CoreNodeN P.n) (r : ℕ) (id : Fin P.n) (co : Bool) (hid : id ≠ j) :
+  | retWIdle (c : CoreRec P.n) (r : ℕ) (id : Fin P.n) (co : Bool) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.retW r id co)) (PMF.pure c)
   /-- Corruption is not the round loop's business (D1). -/
-  | failIdle (c : CoreNodeN P.n) (k : Fin P.n) :
+  | failIdle (c : CoreRec P.n) (k : Fin P.n) :
       CoreProcStepN P j c (Sum.inl (.fail k)) (PMF.pure c)
   /-- The DECIDED relay on an `f + 1` quorum (D12′): the quorum is a condition
   on the node, the write-once condition and the pool insert are `aNet`'s. -/
-  | dsndRelay (c : CoreNodeN P.n) (b : Bool)
+  | dsndRelay (c : CoreRec P.n) (b : Bool)
       (hcnt : P.f + 1 ≤ c.decidedCount b) :
       CoreProcStepN P j c (Sum.inr (.dsnd j b)) (PMF.pure c)
   /-- A DECIDED relay by another process: not `j`'s business. -/
-  | dsndIdle (c : CoreNodeN P.n) (k : Fin P.n) (b : Bool) (hk : k ≠ j) :
+  | dsndIdle (c : CoreRec P.n) (k : Fin P.n) (b : Bool) (hk : k ≠ j) :
       CoreProcStepN P j c (Sum.inr (.dsnd k b)) (PMF.pure c)
   /-- DECIDED delivery, receiver's half: at most one receipt per (sender, bit)
   (D12′). Authenticity is `aNet`'s conjunct. -/
-  | ddlvRecv (c : CoreNodeN P.n) (k : Fin P.n) (b : Bool) (hr : b ∉ c.decIn k) :
+  | ddlvRecv (c : CoreRec P.n) (k : Fin P.n) (b : Bool) (hr : b ∉ c.decIn k) :
       CoreProcStepN P j c (Sum.inr (.ddlv j k b)) (PMF.pure (c.recvDec k b))
   /-- A DECIDED delivery to another process: not `j`'s business. -/
-  | ddlvIdle (c : CoreNodeN P.n) (i k : Fin P.n) (b : Bool) (hi : i ≠ j) :
+  | ddlvIdle (c : CoreRec P.n) (i k : Fin P.n) (b : Bool) (hi : i ≠ j) :
       CoreProcStepN P j c (Sum.inr (.ddlv i k b)) (PMF.pure c)
   /-- The coin return fused with the `⟨DECIDED, b⟩` publication (D10): the
   round's grade was `A b`, so the round advance publishes `b`, the pool insert
   being `aNet`'s half. -/
-  | retWPub (c : CoreNodeN P.n) (r : ℕ) (co : Bool) (b : Bool)
+  | retWPub (c : CoreRec P.n) (r : ℕ) (co : Bool) (b : Bool)
       (hph : c.proc.phase = .awaitW) (hr : c.proc.round = r)
       (hgr : c.proc.lastGrade = some (.A b)) :
       CoreProcStepN P j c (Sum.inr (.retWPub r j co b)) (PMF.pure (c.stepRound co))
   /-- A fused coin return at another process: not `j`'s business. -/
-  | retWPubIdle (c : CoreNodeN P.n) (r : ℕ) (id : Fin P.n) (co : Bool) (b : Bool)
+  | retWPubIdle (c : CoreRec P.n) (r : ℕ) (id : Fin P.n) (co : Bool) (b : Bool)
       (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inr (.retWPub r id co b)) (PMF.pure c)
   /-- The graded-agreement call against an already-called stage record: the
   round loop moves and nothing else does — the whole row is core content. -/
-  | gcallLoop (c : CoreNodeN P.n) (r : ℕ) (b : Bool)
+  | gcallLoop (c : CoreRec P.n) (r : ℕ) (b : Bool)
       (hph : c.proc.phase = .toCallG) (hr : c.proc.round = r)
       (hest : c.proc.est = some b) :
       CoreProcStepN P j c (Sum.inr (.gcallLoop r j b))
         (PMF.pure (c.setProc { c.proc with phase := .awaitG }))
   /-- Such a call at another process: not `j`'s business. -/
-  | gcallLoopIdle (c : CoreNodeN P.n) (r : ℕ) (id : Fin P.n) (b : Bool)
+  | gcallLoopIdle (c : CoreRec P.n) (r : ℕ) (id : Fin P.n) (b : Bool)
       (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inr (.gcallLoop r id b)) (PMF.pure c)
   /-- A Byzantine graded-agreement call (D11) writes a stage record and no
   round-loop data: every round loop, the driven one included, stands still. -/
-  | byzCallGIdle (c : CoreNodeN P.n) (r : ℕ) (k : Fin P.n) (b : Bool) :
+  | byzCallGIdle (c : CoreRec P.n) (r : ℕ) (k : Fin P.n) (b : Bool) :
       CoreProcStepN P j c (Sum.inr (.byzCallG r k b)) (PMF.pure c)
   /-- A Byzantine graded-agreement call against an already-called stage record
   (D11): nothing moves anywhere. -/
-  | byzCallGLoopIdle (c : CoreNodeN P.n) (r : ℕ) (k : Fin P.n) (b : Bool) :
+  | byzCallGLoopIdle (c : CoreRec P.n) (r : ℕ) (k : Fin P.n) (b : Bool) :
       CoreProcStepN P j c (Sum.inr (.byzCallGLoop r k b)) (PMF.pure c)
   /-- A Byzantine graded-agreement return (D11): stage content only. -/
-  | byzRetGIdle (c : CoreNodeN P.n) (r : ℕ) (k : Fin P.n) (out : GbcaOut) :
+  | byzRetGIdle (c : CoreRec P.n) (r : ℕ) (k : Fin P.n) (out : GbcaOut) :
       CoreProcStepN P j c (Sum.inr (.byzRetG r k out)) (PMF.pure c)
   /-- A Byzantine coin call (D11): the coin oracle reacts through the pullback. -/
-  | byzCallWIdle (c : CoreNodeN P.n) (r : ℕ) (k : Fin P.n) :
+  | byzCallWIdle (c : CoreRec P.n) (r : ℕ) (k : Fin P.n) :
       CoreProcStepN P j c (Sum.inr (.byzCallW r k)) (PMF.pure c)
   /-- A Byzantine coin return (D11): the coin oracle reacts through the
   pullback. -/
-  | byzRetWIdle (c : CoreNodeN P.n) (r : ℕ) (k : Fin P.n) (b : Bool) :
+  | byzRetWIdle (c : CoreRec P.n) (r : ℕ) (k : Fin P.n) (b : Bool) :
       CoreProcStepN P j c (Sum.inr (.byzRetW r k b)) (PMF.pure c)
 
-/-! ### The DECIDED layer and the corrupted set
+/-! ### The DECIDED pools and the corrupted set
 
 What is left of the network adversary once the round-tagged pools have gone to
 the round fabrics: the DECIDED pools, the corrupted set with its budget, and
@@ -453,7 +453,7 @@ inductive ANetStep (P : Params) :
   | fail (a : ANetState P.n) (k : Fin P.n) :
       ANetStep P a (Sum.inl (.fail k)) (PMF.pure (ANetState.corrupt P k a))
   /-- Byzantine DECIDED injection (D12′): either or both bits, at any time, so
-  a corrupted process may equivocate at the DECIDED layer. -/
+  a corrupted process may equivocate in the DECIDED pools. -/
   | byzD (a : ANetState P.n) (k : Fin P.n) (b : Bool) (hF : k ∈ a.F) :
       ANetStep P a (Sum.inl .tau) (PMF.pure (a.dput k b))
 
@@ -461,15 +461,15 @@ inductive ANetStep (P : Params) :
 
 /-- The round-loop program of process `j`. -/
 noncomputable def coreProcN (P : Params) (j : Fin P.n) :
-    System (CoreNodeN P.n) (NLab P.n) where
-  init := CoreNodeN.initial P.n
+    System (CoreRec P.n) (NLab P.n) where
+  init := CoreRec.initial P.n
   step := CoreProcStepN P j
 
 @[simp] theorem coreProcN_init (P : Params) (j : Fin P.n) :
-    (coreProcN P j).init = CoreNodeN.initial P.n := rfl
+    (coreProcN P j).init = CoreRec.initial P.n := rfl
 
-@[simp] theorem coreProcN_step (P : Params) (j : Fin P.n) (c : CoreNodeN P.n)
-    (l : NLab P.n) (ν : PMF (CoreNodeN P.n)) :
+@[simp] theorem coreProcN_step (P : Params) (j : Fin P.n) (c : CoreRec P.n)
+    (l : NLab P.n) (ν : PMF (CoreRec P.n)) :
     (coreProcN P j).step c l ν ↔ CoreProcStepN P j c l ν := Iff.rfl
 
 /-- The ABA-side network. -/
@@ -485,8 +485,8 @@ noncomputable def aNet (P : Params) : System (ANetState P.n) (NLab P.n) where
 /-! ### Determinacy of the two new rule tables -/
 
 /-- Every round-loop transition is Dirac. -/
-theorem coreProcStepN_dirac {P : Params} {j : Fin P.n} {c : CoreNodeN P.n}
-    {l : NLab P.n} {ν : PMF (CoreNodeN P.n)} (h : CoreProcStepN P j c l ν) :
+theorem coreProcStepN_dirac {P : Params} {j : Fin P.n} {c : CoreRec P.n}
+    {l : NLab P.n} {ν : PMF (CoreRec P.n)} (h : CoreProcStepN P j c l ν) :
     ∃ c', ν = PMF.pure c' := by
   cases h <;> exact ⟨_, rfl⟩
 
@@ -508,18 +508,18 @@ theorem syncCore_isLTS (P : Params) : (System.syncProduct (coreProcN P)).IsLTS :
 
 /-- No round-loop rule fires on `τ`: a round loop only ever moves in a
 rendezvous or on a shared API label. -/
-theorem coreProcStepN_no_tau {P : Params} {j : Fin P.n} {c : CoreNodeN P.n}
-    {ν : PMF (CoreNodeN P.n)} (h : CoreProcStepN P j c (Silent.τ : NLab P.n) ν) :
+theorem coreProcStepN_no_tau {P : Params} {j : Fin P.n} {c : CoreRec P.n}
+    {ν : PMF (CoreRec P.n)} (h : CoreProcStepN P j c (Silent.τ : NLab P.n) ν) :
     False := by
   rw [nlab_tau] at h; cases h
 
 /-! ### Reading and building a transition of the round-loop group -/
 
 /-- A synchronised transition of the round-loop group on a visible label. -/
-theorem syncCore_inv {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n} {l : NLab P.n}
-    {μ : PMF (∀ _ : Fin P.n, CoreNodeN P.n)}
+theorem syncCore_inv {P : Params} {C : ∀ _ : Fin P.n, CoreRec P.n} {l : NLab P.n}
+    {μ : PMF (∀ _ : Fin P.n, CoreRec P.n)}
     (h : (System.syncProduct (coreProcN P)).step C l μ) :
-    ∃ y : ∀ _ : Fin P.n, CoreNodeN P.n,
+    ∃ y : ∀ _ : Fin P.n, CoreRec P.n,
       μ = PMF.pure y ∧ ∀ i, CoreProcStepN P i (C i) l (PMF.pure (y i)) := by
   rw [System.syncProduct_step] at h
   rcases h with ⟨-, μ_, hall, rfl⟩ | ⟨rfl, i, μ_i, hstep, -⟩
@@ -533,7 +533,7 @@ theorem syncCore_inv {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n} {l : NLab
 
 /-- Build a synchronised transition of the round-loop group from per-process
 Dirac steps. -/
-theorem syncCore_pure {P : Params} {C y : ∀ _ : Fin P.n, CoreNodeN P.n}
+theorem syncCore_pure {P : Params} {C y : ∀ _ : Fin P.n, CoreRec P.n}
     {l : NLab P.n} (hl : l ≠ Silent.τ)
     (h : ∀ i, CoreProcStepN P i (C i) l (PMF.pure (y i))) :
     (System.syncProduct (coreProcN P)).step C l (PMF.pure y) := by
@@ -541,8 +541,8 @@ theorem syncCore_pure {P : Params} {C y : ∀ _ : Fin P.n, CoreNodeN P.n}
   exact Or.inl ⟨hl, fun i => PMF.pure (y i), h, (piPMF_pure y).symm⟩
 
 /-- The round-loop group has no silent transition. -/
-theorem syncCore_no_tau {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
-    {μ : PMF (∀ _ : Fin P.n, CoreNodeN P.n)}
+theorem syncCore_no_tau {P : Params} {C : ∀ _ : Fin P.n, CoreRec P.n}
+    {μ : PMF (∀ _ : Fin P.n, CoreRec P.n)}
     (h : (System.syncProduct (coreProcN P)).step C (Silent.τ : NLab P.n) μ) :
     False := by
   rcases h with ⟨hτ, -⟩ | ⟨-, i, μ_i, hstep, -⟩
@@ -557,7 +557,7 @@ non-participant as the identity. -/
 
 section CoreInversion
 
-variable {P : Params} {j : Fin P.n} {c : CoreNodeN P.n} {ν : PMF (CoreNodeN P.n)}
+variable {P : Params} {j : Fin P.n} {c : CoreRec P.n} {ν : PMF (CoreRec P.n)}
 
 theorem stepC_callABA_own {b : Bool}
     (h : CoreProcStepN P j c (Sum.inl (.callABA j b)) ν) :
@@ -833,23 +833,23 @@ end ANetInversion
 
 /-! ### Pinning the round-loop tuple -/
 
-theorem coresN_update {P : Params} {C y : ∀ _ : Fin P.n, CoreNodeN P.n}
-    {id : Fin P.n} {nd : CoreNodeN P.n}
-    (hown : (PMF.pure (y id) : PMF (CoreNodeN P.n)) = PMF.pure nd)
-    (hfor : ∀ i, i ≠ id → (PMF.pure (y i) : PMF (CoreNodeN P.n)) = PMF.pure (C i)) :
+theorem coresN_update {P : Params} {C y : ∀ _ : Fin P.n, CoreRec P.n}
+    {id : Fin P.n} {nd : CoreRec P.n}
+    (hown : (PMF.pure (y id) : PMF (CoreRec P.n)) = PMF.pure nd)
+    (hfor : ∀ i, i ≠ id → (PMF.pure (y i) : PMF (CoreRec P.n)) = PMF.pure (C i)) :
     y = Function.update C id nd := by
   funext i
   by_cases hi : i = id
   · subst hi; rw [Function.update_self]; exact pureN_inj hown
   · rw [Function.update_of_ne hi]; exact pureN_inj (hfor i hi)
 
-theorem coresN_id {P : Params} {C y : ∀ _ : Fin P.n, CoreNodeN P.n}
-    (hall : ∀ i, (PMF.pure (y i) : PMF (CoreNodeN P.n)) = PMF.pure (C i)) : y = C :=
+theorem coresN_id {P : Params} {C y : ∀ _ : Fin P.n, CoreRec P.n}
+    (hall : ∀ i, (PMF.pure (y i) : PMF (CoreRec P.n)) = PMF.pure (C i)) : y = C :=
   funext fun i => pureN_inj (hall i)
 
 /-- One round loop moves and every other idles. -/
-theorem coresN_family {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
-    {L : NLab P.n} (id : Fin P.n) (nd : CoreNodeN P.n)
+theorem coresN_family {P : Params} {C : ∀ _ : Fin P.n, CoreRec P.n}
+    {L : NLab P.n} (id : Fin P.n) (nd : CoreRec P.n)
     (hown : CoreProcStepN P id (C id) L (PMF.pure nd))
     (hfor : ∀ i, i ≠ id → CoreProcStepN P i (C i) L (PMF.pure (C i))) :
     ∀ i, CoreProcStepN P i (C i) L (PMF.pure (Function.update C id nd i)) := by
@@ -858,7 +858,7 @@ theorem coresN_family {P : Params} {C : ∀ _ : Fin P.n, CoreNodeN P.n}
   · subst hi; rw [Function.update_self]; exact hown
   · rw [Function.update_of_ne hi]; exact hfor i hi
 
-end Layer
+end Comp
 
 end ABA
 end PLTS

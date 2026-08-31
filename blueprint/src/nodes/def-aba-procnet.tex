@@ -1,11 +1,11 @@
 \begin{definition}[The program of one process]
   \label{def:aba-procnet}
-  \lean{PLTS.ABA.GBCA.ProcNodeN}\lean{PLTS.ABA.CoreNodeN}\lean{PLTS.ABA.Net.ABANodeN}\lean{PLTS.ABA.Net.NetEvt}\lean{PLTS.ABA.Net.NLab}\lean{PLTS.ABA.Net.netEvtLabels}\lean{PLTS.ABA.Net.ABAProcStepN}\lean{PLTS.ABA.Net.ABAProcN}\leanok
+  \lean{PLTS.ABA.GBCA.StageRec}\lean{PLTS.ABA.CoreRec}\lean{PLTS.ABA.Net.ProcRec}\lean{PLTS.ABA.Net.NetEvt}\lean{PLTS.ABA.Net.NLab}\lean{PLTS.ABA.Net.netEvtLabels}\lean{PLTS.ABA.Net.ABAProcStepN}\lean{PLTS.ABA.Net.ABAProcN}\leanok
   \uses{def:aba-labels, def:aba-gbca-vocab, def:aba-core-vocab, def:relabel, def:syncproduct}
   The state of process $j$ is
   \[
-    \mathrm{ABANodeN}(n) \;=\;
-      \mathrm{CoreNodeN}(n) \times \mathrm{ProcNodeN}(n),
+    \mathrm{ProcRec}(n) \;=\;
+      \mathrm{CoreRec}(n) \times \mathrm{StageRec}(n),
   \]
   its round-loop node --- the control record of Definition~\ref{def:aba-core-vocab} together with the DECIDED receipt rows $decIn(k)$ --- beside one stage node, the stage record of Definition~\ref{def:aba-gbca-vocab} together with the inbox rows $inbox(k)$.
   The stage node is the record of the round the round loop is in, and the round advance resets it to the initial stage record, so a process holds nothing of a round it has left (D20).

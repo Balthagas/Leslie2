@@ -1,6 +1,6 @@
 \begin{definition}[The program of one process]
   \label{def:aba-procnet}
-  \lean{PLTS.ABA.GBCA.ProcNodeN}\lean{PLTS.ABA.CoreNodeN}\lean{PLTS.ABA.Net.ABANodeN}\lean{PLTS.ABA.Net.NetEvt}\lean{PLTS.ABA.Net.NLab}\lean{PLTS.ABA.Net.netEvtLabels}\lean{PLTS.ABA.Net.ABAProcStepN}\lean{PLTS.ABA.Net.ABAProcN}\leanok
+  \lean{PLTS.ABA.GBCA.StageRec}\lean{PLTS.ABA.CoreRec}\lean{PLTS.ABA.Net.ProcRec}\lean{PLTS.ABA.Net.NetEvt}\lean{PLTS.ABA.Net.NLab}\lean{PLTS.ABA.Net.netEvtLabels}\lean{PLTS.ABA.Net.ABAProcStepN}\lean{PLTS.ABA.Net.ABAProcN}\leanok
   \uses{def:aba-labels, def:aba-gbca-vocab, def:aba-core-vocab, def:relabel, def:syncproduct}
-  The program of process $j$ of the deployed protocol, corruption-blind and read over the extended alphabet that names the network rendezvous, on the state $\mathrm{ABANodeN}(n) = \mathrm{CoreNodeN}(n) \times \mathrm{ProcNodeN}(n)$ --- the round-loop node beside the stage record of the round the loop is in, which the round advance resets (D20): \leandecl{PLTS.ABA.Net.ABAProcN}.
+  The program of process $j$ of the protocol, corruption-blind and read over the extended alphabet that names the network rendezvous, on the state $\mathrm{ProcRec}(n) = \mathrm{CoreRec}(n) \times \mathrm{StageRec}(n)$ --- the round-loop node beside the stage record of the round the loop is in, which the round advance resets (D20): \leandecl{PLTS.ABA.Net.ABAProcN}.
 \end{definition}

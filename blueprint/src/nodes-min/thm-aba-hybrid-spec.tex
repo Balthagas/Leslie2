@@ -1,0 +1,11 @@
+\begin{theorem}[The hybrid refines the ABA specification]
+  \label{thm:aba-hybrid-spec}
+  \lean{PLTS.ABA.HybridState}\lean{PLTS.ABA.Inv}\lean{PLTS.ABA.Abs}\lean{PLTS.ABA.coreR}\lean{PLTS.ABA.coreRel}\lean{PLTS.ABA.coreSim}\lean{PLTS.ABA.hybrid_spec}\leanok
+  \uses{def:aba-hybrid, def:aba-spec, def:aba-core, def:aba-gbca-spec, def:aba-wcc-spec, def:aba-labels, def:process-algebra, def:idle-family, def:forwardsim, def:weakstep, def:pmfrel, def:achievable, thm:forward-sound}
+  The hybrid refines the ABA specification, $\operatorname{ATD}(\mathrm{hybrid}(P)) \subseteq \operatorname{ATD}(\mathrm{spec}(P))$: \leandecl{PLTS.ABA.hybrid_spec}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-hybrid, def:aba-spec, def:aba-core, def:aba-gbca-spec, def:aba-wcc-spec, def:aba-labels, def:process-algebra, def:idle-family, def:forwardsim, def:weakstep, def:pmfrel, def:achievable, thm:forward-sound}
+  One hand-built probabilistic forward simulation, \leandecl{PLTS.ABA.coreSim}, along the relation \leandecl{PLTS.ABA.coreRel} on the state of $\mathrm{hybrid}(P)$ itself, then soundness (Theorem~\ref{thm:forward-sound}).
+\end{proof}

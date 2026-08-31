@@ -98,8 +98,8 @@ The invariant carries
   `F` or genuine holders, and the count is monotone under every step.
 
 `Framework/FamilySim.lean` is imported for the downstream tree: the family
-congruence `ForwardSimulation.family` reaches `ABA/GBCASubsystem.lean` and
-`ABA/LayeredSpec.lean` along this file, which also supplies the broadcast
+congruence `ForwardSimulation.family` reaches `ABA/GBCAInstances.lean` and
+`ABA/Hybrid.lean` along this file, which also supplies the broadcast
 ingredient that congruence consumes (`instRel_corrupt`).
 -/
 
@@ -1789,7 +1789,7 @@ preserved by that act. The spec-side corruption projections
 `ABA/GBCASpec.lean`; the two `corrupt` functions stay in lockstep by
 `implSpec_corrupt_F_eq`. The statement is proved directly rather than through
 `implRefines`, whose `fail` case only yields an existential match. Its
-consumer is the round subsystem's family lifting (`ABA/GBCASubsystem.lean`). -/
+consumer is the round subsystem's family lifting (`ABA/GBCAInstances.lean`). -/
 
 /-- **Broadcast compatibility**: `instRel` is preserved by the synchronized
 corruption of both sides. The two `corrupt`s share the guard

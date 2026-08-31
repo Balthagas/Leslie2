@@ -3,6 +3,6 @@
   \lean{PLTS.ABA.Net.NetState}\lean{PLTS.ABA.Net.NetState.corrupt}\lean{PLTS.ABA.Net.NetStep}\lean{PLTS.ABA.Net.netAdv}\leanok
   \uses{def:aba-procnet, def:aba-labels, def:aba-params}
   The network adversary $\mathrm{netAdv}(P)$ holds what a process may not see: the round-tagged pools $pool(r,j)$ of the stage messages $j$ has multicast in round $r$ (D5), the pools $dpool(j)$ of the DECIDED payloads $j$ has multicast (D12$'$), and the corrupted set $F$ with its budget, the guard $k \notin F \wedge |F| < f$ on the $\mathrm{fail}$ row (D1).
-  It supplies the other half of every send and every delivery, the delivery guards $m \in pool(r,j)$ and $b \in dpool(j)$ being the soundness of the authenticated network; it carries the authorisation $k \in F$ of each of the five Byzantine drives (D11), and the two injections $\mathrm{byzG}$ and $\mathrm{byzD}$, by which a corrupted sender pools an arbitrary stage message or either DECIDED bit and so equivocates at that layer.
+  It supplies the other half of every send and every delivery, the delivery guards $m \in pool(r,j)$ and $b \in dpool(j)$ being the soundness of the authenticated network; it carries the authorisation $k \in F$ of each of the five Byzantine drives (D11), and the two injections $\mathrm{byzG}$ and $\mathrm{byzD}$, by which a corrupted sender pools an arbitrary stage message or either DECIDED bit and so equivocates in those pools.
   Full rule table: \leandecl{PLTS.ABA.Net.netAdv}.
 \end{definition}

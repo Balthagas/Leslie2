@@ -1,0 +1,27 @@
+\begin{theorem}[The hybrid refines the ABA specification]
+  \label{thm:aba-hybrid-spec}
+  \lean{PLTS.ABA.HybridState}\lean{PLTS.ABA.Inv}\lean{PLTS.ABA.Abs}\lean{PLTS.ABA.coreR}\lean{PLTS.ABA.coreRel}\lean{PLTS.ABA.coreSim}\lean{PLTS.ABA.hybrid_spec}\leanok
+  \uses{def:aba-hybrid, def:aba-spec, def:aba-core, def:aba-gbca-spec, def:aba-wcc-spec, def:aba-labels, def:process-algebra, def:idle-family, def:forwardsim, def:weakstep, def:pmfrel, def:achievable, thm:forward-sound}
+  For all parameters $P$,
+  \[
+    \operatorname{ATD}(\mathrm{hybrid}(P)) \;\subseteq\;
+    \operatorname{ATD}(\mathrm{spec}(P)).
+  \]
+  The two systems are compared on the ABA interface alone, namely $\mathrm{callABA}(i,b)$, $\mathrm{retABA}(i,b)$, $\mathrm{fail}(i)$ and $\tau$; the sub-protocol API, the labels $\mathrm{callG}(r,i,b)$, $\mathrm{retG}(r,i,g)$, $\mathrm{callW}(r,i)$ and $\mathrm{retW}(r,i,c)$ for $r \in \mathbb{N}$, $i \in [n]$, bits $b$ and $c$ and graded outcomes $g \in \{A\,0, A\,1, B\,0, B\,1, C\}$, is hidden at the outer frame of $\mathrm{hybrid}(P)$.
+  Headline: \leandecl{PLTS.ABA.hybrid_spec}.
+\end{theorem}
+
+\begin{proof}\leanok
+  \uses{def:aba-hybrid, def:aba-spec, def:aba-core, def:aba-gbca-spec, def:aba-wcc-spec, def:aba-labels, def:process-algebra, def:idle-family, def:forwardsim, def:weakstep, def:pmfrel, def:achievable, thm:forward-sound}
+  One probabilistic forward simulation carries the hybrid to the ABA specification, \leandecl{PLTS.ABA.coreSim}, and it is built by hand and checked row by row.
+  A concrete state is the quadruple $\mathrm{HybridState}(P)$ of the round specifications, the $n$ round loops, the ABA-side network and the coin oracle, which is the state of $\mathrm{hybrid}(P)$ itself.
+  The relation is \leandecl{PLTS.ABA.coreRel}, the Dirac lift of \leandecl{PLTS.ABA.coreR}, and $\mathrm{coreR}$ is the conjunction of an invariant $\mathrm{Inv}$ on the concrete state with an abstraction predicate $\mathrm{Abs}$ tying it to the abstract one.
+  Both read the two ABA-side factors through the accessors of Definition~\ref{def:aba-core}, so the whole relation is written in the coordinates the system already has and no change of system precedes it.
+  Take a state of $\mathrm{hybrid}(P)$ satisfying $\mathrm{Inv} \wedge \mathrm{Abs}$ and a row out of it.
+  $\mathrm{Abs}$ pins the corrupted set, the returns and $coin = \bot$, so the abstract twin never fires the coin rule, and it is two-phase on the twin's $val$ (D16).
+  There are three cases.
+  First, a hidden row or the coin flip: the twin answers by a stutter in the $\mathrm{Abs}$ frame, the flip under the constant coupling that sends every outcome to the one unchanged twin.
+  Second, the first $\mathrm{retABA}$ of the run: the twin answers by a single weak step that binds, fills, decides and returns, its bind licensed by the $f{+}1$ input support carried in the invariant and its $A$-lock certificate obtained by a pigeonhole on the $n-f$ DECIDED tally behind the return.
+  Third, a $\mathrm{fail}$ row: the twin answers by the corruption broadcast.
+  Either way the relation is restored, so $\mathrm{coreRel}$ is a probabilistic forward simulation, and soundness (Theorem~\ref{thm:forward-sound}) turns it into the stated inclusion, \leandecl{PLTS.ABA.hybrid_spec}.
+\end{proof}

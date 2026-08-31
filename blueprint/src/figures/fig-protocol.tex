@@ -1,4 +1,4 @@
-% The deployed system (PLTS.ABA.Net.ABAProcN, PLTS.ABA.Net.netAdv, PLTS.ABA.Net.deployed):
+% The protocol (PLTS.ABA.Net.ABAProcN, PLTS.ABA.Net.netAdv, PLTS.ABA.protocol):
 % n corruption-blind programs, the network adversary, the coin oracle.
 \begin{tikzpicture}[
     >={Stealth[round]}, semithick,
@@ -50,9 +50,9 @@
      $\mathrm{retWPub}$};
   % the presentation it is included in
   \node[box] (impl) at (4.9,-5.2)
-    {the layer-boundary reading\\ $\mathrm{layered}(P)$};
+    {the composed reading\\ $\mathrm{composed}(P)$};
   \draw[->, dashed] (4.9,-3.9) --
-    node[lbl, right, align=left, pos=0.72]{$\operatorname{ATD}$ inclusion, no restriction,\\ along $\mathrm{DepRel}$} (impl.north);
+    node[lbl, right, align=left, pos=0.72]{$\operatorname{ATD}$ inclusion, no restriction,\\ along $\mathrm{ProtocolRel}$} (impl.north);
   % the rendezvous bus legend, drawn last so it masks the descending arrows
   \node[ann, fill=white] at (4.7,-0.8)
     {$\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$,

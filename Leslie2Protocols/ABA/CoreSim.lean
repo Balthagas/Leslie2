@@ -8,23 +8,23 @@ import Leslie2Protocols.ABA.CoreSimAbs
 import Leslie2Protocols.ABA.CoreSimBurst
 
 /-!
-# The core simulation `layeredSpec ⊑ ABA.spec`
+# The core simulation `hybrid ⊑ ABA.spec`
 
 Assembles the invariant/relation of the `CoreSimRel`/`CoreSimInv`/`CoreSimAbs` chain and
 `CoreSimBurst`'s burst kit into the theorem
-`coreSim`, the probabilistic forward simulation `layeredSpec P ⊑ spec P` along `coreRel P`.
+`coreSim`, the probabilistic forward simulation `hybrid P ⊑ spec P` along `coreRel P`.
 -/
 
 namespace PLTS
 namespace ABA
 
-open Net Layer
+open Net Comp
 
 variable {P : Params}
 
 /-- The core simulation relation, `Dirac`-lifted: every concrete state relates to the point
 mass on its (unique) abstract twin. -/
-def coreRel (P : Params) : LayeredSpecState P → PMF (SpecState P.n) → Prop :=
+def coreRel (P : Params) : HybridState P → PMF (SpecState P.n) → Prop :=
   diracRel (coreR P)
 
 /-- **Stutter-row packaging.** If every post-state `s'` in the support of a concrete τ-step's
@@ -33,19 +33,19 @@ answer with the trivial `weakTau_refl` stutter: the coupling `Ω := μ_C.map (fu
 a))` has first marginal `μ_C` and second marginal the constant `pure (pure a)` (`PMF.map_const`),
 so `ω := pure (pure a)` and `ω.bind id = pure a` (`PMF.pure_bind`). Reused by every hidden
 handshake / internal row and by the unanimous `bindUnset` / stale coin-flip cases. -/
-private theorem stutter_step {P : Params} (μ_C : PMF (LayeredSpecState P)) (a : SpecState P.n)
+private theorem stutter_step {P : Params} (μ_C : PMF (HybridState P)) (a : SpecState P.n)
     (hA : ∀ s' ∈ μ_C.support, coreR P s' a) :
     ∃ ω : PMF (PMF (SpecState P.n)),
       PMFRel (coreRel P) μ_C ω ∧ weakTau (spec P) (PMF.pure a) (ω.bind id) := by
-  set Ω : PMF (LayeredSpecState P × PMF (SpecState P.n)) := μ_C.map (fun s' => (s', PMF.pure a)) with hΩdef
+  set Ω : PMF (HybridState P × PMF (SpecState P.n)) := μ_C.map (fun s' => (s', PMF.pure a)) with hΩdef
   have hFst : Ω.map Prod.fst = μ_C := by
     rw [hΩdef, PMF.map_comp]
-    have hcomp : (Prod.fst ∘ fun s' => (s', PMF.pure a)) = (id : LayeredSpecState P → LayeredSpecState P) := rfl
+    have hcomp : (Prod.fst ∘ fun s' => (s', PMF.pure a)) = (id : HybridState P → HybridState P) := rfl
     rw [hcomp, PMF.map_id]
   have hSnd : Ω.map Prod.snd = PMF.pure (PMF.pure a) := by
     rw [hΩdef, PMF.map_comp]
     have hcomp : (Prod.snd ∘ fun s' => (s', PMF.pure a)) =
-        (Function.const (LayeredSpecState P) (PMF.pure a)) := rfl
+        (Function.const (HybridState P) (PMF.pure a)) := rfl
     rw [hcomp, PMF.map_const]
   refine ⟨PMF.pure (PMF.pure a), ⟨Ω, hFst, hSnd, ?_⟩, ?_⟩
   · intro p hp
@@ -345,7 +345,7 @@ private theorem decide_burst {P : Params} {a : SpecState P.n} {b : Bool}
 abstract state `a'` (`coreR`-related) closes the `weakStep` disjunct of the simulation clause:
 the coupling is the Dirac-of-Dirac `ω := pure (pure a')`, whose `bind id` collapses back to
 `pure a'` (`PMF.pure_bind`), so any `weakStep (spec P) (pure a) l (pure a')` transfers directly. -/
-private theorem dirac_step {P : Params} (s_C' : LayeredSpecState P) (a' : SpecState P.n)
+private theorem dirac_step {P : Params} (s_C' : HybridState P) (a' : SpecState P.n)
     (hcoreR : coreR P s_C' a') :
     ∃ ω : PMF (PMF (SpecState P.n)),
       PMFRel (coreRel P) (PMF.pure s_C') ω ∧ ω.bind id = PMF.pure a' := by
@@ -355,30 +355,30 @@ private theorem dirac_step {P : Params} (s_C' : LayeredSpecState P) (a' : SpecSt
   · intro p hp; rw [PMF.mem_support_pure_iff] at hp; subst hp; exact ⟨a', rfl, hcoreR⟩
   · rw [PMF.pure_bind]; rfl
 
-/-- A hidden-API label can never be visible at the `layeredSpec` level (it is always relabeled
-to `τ` by the outer hiding), so any purported `layeredSpec`-step carrying one is vacuous. -/
-private theorem hidden_label_impossible {P : Params} {s_C : LayeredSpecState P} {l : Lab P.n}
-    {μ_C : PMF (LayeredSpecState P)} (hmem : l ∈ Lab.hiddenAPI P.n) (hne : l ≠ Silent.τ)
-    (hstep : (layeredSpec P).step s_C l μ_C) : False := by
-  rw [layeredSpec_step_iff] at hstep
+/-- A hidden-API label can never be visible at the `hybrid` level (it is always relabeled
+to `τ` by the outer hiding), so any purported `hybrid`-step carrying one is vacuous. -/
+private theorem hidden_label_impossible {P : Params} {s_C : HybridState P} {l : Lab P.n}
+    {μ_C : PMF (HybridState P)} (hmem : l ∈ Lab.hiddenAPI P.n) (hne : l ≠ Silent.τ)
+    (hstep : (hybrid P).step s_C l μ_C) : False := by
+  rw [hybrid_step_iff] at hstep
   rcases hstep with ⟨h, -⟩ | ⟨h, -⟩
   · exact hne h
   · exact h hmem
 
-/-- **The core simulation.** `layeredSpec P` is a probabilistic forward simulation of `spec P`
+/-- **The core simulation.** `hybrid P` is a probabilistic forward simulation of `spec P`
 along `coreRel P` (the never-flipping abstract twin). -/
 theorem coreSim (P : Params) :
-    ProbabilisticForwardSimulation (layeredSpec P) (spec P) (coreRel P) := by
+    ProbabilisticForwardSimulation (hybrid P) (spec P) (coreRel P) := by
   refine ⟨⟨PMF.pure (SpecState.initial P.n), ?_, SpecState.initial P.n, rfl, Inv.initial P,
     Abs.initial P⟩, ?_⟩
   · intro s_A hs_A; rw [PMF.mem_support_pure_iff] at hs_A; exact hs_A
   · intro s_C μ_A hR l μ_C hstep
     obtain ⟨g, C, A, w⟩ := s_C
     obtain ⟨a, rfl, hI, hAbs⟩ := hR
-    dsimp only [LayeredSpecState.aba, LayeredSpecState.wcc] at hI hAbs
+    dsimp only [HybridState.aba, HybridState.wcc] at hI hAbs
     cases l with
     | tau =>
-      rcases layered_step_tau P g C A w μ_C hstep with
+      rcases hybrid_step_tau P g C A w μ_C hstep with
         ⟨r, μr, hstepG, rfl⟩ | ⟨μc, hstepC, rfl⟩ | ⟨r, μw', hstepW, rfl⟩ |
         ⟨r, id, b, μr, μc, hstepG, hstepC, rfl⟩ |
         ⟨r, id, out, μr, μc, hstepG, hstepC, rfl⟩ |
@@ -453,7 +453,7 @@ theorem coreSim (P : Params) :
           exact ⟨hI', hAbs.step_retW hI r id b hstepW hstepC hwr' hc2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
     | callABA id b =>
-      rw [layered_step_callABA] at hstep
+      rw [hybrid_step_callABA] at hstep
       obtain ⟨μc, hstepC, rfl⟩ := hstep
       have hdisj := hstepC
       rcases hdisj with ⟨hin, rfl⟩ | rfl
@@ -545,7 +545,7 @@ theorem coreSim (P : Params) :
         rw [hbid]
         exact weakStep_strong (SpecStep.callLoop a id b)
     | retABA id b =>
-      rw [layered_step_retABA] at hstep
+      rw [hybrid_step_retABA] at hstep
       obtain ⟨μc, hstepC, rfl⟩ := hstep
       have hdisj := hstepC
       obtain ⟨hcnt, hs, hret, rfl⟩ := hdisj
@@ -649,7 +649,7 @@ theorem coreSim (P : Params) :
     | callW r id => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | retW r id b => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | fail id =>
-      rw [layered_step_fail] at hstep
+      rw [hybrid_step_fail] at hstep
       subst hstep
       set c' : ABAState P := ABAState.corrupt P id (C, A) with hc'def
       simp only [prodPMF_pure_abaRow]

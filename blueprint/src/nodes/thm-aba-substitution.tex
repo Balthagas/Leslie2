@@ -1,16 +1,16 @@
 \begin{theorem}[Substitution]
   \label{thm:aba-substitution}
   \lean{PLTS.ABA.substSim}\lean{PLTS.ABA.substitution}\leanok
-  \uses{def:aba-layeredspec, def:aba-layered, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, def:achievable}
-  Replacing each round's graded-agreement subsystem by its specification, the other three factors untouched, is a probabilistic forward simulation of $\mathrm{layered}(P)$ by $\mathrm{layeredSpec}(P)$, and hence
+  \uses{def:aba-hybrid, def:aba-composed, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound, def:achievable}
+  Replacing each round's graded-agreement subsystem by its specification, the other three factors untouched, is a probabilistic forward simulation of $\mathrm{composed}(P)$ by $\mathrm{hybrid}(P)$, and hence
   \[
-    \operatorname{ATD}(\mathrm{layered}(P)) \;\subseteq\;
-    \operatorname{ATD}(\mathrm{layeredSpec}(P)).
+    \operatorname{ATD}(\mathrm{composed}(P)) \;\subseteq\;
+    \operatorname{ATD}(\mathrm{hybrid}(P)).
   \]
 \end{theorem}
 
 \begin{proof}\leanok
-  \uses{def:aba-layeredspec, def:aba-layered, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound}
+  \uses{def:aba-hybrid, def:aba-composed, thm:gbca-family-refines, thm:precong-parallel, thm:precong-abstract, thm:precong-relabel, thm:forward-sound}
   The two systems are the same expression with one subterm replaced, so the precongruences apply to the family refinement of Theorem~\ref{thm:gbca-family-refines} along the shape of that expression: parallel composition against the fixed right-hand factor (Theorem~\ref{thm:precong-parallel}), hiding the rendezvous alphabet (Theorem~\ref{thm:precong-abstract}), reading the result back over $\mathrm{Lab}(n)$ (Theorem~\ref{thm:precong-relabel}), and hiding the sub-protocol API (Theorem~\ref{thm:precong-abstract} again).
   Soundness (Theorem~\ref{thm:forward-sound}) turns the resulting simulation into the stated inclusion.
 \end{proof}

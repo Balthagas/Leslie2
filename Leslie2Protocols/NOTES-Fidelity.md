@@ -77,7 +77,7 @@ receiving `echo4` messages from `2t + 1` parties" where the pseudocode's lines 1
 **"Received once."** The wait case (b) of Algorithm 6 requires that "⟨echo5, b⟩ has been
 received once". `ImplStep.retB` reads this as *from at least one sender*: `honce : ∃ k,
 Msg.seal (some v) ∈ s.recv id k`, not as a cardinality constraint of exactly one
-receipt. The hypothesis is a genuine part of the rule, carried through the deployed
+receipt. The hypothesis is a genuine part of the rule, carried through the protocol's
 rendering by `ABAProcStepN.retG_B` and through the round subsystem's Byzantine-drive
 twin `GProcStep.byzRetB`, but no proof
 consumes it: the refinement's `retB` rows bind it and leave it unused, discharging the
@@ -100,12 +100,12 @@ belongs here is the asymmetry *between* the two networks. `CoreProcStepN.ddlvRec
 carries a freshness guard `hr : b ∉ c.decIn k`; `ImplStep.deliver` carries no
 counterpart, its only hypothesis being soundness `h : m ∈ s.sent j`. Both are sound for the same reason — receipt sets are `Finset`s
 and re-delivery is `insert` into a set, so the guard removes redundant transitions
-rather than reachable states — and the asymmetry reappears exactly in the deployed
+rather than reachable states — and the asymmetry reappears exactly in the protocol's
 rendering, where each delivery is a rendezvous whose two halves are held by different
-components. Soundness is the network adversary's conjunct on both layers: `NetStep.gdlv`
+components. Soundness is the network adversary's conjunct in both pools: `NetStep.gdlv`
 requires `h : m ∈ s.pool r j` and `NetStep.ddlv` requires `h : b ∈ s.dpool j`, neither
-consuming the pooled message. Freshness is the receiver's, and only at the DECIDED
-layer: `ABAProcStepN.ddlvRecv` carries `hr : b ∉ c.decIn k` while
+consuming the pooled message. Freshness is the receiver's, and only in the DECIDED
+pools: `ABAProcStepN.ddlvRecv` carries `hr : b ∉ c.decIn k` while
 `ABAProcStepN.gdlvRecv` carries no hypothesis at all, filing the message under the
 sender's inbox row unconditionally.
 
@@ -117,7 +117,7 @@ sender's inbox row unconditionally.
   `decide` witness at `Spec.lean:247–250` — the support guard failing on inputs
   `1,0,0,0` at `n = 4, f = 1`.
 - **TS 2's singular binding witness** (`∃ id ∉ F, call[id] = b`, source p. 19) loses
-  provenance one level down, and `layeredSpec` over it violates Validity; the
+  provenance one level down, and `hybrid` over it violates Validity; the
   deterministic trace is in `GBCASpec.lean`'s docstring (the D14 entry, lines 65–75).
   Both TS 1 defects and this one are annotated in the source blueprint's TeX
   (`Leslie/blueprint/src/sections/Specification.tex`, red notes at the affected
@@ -156,15 +156,15 @@ Unpredictability, inexpressible once the guess is dropped.
   liveness argument counts the amplification echoes a decided process keeps sending
   (Lemma E.5). A process node of the encoding carries one graded-agreement stage record,
   that of the round its round loop is in, and the round advance resets it to
-  `GBCA.ProcNodeN.initial` — `ABAProcStepN.retW` and `ABAProcStepN.retWPub` in
-  `Deployed.lean`. That is deviation **D20**, and its effect is that a process sends
+  `GBCA.StageRec.initial` — `ABAProcStepN.retW` and `ABAProcStepN.retWPub` in
+  `Protocol.lean`. That is deviation **D20**, and its effect is that a process sends
   nothing in an instance it has left: every stage-side rule is guarded by
   `c.proc.round = r`, a stage message addressed to a round the receiver has left is not
   filed, and the Byzantine stage drives `byzCallG` and `byzRetG` have no row at the
   process they name, a corrupted process's stage traffic entering through the network's
   own `byzG` injection. The soundness of the omission is one-directional and safety-only:
-  `DeployedSim.deployed_layered` makes every behaviour of the forgetting reading a
-  behaviour of `layered`, which retains every round's stage records as specification-side
+  `ProtocolSim.protocol_composed` makes every behaviour of the forgetting reading a
+  behaviour of `composed`, which retains every round's stage records as specification-side
   state, so Validity and Agreement read across unchanged, while a liveness claim resting
   on post-decision echoes has no counterpart here.
 
@@ -178,9 +178,8 @@ does not inspect `F`, so the stronger statement is what `spec_safe` proves.
 ## 6. Adjacent open items
 
 Neither is a fidelity gap; both sit under Future work in `ABA/README.md`.
-**Achievability** — `NonVacuity.lean` carries the non-vacuity run on `layeredSpec`, the
-deployment-shaped specification the core simulation takes as its subject, and a
-machine-checked positive-mass trace for `deployed`, the deployed system `main` is about,
-is outstanding.
+**Achievability** — `NonVacuity.lean` carries the non-vacuity run on `hybrid`, the system
+the core simulation takes as its subject, and a machine-checked positive-mass trace for
+`protocol`, the system `main` is about, is outstanding.
 **`ValidityTrace` witness strengthening** — the witness clause accepts any preceding
 `callABA id' b`, where the proof yields a stronger ghost-backed one.

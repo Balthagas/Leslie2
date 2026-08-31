@@ -1,8 +1,8 @@
 \begin{definition}[Non-vacuity]
   \label{def:aba-nonvacuity}
   \lean{PLTS.ABA.P4}\leanok
-  \uses{thm:aba-layeredspec-spec}
-  Machine-checked witnesses, at $n = 4$ and $f = 1$, that the deployment-shaped specification $\mathrm{layeredSpec}(P)$, the system Theorem~\ref{thm:aba-layeredspec-spec} is proved of, executes: a connected $21$-step run of it of positive probability reaching $\mathrm{retABA}\,0\,\mathrm{true}$, every step of it Dirac but the single coin flip, whose chosen branch carries mass $\varepsilon > 0$.
+  \uses{thm:aba-hybrid-spec}
+  Machine-checked witnesses, at $n = 4$ and $f = 1$, that $\mathrm{hybrid}(P)$, the system Theorem~\ref{thm:aba-hybrid-spec} is proved of, executes: a connected $21$-step run of it of positive probability reaching $\mathrm{retABA}\,0\,\mathrm{true}$, every step of it Dirac but the single coin flip, whose chosen branch carries mass $\varepsilon > 0$.
   A synchronised corruption broadcast is witnessed separately.
   Parameters: \leandecl{PLTS.ABA.P4}; the witnesses are in \leanmodule{Leslie2Protocols/ABA/NonVacuity}.
 \end{definition}

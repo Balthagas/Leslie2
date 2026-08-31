@@ -41,9 +41,9 @@ labels, advancing the process's `phase` and recording the returned data, while
 the sub-protocol state itself lives in the round specifications and the coin
 oracle — and no network state: the DECIDED pools and the corrupted set belong
 to the network. The transitions themselves are `CoreProcStepN`
-(`ABA/Factors.lean`), the rows of a round-loop node `CoreNodeN` over the
-extended alphabet, and `Net.ABAProcStepN` (`ABA/Deployed.lean`), the rows of
-the deployed program that carries a round loop beside the graded-agreement
+(`ABA/Components.lean`), the rows of a round-loop node `CoreRec` over the
+extended alphabet, and `Net.ABAProcStepN` (`ABA/Protocol.lean`), the rows of
+the protocol program that carries a round loop beside the graded-agreement
 stage record of the round it is in. This file realises the Core-side assumptions of
 `DESIGN-CoreSim.md`: the phase machine (invariant conjunct 4), the DECIDED
 diffusion state (conjunct 6), and input coherence (conjunct 5 — the honest
@@ -54,7 +54,7 @@ diffusion state (conjunct 6), and input coherence (conjunct 5 — the honest
 * **D9 (0-based rounds).** `round : ℕ` starts at `0` where Algorithm 1 starts
   at `r = 1`; the `GBCA_r`/`WCC_r` instance indices shift accordingly.
 * **D10 (fused DECIDED-send).** Algorithm 1's `elif g = A: send ⟨DECIDED, b⟩`
-  is performed inside the round advance `CoreNodeN.stepRound`, joined with the
+  is performed inside the round advance `CoreRec.stepRound`, joined with the
   network's publication of the bit: receiving the round's coin adopts it when
   `est = ⊥`, multicasts `⟨DECIDED, b⟩` when the round's grade was `A b`,
   clears `lastGrade` and advances to the next round, all in one Dirac
@@ -69,7 +69,7 @@ diffusion state (conjunct 6), and input coherence (conjunct 5 — the honest
 * **D12′ (per-process DECIDED pools, equivocation-capable).** The DECIDED
   multicast state is the network's per-process pool
   `dpool : Fin n → Finset Bool`, read on the ABA side as `decidedSent`
-  (`ABA/CoreView.lean`) and mirroring the GBCA layer's D5 sent-pool pattern.
+  (`ABA/ABAState.lean`) and mirroring graded agreement's D5 sent-pool pattern.
   Honest sends insert into the pool (the fused `retWPub` publication and the
   `f + 1` relay `dsnd`; in reachable states DECIDED coherence keeps every
   honest pool at card ≤ 1, so the insert is a first write or a no-op re-send
@@ -80,9 +80,9 @@ diffusion state (conjunct 6), and input coherence (conjunct 5 — the honest
   receiver's own row `decidedRecv i j` at most once per (receiver, sender,
   bit) triple, with soundness `b ∈ decidedSent j` on the network's half; the
   `retABA` quorum guard counts distinct *senders* per bit (`decidedCount`).
-  The per-process pools (D12′) let a corrupted process equivocate at the
-  DECIDED layer; a single-slot model would bar that — an under-approximation
-  inconsistent with the GBCA layer.
+  The per-process pools (D12′) let a corrupted process equivocate in the
+  DECIDED pools; a single-slot model would bar that — an under-approximation
+  inconsistent with graded agreement.
 
 Two further notes: the return rule has **no** honesty check — corrupted
 returns must pass the same `n − f` quorum guard, exactly like the spec's
@@ -175,43 +175,43 @@ end ProcCore
 A process's control record is not by itself what the composition moves: a
 round loop also holds the DECIDED payloads delivered to it. The record below
 pairs the two, and is one factor of the ABA-side state the core simulation
-reads (`ABA/CoreView.lean`). -/
+reads (`ABA/ABAState.lean`). -/
 
 /-- The round-loop record of one process: its own control record and the
 DECIDED payloads delivered to it, indexed by sender. There is no record of
 what it has multicast — the DECIDED pools live in the network. -/
-structure CoreNodeN (n : ℕ) : Type where
+structure CoreRec (n : ℕ) : Type where
   /-- The process's own control record. -/
   proc : ProcCore n
   /-- The DECIDED payloads delivered to this process, indexed by sender. -/
   decIn : Fin n → Finset Bool
   deriving DecidableEq
 
-namespace CoreNodeN
+namespace CoreRec
 
 variable {n : ℕ}
 
 /-- The initial round-loop record: idle control record, no receipts. -/
-def initial (n : ℕ) : CoreNodeN n where
+def initial (n : ℕ) : CoreRec n where
   proc := ProcCore.initial n
   decIn := fun _ => ∅
 
 /-- The number of distinct senders whose `⟨DECIDED, b⟩` this process holds. -/
-def decidedCount (q : CoreNodeN n) (b : Bool) : ℕ :=
+def decidedCount (q : CoreRec n) (b : Bool) : ℕ :=
   (Finset.univ.filter (fun k => b ∈ q.decIn k)).card
 
 /-- Update the control record. -/
-def setProc (q : CoreNodeN n) (p : ProcCore n) : CoreNodeN n := { q with proc := p }
+def setProc (q : CoreRec n) (p : ProcCore n) : CoreRec n := { q with proc := p }
 
 /-- Record a delivered `⟨DECIDED, b⟩` from sender `k`. -/
-def recvDec (q : CoreNodeN n) (k : Fin n) (b : Bool) : CoreNodeN n :=
+def recvDec (q : CoreRec n) (k : Fin n) (b : Bool) : CoreRec n :=
   { q with decIn := Function.update q.decIn k (insert b (q.decIn k)) }
 
 /-- The round advance on receiving the coin `c`: adopt the coin if the
 estimate is `⊥`, clear the grade, open the next round. The `⟨DECIDED, b⟩`
 publication the advance carries on an `A` grade (D10) is the network's half of
 the joint step, so no row of it appears here. -/
-def stepRound (q : CoreNodeN n) (c : Bool) : CoreNodeN n :=
+def stepRound (q : CoreRec n) (c : Bool) : CoreRec n :=
   q.setProc
     { q.proc with
       est := some (q.proc.est.getD c),
@@ -219,7 +219,7 @@ def stepRound (q : CoreNodeN n) (c : Bool) : CoreNodeN n :=
       round := q.proc.round + 1,
       phase := .toCallG }
 
-end CoreNodeN
+end CoreRec
 
 end ABA
 end PLTS

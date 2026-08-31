@@ -4,32 +4,32 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Factors
+import Leslie2Protocols.ABA.Components
 
 /-!
-# The ABA-side state of the layered presentation
+# The ABA-side state of the composed reading
 
 The round-loop nodes beside the ABA-side network, read as one object.
 
-`ABAState` is the pair `(∀ j, CoreNodeN) × ANetState`. Its accessors gather the
+`ABAState` is the pair `(∀ j, CoreRec) × ANetState`. Its accessors gather the
 data the two factors hold apart: `procs` reads each node's control record,
 `decidedRecv` each node's receipts, and `decidedSent` and `F` the network's
 sent pools and corrupted set. The invariant of the core simulation is stated
-through these accessors, so it reads the layered state without a change of
+through these accessors, so it reads the composed state without a change of
 system.
 -/
 
 namespace PLTS
 namespace ABA
 
-open Net Layer
+open Net Comp
 
 variable {P : Params}
 
 /-- **The ABA-side state**: the `n` round-loop nodes beside the ABA-side
 network. -/
 abbrev ABAState (P : Params) : Type :=
-  (∀ _ : Fin P.n, CoreNodeN P.n) × ANetState P.n
+  (∀ _ : Fin P.n, CoreRec P.n) × ANetState P.n
 
 namespace ABAState
 
@@ -46,17 +46,17 @@ def decidedRecv (s : ABAState P) : Fin P.n → Fin P.n → Finset Bool :=
 /-- The corrupted set. -/
 def F (s : ABAState P) : Finset (Fin P.n) := s.2.F
 
-@[simp] theorem procs_apply (C : ∀ _ : Fin P.n, CoreNodeN P.n) (a : ANetState P.n)
+@[simp] theorem procs_apply (C : ∀ _ : Fin P.n, CoreRec P.n) (a : ANetState P.n)
     (j : Fin P.n) : procs (P := P) (C, a) j = (C j).proc := rfl
-@[simp] theorem decidedSent_apply (C : ∀ _ : Fin P.n, CoreNodeN P.n) (a : ANetState P.n) :
+@[simp] theorem decidedSent_apply (C : ∀ _ : Fin P.n, CoreRec P.n) (a : ANetState P.n) :
     decidedSent (P := P) (C, a) = a.dpool := rfl
-@[simp] theorem decidedRecv_apply (C : ∀ _ : Fin P.n, CoreNodeN P.n) (a : ANetState P.n)
+@[simp] theorem decidedRecv_apply (C : ∀ _ : Fin P.n, CoreRec P.n) (a : ANetState P.n)
     (i : Fin P.n) : decidedRecv (P := P) (C, a) i = (C i).decIn := rfl
-@[simp] theorem F_apply (C : ∀ _ : Fin P.n, CoreNodeN P.n) (a : ANetState P.n) :
+@[simp] theorem F_apply (C : ∀ _ : Fin P.n, CoreRec P.n) (a : ANetState P.n) :
     F (P := P) (C, a) = a.F := rfl
 
 /-- Dot notation resolves against `ABAState`, so the invariant reads the
-layered state in the accessors' own names. -/
+composed state in the accessors' own names. -/
 example (s : ABAState P) (j : Fin P.n) : s.procs j = (s.1 j).proc := rfl
 
 /-! ### State update helpers -/
@@ -64,18 +64,18 @@ example (s : ABAState P) (j : Fin P.n) : s.procs j = (s.1 j).proc := rfl
 /-- The initial ABA-side state: all round loops idle, nothing multicast,
 nobody corrupted. -/
 def initial (P : Params) : ABAState P :=
-  (fun _ => CoreNodeN.initial P.n, ANetState.initial P.n)
+  (fun _ => CoreRec.initial P.n, ANetState.initial P.n)
 
 /-! The two factors' own initial states project componentwise, so unfolding
 `initial` leaves no residue. -/
 
-@[simp] theorem _root_.PLTS.ABA.CoreNodeN.initial_proc (n : ℕ) :
-    (CoreNodeN.initial n).proc = ProcCore.initial n := rfl
-@[simp] theorem _root_.PLTS.ABA.CoreNodeN.initial_decIn (n : ℕ) (j : Fin n) :
-    (CoreNodeN.initial n).decIn j = ∅ := rfl
-@[simp] theorem _root_.PLTS.ABA.Layer.ANetState.initial_dpool (n : ℕ) (j : Fin n) :
+@[simp] theorem _root_.PLTS.ABA.CoreRec.initial_proc (n : ℕ) :
+    (CoreRec.initial n).proc = ProcCore.initial n := rfl
+@[simp] theorem _root_.PLTS.ABA.CoreRec.initial_decIn (n : ℕ) (j : Fin n) :
+    (CoreRec.initial n).decIn j = ∅ := rfl
+@[simp] theorem _root_.PLTS.ABA.Comp.ANetState.initial_dpool (n : ℕ) (j : Fin n) :
     (ANetState.initial n).dpool j = ∅ := rfl
-@[simp] theorem _root_.PLTS.ABA.Layer.ANetState.initial_F (n : ℕ) :
+@[simp] theorem _root_.PLTS.ABA.Comp.ANetState.initial_F (n : ℕ) :
     (ANetState.initial n).F = ∅ := rfl
 
 @[simp] theorem initial_procs (id : Fin P.n) :
@@ -112,7 +112,7 @@ def setProc (s : ABAState P) (id : Fin P.n) (p : ProcCore P.n) : ABAState P :=
     (s.setProc id p).decidedRecv = s.decidedRecv := by
   funext i
   by_cases hi : i = id
-  · subst hi; simp [setProc, decidedRecv, CoreNodeN.setProc]
+  · subst hi; simp [setProc, decidedRecv, CoreRec.setProc]
   · simp [setProc, decidedRecv, Function.update_of_ne hi]
 
 @[simp] theorem setProc_decidedCount (s : ABAState P) (id : Fin P.n) (p : ProcCore P.n)
@@ -122,7 +122,7 @@ def setProc (s : ABAState P) (id : Fin P.n) (p : ProcCore P.n) : ABAState P :=
 
 @[simp] theorem setProc_procs_self (s : ABAState P) (id : Fin P.n) (p : ProcCore P.n) :
     (s.setProc id p).procs id = p := by
-  simp [setProc, procs, CoreNodeN.setProc]
+  simp [setProc, procs, CoreRec.setProc]
 
 theorem setProc_procs_ne (s : ABAState P) (id : Fin P.n) (p : ProcCore P.n)
     {k : Fin P.n} (h : k ≠ id) : (s.setProc id p).procs k = s.procs k := by
@@ -183,12 +183,12 @@ def deliverDecided (s : ABAState P) (i j : Fin P.n) (b : Bool) : ABAState P :=
     (s.deliverDecided i j b).procs = s.procs := by
   funext k
   by_cases hk : k = i
-  · subst hk; simp [deliverDecided, procs, CoreNodeN.recvDec]
+  · subst hk; simp [deliverDecided, procs, CoreRec.recvDec]
   · simp [deliverDecided, procs, Function.update_of_ne hk]
 
 @[simp] theorem deliverDecided_decidedRecv_self (s : ABAState P) (i j : Fin P.n) (b : Bool) :
     (s.deliverDecided i j b).decidedRecv i j = insert b (s.decidedRecv i j) := by
-  simp [deliverDecided, decidedRecv, CoreNodeN.recvDec]
+  simp [deliverDecided, decidedRecv, CoreRec.recvDec]
 
 /-- Deliveries to other (receiver, sender) edges are untouched. -/
 theorem deliverDecided_decidedRecv_of_ne (s : ABAState P) (i j : Fin P.n) (b : Bool)
@@ -198,7 +198,7 @@ theorem deliverDecided_decidedRecv_of_ne (s : ABAState P) (i j : Fin P.n) (b : B
   · simp [deliverDecided, decidedRecv, Function.update_of_ne h]
   · by_cases hi : i' = i
     · subst hi
-      simp [deliverDecided, decidedRecv, CoreNodeN.recvDec, Function.update_of_ne h]
+      simp [deliverDecided, decidedRecv, CoreRec.recvDec, Function.update_of_ne h]
     · simp [deliverDecided, decidedRecv, Function.update_of_ne hi]
 
 /-- The round advance of process `id` on receiving the coin `c` (fused
@@ -276,7 +276,7 @@ theorem stepRound_decidedSent_of_not_A (s : ABAState P) (id : Fin P.n) (c : Bool
 
 /-- The round advance when the round carried no `A` grade: the round loop's
 own advance, the network untouched. -/
-theorem stepRound_plain (C : ∀ _ : Fin P.n, CoreNodeN P.n) (A : ANetState P.n)
+theorem stepRound_plain (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
     (id : Fin P.n) (co : Bool)
     (hg : ∀ v : Bool, (C id).proc.lastGrade ≠ some (.A v)) :
     stepRound (P := P) (C, A) id co
@@ -292,7 +292,7 @@ theorem stepRound_plain (C : ∀ _ : Fin P.n, CoreNodeN P.n) (A : ANetState P.n)
 
 /-- The round advance on an `A b` grade: the round loop's advance joined with
 the network's publication of `b` (the fused DECIDED-send, D10). -/
-theorem stepRound_pub (C : ∀ _ : Fin P.n, CoreNodeN P.n) (A : ANetState P.n)
+theorem stepRound_pub (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
     (id : Fin P.n) (co b : Bool) (hg : (C id).proc.lastGrade = some (.A b)) :
     stepRound (P := P) (C, A) id co
       = (Function.update C id ((C id).stepRound co), A.dput id b) := by

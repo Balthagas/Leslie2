@@ -10,7 +10,7 @@ import Leslie2.Weak.WeakTransition
 /-!
 # Abstract-twin burst machinery
 
-Pure `ABA.spec`-side weak-τ chain lemmas, with no layered-side/`Inv`/`Abs` reasoning: given an
+Pure `ABA.spec`-side weak-τ chain lemmas, with no composed-side/`Inv`/`Abs` reasoning: given an
 abstract `SpecState`, these package the internal `SpecStep` rules (`Spec.lean`) into the
 `weakTau`/`weakStep` chains (`WeakTransition.lean`) that the simulation rows (`CoreSim.lean`) consume
 to drive the abstract twin through a τ-burst. Every lemma here is standalone and never mentions

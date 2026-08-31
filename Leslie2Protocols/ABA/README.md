@@ -2,35 +2,35 @@
 
 Machine-checked safety (Validity ∧ Agreement) for randomized asynchronous binary
 agreement, following the "Verifying ABA with Leslie" blueprint. Every headline is in
-`Results.lean` — `ABA.main`, `ABA.refines`, `ABA.simComposed`, `ABA.deployed_safe`,
-`ABA.deployed_spec`, `ABA.deployed_traces`, `ABA.layeredSpec_spec`, `ABA.layered_safe` —
-all axiom-clean and guarded.
+`Results.lean` — `ABA.main`, `ABA.refines`, `ABA.chainSim`, `ABA.protocol_safe`,
+`ABA.protocol_traces`, `ABA.hybrid_spec`, `ABA.composed_safe` — all axiom-clean and
+guarded.
 
-The architecture in one line, all of it in deployment coordinates:
+The architecture in one line, all of it in the protocol's own coordinates:
 
 ```
-deployed  ⊑  layered  ⊑  layeredSpec  ⊑  ABA.spec
+protocol  ⊑  composed  ⊑  hybrid  ⊑  ABA.spec
 ```
 
-- `deployed` — the protocol as it runs: `n` corruption-blind programs beside the network
+- `protocol` — the protocol as it runs: `n` corruption-blind programs beside the network
   adversary, which owns the message pools and the corrupted set, and the coin oracle,
   the only factor whose transitions are not Dirac. A program holds its round loop and one
   graded-agreement stage record, that of the round the loop is in, which the round advance
   resets (D20).
-- `layered` — the same protocol read with a layer boundary as a component boundary: the
-  round subsystems, the `n` round loops, the DECIDED layer, and the coin oracle.
-  `deployedSim` carries `deployed` into it along the Dirac lift of `DepRel`, and
-  `deployed_layered` is the inclusion it yields. The link is one-directional: a layered
-  state holds one graded-agreement subsystem per round at every moment, where a deployed
-  process node holds the stage record of the round it is in and nothing else (D20), so the
-  retained per-round memory is specification-side state. This is where the chain passes
-  from implementation to specification.
-- `layeredSpec` — each round's subsystem replaced by the graded agreement specification
+- `composed` — the same protocol read as a composition of components: the round
+  subsystems, the `n` round loops, the ABA-side network holding the DECIDED pools, and the
+  coin oracle. `protocolSim` carries `protocol` into it along the Dirac lift of
+  `ProtocolRel`, and `protocol_composed` is the inclusion it yields. The link is
+  one-directional: a composed state holds one graded-agreement subsystem per round at every
+  moment, where a process node of the protocol holds the stage record of the round it is in
+  and nothing else (D20), so the retained per-round memory is specification-side state. This
+  is where the chain passes from implementation to specification.
+- `hybrid` — each round's subsystem replaced by the graded agreement specification
   (`substSim`), the other three factors untouched. This is what the core simulation runs on.
 - `ABA.spec` — the single-automaton reading of agreement, reached by `coreSim`.
 
 Components talk only through synchronized labels, and no component reads another's state.
-Why the cut sits there, and what it buys, is `../DESIGN-Layering.md`.
+Why the cut sits there, and what it buys, is `../DESIGN-Composition.md`.
 
 ## Scope
 
@@ -65,40 +65,40 @@ the file is. The order is the dependency order.
 | `GBCAImpl.lean` | 707 | **The GBCA implementation**, ABDY22's Algorithm 6 in full (D18). Its state is the stage records beside the round's fabric. |
 | `GBCASim.lean` | 1830 | The per-instance refinement `implRefines`, by kill-on-demand: `dead` carried as a receipt-pattern certificate; and the broadcast compatibility of its relation with the `fail` act (`instRel_corrupt`), which the family lifting consumes. |
 | `Core.lean` | 225 | **The ABA round loop**, per process and nothing else: the phase machine, the control record, the round-loop node. |
-| `CoreView.lean` | 331 | The ABA-side state as one object: the round-loop nodes beside the DECIDED network, with the accessors the invariant is stated in. |
+| `Components.lean` | 864 | The extended alphabet `NLab n`, the coin oracle read along its label pullback, the round loop of one process, and the ABA-side network — the pieces the two compositions are built from. |
+| `ABAState.lean` | 331 | The ABA-side state as one object: the round-loop nodes beside the DECIDED network, with the accessors the invariant is stated in. |
+| `Protocol.lean` | 1371 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, and the pipeline that composes them beside the coin oracle. |
+| `GBCAInstances.lean` | 1605 | **The round's graded-agreement subsystem** and the licence to replace it, `subSim`. |
+| `Hybrid.lean` | 729 | **`composed`**, **`substSim`**: the same protocol read as four factors, one round subsystem per round retained at every moment, and that graded-agreement factor then replaced by its specification under the four congruences. |
 | `CoreSimRel.lean` | 700 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
-| `CoreSimInv.lean` | 3809 | Step inversion for `layeredSpec`, then preservation of `Inv` across every row. The bulk of the proof text. |
+| `CoreSimInv.lean` | 3809 | Step inversion for `hybrid`, then preservation of `Inv` across every row. The bulk of the proof text. |
 | `CoreSimAbs.lean` | 336 | `Abs` preservation for the stutter rows, and the assembly `Inv.step`. |
 | `CoreSimBurst.lean` | 187 | The abstract-twin burst kit: how the twin catches up in one weak step. |
 | `CoreSim.lean` | 698 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
-| `Factors.lean` | 864 | The extended alphabet `NLab n`, the coin oracle read along its label pullback, the round loop of one process, and the ABA-side network — the pieces the two compositions are built from. |
-| `Deployed.lean` | 1368 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, and the pipeline that composes them beside the coin oracle. |
-| `GBCASubsystem.lean` | 1601 | **The round's graded-agreement subsystem** and the licence to replace it, `subSim`. |
-| `LayeredSpec.lean` | 724 | **`layered`**, **`substSim`**: the same protocol read as four factors, one round subsystem per round retained at every moment, and that graded-agreement factor then replaced by its specification under the four congruences. |
-| `DeployedSim.lean` | 1092 | **`deployedSim`**, **`deployed_layered`**: the deployed protocol carried into the layered reading along `DepRel`. |
-| `Results.lean` | 217 | The deliverables, gathered so every citable statement is in one file. Thirteen `#guard_msgs` axiom firewalls. |
-| `NonVacuity.lean` | 619 | A concrete 21-step run of `layeredSpec P4` to a `retABA` decision, so the simulation about it is not vacuous. |
+| `ProtocolSim.lean` | 1087 | **`protocolSim`**, **`protocol_composed`**: the protocol carried into the composed reading along `ProtocolRel`. |
+| `Results.lean` | 209 | The deliverables, gathered so every citable statement is in one file. Twelve `#guard_msgs` axiom firewalls. |
+| `NonVacuity.lean` | 623 | A concrete 21-step run of `hybrid P4` to a `retABA` decision, so the simulation about it is not vacuous. |
 
-The pieces both compositions are built from are in `Factors.lean`. `Deployed.lean` and
-`GBCASubsystem.lean` each import it and neither imports the other, so the two readings of
+The pieces both compositions are built from are in `Components.lean`. `Protocol.lean` and
+`GBCAInstances.lean` each import it and neither imports the other, so the two readings of
 the protocol are assembled independently over one set of factors. The specification side —
-`GBCASubsystem.lean`, `LayeredSpec.lean` and the core simulation above them — never imports
-`Deployed.lean`; the deployed protocol enters only at `DeployedSim.lean`, which is where the
-two readings meet, and `Results.lean` reaches it through that file.
+`GBCAInstances.lean`, `Hybrid.lean` and the core simulation above them — never imports
+`Protocol.lean`; the protocol enters only at `ProtocolSim.lean`, which is where the two
+readings meet, and `Results.lean` reaches it through that file.
 
 ## Suggested first read
 
 `Params` → `Labels` → `Spec` → skim `SpecSafety`'s two trace predicates → `Core`'s module
-docstring → `Deployed`'s (the system the headlines are about) → `LayeredSpec`'s (the system
-the core simulation starts from) → `Results`, whose docstring names the three steps of the
-chain and their files. Follow it into the statements along `DeployedSim.deployedSim` →
-`LayeredSpec.substSim` → `CoreSim.coreSim`, with `CoreView`'s `ABAState` beside the last.
+docstring → `Protocol`'s (the system the headlines are about) → `Hybrid`'s (the system the
+core simulation starts from) → `Results`, whose docstring names the three steps of the
+chain and their files. Follow it into the statements along `ProtocolSim.protocolSim` →
+`Hybrid.substSim` → `CoreSim.coreSim`, with `ABAState`'s `ABAState` beside the last.
 That is roughly 700 lines of reading and gives the full statement-level picture; descend
 into the GBCA and core-simulation proofs only when you want them.
 
 ## Where else to look
 
-`../README.md` maps the library and its shared framework. `../DESIGN-Layering.md` is why
+`../README.md` maps the library and its shared framework. `../DESIGN-Composition.md` is why
 the chain is cut where it is; `../DESIGN-CoreSim.md` and `../DESIGN-GBCASim.md` are the
 narrative accounts of the two large proofs; `../NOTES-Fidelity.md` is the encoding against
 its sources and `../NOTES-Liveness-Roadmap.md` what termination would take. The prose
@@ -109,14 +109,14 @@ pseudocode and the proof bodies).
 
 ## Future work
 
-- **Achievability theorem**: one explicit scheduler for `deployed P4` driving a two-return
-  decision trace `t`, with `∃ D ∈ achievableTraceDists (deployed P4), D t ≠ 0` — the
+- **Achievability theorem**: one explicit scheduler for `protocol P4` driving a two-return
+  decision trace `t`, with `∃ D ∈ achievableTraceDists (protocol P4), D t ≠ 0` — the
   machine-checked non-vacuity for `main`'s own system, exercising Agreement with two returns.
 - **Budget as an assumption throughout** (not pursued): the alternative shape is an
   unguarded `fail` in every system, `|F| ≤ f` relativized out of the invariants, and every
   headline conditional on a trace-level budget predicate. It is unnecessary here: in
-  `Deployed.lean` the budget is a component guard on the one box that owns the corrupted
-  set, so `deployed_safe` and `deployed_traces` need no hypothesis on the trace.
+  `Protocol.lean` the budget is a component guard on the one box that owns the corrupted
+  set, so `protocol_safe` and `protocol_traces` need no hypothesis on the trace.
 - **`ValidityTrace` witness strengthening**: the current witness clause accepts any
   preceding `callABA id' b`; the proof yields a stronger ghost-backed witness. Care: the
   D13 ghost is *last*-rule-1-write (D16 junk-erasure), so a "first call" restatement is not

@@ -5,7 +5,7 @@ Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.CoreSimRel
-import Leslie2Protocols.ABA.LayeredSpec
+import Leslie2Protocols.ABA.Hybrid
 
 /-!
 # The core-simulation invariant: step inversion and preservation
@@ -14,9 +14,9 @@ Stages A and B of the proof that `coreR` is a simulation relation
 (`DESIGN-CoreSim.md`), on top of the relation and invariant of
 `CoreSimRel.lean`.
 
-* **Stage A** — step inversion for `layeredSpec`: one lemma per visible label
+* **Stage A** — step inversion for `hybrid`: one lemma per visible label
   class (`callABA`, `retABA`, `fail`) and one for `τ`, each reading a composite
-  transition back into the component rows that produced it. `layered_step_tau`
+  transition back into the component rows that produced it. `hybrid_step_tau`
   is the seven-way disjunction the τ-side of the simulation dispatches on; its
   τ has more sources than the visible labels do, the whole rendezvous alphabet
   being hidden, and each of those sources collapses into one of the seven.
@@ -31,25 +31,25 @@ The assembly of the two into `Inv.step` is in `CoreSimAbs.lean`, beside the
 namespace PLTS
 namespace ABA
 
-open Net Layer
+open Net Comp
 
 variable {P : Params}
 
-/-! ### Stage A: step inversion for `layeredSpec`
+/-! ### Stage A: step inversion for `hybrid`
 
-Each lemma reads a transition of the deployment-shaped specification back into
+Each lemma reads a transition of the protocol-shaped specification back into
 the rows of its four factors, delivering the ABA-side content in the view's own
 coordinates: the pair `(C, A)` of the round loops beside the ABA-side network,
 read through `ABAState`'s accessors. -/
 
-/-- `layeredSpec` inversion, `callABA`: the round specifications and the coin
+/-- `hybrid` inversion, `callABA`: the round specifications and the coin
 oracle idle on a label outside their own API and the ABA-side network has no
 row of its own, so the whole transition is the addressed round loop's — either
 the genuine input, guarded by `input = ⊥`, or the input-enabledness loop. -/
-theorem layered_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
-    (C : ∀ _ : Fin P.n, CoreNodeN P.n) (A : ANetState P.n)
-    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (b : Bool) (μ : PMF (LayeredSpecState P)) :
-    (layeredSpec P).step (G, C, A, o) (.callABA id b) μ ↔
+theorem hybrid_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
+    (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
+    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (b : Bool) (μ : PMF (HybridState P)) :
+    (hybrid P).step (G, C, A, o) (.callABA id b) μ ↔
       ∃ μc : PMF (ABAState P),
         (((ABAState.procs (C, A) id).input = none ∧
             μc = PMF.pure (ABAState.setProc (C, A) id
@@ -62,14 +62,14 @@ theorem layered_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
       (wccFamilyN_idle P o (by simp) rfl (by simp [Lab.isFail]))
   constructor
   · intro hstep
-    rw [layeredSpec_step_iff] at hstep
+    rw [hybrid_step_iff] at hstep
     rcases hstep with ⟨habs, -⟩ | ⟨-, hg⟩
     · exact absurd habs (by simp)
-    · rw [layeredSpecGroup_step_iff] at hg
+    · rw [hybridGroup_step_iff] at hg
       rcases hg with ⟨habs, -⟩ | hpre
       · exact absurd habs (by simp)
       · obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
-          layeredSpecPre_vis_inv P (by simp) hpre
+          hybridPre_vis_inv P (by simp) hpre
         obtain rfl : G = G' :=
           (pureN_inj (specSide_idle_inv P hG (by simp) rfl not_false)).symm
         obtain rfl : A = A' := (pureN_inj (aStep_callABA hA)).symm
@@ -90,12 +90,12 @@ theorem layered_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
           exact ⟨PMF.pure (C, A), Or.inr rfl, by
             simp only [PMF.pure_map, prodPMF_pure_pure]⟩
   · rintro ⟨μc, hdisj, rfl⟩
-    rw [layeredSpec_step_iff]
+    rw [hybrid_step_iff]
     refine Or.inr ⟨by simp, ?_⟩
-    rw [layeredSpecGroup_step_iff]
+    rw [hybridGroup_step_iff]
     refine Or.inr ?_
     rcases hdisj with ⟨hin, rfl⟩ | rfl
-    · have h := layeredSpecPre_vis_step P (L := Sum.inl (Lab.callABA id b)) (by simp)
+    · have h := hybridPre_vis_step P (L := Sum.inl (Lab.callABA id b)) (by simp)
         (specSide_idle P G (by simp) rfl not_false)
         (coresN_family id ((C id).setProc { (C id).proc with
             input := some b, est := some b, round := 0, phase := .toCallG })
@@ -104,7 +104,7 @@ theorem layered_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
         (ANetStep.callABAIdle A id b) hWlift
       simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
       exact h
-    · have h := layeredSpecPre_vis_step P (L := Sum.inl (Lab.callABA id b)) (by simp)
+    · have h := hybridPre_vis_step P (L := Sum.inl (Lab.callABA id b)) (by simp)
         (specSide_idle P G (by simp) rfl not_false)
         (fun i => by
           by_cases hi : i = id
@@ -114,13 +114,13 @@ theorem layered_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
       simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
       exact h
 
-/-- `layeredSpec` inversion, `retABA`: the return's two guards are split across
-the layers — the `n − f` quorum is the round loop's, having multicast
-`⟨DECIDED, b⟩` oneself is the network's — and rejoin as the view's. -/
-theorem layered_step_retABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
-    (C : ∀ _ : Fin P.n, CoreNodeN P.n) (A : ANetState P.n)
-    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (b : Bool) (μ : PMF (LayeredSpecState P)) :
-    (layeredSpec P).step (G, C, A, o) (.retABA id b) μ ↔
+/-- `hybrid` inversion, `retABA`: the return's two guards are split across
+two components — the `n − f` quorum is the round loop's, having multicast
+`⟨DECIDED, b⟩` oneself is the network's — and rejoin on `ABAState`. -/
+theorem hybrid_step_retABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
+    (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
+    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (b : Bool) (μ : PMF (HybridState P)) :
+    (hybrid P).step (G, C, A, o) (.retABA id b) μ ↔
       ∃ μc : PMF (ABAState P),
         (P.n - P.f ≤ ABAState.decidedCount (C, A) id b ∧
           b ∈ ABAState.decidedSent (C, A) id ∧
@@ -133,14 +133,14 @@ theorem layered_step_retABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
       (wccFamilyN_idle P o (by simp) rfl (by simp [Lab.isFail]))
   constructor
   · intro hstep
-    rw [layeredSpec_step_iff] at hstep
+    rw [hybrid_step_iff] at hstep
     rcases hstep with ⟨habs, -⟩ | ⟨-, hg⟩
     · exact absurd habs (by simp)
-    · rw [layeredSpecGroup_step_iff] at hg
+    · rw [hybridGroup_step_iff] at hg
       rcases hg with ⟨habs, -⟩ | hpre
       · exact absurd habs (by simp)
       · obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
-          layeredSpecPre_vis_inv P (by simp) hpre
+          hybridPre_vis_inv P (by simp) hpre
         obtain rfl : G = G' :=
           (pureN_inj (specSide_idle_inv P hG (by simp) rfl not_false)).symm
         obtain ⟨hpool, hA'⟩ := aStep_retABA hA
@@ -155,11 +155,11 @@ theorem layered_step_retABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
             { ABAState.procs (C, A) id with returned := true }),
           ⟨hcnt, hpool, hret, rfl⟩, by simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩
   · rintro ⟨μc, ⟨hcnt, hpool, hret, rfl⟩, rfl⟩
-    rw [layeredSpec_step_iff]
+    rw [hybrid_step_iff]
     refine Or.inr ⟨by simp, ?_⟩
-    rw [layeredSpecGroup_step_iff]
+    rw [hybridGroup_step_iff]
     refine Or.inr ?_
-    have h := layeredSpecPre_vis_step P (L := Sum.inl (Lab.retABA id b)) (by simp)
+    have h := hybridPre_vis_step P (L := Sum.inl (Lab.retABA id b)) (by simp)
       (specSide_idle P G (by simp) rfl not_false)
       (coresN_family id ((C id).setProc { (C id).proc with returned := true })
         (CoreProcStepN.ret (C id) b hcnt hret)
@@ -168,27 +168,27 @@ theorem layered_step_retABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
     simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
     exact h
 
-/-- `layeredSpec` inversion, `fail`: a genuine synchronisation of all four
+/-- `hybrid` inversion, `fail`: a genuine synchronisation of all four
 factors. Corruption is the round loops' one blind spot (D1): the round
 specifications and the coin oracle each corrupt their own copy of `F`, the
 ABA-side network corrupts the view's, and the round loops stand still. -/
-theorem layered_step_fail (P : Params) (G : ℕ → GBCA.SpecState P.n)
-    (C : ∀ _ : Fin P.n, CoreNodeN P.n) (A : ANetState P.n)
-    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (μ : PMF (LayeredSpecState P)) :
-    (layeredSpec P).step (G, C, A, o) (.fail id) μ ↔
+theorem hybrid_step_fail (P : Params) (G : ℕ → GBCA.SpecState P.n)
+    (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
+    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (μ : PMF (HybridState P)) :
+    (hybrid P).step (G, C, A, o) (.fail id) μ ↔
       μ = prodPMF (PMF.pure fun r => (G r).corrupt P id)
         ((PMF.pure (ABAState.corrupt P id (C, A))).map
           fun c => (c.1, c.2, fun r => (o r).corrupt P id)) := by
   constructor
   · intro hstep
-    rw [layeredSpec_step_iff] at hstep
+    rw [hybrid_step_iff] at hstep
     rcases hstep with ⟨habs, -⟩ | ⟨-, hg⟩
     · exact absurd habs (by simp)
-    · rw [layeredSpecGroup_step_iff] at hg
+    · rw [hybridGroup_step_iff] at hg
       rcases hg with ⟨habs, -⟩ | hpre
       · exact absurd habs (by simp)
       · obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
-          layeredSpecPre_vis_inv P (by simp) hpre
+          hybridPre_vis_inv P (by simp) hpre
         obtain rfl : G' = fun r => (G r).corrupt P id :=
           pureN_inj (specSide_fail_inv P id hG)
         obtain rfl : C = C' := (coresN_id fun i => stepC_fail (hall i)).symm
@@ -198,11 +198,11 @@ theorem layered_step_fail (P : Params) (G : ℕ → GBCA.SpecState P.n)
         simp only [PMF.pure_map, prodPMF_pure_pure]
         rfl
   · rintro rfl
-    rw [layeredSpec_step_iff]
+    rw [hybrid_step_iff]
     refine Or.inr ⟨by simp, ?_⟩
-    rw [layeredSpecGroup_step_iff]
+    rw [hybridGroup_step_iff]
     refine Or.inr ?_
-    have h := layeredSpecPre_vis_step P (L := Sum.inl (Lab.fail id)) (by simp)
+    have h := hybridPre_vis_step P (L := Sum.inl (Lab.fail id)) (by simp)
       (specSide_fail P G id)
       (fun i => CoreProcStepN.failIdle (C i) id)
       (ANetStep.fail A id)
@@ -210,7 +210,7 @@ theorem layered_step_fail (P : Params) (G : ℕ → GBCA.SpecState P.n)
     simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
     exact h
 
-/-- `layeredSpec` inversion, `τ` (`mp`-only: preservation only needs the forward
+/-- `hybrid` inversion, `τ` (`mp`-only: preservation only needs the forward
 direction). Seven sources, and the whole rendezvous alphabet folds into them:
 the specification family's binding kill, the view's own DECIDED traffic
 (delivery, echo, Byzantine injection), the coin resolution, and the four
@@ -218,10 +218,10 @@ handshakes — `callG`/`retG` against a round specification, `callW`/`retW`
 against the coin oracle — each reached either by the shared label under the
 sub-protocol hiding or by the rendezvous that stands for it (`gcallLoop`, the
 Byzantine drives, and the fused coin return `retWPub`). -/
-theorem layered_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
-    (C : ∀ _ : Fin P.n, CoreNodeN P.n) (A : ANetState P.n)
-    (o : ℕ → WCC.SpecState P.n) (μ : PMF (LayeredSpecState P))
-    (hstep : (layeredSpec P).step (G, C, A, o) .tau μ) :
+theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
+    (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
+    (o : ℕ → WCC.SpecState P.n) (μ : PMF (HybridState P))
+    (hstep : (hybrid P).step (G, C, A, o) .tau μ) :
     (∃ r μr, GBCA.Step P r (G r) .tau μr ∧
         μ = prodPMF (μr.map (Function.update G r)) (PMF.pure (C, A, o))) ∨
       (∃ μc : PMF (ABAState P),
@@ -272,9 +272,9 @@ theorem layered_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
           (id ∈ ABAState.F (C, A) ∧ μc = PMF.pure (C, A))) ∧
         μ = prodPMF (PMF.pure G) (μc.bind fun c => prodPMF (PMF.pure c.1)
               (prodPMF (PMF.pure c.2) (μw'.map (Function.update o r))))) := by
-  rw [layeredSpec_step_iff] at hstep
+  rw [hybrid_step_iff] at hstep
   rcases hstep with ⟨-, l', hl', hg⟩ | ⟨-, hg⟩
-  · rw [layeredSpecGroup_step_iff] at hg
+  · rw [hybridGroup_step_iff] at hg
     rcases hg with ⟨rfl, e, hpre⟩ | hpre
     · exact absurd hl' (by simp)
     · -- a sub-protocol API label, sent to `τ` by the outer hiding
@@ -285,7 +285,7 @@ theorem layered_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
       | fail k => exact absurd hl' (by simp)
       | callG r id b =>
         obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
-          layeredSpecPre_vis_inv P (by simp) hpre
+          hybridPre_vis_inv P (by simp) hpre
         obtain ⟨X, hstepG, rfl⟩ := specSide_owned_step P rfl (by simp) rfl hG
         obtain rfl : A = A' := (pureN_inj (aStep_callG hA)).symm
         obtain rfl : ω = PMF.pure o := wccFamily_idle_inv P (by simp) rfl (by simp [Lab.isFail])
@@ -301,7 +301,7 @@ theorem layered_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
             simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩)))
       | retG r id out =>
         obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
-          layeredSpecPre_vis_inv P (by simp) hpre
+          hybridPre_vis_inv P (by simp) hpre
         obtain ⟨X, hstepG, rfl⟩ := specSide_owned_step P rfl (by simp) rfl hG
         obtain rfl : A = A' := (pureN_inj (aStep_retG hA)).symm
         obtain rfl : ω = PMF.pure o := wccFamily_idle_inv P (by simp) rfl (by simp [Lab.isFail])
@@ -318,7 +318,7 @@ theorem layered_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
             simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩))))
       | callW r id =>
         obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
-          layeredSpecPre_vis_inv P (by simp) hpre
+          hybridPre_vis_inv P (by simp) hpre
         obtain rfl : G = G' :=
           (pureN_inj (specSide_idle_inv P hG (by simp) rfl not_false)).symm
         obtain rfl : A = A' := (pureN_inj (aStep_callW hA)).symm
@@ -334,7 +334,7 @@ theorem layered_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
           hstepW, Or.inl ⟨hph, hr, rfl⟩, by rw [PMF.pure_bind]; rfl⟩)))))
       | retW r id c =>
         obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
-          layeredSpecPre_vis_inv P (by simp) hpre
+          hybridPre_vis_inv P (by simp) hpre
         obtain rfl : G = G' :=
           (pureN_inj (specSide_idle_inv P hG (by simp) rfl not_false)).symm
         obtain rfl : A = A' := (pureN_inj (aStep_retW hA)).symm
@@ -347,11 +347,11 @@ theorem layered_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
           PMF.pure (ABAState.stepRound (C, A) id c), hstepW,
           Or.inl ⟨hph, hr, rfl⟩, ?_⟩)))))
         rw [PMF.pure_bind, ABAState.stepRound_plain C A id c hgr]
-  · rw [layeredSpecGroup_step_iff] at hg
+  · rw [hybridGroup_step_iff] at hg
     rcases hg with ⟨-, e, hpre⟩ | hpre
     · -- a rendezvous of the hidden alphabet
       obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
-        layeredSpecPre_vis_inv P (by simp) hpre
+        hybridPre_vis_inv P (by simp) hpre
       cases e with
       | gsnd r j m => exact (aStep_gsnd_dead hA).elim
       | gdlv r i j m => exact (aStep_gdlv_dead hA).elim
@@ -461,7 +461,7 @@ theorem layered_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
         exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨r, k, b, μw',
           PMF.pure (C, A), hstepW, Or.inr ⟨hF, rfl⟩, by rw [PMF.pure_bind]⟩)))))
     · -- genuine `τ`: the binding kill, the network's Byzantine injection, or the coin
-      rcases layeredSpecPre_tau_inv P hpre with ⟨G', hspec, rfl⟩ | ⟨A', hnet, rfl⟩ |
+      rcases hybridPre_tau_inv P hpre with ⟨G', hspec, rfl⟩ | ⟨A', hnet, rfl⟩ |
         ⟨ω, hW, rfl⟩
       · obtain ⟨r, X, hstepG, hGeq⟩ := specSide_tau_inv P hspec
         obtain rfl : G' = Function.update G r X := pureN_inj hGeq
