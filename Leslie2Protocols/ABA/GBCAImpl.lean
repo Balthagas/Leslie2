@@ -75,22 +75,28 @@ pseudocode (`n − f`).
   scheduling are absorbed into the set model. A corrupted sender may inject
   any message into its `sent` pool (`byz`).
 * **D8 (participation gating).** Protocol sends (`relay`, `echo`, `vote*`,
-  `bind*`, `seal*`) require the process to have received its input
-  (`input ≠ none`): the algorithm's handlers only run inside a called instance.
+  `bind*`, `seal*`) and the three returns require the process to have received
+  its input (`input ≠ none`): the algorithm's handlers only run inside a called
+  instance. The ladder rules are taken in the wait-until order of Algorithm 6
+  from the `BIND` level down: each of those rules requires the process's own
+  send at the level below. The `VOTE` rules ask for no own send, the `ECHO`
+  they read being sent by an `upon` handler that may still be pending. The
+  return rules carry the negations that the algorithm's if/else chain implies.
 
 The state is exactly the protocol's own data, held in two boxes: each process
 keeps its own local state beside the messages delivered to it, and the round's
 message fabric keeps the per-sender pools and the corrupted set. `ImplState` is
 their pair, so the network is a component of the state and not a field of it — a
 weaker fabric is a different second component and leaves the rest of the round
-alone. The three return transitions are cases
-(1), (2), (3) of Algorithm 6's lines 23–29 and read nothing beyond the receipts
-those cases name — case (1) an `n − f` `SEAL v` quorum, case (2) an `n − f`
+alone. The three return transitions are cases (1), (2), (3) of Algorithm 6's
+lines 23–29: case (1) an `n − f` `SEAL v` quorum, case (2) an `n − f`
 any-`SEAL` quorum containing `SEAL v` together with `f + 1` `BIND v`s and
-`|Valid| > 1`, case (3) an `n − f` `SEAL ⊥` quorum with `|Valid| > 1`. The
-binding and grade information that the specification tracks is an abstraction
-of these receipt patterns and lives only on the specification side; the
-refinement (`ABA/GBCASim.lean`) supplies it from the receipts.
+`|Valid| > 1`, case (3) an `n − f` `SEAL ⊥` quorum with `|Valid| > 1`. Beside
+the receipts of its own case, each return reads the receipts named by the
+cases above it in the chain, the process's own `SEAL` slot, and the call
+record. The binding and grade information that the specification tracks is an
+abstraction of these receipt patterns and lives only on the specification
+side; the refinement (`ABA/GBCASim.lean`) supplies it from the receipts.
 -/
 
 namespace PLTS
@@ -598,7 +604,11 @@ inductive ImplStep (P : Params) (r : ℕ) :
       ImplStep P r s .tau
         (PMF.pure ((s.setProc j { s.proc j with sentEcho := some b }).mcast
           j (.echo b)))
-  /-- `VOTE b` (wait case (a)): an `n − f` `ECHO b` quorum. -/
+  /-- `VOTE b` (wait case (a)): an `n − f` `ECHO b` quorum. The vote reads the
+  `ECHO` quorum received. The process's own `ECHO` is sent by one of the
+  algorithm's `upon` handlers and may still be pending, so no own-send
+  condition applies here. The wait-until order is carried from the `BIND` level
+  down. -/
   | voteBit (s : ImplState P.n) (j : Fin P.n) (b : Bool)
       (hin : (s.proc j).input ≠ none)
       (hcnt : P.n - P.f ≤ s.recvCount j (.echo b))
@@ -607,45 +617,60 @@ inductive ImplStep (P : Params) (r : ℕ) :
         (PMF.pure ((s.setProc j { s.proc j with sentVote := some (some b) }).mcast
           j (.vote (some b))))
   /-- `VOTE ⊥` (wait case (b)): `n − f` `ECHO`s of any payload and
-  `|Valid| > 1`. -/
+  `|Valid| > 1`, and no single-bit `ECHO` quorum is on record. The vote reads
+  the `ECHO` quorum received. The process's own `ECHO` is sent by one of the
+  algorithm's `upon` handlers and may still be pending, so no own-send
+  condition applies here. The wait-until order is carried from the `BIND` level
+  down. -/
   | voteBot (s : ImplState P.n) (j : Fin P.n)
       (hin : (s.proc j).input ≠ none)
+      (hnot : ∀ b, s.recvCount j (.echo b) < P.n - P.f)
       (hcnt : P.n - P.f ≤ s.echoCount j)
       (hval : s.bothValid P j)
       (hsend : (s.proc j).sentVote = none) :
       ImplStep P r s .tau
         (PMF.pure ((s.setProc j { s.proc j with sentVote := some none }).mcast
           j (.vote none)))
-  /-- `BIND b` (wait case (a)): an `n − f` `VOTE b` quorum. -/
+  /-- `BIND b` (wait case (a)): an `n − f` `VOTE b` quorum, the process's own
+  `VOTE` already out. -/
   | bindBit (s : ImplState P.n) (j : Fin P.n) (b : Bool)
       (hin : (s.proc j).input ≠ none)
+      (hlv : (s.proc j).sentVote ≠ none)
       (hcnt : P.n - P.f ≤ s.recvCount j (.vote (some b)))
       (hsend : (s.proc j).sentBind = none) :
       ImplStep P r s .tau
         (PMF.pure ((s.setProc j { s.proc j with sentBind := some (some b) }).mcast
           j (.bind (some b))))
   /-- `BIND ⊥` (wait case (b)): `n − f` `VOTE`s of any payload and
-  `|Valid| > 1`. -/
+  `|Valid| > 1`, the process's own `VOTE` already out, and no single-bit
+  `VOTE` quorum is on record. -/
   | bindBot (s : ImplState P.n) (j : Fin P.n)
       (hin : (s.proc j).input ≠ none)
+      (hlv : (s.proc j).sentVote ≠ none)
+      (hnot : ∀ b, s.recvCount j (.vote (some b)) < P.n - P.f)
       (hcnt : P.n - P.f ≤ s.voteCount j)
       (hval : s.bothValid P j)
       (hsend : (s.proc j).sentBind = none) :
       ImplStep P r s .tau
         (PMF.pure ((s.setProc j { s.proc j with sentBind := some none }).mcast
           j (.bind none)))
-  /-- `SEAL b` (wait case (a)): an `n − f` `BIND b` quorum. -/
+  /-- `SEAL b` (wait case (a)): an `n − f` `BIND b` quorum, the process's own
+  `BIND` already out. -/
   | sealBit (s : ImplState P.n) (j : Fin P.n) (b : Bool)
       (hin : (s.proc j).input ≠ none)
+      (hlv : (s.proc j).sentBind ≠ none)
       (hcnt : P.n - P.f ≤ s.recvCount j (.bind (some b)))
       (hsend : (s.proc j).sentSeal = none) :
       ImplStep P r s .tau
         (PMF.pure ((s.setProc j { s.proc j with sentSeal := some (some b) }).mcast
           j (.seal (some b))))
   /-- `SEAL ⊥` (wait case (b)): `n − f` `BIND`s of any payload and
-  `|Valid| > 1`. -/
+  `|Valid| > 1`, the process's own `BIND` already out, and no single-bit
+  `BIND` quorum is on record. -/
   | sealBot (s : ImplState P.n) (j : Fin P.n)
       (hin : (s.proc j).input ≠ none)
+      (hlv : (s.proc j).sentBind ≠ none)
+      (hnot : ∀ b, s.recvCount j (.bind (some b)) < P.n - P.f)
       (hcnt : P.n - P.f ≤ s.bindCount j)
       (hval : s.bothValid P j)
       (hsend : (s.proc j).sentSeal = none) :
@@ -655,8 +680,12 @@ inductive ImplStep (P : Params) (r : ℕ) :
   /-- Byzantine injection: a corrupted sender multicasts anything. -/
   | byz (s : ImplState P.n) (j : Fin P.n) (m : Msg) (h : j ∈ s.F) :
       ImplStep P r s .tau (PMF.pure (s.mcast j m))
-  /-- `A`-return (decide case (1)): an `n − f` `SEAL v` quorum. -/
+  /-- `A`-return (decide case (1)): an `n − f` `SEAL v` quorum. The process
+  has called and its own `SEAL` is out. Case (1) heads the chain, so there is
+  no higher case to deny. -/
   | retA (s : ImplState P.n) (id : Fin P.n) (v : Bool)
+      (hin : (s.proc id).input ≠ none)
+      (hlv : (s.proc id).sentSeal ≠ none)
       (hcnt : P.n - P.f ≤ s.recvCount id (.seal (some v)))
       (hr : (s.proc id).returned = false) :
       ImplStep P r s (.retG r id (.A v))
@@ -664,8 +693,12 @@ inductive ImplStep (P : Params) (r : ℕ) :
   /-- `B`-return (decide case (2)): an `n − f` any-`SEAL` quorum containing
   `SEAL v`, `f + 1` `BIND v`s and `|Valid| > 1`. The `f + 1` `BIND v` receipts
   put an honest `BIND v` sender — hence an `n − f` `VOTE v` receipt quorum —
-  behind every grade-1 output. -/
+  behind every grade-1 output. The process has called, its own `SEAL` is out,
+  and no higher case holds: `hnotA` denies case (1) at either bit. -/
   | retB (s : ImplState P.n) (id : Fin P.n) (v : Bool)
+      (hin : (s.proc id).input ≠ none)
+      (hlv : (s.proc id).sentSeal ≠ none)
+      (hnotA : ∀ v, s.recvCount id (.seal (some v)) < P.n - P.f)
       (hcnt : P.n - P.f ≤ s.sealCount id)
       (honce : ∃ k, Msg.seal (some v) ∈ s.recv id k)
       (hbind : P.f + 1 ≤ s.recvCount id (.bind (some v)))
@@ -674,8 +707,21 @@ inductive ImplStep (P : Params) (r : ℕ) :
       ImplStep P r s (.retG r id (.B v))
         (PMF.pure (s.setProc id { s.proc id with returned := true }))
   /-- `C`-return (decide case (3)): an `n − f` `SEAL ⊥` quorum and
-  `|Valid| > 1`. -/
+  `|Valid| > 1`. The process has called, its own `SEAL` is out, and no higher
+  case holds: `hnotA` denies case (1) at either bit, and `hnotB` denies
+  case (2). The denial of case (2) is carried in reduced form. Case (2) asks
+  for four things at a bit `v`: an `n − f` any-`SEAL` quorum, a received
+  `SEAL v`, `f + 1` `BIND v` receipts, and `|Valid| > 1`. This row's own
+  `hcnt` and `hval` already supply the first and the last, an `n − f`
+  `SEAL ⊥` quorum being in particular an `n − f` any-`SEAL` quorum. What is
+  left to deny is the pair of the received `SEAL v` and the `f + 1` `BIND v`
+  receipts, which is what `hnotB` states. -/
   | retC (s : ImplState P.n) (id : Fin P.n)
+      (hin : (s.proc id).input ≠ none)
+      (hlv : (s.proc id).sentSeal ≠ none)
+      (hnotA : ∀ v, s.recvCount id (.seal (some v)) < P.n - P.f)
+      (hnotB : ∀ v, (∃ k, Msg.seal (some v) ∈ s.recv id k) →
+        s.recvCount id (.bind (some v)) < P.f + 1)
       (hcnt : P.n - P.f ≤ s.recvCount id (.seal none))
       (hval : s.bothValid P id)
       (hr : (s.proc id).returned = false) :

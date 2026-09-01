@@ -305,10 +305,8 @@ Algorithm~$k$'' and ``ABDY22's Algorithm~$k$''.
 
 \paragraph{Deviations.}
 The encodings depart from~\cite{LeslieBP} in catalogued ways.
-Each departure carries a label D1--D22 and is cited at the point where it
-applies.
-The labels D2, D3, D6 and D7 are unused, and D20 is withdrawn: the ground it
-covered is D22's.
+Each departure carries a label and is cited at the point where it applies.
+The labels D2, D3, D6, D7 and D20 are not in use.
 \begin{itemize}
   \item D1: corruption is a total deterministic transform.
   \item D4: the WCC \texttt{guess} label and the \texttt{guess} state field are
@@ -697,8 +695,8 @@ composition the core simulation runs on.
 \input{nodes/def-aba-gbca-impl}
 
 \blueprintfig{fig-gbca-impl}{The GBCA implementation instance \leandecl{PLTS.ABA.GBCA.implInst} (Algorithm~\ref{alg:gbca-impl}, D18): the per-process stage automaton and, boxed, the authenticated set-based network.
-On a call a process multicasts $\langle\mathrm{INPUT},b\rangle$ and relays it after $f{+}1$ receipts; an $n{-}f$ quorum at each stage produces the next multicast $\langle\mathrm{ECHO},b\rangle$, $\langle\mathrm{VOTE},v\rangle$, $\langle\mathrm{BIND},v\rangle$, then $\langle\mathrm{SEAL},v\rangle$.
-The returns are $A\,b$ on an $n{-}f$ SEAL-$b$ quorum, $B\,b$ on an $n{-}f$ any-SEAL quorum with $f{+}1$ BIND-$b$ and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ SEAL-$\bot$ quorum with $|\mathrm{Valid}|>1$: the three wait-until cases of Algorithm~\ref{alg:gbca-impl}, each reading the receipts its own case names.
+On a call a process multicasts $\langle\mathrm{INPUT},b\rangle$ and relays it after $f{+}1$ receipts; an $n{-}f$ quorum at each stage produces the next multicast $\langle\mathrm{ECHO},b\rangle$, $\langle\mathrm{VOTE},v\rangle$, $\langle\mathrm{BIND},v\rangle$, then $\langle\mathrm{SEAL},v\rangle$, the levels from $\mathrm{BIND}$ down asking for the process's own send at the level below.
+The returns are $A\,b$ on an $n{-}f$ SEAL-$b$ quorum, $B\,b$ on an $n{-}f$ any-SEAL quorum with $f{+}1$ BIND-$b$ and $|\mathrm{Valid}|>1$, and $C$ on an $n{-}f$ SEAL-$\bot$ quorum with $|\mathrm{Valid}|>1$: the three cases of the last wait-until block of Algorithm~\ref{alg:gbca-impl}, taken as the if/elif/else chain that block writes, so a return denies the cases above it and asks for the process's own SEAL.
 The dashed box is the D5 network: per-sender sent and received message sets, adversary $\mathrm{deliver}$, and Byzantine injection for $j\in F$.}
 
 The Lean encoding of Algorithm~\ref{alg:gbca-impl} is the round-$r$ instance
@@ -784,6 +782,12 @@ $\mathit{sent}$ pool, and a dash marks an unguarded rule.
 The two $\mathrm{SEAL}$ rows and the SEAL-reading guards of the three return
 rows are what D18 restores over the source blueprint's compressed four-round form, and carry
 no separate marker in the table.
+Two further conditions of Algorithm~\ref{alg:gbca-impl}'s control flow are written
+into the same guards and are likewise unmarked: from the $\mathrm{BIND}$ level
+down each level asks for the process's own send at the level below, and each
+return denies the cases above it.
+The two $\mathrm{VOTE}$ rows ask for no own send, the $\mathrm{ECHO}$ they read
+being multicast by an \textbf{upon} handler and not on the main thread.
 
 \begin{center}
 \footnotesize
@@ -821,48 +825,58 @@ Rule & Label & Guard & Effect \\
 \leandeclnamed{voteBot}{PLTS.ABA.GBCA.ImplStep.voteBot} & $\tau$
   & $\mathit{input}_j$ set, $\mathit{sentVote}_j$ unset,
   & $\mathit{sentVote}_j \gets \bot$; \\
- & & $\#_j(\mathrm{EC}) \ge n{-}f$, $\mathit{Val}_j = \{0,1\}$
+ & & $\#_j(\mathrm{EC}) \ge n{-}f$, $\mathit{Val}_j = \{0,1\}$,
   & mcast $\mathrm{VT}\,\bot$ (D8) \\
+ & & $\#_j(\mathrm{EC}\,b) < n{-}f$ for both $b$ & \\
 \hline
 \leandeclnamed{bindBit}{PLTS.ABA.GBCA.ImplStep.bindBit} & $\tau$
-  & $\mathit{input}_j$ set, $\mathit{sentBind}_j$ unset,
+  & $\mathit{input}_j$, $\mathit{sentVote}_j$ set, $\mathit{sentBind}_j$ unset,
   & $\mathit{sentBind}_j \gets b$; \\
  & & $\#_j(\mathrm{VT}\,b) \ge n{-}f$ & mcast $\mathrm{BD}\,b$ (D8) \\
 \hline
 \leandeclnamed{bindBot}{PLTS.ABA.GBCA.ImplStep.bindBot} & $\tau$
-  & $\mathit{input}_j$ set, $\mathit{sentBind}_j$ unset,
+  & $\mathit{input}_j$, $\mathit{sentVote}_j$ set, $\mathit{sentBind}_j$ unset,
   & $\mathit{sentBind}_j \gets \bot$; \\
- & & $\#_j(\mathrm{VT}) \ge n{-}f$, $\mathit{Val}_j = \{0,1\}$
+ & & $\#_j(\mathrm{VT}) \ge n{-}f$, $\mathit{Val}_j = \{0,1\}$,
   & mcast $\mathrm{BD}\,\bot$ (D8) \\
+ & & $\#_j(\mathrm{VT}\,b) < n{-}f$ for both $b$ & \\
 \hline
 \leandeclnamed{sealBit}{PLTS.ABA.GBCA.ImplStep.sealBit} & $\tau$
-  & $\mathit{input}_j$ set, $\mathit{sentSeal}_j$ unset,
+  & $\mathit{input}_j$, $\mathit{sentBind}_j$ set, $\mathit{sentSeal}_j$ unset,
   & $\mathit{sentSeal}_j \gets b$; \\
  & & $\#_j(\mathrm{BD}\,b) \ge n{-}f$ & mcast $\mathrm{SL}\,b$ (D8) \\
 \hline
 \leandeclnamed{sealBot}{PLTS.ABA.GBCA.ImplStep.sealBot} & $\tau$
-  & $\mathit{input}_j$ set, $\mathit{sentSeal}_j$ unset,
+  & $\mathit{input}_j$, $\mathit{sentBind}_j$ set, $\mathit{sentSeal}_j$ unset,
   & $\mathit{sentSeal}_j \gets \bot$; \\
- & & $\#_j(\mathrm{BD}) \ge n{-}f$, $\mathit{Val}_j = \{0,1\}$
+ & & $\#_j(\mathrm{BD}) \ge n{-}f$, $\mathit{Val}_j = \{0,1\}$,
   & mcast $\mathrm{SL}\,\bot$ (D8) \\
+ & & $\#_j(\mathrm{BD}\,b) < n{-}f$ for both $b$ & \\
 \hline
 \leandeclnamed{byz}{PLTS.ABA.GBCA.ImplStep.byz} & $\tau$ & $j \in F$ & mcast $m$ at $j$ (D5) \\
 \hline
 \leandeclnamed{retA}{PLTS.ABA.GBCA.ImplStep.retA} & $\mathrm{retG}(r,i,A\,v)$
-  & $\#_i(\mathrm{SL}\,v) \ge n{-}f$,
+  & $\mathit{input}_i$, $\mathit{sentSeal}_i$ set,
   & mark $i$ returned \\
+ & & $\#_i(\mathrm{SL}\,v) \ge n{-}f$, & \\
  & & $\mathit{returned}_i$ false & \\
 \hline
 \leandeclnamed{retB}{PLTS.ABA.GBCA.ImplStep.retB} & $\mathrm{retG}(r,i,B\,v)$
-  & $\#_i(\mathrm{SL}) \ge n{-}f$, $\mathit{Val}_i = \{0,1\}$,
+  & $\mathit{input}_i$, $\mathit{sentSeal}_i$ set,
   & mark $i$ returned \\
+ & & $\#_i(\mathrm{SL}) \ge n{-}f$, $\mathit{Val}_i = \{0,1\}$, & \\
  & & $\#_i(\mathrm{BD}\,v) \ge f{+}1$, & \\
  & & $\mathrm{SL}\,v \in \mathit{recv}(i,k)$ for some $k$, & \\
+ & & $\#_i(\mathrm{SL}\,b) < n{-}f$ for both $b$, & \\
  & & $\mathit{returned}_i$ false & \\
 \hline
 \leandeclnamed{retC}{PLTS.ABA.GBCA.ImplStep.retC} & $\mathrm{retG}(r,i,C)$
-  & $\#_i(\mathrm{SL}\,\bot) \ge n{-}f$, $\mathit{Val}_i = \{0,1\}$,
+  & $\mathit{input}_i$, $\mathit{sentSeal}_i$ set,
   & mark $i$ returned \\
+ & & $\#_i(\mathrm{SL}\,\bot) \ge n{-}f$, $\mathit{Val}_i = \{0,1\}$, & \\
+ & & $\#_i(\mathrm{SL}\,b) < n{-}f$ for both $b$, & \\
+ & & $\#_i(\mathrm{BD}\,b) < f{+}1$ for every $b$ with & \\
+ & & \quad $\mathrm{SL}\,b \in \mathit{recv}(i,k)$ for some $k$, & \\
  & & $\mathit{returned}_i$ false & \\
 \hline
 \leandeclnamed{fail}{PLTS.ABA.GBCA.ImplStep.fail} & $\mathrm{fail}(i)$ & ---
@@ -879,13 +893,41 @@ guards of \leandeclnamed{voteBit}{PLTS.ABA.GBCA.ImplStep.voteBit}/\allowbreak\le
 \leandeclnamed{retA}{PLTS.ABA.GBCA.ImplStep.retA}/\allowbreak\leandeclnamed{retB}{PLTS.ABA.GBCA.ImplStep.retB}/\allowbreak\leandeclnamed{retC}{PLTS.ABA.GBCA.ImplStep.retC}; the write-once fields
 $\mathit{sentEcho}$, $\mathit{sentVote}$, $\mathit{sentBind}$,
 $\mathit{sentSeal}$ carry the ``not sent yet'' side conditions.
-The three return rules are the three wait-until cases of the last block
-verbatim: case (a) is an $n{-}f$ $\mathrm{SEAL}\,v$ quorum, case (b) an $n{-}f$
+The blocks are taken in the order Algorithm~\ref{alg:gbca-impl} writes them.
+A process reaches a block only after executing the send the block above it ends
+with, and that is the guard $\mathit{sentVote}_j$ set on the two
+$\mathrm{BIND}$ rules, $\mathit{sentBind}_j$ set on the two $\mathrm{SEAL}$
+rules, and $\mathit{sentSeal}_i$ set on the three return rules.
+The two $\mathrm{VOTE}$ rules carry no such guard.
+What precedes the first \textbf{wait until} block is not a block a process must
+execute to the end but the \textbf{upon} handler that multicasts
+$\mathrm{ECHO}$, so a process may reach that block with its own
+$\mathrm{ECHO}$ still pending.
+In each of the three ladder blocks the two rules are exclusive: the $\bot$ rule
+denies its block's case (a) at either bit, which is the \textbf{else} of that
+block's last line.
+The three return rules are the three wait-until cases of the last block:
+case (a) is an $n{-}f$ $\mathrm{SEAL}\,v$ quorum, case (b) an $n{-}f$
 any-$\mathrm{SEAL}$ quorum containing $\mathrm{SEAL}\,v$ together with $f{+}1$
 $\mathrm{BIND}\,v$ receipts and $|\mathit{Valid}| > 1$, and case (c) an $n{-}f$
 $\mathrm{SEAL}\,\bot$ quorum with $|\mathit{Valid}| > 1$.
-Each reads the receipts its own case names and nothing else, and case (c)
-returns no bit.
+That block ends in an \textbf{if}/\textbf{elif}/\textbf{else}, so each rule
+carries the denials of the cases above it beside the receipts its own case
+names: \leandeclnamed{retB}{PLTS.ABA.GBCA.ImplStep.retB} denies case (a) at
+either bit, and \leandeclnamed{retC}{PLTS.ABA.GBCA.ImplStep.retC} denies
+case (a) at either bit and case (b).
+The denial of case (b) is carried in reduced form.
+Case (b) asks at a bit $v$ for four things: an $n{-}f$ any-$\mathrm{SEAL}$
+quorum, a received $\mathrm{SEAL}\,v$, $f{+}1$ $\mathrm{BIND}\,v$ receipts and
+$|\mathit{Valid}| > 1$.
+The first and the last are supplied by
+\leandeclnamed{retC}{PLTS.ABA.GBCA.ImplStep.retC}'s own guard, an $n{-}f$
+$\mathrm{SEAL}\,\bot$ quorum being in particular an $n{-}f$ any-$\mathrm{SEAL}$
+quorum, so what is left to deny is the pair of the received $\mathrm{SEAL}\,v$
+and the $f{+}1$ $\mathrm{BIND}\,v$ receipts.
+All three rules ask further that the returning process has been called, the D8
+gate carried from the sends over to the returns.
+Case (c) returns no bit.
 The depth is what the grade-$1$ evidence buys (D18): $f{+}1$ $\mathrm{BIND}\,v$
 receipts exceed the corruption budget, so they put an honest $\mathrm{BIND}\,v$
 sender behind every grade-$1$ output, and that sender's own wait condition is an

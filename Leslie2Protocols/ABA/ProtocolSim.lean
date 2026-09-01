@@ -354,37 +354,46 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
         | some b =>
           obtain ⟨-, hin, hcnt, hsend, hxid⟩ := stepN_gsnd_voteBit_self (hall j)
           exact ⟨_, GSub.GProcStep.sndVoteBit _ b (by rw [hcol]; exact hin)
-            (by rw [hcol]; exact hcnt) (by rw [hcol]; exact hsend),
+            (by rw [hcol]; exact hcnt)
+            (by rw [hcol]; exact hsend),
             by rw [hcol]; exact pureN_inj hxid⟩
         | none =>
-          obtain ⟨-, hin, hcnt, hval, hsend, hxid⟩ := stepN_gsnd_voteBot_self (hall j)
+          obtain ⟨-, hin, hnot, hcnt, hval, hsend, hxid⟩ :=
+            stepN_gsnd_voteBot_self (hall j)
           exact ⟨_, GSub.GProcStep.sndVoteBot _ (by rw [hcol]; exact hin)
+            (by rw [hcol]; exact hnot)
             (by rw [hcol]; exact hcnt) (by rw [hcol]; exact hval)
             (by rw [hcol]; exact hsend),
             by rw [hcol]; exact pureN_inj hxid⟩
       | bind v =>
         cases v with
         | some b =>
-          obtain ⟨-, hin, hcnt, hsend, hxid⟩ := stepN_gsnd_bindBit_self (hall j)
+          obtain ⟨-, hin, hlv, hcnt, hsend, hxid⟩ := stepN_gsnd_bindBit_self (hall j)
           exact ⟨_, GSub.GProcStep.sndBindBit _ b (by rw [hcol]; exact hin)
-            (by rw [hcol]; exact hcnt) (by rw [hcol]; exact hsend),
+            (by rw [hcol]; exact hlv) (by rw [hcol]; exact hcnt)
+            (by rw [hcol]; exact hsend),
             by rw [hcol]; exact pureN_inj hxid⟩
         | none =>
-          obtain ⟨-, hin, hcnt, hval, hsend, hxid⟩ := stepN_gsnd_bindBot_self (hall j)
+          obtain ⟨-, hin, hlv, hnot, hcnt, hval, hsend, hxid⟩ :=
+            stepN_gsnd_bindBot_self (hall j)
           exact ⟨_, GSub.GProcStep.sndBindBot _ (by rw [hcol]; exact hin)
+            (by rw [hcol]; exact hlv) (by rw [hcol]; exact hnot)
             (by rw [hcol]; exact hcnt) (by rw [hcol]; exact hval)
             (by rw [hcol]; exact hsend),
             by rw [hcol]; exact pureN_inj hxid⟩
       | «seal» v =>
         cases v with
         | some b =>
-          obtain ⟨-, hin, hcnt, hsend, hxid⟩ := stepN_gsnd_sealBit_self (hall j)
+          obtain ⟨-, hin, hlv, hcnt, hsend, hxid⟩ := stepN_gsnd_sealBit_self (hall j)
           exact ⟨_, GSub.GProcStep.sndSealBit _ b (by rw [hcol]; exact hin)
-            (by rw [hcol]; exact hcnt) (by rw [hcol]; exact hsend),
+            (by rw [hcol]; exact hlv) (by rw [hcol]; exact hcnt)
+            (by rw [hcol]; exact hsend),
             by rw [hcol]; exact pureN_inj hxid⟩
         | none =>
-          obtain ⟨-, hin, hcnt, hval, hsend, hxid⟩ := stepN_gsnd_sealBot_self (hall j)
+          obtain ⟨-, hin, hlv, hnot, hcnt, hval, hsend, hxid⟩ :=
+            stepN_gsnd_sealBot_self (hall j)
           exact ⟨_, GSub.GProcStep.sndSealBot _ (by rw [hcol]; exact hin)
+            (by rw [hcol]; exact hlv) (by rw [hcol]; exact hnot)
             (by rw [hcol]; exact hcnt) (by rw [hcol]; exact hval)
             (by rw [hcol]; exact hsend),
             by rw [hcol]; exact pureN_inj hxid⟩
@@ -463,10 +472,11 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
   | dsnd j b =>
     obtain ⟨hdp, hw⟩ := netStep_dsnd hn
     obtain rfl : w' = w.dput j b := pureN_inj hw
+    obtain ⟨-, hdcnt, hdx⟩ := stepN_dsnd_self (hall j)
     have hx : ∀ i, x i = procs i := by
       intro i
       by_cases hi : i = j
-      · subst hi; exact pureN_inj (stepN_dsnd_self (hall i)).2
+      · subst hi; exact pureN_inj hdx
       · exact pureN_inj (stepN_dsnd_foreign (Ne.symm hi) (hall i))
     have h5 := rel_none P (G' := G) hst hx (fun _ _ => rfl)
     refine hvis (A' := A.dput j b) (fun o' _ => (protocolRel_mk P _ _ _ _ _ _ _).mpr
@@ -476,7 +486,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
       (ANetStep.dsnd A j b (by rw [hA]; exact hdp))
     rw [hCeq i, hx i]
     by_cases hi : i = j
-    · subst hi; exact CoreProcStepN.dsndRelay _ b (stepN_dsnd_self (hall i)).1
+    · subst hi; exact CoreProcStepN.dsndRelay _ b hdcnt
     · exact CoreProcStepN.dsndIdle _ j b (Ne.symm hi)
   | ddlv i k b =>
     obtain ⟨hdp, hw⟩ := netStep_ddlv hn
@@ -515,7 +525,7 @@ theorem match_event (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
       exact CoreProcStepN.retWPubIdle _ r id co b (Ne.symm hi)
   | gcallLoop r id b =>
     obtain rfl : w' = w := pureN_inj (netStep_gcallLoop hn)
-    obtain ⟨hph, hrr, hest, hxid⟩ := stepN_gcallLoop_self (hall id)
+    obtain ⟨hph, hrr, hest, -, hxid⟩ := stepN_gcallLoop_self (hall id)
     have hx : x id = ((procs id).1.setProc { (procs id).1.proc with phase := .awaitG },
       (procs id).2) := pureN_inj hxid
     have hfor : ∀ i, i ≠ id → x i = procs i := fun i hi =>
@@ -631,7 +641,7 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
     obtain rfl : w' = w := pureN_inj hw
     have hfor : ∀ i, i ≠ id → x i = procs i := fun i hi =>
       pureN_inj (stepN_retABA_foreign (Ne.symm hi) (hall i))
-    obtain ⟨hcnt, hret, hxid⟩ := stepN_retABA_own (hall id)
+    obtain ⟨-, hcnt, hret, hxid⟩ := stepN_retABA_own (hall id)
     have hx : x id =
         ((procs id).1.setProc { (procs id).1.proc with returned := true },
           (procs id).2) := pureN_inj hxid
@@ -770,19 +780,25 @@ theorem match_lab (P : Params) {procs : ∀ _ : Fin P.n, ProcRec P.n}
             { ((procs id).2.stage r).proc with returned := true })) := by
       cases out with
       | A v =>
-        obtain ⟨hph, hrr, -, hcnt, hret, hxid⟩ := stepN_retG_A_own (hall id)
-        exact ⟨hph, hrr, GSub.GProcStep.retA _ v (by rw [hcol]; exact hcnt)
+        obtain ⟨hph, hrr, -, hin, hlv, hcnt, hret, hxid⟩ := stepN_retG_A_own (hall id)
+        exact ⟨hph, hrr, GSub.GProcStep.retA _ v (by rw [hcol]; exact hin)
+          (by rw [hcol]; exact hlv) (by rw [hcol]; exact hcnt)
           (by rw [hcol]; exact hret), pureN_inj hxid⟩
       | B v =>
-        obtain ⟨hph, hrr, -, hcnt, honce, hbind, hval, hret, hxid⟩ :=
+        obtain ⟨hph, hrr, -, hin, hlv, hnotA, hcnt, honce, hbind, hval, hret, hxid⟩ :=
           stepN_retG_B_own (hall id)
-        exact ⟨hph, hrr, GSub.GProcStep.retB _ v (by rw [hcol]; exact hcnt)
-          (by rw [hcol]; exact honce) (by rw [hcol]; exact hbind)
+        exact ⟨hph, hrr, GSub.GProcStep.retB _ v (by rw [hcol]; exact hin)
+          (by rw [hcol]; exact hlv) (by rw [hcol]; exact hnotA)
+          (by rw [hcol]; exact hcnt) (by rw [hcol]; exact honce)
+          (by rw [hcol]; exact hbind)
           (by rw [hcol]; exact hval) (by rw [hcol]; exact hret),
           pureN_inj hxid⟩
       | C =>
-        obtain ⟨hph, hrr, -, hcnt, hval, hret, hxid⟩ := stepN_retG_C_own (hall id)
-        exact ⟨hph, hrr, GSub.GProcStep.retC _ (by rw [hcol]; exact hcnt)
+        obtain ⟨hph, hrr, -, hin, hlv, hnotA, hnotB, hcnt, hval, hret, hxid⟩ :=
+          stepN_retG_C_own (hall id)
+        exact ⟨hph, hrr, GSub.GProcStep.retC _ (by rw [hcol]; exact hin)
+          (by rw [hcol]; exact hlv) (by rw [hcol]; exact hnotA)
+          (by rw [hcol]; exact hnotB) (by rw [hcol]; exact hcnt)
           (by rw [hcol]; exact hval) (by rw [hcol]; exact hret),
           pureN_inj hxid⟩
     obtain ⟨hph, hrr, hrow, hx⟩ := hstage

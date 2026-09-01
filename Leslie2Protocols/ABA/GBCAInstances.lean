@@ -56,19 +56,25 @@ broadcasts `fail` to every round at once.
   the set of messages from `k` delivered there. Thresholds count distinct
   senders. A corrupted sender's injections enter its pool through the
   fabric's own `byzG` transition.
-* **D8 (participation gating).** The protocol sends require the record to
-  have received its input: the algorithm's handlers only run inside a called
-  instance.
+* **D8 (participation gating).** The protocol sends and the three returns
+  require the record to have received its input: the algorithm's handlers only
+  run inside a called instance.
 * **D11 (Byzantine handshake drives), split.** A drive is authorised by a
   `k ∈ F` guard and has an effect on the round's data. The instance carries
   the effect and not the authorisation: `byzCallG` opens the stage record and
   pools its `⟨INPUT, b⟩` without any `k ∈ F` guard, and `byzRetG` sets the
-  `returned` flag on the same evidence an honest return needs. The guard
-  belongs to the network that surrounds the instance, where it applies to
-  the drive label that stays visible at this boundary.
+  `returned` flag on the same evidence, denials and gate an honest return
+  needs. The guard belongs to the network that surrounds the instance, where
+  it applies to the drive label that stays visible at this boundary.
 * **D18 (the five-level ladder).** The send rows are the five levels
   `INPUT / ECHO / VOTE / BIND / SEAL` and the three graded returns of the
-  cited algorithm, not the four-round compression.
+  cited algorithm, not the four-round compression. The rows are taken in the
+  wait-until order of Algorithm 6 from the `BIND` level down: each of those
+  rows requires the record's own send at the level below. The `VOTE` rows ask
+  for no own send, the `ECHO` they read being sent by an `upon` handler that
+  may still be pending. The `⊥` rows and the returns carry the negations
+  that the algorithm's if/else chain implies, the return rows in the reduced
+  form `GBCA.ImplStep.retC` states.
 
 ## The interface
 
@@ -174,15 +180,22 @@ inductive GProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
   (`ImplStep.callLoop`). -/
   | callLoop (p : GBCA.StageRec P.n) (id : Fin P.n) (b : Bool) :
       GProcStep P r j p (Sum.inl (Sum.inr (.gcallLoop r id b))) (PMF.pure p)
-  /-- Return with grade `A v`: an `n − f` `SEAL v` quorum (`ImplStep.retA`). -/
+  /-- Return with grade `A v`: an `n − f` `SEAL v` quorum, the record called
+  and its own `SEAL` out (`ImplStep.retA`). -/
   | retA (p : GBCA.StageRec P.n) (v : Bool)
+      (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentSeal ≠ none)
       (hcnt : P.n - P.f ≤ p.recvCount (.seal (some v)))
       (hret : p.proc.returned = false) :
       GProcStep P r j p (Sum.inl (Sum.inl (.retG r j (.A v))))
         (PMF.pure (p.setP { p.proc with returned := true }))
   /-- Return with grade `B v`: an `n − f` any-`SEAL` quorum containing
-  `SEAL v`, `f + 1` `BIND v`s and `|Valid| > 1` (`ImplStep.retB`). -/
+  `SEAL v`, `f + 1` `BIND v`s and `|Valid| > 1`, the record called, its own
+  `SEAL` out and case (1) denied at either bit (`ImplStep.retB`). -/
   | retB (p : GBCA.StageRec P.n) (v : Bool)
+      (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentSeal ≠ none)
+      (hnotA : ∀ v, p.recvCount (.seal (some v)) < P.n - P.f)
       (hcnt : P.n - P.f ≤ p.sealCount)
       (honce : ∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k)
       (hbind : P.f + 1 ≤ p.recvCount (.bind (some v)))
@@ -190,9 +203,15 @@ inductive GProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       (hret : p.proc.returned = false) :
       GProcStep P r j p (Sum.inl (Sum.inl (.retG r j (.B v))))
         (PMF.pure (p.setP { p.proc with returned := true }))
-  /-- Return with grade `C`: an `n − f` `SEAL ⊥` quorum and `|Valid| > 1`
-  (`ImplStep.retC`). -/
+  /-- Return with grade `C`: an `n − f` `SEAL ⊥` quorum and `|Valid| > 1`, the
+  record called, its own `SEAL` out, case (1) denied at either bit and case (2)
+  denied in the reduced form `ImplStep.retC` states. -/
   | retC (p : GBCA.StageRec P.n)
+      (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentSeal ≠ none)
+      (hnotA : ∀ v, p.recvCount (.seal (some v)) < P.n - P.f)
+      (hnotB : ∀ v, (∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k) →
+        p.recvCount (.bind (some v)) < P.f + 1)
       (hcnt : P.n - P.f ≤ p.recvCount (.seal none))
       (hval : p.bothValid P)
       (hret : p.proc.returned = false) :
@@ -215,15 +234,21 @@ inductive GProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
   does not move (`ImplStep.callLoop`). -/
   | byzCallLoop (p : GBCA.StageRec P.n) (k : Fin P.n) (b : Bool) :
       GProcStep P r j p (Sum.inl (Sum.inr (.byzCallGLoop r k b))) (PMF.pure p)
-  /-- A driven grade-`A` return (D11): the same evidence and the same record
-  write as the honest return (`ImplStep.retA`). -/
+  /-- A driven grade-`A` return (D11): the honest row's evidence and gate, and
+  the same record write (`ImplStep.retA`). -/
   | byzRetA (p : GBCA.StageRec P.n) (v : Bool)
+      (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentSeal ≠ none)
       (hcnt : P.n - P.f ≤ p.recvCount (.seal (some v)))
       (hret : p.proc.returned = false) :
       GProcStep P r j p (Sum.inl (Sum.inr (.byzRetG r j (.A v))))
         (PMF.pure (p.setP { p.proc with returned := true }))
-  /-- A driven grade-`B` return (D11) (`ImplStep.retB`). -/
+  /-- A driven grade-`B` return (D11): the honest row's evidence, denial and
+  gate, and the same record write (`ImplStep.retB`). -/
   | byzRetB (p : GBCA.StageRec P.n) (v : Bool)
+      (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentSeal ≠ none)
+      (hnotA : ∀ v, p.recvCount (.seal (some v)) < P.n - P.f)
       (hcnt : P.n - P.f ≤ p.sealCount)
       (honce : ∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k)
       (hbind : P.f + 1 ≤ p.recvCount (.bind (some v)))
@@ -231,8 +256,14 @@ inductive GProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       (hret : p.proc.returned = false) :
       GProcStep P r j p (Sum.inl (Sum.inr (.byzRetG r j (.B v))))
         (PMF.pure (p.setP { p.proc with returned := true }))
-  /-- A driven grade-`C` return (D11) (`ImplStep.retC`). -/
+  /-- A driven grade-`C` return (D11): the honest row's evidence, denials and
+  gate, and the same record write (`ImplStep.retC`). -/
   | byzRetC (p : GBCA.StageRec P.n)
+      (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentSeal ≠ none)
+      (hnotA : ∀ v, p.recvCount (.seal (some v)) < P.n - P.f)
+      (hnotB : ∀ v, (∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k) →
+        p.recvCount (.bind (some v)) < P.f + 1)
       (hcnt : P.n - P.f ≤ p.recvCount (.seal none))
       (hval : p.bothValid P)
       (hret : p.proc.returned = false) :
@@ -257,49 +288,64 @@ inductive GProcStep (P : Params) (r : ℕ) (j : Fin P.n) :
       (hsend : p.proc.sentEcho = none) :
       GProcStep P r j p (Sum.inr (.snd j (.echo b)))
         (PMF.pure (p.setP { p.proc with sentEcho := some b }))
-  /-- `VOTE b`: an `n − f` `ECHO b` quorum (`ImplStep.voteBit`; D18). -/
+  /-- `VOTE b`: an `n − f` `ECHO b` quorum. The record's own `ECHO` is sent by
+  one of the algorithm's `upon` handlers and may still be pending, so no
+  own-send condition applies here (`ImplStep.voteBit`; D18). -/
   | sndVoteBit (p : GBCA.StageRec P.n) (b : Bool)
       (hin : p.proc.input ≠ none)
       (hcnt : P.n - P.f ≤ p.recvCount (.echo b))
       (hsend : p.proc.sentVote = none) :
       GProcStep P r j p (Sum.inr (.snd j (.vote (some b))))
         (PMF.pure (p.setP { p.proc with sentVote := some (some b) }))
-  /-- `VOTE ⊥`: `n − f` `ECHO`s of any payload and `|Valid| > 1`
-  (`ImplStep.voteBot`; D18). -/
+  /-- `VOTE ⊥`: `n − f` `ECHO`s of any payload and `|Valid| > 1`, and no
+  single-bit `ECHO` quorum on record. The record's own `ECHO` is sent by one of
+  the algorithm's `upon` handlers and may still be pending, so no own-send
+  condition applies here (`ImplStep.voteBot`; D18). -/
   | sndVoteBot (p : GBCA.StageRec P.n)
       (hin : p.proc.input ≠ none)
+      (hnot : ∀ b, p.recvCount (.echo b) < P.n - P.f)
       (hcnt : P.n - P.f ≤ p.echoCount)
       (hval : p.bothValid P)
       (hsend : p.proc.sentVote = none) :
       GProcStep P r j p (Sum.inr (.snd j (.vote none)))
         (PMF.pure (p.setP { p.proc with sentVote := some none }))
-  /-- `BIND b`: an `n − f` `VOTE b` quorum (`ImplStep.bindBit`; D18). -/
+  /-- `BIND b`: an `n − f` `VOTE b` quorum, the record's own `VOTE` already
+  out (`ImplStep.bindBit`; D18). -/
   | sndBindBit (p : GBCA.StageRec P.n) (b : Bool)
       (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentVote ≠ none)
       (hcnt : P.n - P.f ≤ p.recvCount (.vote (some b)))
       (hsend : p.proc.sentBind = none) :
       GProcStep P r j p (Sum.inr (.snd j (.bind (some b))))
         (PMF.pure (p.setP { p.proc with sentBind := some (some b) }))
-  /-- `BIND ⊥`: `n − f` `VOTE`s of any payload and `|Valid| > 1`
+  /-- `BIND ⊥`: `n − f` `VOTE`s of any payload and `|Valid| > 1`, the record's
+  own `VOTE` already out, and no single-bit `VOTE` quorum on record
   (`ImplStep.bindBot`; D18). -/
   | sndBindBot (p : GBCA.StageRec P.n)
       (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentVote ≠ none)
+      (hnot : ∀ b, p.recvCount (.vote (some b)) < P.n - P.f)
       (hcnt : P.n - P.f ≤ p.voteCount)
       (hval : p.bothValid P)
       (hsend : p.proc.sentBind = none) :
       GProcStep P r j p (Sum.inr (.snd j (.bind none)))
         (PMF.pure (p.setP { p.proc with sentBind := some none }))
-  /-- `SEAL b`: an `n − f` `BIND b` quorum (`ImplStep.sealBit`; D18). -/
+  /-- `SEAL b`: an `n − f` `BIND b` quorum, the record's own `BIND` already
+  out (`ImplStep.sealBit`; D18). -/
   | sndSealBit (p : GBCA.StageRec P.n) (b : Bool)
       (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentBind ≠ none)
       (hcnt : P.n - P.f ≤ p.recvCount (.bind (some b)))
       (hsend : p.proc.sentSeal = none) :
       GProcStep P r j p (Sum.inr (.snd j (.seal (some b))))
         (PMF.pure (p.setP { p.proc with sentSeal := some (some b) }))
-  /-- `SEAL ⊥`: `n − f` `BIND`s of any payload and `|Valid| > 1`
+  /-- `SEAL ⊥`: `n − f` `BIND`s of any payload and `|Valid| > 1`, the record's
+  own `BIND` already out, and no single-bit `BIND` quorum on record
   (`ImplStep.sealBot`; D18). -/
   | sndSealBot (p : GBCA.StageRec P.n)
       (hin : p.proc.input ≠ none)
+      (hlv : p.proc.sentBind ≠ none)
+      (hnot : ∀ b, p.recvCount (.bind (some b)) < P.n - P.f)
       (hcnt : P.n - P.f ≤ p.bindCount)
       (hval : p.bothValid P)
       (hsend : p.proc.sentSeal = none) :
@@ -652,31 +698,41 @@ theorem stepG_gcallLoop {id : Fin P.n} {b : Bool}
 
 theorem stepG_retG_A_own {v : Bool}
     (h : GProcStep P r j p (Sum.inl (Sum.inl (.retG r j (.A v)))) ν) :
-    P.n - P.f ≤ p.recvCount (.seal (some v)) ∧ p.proc.returned = false ∧
+    p.proc.input ≠ none ∧ p.proc.sentSeal ≠ none ∧
+      P.n - P.f ≤ p.recvCount (.seal (some v)) ∧ p.proc.returned = false ∧
       ν = PMF.pure (p.setP { p.proc with returned := true }) := by
   cases h
-  case retA => exact ⟨by assumption, by assumption, rfl⟩
+  case retA =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
   case retIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_retG_B_own {v : Bool}
     (h : GProcStep P r j p (Sum.inl (Sum.inl (.retG r j (.B v)))) ν) :
-    P.n - P.f ≤ p.sealCount ∧ (∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k) ∧
+    p.proc.input ≠ none ∧ p.proc.sentSeal ≠ none ∧
+      (∀ v, p.recvCount (.seal (some v)) < P.n - P.f) ∧
+      P.n - P.f ≤ p.sealCount ∧ (∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k) ∧
       P.f + 1 ≤ p.recvCount (.bind (some v)) ∧ p.bothValid P ∧
       p.proc.returned = false ∧
       ν = PMF.pure (p.setP { p.proc with returned := true }) := by
   cases h
   case retB =>
     exact ⟨by assumption, by assumption, by assumption, by assumption,
-      by assumption, rfl⟩
+      by assumption, by assumption, by assumption, by assumption, rfl⟩
   case retIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_retG_C_own
     (h : GProcStep P r j p (Sum.inl (Sum.inl (.retG r j .C))) ν) :
-    P.n - P.f ≤ p.recvCount (.seal none) ∧ p.bothValid P ∧
+    p.proc.input ≠ none ∧ p.proc.sentSeal ≠ none ∧
+      (∀ v, p.recvCount (.seal (some v)) < P.n - P.f) ∧
+      (∀ v, (∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k) →
+        p.recvCount (.bind (some v)) < P.f + 1) ∧
+      P.n - P.f ≤ p.recvCount (.seal none) ∧ p.bothValid P ∧
       p.proc.returned = false ∧
       ν = PMF.pure (p.setP { p.proc with returned := true }) := by
   cases h
-  case retC => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case retC =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption,
+      by assumption, by assumption, by assumption, rfl⟩
   case retIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_retG_foreign {id : Fin P.n} {out : GbcaOut} (hid : id ≠ j)
@@ -711,31 +767,41 @@ theorem stepG_byzCallGLoop {k : Fin P.n} {b : Bool}
 
 theorem stepG_byzRetG_A_own {v : Bool}
     (h : GProcStep P r j p (Sum.inl (Sum.inr (.byzRetG r j (.A v)))) ν) :
-    P.n - P.f ≤ p.recvCount (.seal (some v)) ∧ p.proc.returned = false ∧
+    p.proc.input ≠ none ∧ p.proc.sentSeal ≠ none ∧
+      P.n - P.f ≤ p.recvCount (.seal (some v)) ∧ p.proc.returned = false ∧
       ν = PMF.pure (p.setP { p.proc with returned := true }) := by
   cases h
-  case byzRetA => exact ⟨by assumption, by assumption, rfl⟩
+  case byzRetA =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
   case byzRetIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_byzRetG_B_own {v : Bool}
     (h : GProcStep P r j p (Sum.inl (Sum.inr (.byzRetG r j (.B v)))) ν) :
-    P.n - P.f ≤ p.sealCount ∧ (∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k) ∧
+    p.proc.input ≠ none ∧ p.proc.sentSeal ≠ none ∧
+      (∀ v, p.recvCount (.seal (some v)) < P.n - P.f) ∧
+      P.n - P.f ≤ p.sealCount ∧ (∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k) ∧
       P.f + 1 ≤ p.recvCount (.bind (some v)) ∧ p.bothValid P ∧
       p.proc.returned = false ∧
       ν = PMF.pure (p.setP { p.proc with returned := true }) := by
   cases h
   case byzRetB =>
     exact ⟨by assumption, by assumption, by assumption, by assumption,
-      by assumption, rfl⟩
+      by assumption, by assumption, by assumption, by assumption, rfl⟩
   case byzRetIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_byzRetG_C_own
     (h : GProcStep P r j p (Sum.inl (Sum.inr (.byzRetG r j .C))) ν) :
-    P.n - P.f ≤ p.recvCount (.seal none) ∧ p.bothValid P ∧
+    p.proc.input ≠ none ∧ p.proc.sentSeal ≠ none ∧
+      (∀ v, p.recvCount (.seal (some v)) < P.n - P.f) ∧
+      (∀ v, (∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k) →
+        p.recvCount (.bind (some v)) < P.f + 1) ∧
+      P.n - P.f ≤ p.recvCount (.seal none) ∧ p.bothValid P ∧
       p.proc.returned = false ∧
       ν = PMF.pure (p.setP { p.proc with returned := true }) := by
   cases h
-  case byzRetC => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case byzRetC =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption,
+      by assumption, by assumption, by assumption, rfl⟩
   case byzRetIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_byzRetG_foreign {k : Fin P.n} {out : GbcaOut} (hk : k ≠ j)
@@ -767,59 +833,71 @@ theorem stepG_snd_echo_own {b : Bool}
 
 theorem stepG_snd_voteBit_own {b : Bool}
     (h : GProcStep P r j p (Sum.inr (.snd j (.vote (some b)))) ν) :
-    p.proc.input ≠ none ∧ P.n - P.f ≤ p.recvCount (.echo b) ∧
-      p.proc.sentVote = none ∧
+    p.proc.input ≠ none ∧
+      P.n - P.f ≤ p.recvCount (.echo b) ∧ p.proc.sentVote = none ∧
       ν = PMF.pure (p.setP { p.proc with sentVote := some (some b) }) := by
   cases h
-  case sndVoteBit => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case sndVoteBit =>
+    exact ⟨by assumption, by assumption, by assumption, rfl⟩
   case sndIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_snd_voteBot_own
     (h : GProcStep P r j p (Sum.inr (.snd j (.vote none))) ν) :
-    p.proc.input ≠ none ∧ P.n - P.f ≤ p.echoCount ∧ p.bothValid P ∧
+    p.proc.input ≠ none ∧
+      (∀ b, p.recvCount (.echo b) < P.n - P.f) ∧
+      P.n - P.f ≤ p.echoCount ∧ p.bothValid P ∧
       p.proc.sentVote = none ∧
       ν = PMF.pure (p.setP { p.proc with sentVote := some none }) := by
   cases h
   case sndVoteBot =>
-    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
+    exact ⟨by assumption, by assumption, by assumption, by assumption,
+      by assumption, rfl⟩
   case sndIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_snd_bindBit_own {b : Bool}
     (h : GProcStep P r j p (Sum.inr (.snd j (.bind (some b)))) ν) :
-    p.proc.input ≠ none ∧ P.n - P.f ≤ p.recvCount (.vote (some b)) ∧
-      p.proc.sentBind = none ∧
+    p.proc.input ≠ none ∧ p.proc.sentVote ≠ none ∧
+      P.n - P.f ≤ p.recvCount (.vote (some b)) ∧ p.proc.sentBind = none ∧
       ν = PMF.pure (p.setP { p.proc with sentBind := some (some b) }) := by
   cases h
-  case sndBindBit => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case sndBindBit =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
   case sndIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_snd_bindBot_own
     (h : GProcStep P r j p (Sum.inr (.snd j (.bind none))) ν) :
-    p.proc.input ≠ none ∧ P.n - P.f ≤ p.voteCount ∧ p.bothValid P ∧
+    p.proc.input ≠ none ∧ p.proc.sentVote ≠ none ∧
+      (∀ b, p.recvCount (.vote (some b)) < P.n - P.f) ∧
+      P.n - P.f ≤ p.voteCount ∧ p.bothValid P ∧
       p.proc.sentBind = none ∧
       ν = PMF.pure (p.setP { p.proc with sentBind := some none }) := by
   cases h
   case sndBindBot =>
-    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
+    exact ⟨by assumption, by assumption, by assumption, by assumption,
+      by assumption, by assumption, rfl⟩
   case sndIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_snd_sealBit_own {b : Bool}
     (h : GProcStep P r j p (Sum.inr (.snd j (.seal (some b)))) ν) :
-    p.proc.input ≠ none ∧ P.n - P.f ≤ p.recvCount (.bind (some b)) ∧
-      p.proc.sentSeal = none ∧
+    p.proc.input ≠ none ∧ p.proc.sentBind ≠ none ∧
+      P.n - P.f ≤ p.recvCount (.bind (some b)) ∧ p.proc.sentSeal = none ∧
       ν = PMF.pure (p.setP { p.proc with sentSeal := some (some b) }) := by
   cases h
-  case sndSealBit => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case sndSealBit =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
   case sndIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_snd_sealBot_own
     (h : GProcStep P r j p (Sum.inr (.snd j (.seal none))) ν) :
-    p.proc.input ≠ none ∧ P.n - P.f ≤ p.bindCount ∧ p.bothValid P ∧
+    p.proc.input ≠ none ∧ p.proc.sentBind ≠ none ∧
+      (∀ b, p.recvCount (.bind (some b)) < P.n - P.f) ∧
+      P.n - P.f ≤ p.bindCount ∧ p.bothValid P ∧
       p.proc.sentSeal = none ∧
       ν = PMF.pure (p.setP { p.proc with sentSeal := some none }) := by
   cases h
   case sndSealBot =>
-    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
+    exact ⟨by assumption, by assumption, by assumption, by assumption,
+      by assumption, by assumption, rfl⟩
   case sndIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepG_snd_foreign {k : Fin P.n} {m : GBCA.Msg} (hk : k ≠ j)
@@ -1248,29 +1326,32 @@ theorem sub_projects (P : Params) (r : ℕ) :
           rw [sub_setProc_gpool (pure_inj hx) hfor]
           exact GBCA.ImplStep.voteBit _ j b hin hcnt hsend
         | none =>
-          obtain ⟨hin, hcnt, hval, hsend, hx⟩ := stepG_snd_voteBot_own (hall j)
+          obtain ⟨hin, hnot, hcnt, hval, hsend, hx⟩ :=
+            stepG_snd_voteBot_own (hall j)
           rw [sub_setProc_gpool (pure_inj hx) hfor]
-          exact GBCA.ImplStep.voteBot _ j hin hcnt hval hsend
+          exact GBCA.ImplStep.voteBot _ j hin hnot hcnt hval hsend
       | bind v =>
         cases v with
         | some b =>
-          obtain ⟨hin, hcnt, hsend, hx⟩ := stepG_snd_bindBit_own (hall j)
+          obtain ⟨hin, hlv, hcnt, hsend, hx⟩ := stepG_snd_bindBit_own (hall j)
           rw [sub_setProc_gpool (pure_inj hx) hfor]
-          exact GBCA.ImplStep.bindBit _ j b hin hcnt hsend
+          exact GBCA.ImplStep.bindBit _ j b hin hlv hcnt hsend
         | none =>
-          obtain ⟨hin, hcnt, hval, hsend, hx⟩ := stepG_snd_bindBot_own (hall j)
+          obtain ⟨hin, hlv, hnot, hcnt, hval, hsend, hx⟩ :=
+            stepG_snd_bindBot_own (hall j)
           rw [sub_setProc_gpool (pure_inj hx) hfor]
-          exact GBCA.ImplStep.bindBot _ j hin hcnt hval hsend
+          exact GBCA.ImplStep.bindBot _ j hin hlv hnot hcnt hval hsend
       | «seal» v =>
         cases v with
         | some b =>
-          obtain ⟨hin, hcnt, hsend, hx⟩ := stepG_snd_sealBit_own (hall j)
+          obtain ⟨hin, hlv, hcnt, hsend, hx⟩ := stepG_snd_sealBit_own (hall j)
           rw [sub_setProc_gpool (pure_inj hx) hfor]
-          exact GBCA.ImplStep.sealBit _ j b hin hcnt hsend
+          exact GBCA.ImplStep.sealBit _ j b hin hlv hcnt hsend
         | none =>
-          obtain ⟨hin, hcnt, hval, hsend, hx⟩ := stepG_snd_sealBot_own (hall j)
+          obtain ⟨hin, hlv, hnot, hcnt, hval, hsend, hx⟩ :=
+            stepG_snd_sealBot_own (hall j)
           rw [sub_setProc_gpool (pure_inj hx) hfor]
-          exact GBCA.ImplStep.sealBot _ j hin hcnt hval hsend
+          exact GBCA.ImplStep.sealBot _ j hin hlv hnot hcnt hval hsend
     | dlv i j m =>
       obtain ⟨hmem, hw⟩ := netG_dlv hn
       have hw' : w' = w := pure_inj hw
@@ -1318,17 +1399,19 @@ theorem sub_projects (P : Params) (r : ℕ) :
           refine ⟨_, rfl, ?_⟩
           cases out with
           | A v =>
-            obtain ⟨hcnt, hret, hx⟩ := stepG_retG_A_own (hall id)
+            obtain ⟨hin, hlv, hcnt, hret, hx⟩ := stepG_retG_A_own (hall id)
             rw [sub_setProc (pure_inj hx) hfor]
-            exact GBCA.ImplStep.retA _ id v hcnt hret
+            exact GBCA.ImplStep.retA _ id v hin hlv hcnt hret
           | B v =>
-            obtain ⟨hcnt, honce, hbind, hval, hret, hx⟩ := stepG_retG_B_own (hall id)
+            obtain ⟨hin, hlv, hnotA, hcnt, honce, hbind, hval, hret, hx⟩ :=
+              stepG_retG_B_own (hall id)
             rw [sub_setProc (pure_inj hx) hfor]
-            exact GBCA.ImplStep.retB _ id v hcnt honce hbind hval hret
+            exact GBCA.ImplStep.retB _ id v hin hlv hnotA hcnt honce hbind hval hret
           | C =>
-            obtain ⟨hcnt, hval, hret, hx⟩ := stepG_retG_C_own (hall id)
+            obtain ⟨hin, hlv, hnotA, hnotB, hcnt, hval, hret, hx⟩ :=
+              stepG_retG_C_own (hall id)
             rw [sub_setProc (pure_inj hx) hfor]
-            exact GBCA.ImplStep.retC _ id hcnt hval hret
+            exact GBCA.ImplStep.retC _ id hin hlv hnotA hnotB hcnt hval hret
       | inr ev =>
         cases ev with
         | gsnd r' j m => exact (netG_gsnd_dead hn).elim
@@ -1374,17 +1457,19 @@ theorem sub_projects (P : Params) (r : ℕ) :
           refine ⟨_, rfl, ?_⟩
           cases out with
           | A v =>
-            obtain ⟨hcnt, hret, hx⟩ := stepG_byzRetG_A_own (hall k)
+            obtain ⟨hin, hlv, hcnt, hret, hx⟩ := stepG_byzRetG_A_own (hall k)
             rw [sub_setProc (pure_inj hx) hfor]
-            exact GBCA.ImplStep.retA _ k v hcnt hret
+            exact GBCA.ImplStep.retA _ k v hin hlv hcnt hret
           | B v =>
-            obtain ⟨hcnt, honce, hbind, hval, hret, hx⟩ := stepG_byzRetG_B_own (hall k)
+            obtain ⟨hin, hlv, hnotA, hcnt, honce, hbind, hval, hret, hx⟩ :=
+              stepG_byzRetG_B_own (hall k)
             rw [sub_setProc (pure_inj hx) hfor]
-            exact GBCA.ImplStep.retB _ k v hcnt honce hbind hval hret
+            exact GBCA.ImplStep.retB _ k v hin hlv hnotA hcnt honce hbind hval hret
           | C =>
-            obtain ⟨hcnt, hval, hret, hx⟩ := stepG_byzRetG_C_own (hall k)
+            obtain ⟨hin, hlv, hnotA, hnotB, hcnt, hval, hret, hx⟩ :=
+              stepG_byzRetG_C_own (hall k)
             rw [sub_setProc (pure_inj hx) hfor]
-            exact GBCA.ImplStep.retC _ k hcnt hval hret
+            exact GBCA.ImplStep.retC _ k hin hlv hnotA hnotB hcnt hval hret
 
 /-! ### The round instance is refined by the graded agreement specification
 

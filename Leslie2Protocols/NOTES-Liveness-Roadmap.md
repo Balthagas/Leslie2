@@ -187,6 +187,13 @@ Ordered by expected value-for-effort:
    probabilistic model would let the LTS liveness toolkit and Leslie2's simulation
    stack meet without duplication.
 
+One cost note, on any of the three. The achievability item of `ABA/README.md` — an
+explicit scheduler driving `protocol P4` to a two-return trace of positive mass — has
+grown more expensive under the wait-until order and the case denials: every stage send now
+waits on the sender's own send at the level below, and every return but `retA` discharges
+the denials of the cases above it, so a witness has to schedule the full five-level
+exchange at each participating process and then exhibit those denials at each returner.
+
 ## 5. Design note: the two failure outcomes under fairness
 
 The `δ_f` mass is encoded twice, and the two encodings agree. Neither is visible to

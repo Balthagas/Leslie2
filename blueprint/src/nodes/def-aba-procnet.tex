@@ -15,6 +15,9 @@
   Process $j$ therefore answers the traffic of a round its round loop has passed, and a stage delivery of any round is filed.
   The row $terminate$ fires on $j$'s own return and $2f+1$ DECIDED receipts, and its effect is to set $terminated$ and nothing else, so the retained stage records are frozen from that point.
   The DECIDED rows carry no termination guard, so a process that has terminated keeps relaying the payloads it holds.
+  The return $retABA$ and the DECIDED relay are gated on the round-loop record holding an input, so a process that was never called neither returns nor relays (D8).
+  The row $gcallLoop$ reads the stage record of round $r$ without writing it, asking that the record holds an input, and carries no termination guard.
+  A process that has terminated at phase $toCallG$ over an uncalled stage record therefore has a row on neither call label and takes no further round-loop step, a dead region this reading accepts.
   There is no outbox, no copy of the corrupted set and no corruption flag, so every guard of the automaton $\mathrm{ABAProcN}(P,j)$ reads $j$'s own record.
   It runs over the extended alphabet $\mathrm{NLab}(n) = \mathrm{Lab}(n) \oplus \mathrm{NetEvt}(n)$, where $\mathrm{NetEvt}$ names the rendezvous the shared alphabet cannot: the stage multicast $\mathrm{gsnd}(r,j,m)$ and the stage delivery $\mathrm{gdlv}(r,i,j,m)$; the DECIDED relay $\mathrm{dsnd}(j,b)$ and the DECIDED delivery $\mathrm{ddlv}(i,j,b)$; the fused coin return $\mathrm{retWPub}(r,id,c,b)$, which carries beside the coin the payload to be published (D10); the graded-agreement call $\mathrm{gcallLoop}(r,id,b)$ against an already-opened stage record; and the five Byzantine drives $\mathrm{byzCallG}$, $\mathrm{byzCallGLoop}$, $\mathrm{byzRetG}$, $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ (D11).
   The set $\mathrm{netEvtLabels}(n)$ of these labels is what the composition hides, the silent label of $\mathrm{NLab}(n)$ being that of $\mathrm{Lab}(n)$.

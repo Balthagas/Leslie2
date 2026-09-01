@@ -45,8 +45,16 @@ exact message `m` delivered to `i`), `echoCount`/`voteCount`/`bindCount`/
 `bothValid P s i` (an `n − f` `INPUT b` receipt quorum at `i` for **each**
 bit — Algorithm 6's `|approvedVals| > 1`).
 
-The rules, all τ except the labelled API rows (D8 participation gating
-`input ≠ none` on every protocol send, including the seal level):
+The rules, all τ except the labelled API rows. Three conditions run across the
+table. D8 participation gating (`input ≠ none`) is on every protocol send,
+including the seal level, and on all three returns. The ladder is taken in the
+wait-until order of Algorithm 6 from the `BIND` level down: each of those levels
+requires the sender's own send at the level below (`hlv`), the returns requiring
+the sender's own `SEAL`. The vote level requires no own send, the `ECHO` it
+reads being multicast by an `upon` handler and not on the main thread. And the
+block boundaries are denials: within a ladder block the `⊥` rule denies its
+block's case (a) at either bit, and the returns read as Algorithm 6's
+`if (a) … elif (b) … else …`, each carrying the denials of the cases above it.
 
 * `call` / `callLoop` — record the input, multicast `INPUT b` / input-enabled
   self-loop;
@@ -54,18 +62,31 @@ The rules, all τ except the labelled API rows (D8 participation gating
 * `relay` — `f + 1` `INPUT b` receipts, re-multicast `INPUT b` (amplification);
 * `echo` — `n − f` `INPUT b` receipts, multicast `ECHO b` (write-once);
 * `voteBit` — `n − f` `ECHO b` receipts, multicast `VOTE b` (write-once);
-* `voteBot` — `n − f` any-`ECHO` receipts and `bothValid`, multicast `VOTE ⊥`;
-* `bindBit` — `n − f` `VOTE b` receipts, multicast `BIND b` (write-once);
-* `bindBot` — `n − f` any-`VOTE` receipts and `bothValid`, multicast `BIND ⊥`;
-* `sealBit` — `n − f` `BIND b` receipts, multicast `SEAL b` (write-once);
-* `sealBot` — `n − f` any-`BIND` receipts and `bothValid`, multicast `SEAL ⊥`;
+* `voteBot` — `n − f` any-`ECHO` receipts, `bothValid`, and no `n − f` `ECHO b`
+  quorum at either bit, multicast `VOTE ⊥`;
+* `bindBit` — `n − f` `VOTE b` receipts and own `VOTE` out, multicast `BIND b`
+  (write-once);
+* `bindBot` — `n − f` any-`VOTE` receipts, own `VOTE` out, `bothValid`, and no
+  `n − f` `VOTE b` quorum at either bit, multicast `BIND ⊥`;
+* `sealBit` — `n − f` `BIND b` receipts and own `BIND` out, multicast `SEAL b`
+  (write-once);
+* `sealBot` — `n − f` any-`BIND` receipts, own `BIND` out, `bothValid`, and no
+  `n − f` `BIND b` quorum at either bit, multicast `SEAL ⊥`;
 * `byz` — a corrupted sender multicasts anything;
-* `retA id v` — an `n − f` `SEAL v` receipt quorum (grade 2);
+* `retA id v` — an `n − f` `SEAL v` receipt quorum, the process called and its
+  own `SEAL` out (grade 2 — case (a), which heads the chain and denies nothing);
 * `retB id v` — `n − f` any-`SEAL` receipts, at least one `SEAL v` receipt,
-  **`f + 1` `BIND v` receipts**, and `bothValid` (grade 1 — Algorithm 6's
+  **`f + 1` `BIND v` receipts**, and `bothValid`, the process called, its own
+  `SEAL` out and case (a) denied at either bit (`hnotA`) (grade 1 — Algorithm 6's
   line-25 condition: the `t + 1` `echo4` check is what puts an honest `BIND v`
   behind every grade-1 output);
-* `retC id` — an `n − f` `SEAL ⊥` receipt quorum and `bothValid` (grade 0);
+* `retC id` — an `n − f` `SEAL ⊥` receipt quorum and `bothValid`, the process
+  called, its own `SEAL` out, case (a) denied at either bit (`hnotA`), and
+  case (b) denied in reduced form (`hnotB`: `∀ v, (∃ k, seal (some v) ∈ recv id k)
+  → recvCount (.bind (some v)) < f + 1`) — the reduction is sound because case
+  (b)'s other two conjuncts, the `n − f` any-`SEAL` quorum and `bothValid`, are
+  this row's own `hcnt` and `hval`, an `n − f` `SEAL ⊥` quorum being in
+  particular an `n − f` any-`SEAL` quorum (grade 0);
 * `fail` — D1 determinised corruption.
 
 The load-bearing depth of the return evidence: **every grade-≥1 output names a

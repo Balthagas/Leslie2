@@ -658,7 +658,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       (Or.inr ⟨some b, rfl, rfl, hsend⟩)
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
-  | voteBot j hin hcnt hval hsend =>
+  | voteBot j hin _hnot hcnt hval hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine hI.send hin (fun _ hb => hb) (fun b' heq => by simp at heq)
@@ -669,7 +669,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       (Or.inr ⟨none, rfl, rfl, hsend⟩)
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
-  | bindBit j b hin hcnt hsend =>
+  | bindBit j b hin _hlv hcnt hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine hI.send hin (fun _ hb => hb) (fun b' heq => by simp at heq)
@@ -682,7 +682,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
       (Or.inr ⟨some b, rfl, rfl, hsend⟩)
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
-  | bindBot j hin hcnt hval hsend =>
+  | bindBot j hin _hlv _hnot hcnt hval hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine hI.send hin (fun _ hb => hb) (fun b' heq => by simp at heq)
@@ -693,7 +693,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
       (Or.inr ⟨none, rfl, rfl, hsend⟩)
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
-  | sealBit j b hin hcnt hsend =>
+  | sealBit j b hin _hlv hcnt hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine hI.send hin (fun _ hb => hb) (fun b' heq => by simp at heq)
@@ -706,7 +706,7 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
       (Or.inl ⟨fun w heq => by simp at heq, rfl⟩)
       (Or.inr ⟨some b, rfl, rfl, hsend⟩)
-  | sealBot j hin hcnt hval hsend =>
+  | sealBot j hin _hlv _hnot hcnt hval hsend =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     refine hI.send hin (fun _ hb => hb) (fun b' heq => by simp at heq)
@@ -748,15 +748,15 @@ theorem Inv.step {r : ℕ} {s : ImplState P.n} {l : Lab P.n}
         hI.input_orig b G hFG hGc j' hjG (hsentG G hFG j' _ hjG hm')
     · exact fun b j' hF hm' => hI.input_supp b j' hF (hs j' _ hF hm')
     · exact fun j' b hF hm' => hI.input_called j' b hF (hs j' _ hF hm')
-  | retA id v hcnt hr =>
+  | retA id v _hin _hlv hcnt hr =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     exact hI.setProc_frame rfl rfl rfl rfl rfl
-  | retB id v hcnt honce hbind hval hr =>
+  | retB id v _hin _hlv _hnotA hcnt honce hbind hval hr =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     exact hI.setProc_frame rfl rfl rfl rfl rfl
-  | retC id hcnt hval hr =>
+  | retC id _hin _hlv _hnotA _hnotB hcnt hval hr =>
     rw [PMF.mem_support_pure_iff] at hs'
     subst hs'
     exact hI.setProc_frame rfl rfl rfl rfl rfl
@@ -1419,7 +1419,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         simpa using hRR.ret_eq k
       · rw [proc_send_ne hk]
         exact hRR.ret_eq k
-  | voteBot j hin hcnt hval hsend =>
+  | voteBot j hin _hnot hcnt hval hsend =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     refine ⟨q2, Or.inl ⟨rfl, System.weakLSilent_refl _ q2⟩,
@@ -1440,7 +1440,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         simpa using hRR.ret_eq k
       · rw [proc_send_ne hk]
         exact hRR.ret_eq k
-  | bindBit j b hin hcnt hsend =>
+  | bindBit j b hin _hlv hcnt hsend =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     refine ⟨q2, Or.inl ⟨rfl, System.weakLSilent_refl _ q2⟩,
@@ -1460,7 +1460,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         simpa using hRR.ret_eq k
       · rw [proc_send_ne hk]
         exact hRR.ret_eq k
-  | bindBot j hin hcnt hval hsend =>
+  | bindBot j hin _hlv _hnot hcnt hval hsend =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     refine ⟨q2, Or.inl ⟨rfl, System.weakLSilent_refl _ q2⟩,
@@ -1480,7 +1480,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         simpa using hRR.ret_eq k
       · rw [proc_send_ne hk]
         exact hRR.ret_eq k
-  | sealBit j b hin hcnt hsend =>
+  | sealBit j b hin _hlv hcnt hsend =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     refine ⟨q2, Or.inl ⟨rfl, System.weakLSilent_refl _ q2⟩,
@@ -1500,7 +1500,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         simpa using hRR.ret_eq k
       · rw [proc_send_ne hk]
         exact hRR.ret_eq k
-  | sealBot j hin hcnt hval hsend =>
+  | sealBot j hin _hlv _hnot hcnt hval hsend =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     refine ⟨q2, Or.inl ⟨rfl, System.weakLSilent_refl _ q2⟩,
@@ -1526,7 +1526,7 @@ theorem implRefines (P : Params) (r : ℕ) :
     exact ⟨q2, Or.inl ⟨rfl, System.weakLSilent_refl _ q2⟩,
       hI', hRR.call_eq, hRR.ret_eq, hRR.F_eq, hRR.dead_cert, hRR.gradeA_ev,
       hRR.gradeC_ev⟩
-  | retA id v hcnt hr =>
+  | retA id v _hin _hlv hcnt hr =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     have hret : q2.ret id = false := by rw [hRR.ret_eq]; exact hr
@@ -1595,7 +1595,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         rcases hb with rfl | hb
         · exact deadCert_ret (deadCert_of_voteQuorum hRR.inv hvq)
         · exact deadCert_ret (hRR.dead_cert b hb)
-  | retB id v hcnt honce hbind hval hr =>
+  | retB id v _hin _hlv _hnotA hcnt honce hbind hval hr =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     have hret : q2.ret id = false := by rw [hRR.ret_eq]; exact hr
@@ -1653,7 +1653,7 @@ theorem implRefines (P : Params) (r : ℕ) :
         rcases hb with rfl | hb
         · exact deadCert_ret (deadCert_of_voteQuorum hRR.inv hvq)
         · exact deadCert_ret (hRR.dead_cert b hb)
-  | retC id hcnt hval hr =>
+  | retC id _hin _hlv _hnotA _hnotB hcnt hval hr =>
     rw [PMF.mem_support_pure_iff] at hq1'
     subst hq1'
     have hret : q2.ret id = false := by rw [hRR.ret_eq]; exact hr
