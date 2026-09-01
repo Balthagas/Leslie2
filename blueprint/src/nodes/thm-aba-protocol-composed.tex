@@ -7,28 +7,29 @@
     \operatorname{ATD}(\mathrm{protocol}(P)) \;\subseteq\;
     \operatorname{ATD}(\mathrm{composed}(P)).
   \]
-  The two presentations are related by a relation and not by a map.
-  A composed state carries one graded-agreement instance per round at every moment, where a process record of the protocol carries the stage record of the round its round loop is in and nothing else (D20), so the composed reading holds strictly more state than the protocol.
-  $\mathrm{ProtocolRel}(P)$ pins, of a composed state, everything a state of the protocol determines, and it has seven conjuncts.
+  The two presentations hold the same stage data indexed two ways, by process on the protocol side and by round on the composed one.
+  $\mathrm{ProtocolRel}(P)$ pins, of a composed state, everything a state of the protocol determines, and it has five conjuncts, none of them guarded.
   The round loops agree.
   The coin oracle is the same component on both sides.
   The ABA-side network is the network adversary's DECIDED pools beside its corrupted set, and the fabric of round $r$ is that adversary's round-$r$ pools beside the same corrupted set, corruption being one broadcast on both sides.
-  The stage record of a process is the entry, at that process, of the instance of the round its round loop is in.
-  A round above a process's round holds the initial stage record at that process.
-  A process with no input is idle in round $0$.
-  The columns below a process's round are unconstrained: they are specification-side state, and no rule of the protocol reads them.
+  The entry of process $j$ in the instance of round $r$ is the stage record of round $r$ that $j$ holds, one equation for each pair $(j,r)$.
+  A round $j$ has not touched reads on the protocol side as the initial stage record, and that equation asks the composed entry to be initial there too.
+  A composed state is therefore determined by any state of the protocol related to it.
+  The determination is not injective: no composed state carries a termination flag, so two states of the protocol differing only in which processes have terminated are related to the same composed state (D22).
   Headline: \leandecl{PLTS.ABA.protocol_composed}.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{def:aba-composed, def:aba-procnet, def:aba-netadv, def:aba-protocol, def:forwardsim, def:pmfrel, def:achievable, thm:forward-sound}
-  The initial states are related, \leandecl{PLTS.ABA.protocolRel_init}: everything is initial, so the live column is the initial stage record and every column above round $0$ is pristine.
+  The initial states are related, \leandecl{PLTS.ABA.protocolRel_init}: everything is initial, so each process's stage-side record is off the map at every round and $\mathrm{stage}\,r$ is the initial stage record there, which is the entry the composed initial state carries.
   For the step condition, take a state of the protocol, a composed state related to it, and a row out of that protocol state.
   Every transition of the protocol is a product of Dirac factors beside the coin oracle's successor distribution, and so is the composed transition that answers it.
   The two presentations carry the same oracle, so the coupling is functional in the oracle coordinate and the matched outcomes differ in no coordinate the relation constrains.
   The rows are answered by label class: the rendezvous labels of the two networks and of the drives, the visible labels of the ABA interface, and the silent label.
-  The round advance is the row the sixth conjunct is written for.
-  A round advance of the protocol resets the stage record to $\mathrm{StageRec.initial}$, and the composed side answers with the column of the round just opened, which that conjunct holds pristine.
-  The Byzantine graded-agreement call and return name a process whose program has no row for them (D11, D20), and the process group is a full synchronisation, so no transition of the protocol carries either label and neither needs an answer.
+  A stage-side row writes the stage record of the round its label tags and no other, and the round instance of that round writes the entry of the acting process and no other, so the fifth conjunct is preserved pair by pair.
+  The round advance writes no stage record on either side, and the row $terminate$ writes a field no conjunct reads, so the composed answer to it is a stutter.
+  The Byzantine graded-agreement call and return name a process whose program has no row for them (D11, D22), and the process group is a full synchronisation, so no transition of the protocol carries either label, while the round instance has a row for each.
+  The stage rules of a round instance carry no termination guard either, so the instance answers a send or a delivery at a process the protocol has terminated.
+  The inclusion is one-directional for those two reasons.
   Soundness (Theorem~\ref{thm:forward-sound}) turns the simulation \leandecl{PLTS.ABA.protocolSim} into the stated inclusion.
 \end{proof}

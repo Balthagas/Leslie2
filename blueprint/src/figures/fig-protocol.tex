@@ -17,11 +17,11 @@
     {$\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netEvtLabels}$};
   % the n programs
   \node[prog] (p1) at (0.6,1.0)
-    {$\mathrm{ABAProcN}(P,1)$\\ round loop\\ stage of its round\\ inbox rows};
+    {$\mathrm{ABAProcN}(P,1)$\\ round loop\\ stage-side record\\ inbox rows};
   \node[prog] (pj) at (4.9,1.0)
-    {$\mathrm{ABAProcN}(P,j)$\\ round loop\\ stage of its round\\ inbox rows};
+    {$\mathrm{ABAProcN}(P,j)$\\ round loop\\ stage-side record\\ inbox rows};
   \node[prog] (pn) at (8.9,1.0)
-    {$\mathrm{ABAProcN}(P,n)$\\ round loop\\ stage of its round\\ inbox rows};
+    {$\mathrm{ABAProcN}(P,n)$\\ round loop\\ stage-side record\\ inbox rows};
   \node[font=\footnotesize] at (2.75,1.0) {$\cdots$};
   \node[font=\footnotesize] at (6.9,1.0) {$\cdots$};
   % the synchronised visible bus
@@ -58,5 +58,5 @@
     {$\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$,
      $\mathrm{retWPub}$, $\mathrm{gcallLoop}$, the five drives $\to \tau$:\\
      one half at the named program, the other at the adversary,\\
-     save $\mathrm{byzCallG}$ and $\mathrm{byzRetG}$, which have no program half (D20)};
+     save $\mathrm{byzCallG}$ and $\mathrm{byzRetG}$, which have no program half (D11)};
 \end{tikzpicture}

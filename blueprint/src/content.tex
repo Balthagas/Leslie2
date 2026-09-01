@@ -142,7 +142,7 @@ Transition System~1 is the ABA specification, Transition System~2 the GBCA speci
 A rule is cited by its Lean constructor name, a deviation label in parentheses marks a point where an encoding departs from~\cite{LeslieBP}, and where a node names ABDY22's Algorithm~$k$ it means the numbering of~\cite{ABDY22}.
 
 \paragraph{Deviations.}
-Each departure from~\cite{LeslieBP} carries a label D1--D21, cited at the point where it applies; the labels D2, D3, D6 and D7 are unused.
+Each departure from~\cite{LeslieBP} carries a label D1--D22, cited at the point where it applies; the labels D2, D3, D6 and D7 are unused, and D20 is withdrawn, the ground it covered being D22's.
 \begin{itemize}
   \item D1: corruption is a total deterministic transform.
   \item D4: the WCC \texttt{guess} label and the \texttt{guess} state field are omitted.
@@ -163,10 +163,15 @@ Each departure from~\cite{LeslieBP} carries a label D1--D21, cited at the point 
     At Transition System~1 it is the kill outcome of the flip, which drives the system into the terminal mode $dead$, and $dead$ enables no $\tau$-rule.
   \item D18: the GBCA implementation transcribes ABDY22's Algorithm~6 in full, six rounds over the message levels INPUT, ECHO, VOTE, BIND and SEAL, in place of the source's four-round compression of it, which elides the SEAL level and takes $f{+}1$ $\mathrm{VOTE}\,v$ receipts as the grade-$1$ witness and thereby violates Binding.
   \item D19: the GBCA specification state carries an exclusion set $dead \subseteq \{0,1\}$, the bits the instance is barred from handing out, in place of the source's bound value $bind \in \{0,1,\bot\}$, which makes Binding negative and monotone.
-  \item D20: instance forgetting at the round advance.
   \item D21: Transition System~1 is six rules over the record $\{input, ret, F, val, mode\}$, in place of the source's per-process call row and five-valued coin.
     The coin is an abstract flip, \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}, which resolves once per firing into a lock, a release or a kill and names no bit.
     The decision is a single guarded write, \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}, of a bit carrying $f+1$ $F$-blind support under an $n-f$ quorum on the recorded inputs.
+  \item D22: retention with termination.
+    A process record retains the graded-agreement stage record of every round it has touched, in a finite map \leandecl{PLTS.ABA.Net.StageSideRec} on which a round never touched reads as the initial stage record.
+    The stage-side rules are round-indexed and guarded by the stage record their label tags rather than by the round loop, so a process answers the traffic of a round its round loop has passed.
+    That indefinite participation is the regime of ABDY22's Lemmas~4.6 and~E.5, which are stated under the hypothesis that no non-faulty process has terminated.
+    Termination is the rule \leandeclnamed{terminate}{PLTS.ABA.Net.ABAProcStepN.terminate}, which fires once the process's own return has fired and $2f+1$ DECIDED receipts are on its record (ABDY22's Definitions~3.1 and~3.2 and its note on termination), and whose effect is to set the flag alone.
+    It stops the stage-side rules only: the DECIDED rules carry no termination guard, so a process that has terminated keeps relaying the payloads it holds.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -292,7 +297,7 @@ A return whose bit the specification has not yet excluded is a burst, mapping to
 A sub-protocol may be exchanged for its specification where it is a component of a composition, and the protocol does not present graded agreement as one.
 This subsection reads the same protocol as a composition of components, the cut being decided by which component owns the round's message fabric.
 The component boundary is where the chain passes from implementation to specification: $\mathrm{protocol}(P)$ is the system that runs, everything above it is specification, and the first link is accordingly an inclusion.
-The composed reading holds one graded-agreement instance per round at every moment, where a process record of the protocol holds the stage record of the round it is in and nothing else (D20), so the per-round memory it retains is specification-side state.
+The composed reading holds one graded-agreement instance per round at every moment, and a round instance carries no termination flag, so it answers a send or a delivery at a process the protocol has terminated (D22).
 Graded agreement is a parallel component of that reading, which is what the substitution congruence consumes.
 See \leanmodule{Leslie2Protocols/ABA/GBCAInstances} and \leanmodule{Leslie2Protocols/ABA/Hybrid}.
 

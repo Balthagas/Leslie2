@@ -5,6 +5,7 @@ Authors: Sathiya / Claude
 -/
 
 import Leslie2Protocols.ABA.Components
+import Mathlib.Data.Finmap
 
 /-!
 # ABA as corruption-blind programs beside a network adversary
@@ -14,8 +15,10 @@ code and nothing else, beside two boxes that are not processes — the network
 adversary and the coin oracle.
 
 A process record is exactly the data the program of that process may read: its
-round-loop record, the graded-agreement stage record of the round it is in,
-and the messages that have been delivered to it. It holds no copy of
+round-loop record and its stage-side record. The stage-side record retains the
+graded-agreement stage record of every round the process has touched, together
+with the messages delivered into each of them, and says whether the process has
+terminated. It holds no copy of
 the corrupted set, no corruption flag, and no record of what it has sent. A
 program is therefore *corruption-blind*: no guard of its rule table can ask
 whether the process is honest, and no guard can ask what the process has
@@ -69,7 +72,7 @@ The composition hides it, so `protocolGroup` speaks exactly `Lab n`.
   sub-protocol handshakes arbitrarily. Each drive is a rendezvous label of
   its own, authorised by the network's `k ∈ F` guard, and no drive ever makes
   a round-loop write. The coin drives reach the oracle through the pullback;
-  the stage drives have no process row at all (D20).
+  the stage drives have no process row at all (D22).
 * **D12′ (per-process DECIDED pools, equivocation-capable).** The DECIDED
   state is the pool family `dpool j` beside the per-process receipt rows
   `decIn k`. The relay's write-once condition is a condition on the pool, so
@@ -82,14 +85,18 @@ The composition hides it, so `protocolGroup` speaks exactly `Lab n`.
 * **D18 (the five-level ladder).** The stage rules are the five levels
   `INPUT / ECHO / VOTE / BIND / SEAL` and the three graded returns of the
   cited algorithm, not the four-round compression.
-* **D20 (instance forgetting).** A process record carries one graded-agreement
-  stage record, the record of the round the process is in, and the round
-  advance resets it to `GBCA.StageRec.initial`. Every stage-side rule is
-  therefore guarded by `c.proc.round = r`, so a label whose round tag is not
-  the acting process's round has no row at that process. The Byzantine stage
-  drives keep their labels and their network rows but have no row at the
-  process they name; a corrupted process's stage traffic enters through the
-  network's own `byzG` injection.
+* **D22 (retention with termination).** A process record retains the stage
+  record of every round in a finite map, and the process terminates once its
+  own return has fired and `2f + 1` DECIDED receipts are on record;
+  participation before that point is indefinite. A stage-side rule therefore
+  reads and writes the stage record of the round its label tags, whichever
+  round the round loop is in, and is guarded by `p.terminated = false` rather
+  than by the round. Deliveries file into any round's record, and each
+  stage-side send remains one-per-round-instance send-once. The DECIDED rules
+  carry no termination guard, so a terminated process keeps relaying the
+  payloads it holds. The Byzantine stage drives keep their labels and their
+  network rows but have no row at the process they name; a corrupted process's
+  stage traffic enters through the network's own `byzG` injection.
 
 ## The pipeline
 
@@ -115,9 +122,68 @@ namespace Net
 
 /-! ### The state of one process -/
 
-/-- The state of one corruption-blind process: its round-loop record and the
-stage record of the round it is in (D20). -/
-abbrev ProcRec (n : ℕ) : Type := CoreRec n × GBCA.StageRec n
+/-- The stage-side record of one process: the stage record of every round the
+process has touched, and whether it has terminated (D22). -/
+structure StageSideRec (n : ℕ) : Type where
+  /-- The finite map of stage records; a round off the map has the initial
+  record. -/
+  stages : Finmap (fun _ : ℕ => GBCA.StageRec n)
+  /-- Whether this process has terminated (ABDY22 §3, Termination). `terminated`
+  is not `returned`: the round-loop record's `returned` says the process has
+  fired `retABA`; `terminated` says it has stopped participating. -/
+  terminated : Bool
+  deriving DecidableEq
+
+namespace StageSideRec
+
+variable {n : ℕ}
+
+/-- The initial stage-side record: no round touched, not terminated. -/
+def initial (n : ℕ) : StageSideRec n where
+  stages := ∅
+  terminated := false
+
+/-- The stage record of round `r`: the retained record if the process has
+touched round `r`, the initial record otherwise. -/
+def stage (q : StageSideRec n) (r : ℕ) : GBCA.StageRec n :=
+  (q.stages.lookup r).getD (GBCA.StageRec.initial n)
+
+/-- Retain `p` as the stage record of round `r`. -/
+def setStage (q : StageSideRec n) (r : ℕ) (p : GBCA.StageRec n) : StageSideRec n :=
+  { q with stages := q.stages.insert r p }
+
+/-- File `m` under the inbox row of sender `k` in the stage record of round
+`r`. -/
+def deliverTo (q : StageSideRec n) (r : ℕ) (k : Fin n) (m : GBCA.Msg) :
+    StageSideRec n :=
+  q.setStage r ((q.stage r).deliverTo k m)
+
+@[simp] theorem initial_stage (n r : ℕ) :
+    (initial n).stage r = GBCA.StageRec.initial n := by
+  simp [stage, initial]
+
+@[simp] theorem initial_terminated (n : ℕ) : (initial n).terminated = false := rfl
+
+@[simp] theorem stage_setStage_self (q : StageSideRec n) (r : ℕ)
+    (p : GBCA.StageRec n) : (q.setStage r p).stage r = p := by
+  simp [stage, setStage, Finmap.lookup_insert]
+
+@[simp] theorem stage_setStage_ne (q : StageSideRec n) (r : ℕ)
+    (p : GBCA.StageRec n) {r' : ℕ} (h : r' ≠ r) :
+    (q.setStage r p).stage r' = q.stage r' := by
+  simp [stage, setStage, Finmap.lookup_insert_of_ne _ h]
+
+@[simp] theorem terminated_setStage (q : StageSideRec n) (r : ℕ)
+    (p : GBCA.StageRec n) : (q.setStage r p).terminated = q.terminated := rfl
+
+@[simp] theorem terminated_deliverTo (q : StageSideRec n) (r : ℕ) (k : Fin n)
+    (m : GBCA.Msg) : (q.deliverTo r k m).terminated = q.terminated := rfl
+
+end StageSideRec
+
+/-- The state of one corruption-blind process: its round-loop record and its
+stage-side record (D22). -/
+abbrev ProcRec (n : ℕ) : Type := CoreRec n × StageSideRec n
 
 /-! ### The network adversary's state -/
 
@@ -161,265 +227,289 @@ end NetState
 
 Process `j`'s program. Every guard reads the process's own record and nothing
 else: no guard asks whether the process is honest, and none asks what it has
-multicast. A process record carries the stage record of one round only, so
-every stage-side row is guarded by
-`c.proc.round = r` and a label whose round tag is not `j`'s round has no row
-at `j` (D20). A rendezvous row carries the process's half of a joint step with
-the network: on a send the record write, on a delivery the inbox write. The
-Byzantine stage drives are the exception, having no row at the process they
-name (D11, D20). Every other label of the extended alphabet has a row: the
-participant's, or an idle one. -/
+multicast. A stage-side row reads and writes the stage record of the round its
+label tags, whichever round the round loop is in, and is guarded by
+`p.terminated = false` (D22). A rendezvous row carries the process's half of a
+joint step with the network: on a send the record write, on a delivery the
+inbox write. The DECIDED rows carry no termination guard, so a terminated
+process keeps relaying the payloads it holds. The Byzantine stage drives are
+the exception, having no row at the process they name (D11, D22). Every other
+label of the extended alphabet has a row: the participant's, or an idle one. -/
 
 /-- The step relation of the corruption-blind program of process `j`. -/
 inductive ABAProcStepN (P : Params) (j : Fin P.n) :
     ProcRec P.n → NLab P.n → PMF (ProcRec P.n) → Prop
   /-- `upon ABA(b)`: record input and estimate, open round `0`. -/
-  | input (c : CoreRec P.n) (p : GBCA.StageRec P.n) (b : Bool)
+  | input (c : CoreRec P.n) (p : StageSideRec P.n) (b : Bool)
       (h : c.proc.input = none) :
       ABAProcStepN P j (c, p) (Sum.inl (.callABA j b))
         (PMF.pure (c.setProc { c.proc with
           input := some b, est := some b, round := 0, phase := .toCallG }, p))
   /-- Input-enabledness loop on `j`'s own `callABA`. -/
-  | inputLoop (c : CoreRec P.n) (p : GBCA.StageRec P.n) (b : Bool) :
+  | inputLoop (c : CoreRec P.n) (p : StageSideRec P.n) (b : Bool) :
       ABAProcStepN P j (c, p) (Sum.inl (.callABA j b)) (PMF.pure (c, p))
   /-- An input addressed elsewhere: not `j`'s business. -/
-  | callABAIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | callABAIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inl (.callABA id b)) (PMF.pure (c, p))
   /-- Return `b` on an `n − f` DECIDED quorum. Having multicast `b` oneself is
   a condition on the pool, hence the network's conjunct. -/
-  | ret (c : CoreRec P.n) (p : GBCA.StageRec P.n) (b : Bool)
+  | ret (c : CoreRec P.n) (p : StageSideRec P.n) (b : Bool)
       (hcnt : P.n - P.f ≤ c.decidedCount b) (hret : c.proc.returned = false) :
       ABAProcStepN P j (c, p) (Sum.inl (.retABA j b))
         (PMF.pure (c.setProc { c.proc with returned := true }, p))
   /-- A return by another process: not `j`'s business. -/
-  | retABAIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | retABAIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inl (.retABA id b)) (PMF.pure (c, p))
-  /-- The graded-agreement call: the round loop hands its estimate to the
-  stage record, which opens. The `⟨INPUT, b⟩` multicast is the network's
+  /-- The process terminates (ABDY22 Definitions 3.1/3.2 and the p.7 note on
+  termination): its own return is fired and DECIDED receipts from `2f + 1`
+  distinct senders are on record, so every process still running will cross the
+  relay threshold without further response from this one. -/
+  | terminate (c : CoreRec P.n) (p : StageSideRec P.n) (b : Bool)
+      (hret : c.proc.returned = true)
+      (hcnt : 2 * P.f + 1 ≤ c.decidedCount b)
+      (hterm : p.terminated = false) :
+      ABAProcStepN P j (c, p) (Sum.inl Lab.tau)
+        (PMF.pure (c, { p with terminated := true }))
+  /-- The graded-agreement call: the round loop hands its estimate to the stage
+  record of round `r`, which opens. The `⟨INPUT, b⟩` multicast is the network's
   half. -/
-  | callG_call (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (b : Bool)
+  | callG_call (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (b : Bool)
       (hph : c.proc.phase = .toCallG) (hr : c.proc.round = r)
-      (hest : c.proc.est = some b) (hin : p.proc.input = none) :
+      (hterm : p.terminated = false)
+      (hest : c.proc.est = some b) (hin : (p.stage r).proc.input = none) :
       ABAProcStepN P j (c, p) (Sum.inl (.callG r j b))
         (PMF.pure (c.setProc { c.proc with phase := .awaitG },
-          p.setP { p.proc with
+          p.setStage r ((p.stage r).setP { (p.stage r).proc with
             input := some b,
-            sentInput := Function.update p.proc.sentInput b true }))
+            sentInput := Function.update (p.stage r).proc.sentInput b true })))
   /-- A graded-agreement call by another process: not `j`'s business. -/
-  | callGIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | callGIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inl (.callG r id b)) (PMF.pure (c, p))
   /-- Return with grade `A v`. -/
-  | retG_A (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (v : Bool)
+  | retG_A (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (v : Bool)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r)
-      (hcnt : P.n - P.f ≤ p.recvCount (.seal (some v)))
-      (hret : p.proc.returned = false) :
+      (hterm : p.terminated = false)
+      (hcnt : P.n - P.f ≤ (p.stage r).recvCount (.seal (some v)))
+      (hret : (p.stage r).proc.returned = false) :
       ABAProcStepN P j (c, p) (Sum.inl (.retG r j (.A v)))
         (PMF.pure (c.setProc { c.proc with
             est := (GbcaOut.A v).est, lastGrade := some (.A v), phase := .toCallW },
-          p.setP { p.proc with returned := true }))
+          p.setStage r ((p.stage r).setP { (p.stage r).proc with returned := true })))
   /-- Return with grade `B v`. -/
-  | retG_B (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (v : Bool)
+  | retG_B (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (v : Bool)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r)
-      (hcnt : P.n - P.f ≤ p.sealCount)
-      (honce : ∃ k, GBCA.Msg.seal (some v) ∈ p.inbox k)
-      (hbind : P.f + 1 ≤ p.recvCount (.bind (some v)))
-      (hval : p.bothValid P)
-      (hret : p.proc.returned = false) :
+      (hterm : p.terminated = false)
+      (hcnt : P.n - P.f ≤ (p.stage r).sealCount)
+      (honce : ∃ k, GBCA.Msg.seal (some v) ∈ (p.stage r).inbox k)
+      (hbind : P.f + 1 ≤ (p.stage r).recvCount (.bind (some v)))
+      (hval : (p.stage r).bothValid P)
+      (hret : (p.stage r).proc.returned = false) :
       ABAProcStepN P j (c, p) (Sum.inl (.retG r j (.B v)))
         (PMF.pure (c.setProc { c.proc with
             est := (GbcaOut.B v).est, lastGrade := some (.B v), phase := .toCallW },
-          p.setP { p.proc with returned := true }))
+          p.setStage r ((p.stage r).setP { (p.stage r).proc with returned := true })))
   /-- Return with grade `C`. -/
-  | retG_C (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ)
+  | retG_C (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r)
-      (hcnt : P.n - P.f ≤ p.recvCount (.seal none))
-      (hval : p.bothValid P)
-      (hret : p.proc.returned = false) :
+      (hterm : p.terminated = false)
+      (hcnt : P.n - P.f ≤ (p.stage r).recvCount (.seal none))
+      (hval : (p.stage r).bothValid P)
+      (hret : (p.stage r).proc.returned = false) :
       ABAProcStepN P j (c, p) (Sum.inl (.retG r j .C))
         (PMF.pure (c.setProc { c.proc with
             est := GbcaOut.C.est, lastGrade := some .C, phase := .toCallW },
-          p.setP { p.proc with returned := true }))
+          p.setStage r ((p.stage r).setP { (p.stage r).proc with returned := true })))
   /-- A graded-agreement return to another process: not `j`'s business. -/
-  | retGIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | retGIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (id : Fin P.n) (out : GbcaOut) (hid : id ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inl (.retG r id out)) (PMF.pure (c, p))
   /-- `c ← WCC_r()`, the call half at the round loop. -/
-  | callW (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ)
+  | callW (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ)
       (hph : c.proc.phase = .toCallW) (hr : c.proc.round = r) :
       ABAProcStepN P j (c, p) (Sum.inl (.callW r j))
         (PMF.pure (c.setProc { c.proc with phase := .awaitW }, p))
   /-- A coin call by another process: not `j`'s business. -/
-  | callWIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | callWIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (id : Fin P.n) (hid : id ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inl (.callW r id)) (PMF.pure (c, p))
   /-- The coin return without a publication: the round advances and nothing is
   multicast, the round's grade not being an `A` (D10). The advance opens a new
-  stage, so the stage record is reset (D20). -/
-  | retW (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (co : Bool)
+  round; the stage records the process holds are retained across it (D22). -/
+  | retW (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (co : Bool)
       (hph : c.proc.phase = .awaitW) (hr : c.proc.round = r)
       (hgr : ∀ v : Bool, c.proc.lastGrade ≠ some (.A v)) :
       ABAProcStepN P j (c, p) (Sum.inl (.retW r j co))
-        (PMF.pure (c.stepRound co, GBCA.StageRec.initial P.n))
+        (PMF.pure (c.stepRound co, p))
   /-- A coin return to another process: not `j`'s business. -/
-  | retWIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | retWIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (id : Fin P.n) (co : Bool) (hid : id ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inl (.retW r id co)) (PMF.pure (c, p))
   /-- Corruption is not the process's business: the broadcast is taken without
   moving, whoever it names. -/
-  | failIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n) (k : Fin P.n) :
+  | failIdle (c : CoreRec P.n) (p : StageSideRec P.n) (k : Fin P.n) :
       ABAProcStepN P j (c, p) (Sum.inl (.fail k)) (PMF.pure (c, p))
-  /-- The stage `INPUT` relay: `f + 1` receipts of `⟨INPUT, b⟩`, not yet
-  multicast (D8, D18, D20). -/
-  | gsndRelay (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (b : Bool)
-      (hr : c.proc.round = r)
-      (hin : p.proc.input ≠ none)
-      (hcnt : P.f + 1 ≤ p.recvCount (.input b))
-      (hsend : p.proc.sentInput b = false) :
+  /-- The stage `INPUT` relay: `f + 1` receipts of `⟨INPUT, b⟩` in the stage
+  record of round `r`, not yet multicast there (D8, D18, D22). -/
+  | gsndRelay (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (b : Bool)
+      (hterm : p.terminated = false)
+      (hin : (p.stage r).proc.input ≠ none)
+      (hcnt : P.f + 1 ≤ (p.stage r).recvCount (.input b))
+      (hsend : (p.stage r).proc.sentInput b = false) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r j (.input b)))
-        (PMF.pure (c, p.setP { p.proc with
-          sentInput := Function.update p.proc.sentInput b true }))
-  /-- The stage `ECHO`: an `n − f` `INPUT b` quorum (D18, D20). -/
-  | gsndEcho (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (b : Bool)
-      (hr : c.proc.round = r)
-      (hin : p.proc.input ≠ none)
-      (hcnt : P.n - P.f ≤ p.recvCount (.input b))
-      (hsend : p.proc.sentEcho = none) :
+        (PMF.pure (c, p.setStage r ((p.stage r).setP { (p.stage r).proc with
+          sentInput := Function.update (p.stage r).proc.sentInput b true })))
+  /-- The stage `ECHO`: an `n − f` `INPUT b` quorum (D18, D22). -/
+  | gsndEcho (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (b : Bool)
+      (hterm : p.terminated = false)
+      (hin : (p.stage r).proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ (p.stage r).recvCount (.input b))
+      (hsend : (p.stage r).proc.sentEcho = none) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r j (.echo b)))
-        (PMF.pure (c, p.setP { p.proc with sentEcho := some b }))
-  /-- The stage `VOTE b`: an `n − f` `ECHO b` quorum (D18, D20). -/
-  | gsndVoteBit (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (b : Bool)
-      (hr : c.proc.round = r)
-      (hin : p.proc.input ≠ none)
-      (hcnt : P.n - P.f ≤ p.recvCount (.echo b))
-      (hsend : p.proc.sentVote = none) :
+        (PMF.pure (c, p.setStage r
+          ((p.stage r).setP { (p.stage r).proc with sentEcho := some b })))
+  /-- The stage `VOTE b`: an `n − f` `ECHO b` quorum (D18, D22). -/
+  | gsndVoteBit (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (b : Bool)
+      (hterm : p.terminated = false)
+      (hin : (p.stage r).proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ (p.stage r).recvCount (.echo b))
+      (hsend : (p.stage r).proc.sentVote = none) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r j (.vote (some b))))
-        (PMF.pure (c, p.setP { p.proc with sentVote := some (some b) }))
+        (PMF.pure (c, p.setStage r
+          ((p.stage r).setP { (p.stage r).proc with sentVote := some (some b) })))
   /-- The stage `VOTE ⊥`: `n − f` `ECHO`s of any payload and `|Valid| > 1`
-  (D20). -/
-  | gsndVoteBot (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ)
-      (hr : c.proc.round = r)
-      (hin : p.proc.input ≠ none) (hcnt : P.n - P.f ≤ p.echoCount)
-      (hval : p.bothValid P) (hsend : p.proc.sentVote = none) :
+  (D22). -/
+  | gsndVoteBot (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ)
+      (hterm : p.terminated = false)
+      (hin : (p.stage r).proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ (p.stage r).echoCount)
+      (hval : (p.stage r).bothValid P) (hsend : (p.stage r).proc.sentVote = none) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r j (.vote none)))
-        (PMF.pure (c, p.setP { p.proc with sentVote := some none }))
-  /-- The stage `BIND b`: an `n − f` `VOTE b` quorum (D18, D20). -/
-  | gsndBindBit (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (b : Bool)
-      (hr : c.proc.round = r)
-      (hin : p.proc.input ≠ none)
-      (hcnt : P.n - P.f ≤ p.recvCount (.vote (some b)))
-      (hsend : p.proc.sentBind = none) :
+        (PMF.pure (c, p.setStage r
+          ((p.stage r).setP { (p.stage r).proc with sentVote := some none })))
+  /-- The stage `BIND b`: an `n − f` `VOTE b` quorum (D18, D22). -/
+  | gsndBindBit (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (b : Bool)
+      (hterm : p.terminated = false)
+      (hin : (p.stage r).proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ (p.stage r).recvCount (.vote (some b)))
+      (hsend : (p.stage r).proc.sentBind = none) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r j (.bind (some b))))
-        (PMF.pure (c, p.setP { p.proc with sentBind := some (some b) }))
+        (PMF.pure (c, p.setStage r
+          ((p.stage r).setP { (p.stage r).proc with sentBind := some (some b) })))
   /-- The stage `BIND ⊥`: `n − f` `VOTE`s of any payload and `|Valid| > 1`
-  (D20). -/
-  | gsndBindBot (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ)
-      (hr : c.proc.round = r)
-      (hin : p.proc.input ≠ none) (hcnt : P.n - P.f ≤ p.voteCount)
-      (hval : p.bothValid P) (hsend : p.proc.sentBind = none) :
+  (D22). -/
+  | gsndBindBot (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ)
+      (hterm : p.terminated = false)
+      (hin : (p.stage r).proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ (p.stage r).voteCount)
+      (hval : (p.stage r).bothValid P) (hsend : (p.stage r).proc.sentBind = none) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r j (.bind none)))
-        (PMF.pure (c, p.setP { p.proc with sentBind := some none }))
-  /-- The stage `SEAL b`: an `n − f` `BIND b` quorum (D18, D20). -/
-  | gsndSealBit (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (b : Bool)
-      (hr : c.proc.round = r)
-      (hin : p.proc.input ≠ none)
-      (hcnt : P.n - P.f ≤ p.recvCount (.bind (some b)))
-      (hsend : p.proc.sentSeal = none) :
+        (PMF.pure (c, p.setStage r
+          ((p.stage r).setP { (p.stage r).proc with sentBind := some none })))
+  /-- The stage `SEAL b`: an `n − f` `BIND b` quorum (D18, D22). -/
+  | gsndSealBit (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (b : Bool)
+      (hterm : p.terminated = false)
+      (hin : (p.stage r).proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ (p.stage r).recvCount (.bind (some b)))
+      (hsend : (p.stage r).proc.sentSeal = none) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r j (.seal (some b))))
-        (PMF.pure (c, p.setP { p.proc with sentSeal := some (some b) }))
+        (PMF.pure (c, p.setStage r
+          ((p.stage r).setP { (p.stage r).proc with sentSeal := some (some b) })))
   /-- The stage `SEAL ⊥`: `n − f` `BIND`s of any payload and `|Valid| > 1`
-  (D20). -/
-  | gsndSealBot (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ)
-      (hr : c.proc.round = r)
-      (hin : p.proc.input ≠ none) (hcnt : P.n - P.f ≤ p.bindCount)
-      (hval : p.bothValid P) (hsend : p.proc.sentSeal = none) :
+  (D22). -/
+  | gsndSealBot (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ)
+      (hterm : p.terminated = false)
+      (hin : (p.stage r).proc.input ≠ none)
+      (hcnt : P.n - P.f ≤ (p.stage r).bindCount)
+      (hval : (p.stage r).bothValid P) (hsend : (p.stage r).proc.sentSeal = none) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r j (.seal none)))
-        (PMF.pure (c, p.setP { p.proc with sentSeal := some none }))
+        (PMF.pure (c, p.setStage r
+          ((p.stage r).setP { (p.stage r).proc with sentSeal := some none })))
   /-- A stage multicast by another process: not `j`'s business. -/
-  | gsndIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | gsndIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (k : Fin P.n) (m : GBCA.Msg) (hk : k ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inr (.gsnd r k m)) (PMF.pure (c, p))
   /-- Stage delivery, receiver's half: file the message under the sender's
-  inbox row. Authenticity is the network's conjunct; a message tagged with a
-  round the receiver has left is not filed (D20). -/
-  | gdlvRecv (c : CoreRec P.n) (p : GBCA.StageRec P.n)
-      (r : ℕ) (k : Fin P.n) (m : GBCA.Msg) (hr : c.proc.round = r) :
+  inbox row in the stage record of round `r`, whichever round the round loop is
+  in. Authenticity is the network's conjunct (D22). -/
+  | gdlvRecv (c : CoreRec P.n) (p : StageSideRec P.n)
+      (r : ℕ) (k : Fin P.n) (m : GBCA.Msg) (hterm : p.terminated = false) :
       ABAProcStepN P j (c, p) (Sum.inr (.gdlv r j k m))
-        (PMF.pure (c, p.deliverTo k m))
+        (PMF.pure (c, p.deliverTo r k m))
   /-- A stage delivery to another process: not `j`'s business. -/
-  | gdlvIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | gdlvIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (i k : Fin P.n) (m : GBCA.Msg) (hi : i ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inr (.gdlv r i k m)) (PMF.pure (c, p))
   /-- The DECIDED relay on an `f + 1` quorum (D12′). Not having multicast `b`
   is a condition on the pool, hence the network's conjunct; the pool insert is
   the network's half too. -/
-  | dsndRelay (c : CoreRec P.n) (p : GBCA.StageRec P.n) (b : Bool)
+  | dsndRelay (c : CoreRec P.n) (p : StageSideRec P.n) (b : Bool)
       (hcnt : P.f + 1 ≤ c.decidedCount b) :
       ABAProcStepN P j (c, p) (Sum.inr (.dsnd j b)) (PMF.pure (c, p))
   /-- A DECIDED relay by another process: not `j`'s business. -/
-  | dsndIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | dsndIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (k : Fin P.n) (b : Bool) (hk : k ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inr (.dsnd k b)) (PMF.pure (c, p))
   /-- DECIDED delivery, receiver's half: at most one receipt per (sender, bit)
   (D12′). Authenticity is the network's conjunct. -/
-  | ddlvRecv (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | ddlvRecv (c : CoreRec P.n) (p : StageSideRec P.n)
       (k : Fin P.n) (b : Bool) (hr : b ∉ c.decIn k) :
       ABAProcStepN P j (c, p) (Sum.inr (.ddlv j k b))
         (PMF.pure (c.recvDec k b, p))
   /-- A DECIDED delivery to another process: not `j`'s business. -/
-  | ddlvIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | ddlvIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (i k : Fin P.n) (b : Bool) (hi : i ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inr (.ddlv i k b)) (PMF.pure (c, p))
   /-- The coin return fused with the `⟨DECIDED, b⟩` publication (D10): the
   round's grade was `A b`, so the round advance publishes `b`, the pool insert
-  being the network's half. The advance opens a new stage, so the stage record
-  is reset (D20). -/
-  | retWPub (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  being the network's half. The advance opens a new round; the stage records
+  the process holds are retained across it (D22). -/
+  | retWPub (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (co : Bool) (b : Bool)
       (hph : c.proc.phase = .awaitW) (hr : c.proc.round = r)
       (hgr : c.proc.lastGrade = some (.A b)) :
       ABAProcStepN P j (c, p) (Sum.inr (.retWPub r j co b))
-        (PMF.pure (c.stepRound co, GBCA.StageRec.initial P.n))
+        (PMF.pure (c.stepRound co, p))
   /-- A fused coin return at another process: not `j`'s business. -/
-  | retWPubIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | retWPubIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (id : Fin P.n) (co : Bool) (b : Bool) (hid : id ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inr (.retWPub r id co b)) (PMF.pure (c, p))
   /-- The graded-agreement call against an already-called stage record: the
   round loop moves, the stage record does not. -/
-  | gcallLoop (c : CoreRec P.n) (p : GBCA.StageRec P.n) (r : ℕ) (b : Bool)
+  | gcallLoop (c : CoreRec P.n) (p : StageSideRec P.n) (r : ℕ) (b : Bool)
       (hph : c.proc.phase = .toCallG) (hr : c.proc.round = r)
       (hest : c.proc.est = some b) :
       ABAProcStepN P j (c, p) (Sum.inr (.gcallLoop r j b))
         (PMF.pure (c.setProc { c.proc with phase := .awaitG }, p))
   /-- Such a call at another process: not `j`'s business. -/
-  | gcallLoopIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | gcallLoopIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inr (.gcallLoop r id b)) (PMF.pure (c, p))
   /-- A Byzantine graded-agreement call at another process: not `j`'s
-  business. The process the label names has no row either (D11, D20). -/
-  | byzCallGIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  business. The process the label names has no row either (D11, D22). -/
+  | byzCallGIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (k : Fin P.n) (b : Bool) (hk : k ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inr (.byzCallG r k b)) (PMF.pure (c, p))
   /-- A Byzantine graded-agreement call against an already-called stage record
   (D11): nothing moves anywhere. -/
-  | byzCallGLoopIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | byzCallGLoopIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (k : Fin P.n) (b : Bool) :
       ABAProcStepN P j (c, p) (Sum.inr (.byzCallGLoop r k b)) (PMF.pure (c, p))
   /-- A Byzantine graded-agreement return at another process: not `j`'s
-  business. The process the label names has no row either (D11, D20). -/
-  | byzRetGIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  business. The process the label names has no row either (D11, D22). -/
+  | byzRetGIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (k : Fin P.n) (out : GbcaOut) (hk : k ≠ j) :
       ABAProcStepN P j (c, p) (Sum.inr (.byzRetG r k out)) (PMF.pure (c, p))
   /-- A Byzantine coin call (D11): the coin oracle reacts through the pullback,
   no process moves. -/
-  | byzCallWIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | byzCallWIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (k : Fin P.n) :
       ABAProcStepN P j (c, p) (Sum.inr (.byzCallW r k)) (PMF.pure (c, p))
   /-- A Byzantine coin return (D11): the coin oracle reacts through the
   pullback, no process moves. -/
-  | byzRetWIdle (c : CoreRec P.n) (p : GBCA.StageRec P.n)
+  | byzRetWIdle (c : CoreRec P.n) (p : StageSideRec P.n)
       (r : ℕ) (k : Fin P.n) (b : Bool) :
       ABAProcStepN P j (c, p) (Sum.inr (.byzRetW r k b)) (PMF.pure (c, p))
 
@@ -515,11 +605,11 @@ inductive NetStep (P : Params) :
 /-- The corruption-blind program of process `j`. -/
 noncomputable def ABAProcN (P : Params) (j : Fin P.n) :
     System (ProcRec P.n) (NLab P.n) where
-  init := (CoreRec.initial P.n, GBCA.StageRec.initial P.n)
+  init := (CoreRec.initial P.n, StageSideRec.initial P.n)
   step := ABAProcStepN P j
 
 @[simp] theorem ABAProcN_init (P : Params) (j : Fin P.n) :
-    (ABAProcN P j).init = (CoreRec.initial P.n, GBCA.StageRec.initial P.n) := rfl
+    (ABAProcN P j).init = (CoreRec.initial P.n, StageSideRec.initial P.n) := rfl
 
 @[simp] theorem ABAProcN_step (P : Params) (j : Fin P.n) (q : ProcRec P.n)
     (l : NLab P.n) (μ : PMF (ProcRec P.n)) :
@@ -575,12 +665,17 @@ theorem netStep_dirac {P : Params} {s : NetState P.n} {l : NLab P.n}
     {μ : PMF (NetState P.n)} (h : NetStep P s l μ) : ∃ s', μ = PMF.pure s' := by
   cases h <;> exact ⟨_, rfl⟩
 
-/-- No process rule fires on `τ`: a program only ever moves in a rendezvous or
-on a shared API label. -/
-theorem procStepN_no_tau {P : Params} {j : Fin P.n} {q : ProcRec P.n}
+/-- The one `τ` row of a process's table is `terminate`: a silent step of a
+program is that program's own termination, taken on a fired return and DECIDED
+receipts from `2f + 1` distinct senders (D22). -/
+theorem stepN_tau_terminate {P : Params} {j : Fin P.n} {q : ProcRec P.n}
     {ν : PMF (ProcRec P.n)} (h : ABAProcStepN P j q (Silent.τ : NLab P.n) ν) :
-    False := by
-  rw [nlab_tau] at h; cases h
+    ∃ b : Bool, q.1.proc.returned = true ∧
+      2 * P.f + 1 ≤ q.1.decidedCount b ∧ q.2.terminated = false ∧
+      ν = PMF.pure (q.1, { q.2 with terminated := true }) := by
+  rw [nlab_tau] at h
+  cases h with
+  | terminate c p b hret hcnt hterm => exact ⟨b, hret, hcnt, hterm, rfl⟩
 
 /-! ### Reading composite transitions
 
@@ -590,7 +685,7 @@ lemmas below unfold it once and for all. -/
 /-- A synchronised transition of the process group on a visible label: every
 process steps, and the joint distribution is Dirac. -/
 theorem syncN_inv {P : Params} {u : ∀ _ : Fin P.n, ProcRec P.n} {l : NLab P.n}
-    {μ : PMF (∀ _ : Fin P.n, ProcRec P.n)}
+    {μ : PMF (∀ _ : Fin P.n, ProcRec P.n)} (hl : l ≠ Silent.τ)
     (h : (System.syncProduct (ABAProcN P)).step u l μ) :
     ∃ x : ∀ _ : Fin P.n, ProcRec P.n,
       μ = PMF.pure x ∧ ∀ i, ABAProcStepN P i (u i) l (PMF.pure (x i)) := by
@@ -602,16 +697,20 @@ theorem syncN_inv {P : Params} {u : ∀ _ : Fin P.n, ProcRec P.n} {l : NLab P.n}
     · rw [show μ_ = fun i => PMF.pure (x i) from funext hx]
       exact piPMF_pure x
     · rw [← hx i]; exact hall i
-  · exact absurd hstep procStepN_no_tau
+  · exact absurd rfl hl
 
-/-- The process group has no silent transition: no program has a `τ` row. -/
-theorem syncN_no_tau {P : Params} {u : ∀ _ : Fin P.n, ProcRec P.n}
+/-- A silent transition of the process group: `τ` is interleaved, so exactly one
+program moves and the rest hold their state. -/
+theorem syncN_tau_inv {P : Params} {u : ∀ _ : Fin P.n, ProcRec P.n}
     {μ : PMF (∀ _ : Fin P.n, ProcRec P.n)}
     (h : (System.syncProduct (ABAProcN P)).step u (Silent.τ : NLab P.n) μ) :
-    False := by
-  rcases h with ⟨hτ, -⟩ | ⟨-, i, μ_i, hstep, -⟩
-  · exact hτ rfl
-  · exact procStepN_no_tau hstep
+    ∃ (i : Fin P.n) (y : ProcRec P.n),
+      ABAProcStepN P i (u i) (Silent.τ : NLab P.n) (PMF.pure y) ∧
+      μ = PMF.pure (Function.update u i y) := by
+  rcases h with ⟨hτ, -⟩ | ⟨-, i, μ_i, hstep, rfl⟩
+  · exact absurd rfl hτ
+  · obtain ⟨y, rfl⟩ := procStepN_dirac hstep
+    exact ⟨i, y, hstep, by rw [piPMF_update_pure, PMF.pure_map]⟩
 
 /-- The composite step relation of the protocol group, unfolded to the hidden
 rendezvous case and the shared-label case. -/
@@ -688,15 +787,16 @@ theorem stepN_retABA_foreign {id : Fin P.n} {b : Bool} (hid : id ≠ j)
 
 theorem stepN_callG_own {r : ℕ} {b : Bool}
     (h : ABAProcStepN P j q (Sum.inl (.callG r j b)) ν) :
-    q.1.proc.phase = .toCallG ∧ q.1.proc.round = r ∧ q.1.proc.est = some b ∧
-      q.2.proc.input = none ∧
+    q.1.proc.phase = .toCallG ∧ q.1.proc.round = r ∧ q.2.terminated = false ∧
+      q.1.proc.est = some b ∧ (q.2.stage r).proc.input = none ∧
       ν = PMF.pure (q.1.setProc { q.1.proc with phase := .awaitG },
-        q.2.setP { q.2.proc with
+        q.2.setStage r ((q.2.stage r).setP { (q.2.stage r).proc with
           input := some b,
-          sentInput := Function.update q.2.proc.sentInput b true }) := by
+          sentInput := Function.update (q.2.stage r).proc.sentInput b true })) := by
   cases h
   case callG_call =>
-    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
+    exact ⟨by assumption, by assumption, by assumption, by assumption,
+      by assumption, rfl⟩
   case callGIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepN_callG_foreign {r : ℕ} {id : Fin P.n} {b : Bool} (hid : id ≠ j)
@@ -707,45 +807,51 @@ theorem stepN_callG_foreign {r : ℕ} {id : Fin P.n} {b : Bool} (hid : id ≠ j)
 
 theorem stepN_retG_A_own {r : ℕ} {v : Bool}
     (h : ABAProcStepN P j q (Sum.inl (.retG r j (.A v))) ν) :
-    q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧
-      P.n - P.f ≤ q.2.recvCount (.seal (some v)) ∧
-      q.2.proc.returned = false ∧
+    q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧ q.2.terminated = false ∧
+      P.n - P.f ≤ (q.2.stage r).recvCount (.seal (some v)) ∧
+      (q.2.stage r).proc.returned = false ∧
       ν = PMF.pure (q.1.setProc { q.1.proc with
           est := (GbcaOut.A v).est, lastGrade := some (.A v), phase := .toCallW },
-        q.2.setP { q.2.proc with returned := true }) := by
+        q.2.setStage r
+          ((q.2.stage r).setP { (q.2.stage r).proc with returned := true })) := by
   cases h
   case retG_A =>
-    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
+    exact ⟨by assumption, by assumption, by assumption, by assumption,
+      by assumption, rfl⟩
   case retGIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepN_retG_B_own {r : ℕ} {v : Bool}
     (h : ABAProcStepN P j q (Sum.inl (.retG r j (.B v))) ν) :
-    q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧
-      P.n - P.f ≤ q.2.sealCount ∧
-      (∃ k, GBCA.Msg.seal (some v) ∈ q.2.inbox k) ∧
-      P.f + 1 ≤ q.2.recvCount (.bind (some v)) ∧ q.2.bothValid P ∧
-      q.2.proc.returned = false ∧
+    q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧ q.2.terminated = false ∧
+      P.n - P.f ≤ (q.2.stage r).sealCount ∧
+      (∃ k, GBCA.Msg.seal (some v) ∈ (q.2.stage r).inbox k) ∧
+      P.f + 1 ≤ (q.2.stage r).recvCount (.bind (some v)) ∧
+      (q.2.stage r).bothValid P ∧
+      (q.2.stage r).proc.returned = false ∧
       ν = PMF.pure (q.1.setProc { q.1.proc with
           est := (GbcaOut.B v).est, lastGrade := some (.B v), phase := .toCallW },
-        q.2.setP { q.2.proc with returned := true }) := by
+        q.2.setStage r
+          ((q.2.stage r).setP { (q.2.stage r).proc with returned := true })) := by
   cases h
   case retG_B =>
     exact ⟨by assumption, by assumption, by assumption, by assumption, by assumption,
-      by assumption, by assumption, rfl⟩
+      by assumption, by assumption, by assumption, rfl⟩
   case retGIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepN_retG_C_own {r : ℕ}
     (h : ABAProcStepN P j q (Sum.inl (.retG r j .C)) ν) :
-    q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧
-      P.n - P.f ≤ q.2.recvCount (.seal none) ∧ q.2.bothValid P ∧
-      q.2.proc.returned = false ∧
+    q.1.proc.phase = .awaitG ∧ q.1.proc.round = r ∧ q.2.terminated = false ∧
+      P.n - P.f ≤ (q.2.stage r).recvCount (.seal none) ∧
+      (q.2.stage r).bothValid P ∧
+      (q.2.stage r).proc.returned = false ∧
       ν = PMF.pure (q.1.setProc { q.1.proc with
           est := GbcaOut.C.est, lastGrade := some .C, phase := .toCallW },
-        q.2.setP { q.2.proc with returned := true }) := by
+        q.2.setStage r
+          ((q.2.stage r).setP { (q.2.stage r).proc with returned := true })) := by
   cases h
   case retG_C =>
     exact ⟨by assumption, by assumption, by assumption, by assumption, by assumption,
-      rfl⟩
+      by assumption, rfl⟩
   case retGIdle => exact absurd rfl ‹_ ≠ j›
 
 theorem stepN_retG_foreign {r : ℕ} {id : Fin P.n} {out : GbcaOut} (hid : id ≠ j)
@@ -774,7 +880,7 @@ theorem stepN_retW_own {r : ℕ} {co : Bool}
     (h : ABAProcStepN P j q (Sum.inl (.retW r j co)) ν) :
     q.1.proc.phase = .awaitW ∧ q.1.proc.round = r ∧
       (∀ v : Bool, q.1.proc.lastGrade ≠ some (.A v)) ∧
-      ν = PMF.pure (q.1.stepRound co, GBCA.StageRec.initial P.n) := by
+      ν = PMF.pure (q.1.stepRound co, q.2) := by
   cases h
   case retW => exact ⟨by assumption, by assumption, by assumption, rfl⟩
   case retWIdle => exact absurd rfl ‹_ ≠ j›
@@ -793,7 +899,7 @@ end ProcInversion
 
 /-! ### One process's rules on the rendezvous alphabet
 
-The Byzantine stage drives have no row at the process they name (D20), so on
+The Byzantine stage drives have no row at the process they name (D22), so on
 `byzCallG`, `byzCallGLoop` and `byzRetG` every process idles and there is no
 participant's row to read. -/
 
@@ -803,11 +909,11 @@ variable {P : Params} {j : Fin P.n} {q : ProcRec P.n} {ν : PMF (ProcRec P.n)}
 
 theorem stepN_gsnd_input_self {r : ℕ} {b : Bool}
     (h : ABAProcStepN P j q (Sum.inr (.gsnd r j (.input b))) ν) :
-    q.1.proc.round = r ∧ q.2.proc.input ≠ none ∧
-      P.f + 1 ≤ q.2.recvCount (.input b) ∧
-      q.2.proc.sentInput b = false ∧
-      ν = PMF.pure (q.1, q.2.setP { q.2.proc with
-        sentInput := Function.update q.2.proc.sentInput b true }) := by
+    q.2.terminated = false ∧ (q.2.stage r).proc.input ≠ none ∧
+      P.f + 1 ≤ (q.2.stage r).recvCount (.input b) ∧
+      (q.2.stage r).proc.sentInput b = false ∧
+      ν = PMF.pure (q.1, q.2.setStage r ((q.2.stage r).setP { (q.2.stage r).proc with
+        sentInput := Function.update (q.2.stage r).proc.sentInput b true })) := by
   cases h
   case gsndRelay =>
     exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
@@ -815,10 +921,11 @@ theorem stepN_gsnd_input_self {r : ℕ} {b : Bool}
 
 theorem stepN_gsnd_echo_self {r : ℕ} {b : Bool}
     (h : ABAProcStepN P j q (Sum.inr (.gsnd r j (.echo b))) ν) :
-    q.1.proc.round = r ∧ q.2.proc.input ≠ none ∧
-      P.n - P.f ≤ q.2.recvCount (.input b) ∧
-      q.2.proc.sentEcho = none ∧
-      ν = PMF.pure (q.1, q.2.setP { q.2.proc with sentEcho := some b }) := by
+    q.2.terminated = false ∧ (q.2.stage r).proc.input ≠ none ∧
+      P.n - P.f ≤ (q.2.stage r).recvCount (.input b) ∧
+      (q.2.stage r).proc.sentEcho = none ∧
+      ν = PMF.pure (q.1, q.2.setStage r
+        ((q.2.stage r).setP { (q.2.stage r).proc with sentEcho := some b })) := by
   cases h
   case gsndEcho =>
     exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
@@ -826,10 +933,11 @@ theorem stepN_gsnd_echo_self {r : ℕ} {b : Bool}
 
 theorem stepN_gsnd_voteBit_self {r : ℕ} {b : Bool}
     (h : ABAProcStepN P j q (Sum.inr (.gsnd r j (.vote (some b)))) ν) :
-    q.1.proc.round = r ∧ q.2.proc.input ≠ none ∧
-      P.n - P.f ≤ q.2.recvCount (.echo b) ∧
-      q.2.proc.sentVote = none ∧
-      ν = PMF.pure (q.1, q.2.setP { q.2.proc with sentVote := some (some b) }) := by
+    q.2.terminated = false ∧ (q.2.stage r).proc.input ≠ none ∧
+      P.n - P.f ≤ (q.2.stage r).recvCount (.echo b) ∧
+      (q.2.stage r).proc.sentVote = none ∧
+      ν = PMF.pure (q.1, q.2.setStage r
+        ((q.2.stage r).setP { (q.2.stage r).proc with sentVote := some (some b) })) := by
   cases h
   case gsndVoteBit =>
     exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
@@ -837,9 +945,11 @@ theorem stepN_gsnd_voteBit_self {r : ℕ} {b : Bool}
 
 theorem stepN_gsnd_voteBot_self {r : ℕ}
     (h : ABAProcStepN P j q (Sum.inr (.gsnd r j (.vote none))) ν) :
-    q.1.proc.round = r ∧ q.2.proc.input ≠ none ∧ P.n - P.f ≤ q.2.echoCount ∧
-      q.2.bothValid P ∧ q.2.proc.sentVote = none ∧
-      ν = PMF.pure (q.1, q.2.setP { q.2.proc with sentVote := some none }) := by
+    q.2.terminated = false ∧ (q.2.stage r).proc.input ≠ none ∧
+      P.n - P.f ≤ (q.2.stage r).echoCount ∧
+      (q.2.stage r).bothValid P ∧ (q.2.stage r).proc.sentVote = none ∧
+      ν = PMF.pure (q.1, q.2.setStage r
+        ((q.2.stage r).setP { (q.2.stage r).proc with sentVote := some none })) := by
   cases h
   case gsndVoteBot =>
     exact ⟨by assumption, by assumption, by assumption, by assumption,
@@ -848,10 +958,11 @@ theorem stepN_gsnd_voteBot_self {r : ℕ}
 
 theorem stepN_gsnd_bindBit_self {r : ℕ} {b : Bool}
     (h : ABAProcStepN P j q (Sum.inr (.gsnd r j (.bind (some b)))) ν) :
-    q.1.proc.round = r ∧ q.2.proc.input ≠ none ∧
-      P.n - P.f ≤ q.2.recvCount (.vote (some b)) ∧
-      q.2.proc.sentBind = none ∧
-      ν = PMF.pure (q.1, q.2.setP { q.2.proc with sentBind := some (some b) }) := by
+    q.2.terminated = false ∧ (q.2.stage r).proc.input ≠ none ∧
+      P.n - P.f ≤ (q.2.stage r).recvCount (.vote (some b)) ∧
+      (q.2.stage r).proc.sentBind = none ∧
+      ν = PMF.pure (q.1, q.2.setStage r
+        ((q.2.stage r).setP { (q.2.stage r).proc with sentBind := some (some b) })) := by
   cases h
   case gsndBindBit =>
     exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
@@ -859,9 +970,11 @@ theorem stepN_gsnd_bindBit_self {r : ℕ} {b : Bool}
 
 theorem stepN_gsnd_bindBot_self {r : ℕ}
     (h : ABAProcStepN P j q (Sum.inr (.gsnd r j (.bind none))) ν) :
-    q.1.proc.round = r ∧ q.2.proc.input ≠ none ∧ P.n - P.f ≤ q.2.voteCount ∧
-      q.2.bothValid P ∧ q.2.proc.sentBind = none ∧
-      ν = PMF.pure (q.1, q.2.setP { q.2.proc with sentBind := some none }) := by
+    q.2.terminated = false ∧ (q.2.stage r).proc.input ≠ none ∧
+      P.n - P.f ≤ (q.2.stage r).voteCount ∧
+      (q.2.stage r).bothValid P ∧ (q.2.stage r).proc.sentBind = none ∧
+      ν = PMF.pure (q.1, q.2.setStage r
+        ((q.2.stage r).setP { (q.2.stage r).proc with sentBind := some none })) := by
   cases h
   case gsndBindBot =>
     exact ⟨by assumption, by assumption, by assumption, by assumption,
@@ -870,10 +983,11 @@ theorem stepN_gsnd_bindBot_self {r : ℕ}
 
 theorem stepN_gsnd_sealBit_self {r : ℕ} {b : Bool}
     (h : ABAProcStepN P j q (Sum.inr (.gsnd r j (.seal (some b)))) ν) :
-    q.1.proc.round = r ∧ q.2.proc.input ≠ none ∧
-      P.n - P.f ≤ q.2.recvCount (.bind (some b)) ∧
-      q.2.proc.sentSeal = none ∧
-      ν = PMF.pure (q.1, q.2.setP { q.2.proc with sentSeal := some (some b) }) := by
+    q.2.terminated = false ∧ (q.2.stage r).proc.input ≠ none ∧
+      P.n - P.f ≤ (q.2.stage r).recvCount (.bind (some b)) ∧
+      (q.2.stage r).proc.sentSeal = none ∧
+      ν = PMF.pure (q.1, q.2.setStage r
+        ((q.2.stage r).setP { (q.2.stage r).proc with sentSeal := some (some b) })) := by
   cases h
   case gsndSealBit =>
     exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
@@ -881,9 +995,11 @@ theorem stepN_gsnd_sealBit_self {r : ℕ} {b : Bool}
 
 theorem stepN_gsnd_sealBot_self {r : ℕ}
     (h : ABAProcStepN P j q (Sum.inr (.gsnd r j (.seal none))) ν) :
-    q.1.proc.round = r ∧ q.2.proc.input ≠ none ∧ P.n - P.f ≤ q.2.bindCount ∧
-      q.2.bothValid P ∧ q.2.proc.sentSeal = none ∧
-      ν = PMF.pure (q.1, q.2.setP { q.2.proc with sentSeal := some none }) := by
+    q.2.terminated = false ∧ (q.2.stage r).proc.input ≠ none ∧
+      P.n - P.f ≤ (q.2.stage r).bindCount ∧
+      (q.2.stage r).bothValid P ∧ (q.2.stage r).proc.sentSeal = none ∧
+      ν = PMF.pure (q.1, q.2.setStage r
+        ((q.2.stage r).setP { (q.2.stage r).proc with sentSeal := some none })) := by
   cases h
   case gsndSealBot =>
     exact ⟨by assumption, by assumption, by assumption, by assumption,
@@ -905,7 +1021,7 @@ theorem stepN_gsnd_foreign {r : ℕ} {k : Fin P.n} {m : GBCA.Msg} (hk : k ≠ j)
 
 theorem stepN_gdlv_self {r : ℕ} {k : Fin P.n} {m : GBCA.Msg}
     (h : ABAProcStepN P j q (Sum.inr (.gdlv r j k m)) ν) :
-    q.1.proc.round = r ∧ ν = PMF.pure (q.1, q.2.deliverTo k m) := by
+    q.2.terminated = false ∧ ν = PMF.pure (q.1, q.2.deliverTo r k m) := by
   cases h
   case gdlvRecv => exact ⟨by assumption, rfl⟩
   case gdlvIdle => exact absurd rfl ‹_ ≠ j›
@@ -946,7 +1062,7 @@ theorem stepN_retWPub_self {r : ℕ} {co b : Bool}
     (h : ABAProcStepN P j q (Sum.inr (.retWPub r j co b)) ν) :
     q.1.proc.phase = .awaitW ∧ q.1.proc.round = r ∧
       q.1.proc.lastGrade = some (.A b) ∧
-      ν = PMF.pure (q.1.stepRound co, GBCA.StageRec.initial P.n) := by
+      ν = PMF.pure (q.1.stepRound co, q.2) := by
   cases h
   case retWPub => exact ⟨by assumption, by assumption, by assumption, rfl⟩
   case retWPubIdle => exact absurd rfl ‹_ ≠ j›
@@ -1128,7 +1244,7 @@ theorem protocolPre_event_inv (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
       μ = prodPMF (PMF.pure x) (prodPMF (PMF.pure w') μ₃) := by
   rw [protocolPre, System.parallel_step] at h
   rcases h with ⟨-, μ₁, μ₂₃, hS, hNW, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
-  · obtain ⟨x, rfl, hall⟩ := syncN_inv hS
+  · obtain ⟨x, rfl, hall⟩ := syncN_inv (by simp) hS
     rw [System.parallel_step] at hNW
     rcases hNW with ⟨-, μ₂, μ₃, hN, hO, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
     · obtain ⟨w', rfl⟩ := netStep_dirac hN
@@ -1152,7 +1268,8 @@ theorem protocolPre_lab_inv (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
       μ = prodPMF (PMF.pure x) (prodPMF (PMF.pure w') ω) := by
   rw [protocolPre, System.parallel_step] at h
   rcases h with ⟨-, μ₁, μ₂₃, hS, hNW, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
-  · obtain ⟨x, rfl, hall⟩ := syncN_inv hS
+  · obtain ⟨x, rfl, hall⟩ :=
+      syncN_inv (by rw [nlab_tau]; exact fun hh => hl (Sum.inl_injective hh)) hS
     rw [System.parallel_step] at hNW
     rcases hNW with ⟨-, μ₂, μ₃, hN, hO, rfl⟩ | ⟨habs, -⟩ | ⟨habs, -⟩
     · obtain ⟨w', rfl⟩ := netStep_dirac hN
@@ -1163,27 +1280,31 @@ theorem protocolPre_lab_inv (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
   · rw [nlab_tau] at habs; exact absurd (Sum.inl_injective habs) hl
   · rw [nlab_tau] at habs; exact absurd (Sum.inl_injective habs) hl
 
-/-- A silent shared-label transition: no process has a `τ` row, so it is the
-network's own injection or the coin resolution. -/
+/-- A silent shared-label transition: one process terminating, the network's own
+injection, or the coin resolution. -/
 theorem protocolPre_tau_inv (P : Params) {u : ∀ _ : Fin P.n, ProcRec P.n}
     {w : NetState P.n} {o : ℕ → WCC.SpecState P.n}
     {μ : PMF ((∀ _ : Fin P.n, ProcRec P.n) ×
       (NetState P.n × (ℕ → WCC.SpecState P.n)))}
     (h : (protocolPre P).step (u, w, o) (Sum.inl Lab.tau) μ) :
+    (∃ (i : Fin P.n) (y : ProcRec P.n),
+      ABAProcStepN P i (u i) (Sum.inl Lab.tau) (PMF.pure y) ∧
+      μ = PMF.pure (Function.update u i y, w, o)) ∨
     (∃ w', NetStep P w (Sum.inl .tau) (PMF.pure w') ∧ μ = PMF.pure (u, w', o)) ∨
     (∃ ω, (WCC.specFamily P).step o Lab.tau ω ∧
       μ = prodPMF (PMF.pure u) (prodPMF (PMF.pure w) ω)) := by
   rw [protocolPre, System.parallel_step] at h
   rcases h with ⟨habs, -⟩ | ⟨-, μ₁, hS, rfl⟩ | ⟨-, μ₂₃, hNW, rfl⟩
   · exact absurd rfl habs
-  · exact (syncN_no_tau hS).elim
+  · obtain ⟨i, y, hstep, rfl⟩ := syncN_tau_inv hS
+    exact Or.inl ⟨i, y, hstep, by rw [prodPMF_pure_pure]⟩
   · rw [System.parallel_step] at hNW
     rcases hNW with ⟨habs, -⟩ | ⟨-, μ₂, hN, rfl⟩ | ⟨-, μ₃, hO, rfl⟩
     · exact absurd rfl habs
     · obtain ⟨w', rfl⟩ := netStep_dirac hN
-      exact Or.inl ⟨w', hN, by rw [prodPMF_pure_pure, prodPMF_pure_pure]⟩
-    · exact Or.inr ⟨μ₃,
-        (System.mapIdle_step_some (wccPull_inl Lab.tau) μ₃).mp hO, rfl⟩
+      exact Or.inr (Or.inl ⟨w', hN, by rw [prodPMF_pure_pure, prodPMF_pure_pure]⟩)
+    · exact Or.inr (Or.inr ⟨μ₃,
+        (System.mapIdle_step_some (wccPull_inl Lab.tau) μ₃).mp hO, rfl⟩)
 
 end Net
 

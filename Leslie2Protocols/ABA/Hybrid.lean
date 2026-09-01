@@ -54,9 +54,10 @@ A round instance is a component of the composite from the start, not an object
 created by the round's first call, and it keeps its stage records and its
 fabric for the whole run. The graded-agreement coordinate of a composed state
 is therefore `ℕ → GBCA.ImplState n`: every round is present at every moment,
-whichever round each process is in. That retained memory is specification-side
-state. No process holds it. A process record of the protocol carries the stage
-record of the round its round loop is in and nothing else (D20).
+whichever round each process is in. Those retained stage records are
+specification-side state in one respect only: a process record of the protocol
+holds its own stage records in a finite map and, once it terminates, answers
+nothing further, where the round instance answers at every moment (D22).
 
 ## The authorisation relocation (D11)
 

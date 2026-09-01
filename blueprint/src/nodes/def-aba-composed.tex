@@ -11,7 +11,8 @@
   runs through the pipeline of Definition~\ref{def:aba-protocol} component for component, giving $\mathrm{composedGroup}(P)$ inside the inner frame and $\mathrm{composed}(P)$ inside the outer.
   A round loop is not round-filtered: it answers every round's $\mathrm{callG}$, its own as a participant and every other process's as a bystander.
   A round instance is a component of the composite at every moment, so the graded-agreement coordinate of a composed state is $\mathbb{N} \to \mathrm{ImplState}(n)$: every round keeps its stage records and its fabric for the whole run, whichever round each process is in.
-  That retained per-round memory is specification-side state, held by no process (D20).
+  The processes hold those stage records too (D22).
+  What no process holds is the fabric of a round, and a round instance, carrying no termination flag, answers a send or a delivery at a process the protocol has terminated.
   The graded-agreement family occupies the left argument of the outer parallel composition, which is the refinable slot.
   Full construction: \leandecl{PLTS.ABA.composed}, over \leandecl{PLTS.ABA.Comp.coreProcN} and \leandecl{PLTS.ABA.Comp.aNet}.
 \end{definition}

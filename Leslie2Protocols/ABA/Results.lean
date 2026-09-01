@@ -17,9 +17,10 @@ network adversary, which owns the message pools, the DECIDED pools and the
 corrupted set with its budget, and the common-coin oracle, the only component
 whose transitions are not Dirac. A program reads nothing but its own records
 and its own inbox; whether a process may be driven off-protocol is decided by
-the network's `k ∈ F` guard, never by the program. A program holds one
-graded-agreement stage record, that of the round its round loop is in, and the
-round advance resets it (D20).
+the network's `k ∈ F` guard, never by the program. A program holds its
+round loop beside its stage-side record — the stage record of every round it
+has touched, in a finite map — and terminates at `2f + 1` DECIDED receipts
+(D22).
 
 The abstract side is `ABA.spec P`, the single-automaton reading of agreement,
 whose traces satisfy Validity and Agreement (`spec_safe`, `SpecSafety.lean`).
@@ -30,11 +31,10 @@ Three probabilistic forward simulations carry the protocol to the
 specification:
 
 1. `protocolSim` (`ProtocolSim.lean`) — the protocol into the composed
-   reading, along the Dirac lift of `ProtocolRel`. A composed state carries one
-   graded-agreement instance per round at every moment, where a process record
-   of the protocol carries only the stage record of the round it is in (D20), so
-   the composed side holds strictly more state and the two are related by a
-   relation rather than by a map.
+   reading, along the Dirac lift of `ProtocolRel`. The relation pins every
+   composed coordinate against the protocol state; the inclusion is
+   one-directional because a round instance also answers the Byzantine drives
+   (D11) and the processes the protocol has terminated (D22).
 2. `substSim` (`Hybrid.lean`) — replace each round's graded-agreement
    instance by its specification, the other three components untouched: the
    family substitution carried by four congruences (`parallel_right`,

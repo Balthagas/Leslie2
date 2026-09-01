@@ -17,9 +17,9 @@ file are the source blueprint's. The encoding follows the
 source blueprint; where the source blueprint departs from ABDY22 the encoding inherits
 the departure, with the single exception of §1.
 
-**The D-registry is elsewhere.** The catalogued deviations — D1, D4, D5, D8–D21, D12
-refined to D12′ — are cited at the point of use in the ABA module docstrings and glossed
-one by one in the blueprint chapter (the Deviations paragraph of
+**The D-registry is elsewhere.** The catalogued deviations — D1, D4, D5 and D8–D22, with
+D12 refined to D12′ and D20 withdrawn — are cited at the point of use in the ABA module
+docstrings and glossed one by one in the blueprint chapter (the Deviations paragraph of
 `blueprint/src/content.tex`), which is the registry of record.
 
 ## 1. Where the encoding follows ABDY22 against the source blueprint
@@ -90,7 +90,10 @@ hypothesis of all three GBCA returns `ImplStep.retA`, `retB` and `retC`, and
 `ProcCore.returned`, guarded at `CoreProcStepN.ret`. The
 guard has no surface counterpart in Algorithm 1 or Algorithm 2, which name no such
 variable; the control-flow fact it expresses does. (At specification level it is no
-interpretation: TS 1 and TS 2 carry `ret[id] = ⊥` guards of their own.)
+interpretation: TS 1 and TS 2 carry `ret[id] = ⊥` guards of their own.) At the protocol,
+returning and terminating are two fields and two rules: `ProcCore.returned` records that
+`ABAProcStepN.ret` has fired, and `Net.StageSideRec.terminated`, whose sole writer is
+`ABAProcStepN.terminate`, records that the process has stopped participating (D22, §5).
 
 ## 3. A network-model artifact
 
@@ -106,8 +109,10 @@ components. Soundness is the network adversary's conjunct in both pools: `NetSte
 requires `h : m ∈ s.pool r j` and `NetStep.ddlv` requires `h : b ∈ s.dpool j`, neither
 consuming the pooled message. Freshness is the receiver's, and only in the DECIDED
 pools: `ABAProcStepN.ddlvRecv` carries `hr : b ∉ c.decIn k` while
-`ABAProcStepN.gdlvRecv` carries no hypothesis at all, filing the message under the
-sender's inbox row unconditionally.
+`ABAProcStepN.gdlvRecv` carries no freshness guard, filing the message under the sender's
+inbox row whatever is already there. Its one hypothesis is the termination guard
+`hterm : p.terminated = false` carried by every stage-side row (D22, §5), which is not a
+freshness condition.
 
 ## 4. Source defects the encoding does not reproduce
 
@@ -119,7 +124,7 @@ sender's inbox row unconditionally.
   `val` and fires only from `val = ⊥`, so the decision value is written once and
   Agreement is structural (`PLTS.ABA.SpecInv.val_stable`); and it carries the D13 support
   guard `PLTS.ABA.SuppOK` beside the quorum, which is where the Validity trace dies —
-  the counterexample check closing `Spec.lean` records it, with inputs `1,0,0,0` at
+  the counterexample check in `Spec.lean` records it, with inputs `1,0,0,0` at
   `n = 4, f = 1` and the sole `1`-inputter corrupted leaving one supporter of `1` against
   the `f + 1 = 2` the guard demands. The six-rule shape this leaves, with the control mode
   carrying the flip, is deviation **D21**.
@@ -158,22 +163,35 @@ Unpredictability, inexpressible once the guess is dropped.
 - **Termination.** ABA's ε-sure Termination, GBCA's Termination and WCC's ε′-sure
   Termination (pp. 6–7) are unclaimed — `ABA.main` is Validity ∧
   Agreement. See `NOTES-Liveness-Roadmap.md`.
-- **Instance memory past the round advance.** ABDY22 separates deciding from terminating:
-  a process decides and then eventually terminates (Definitions 3.1 and 3.2), and the
-  liveness argument counts the amplification echoes a decided process keeps sending
-  (Lemma E.5). A process record of the encoding carries one graded-agreement stage record,
-  that of the round its round loop is in, and the round advance resets it to
-  `GBCA.StageRec.initial` — `ABAProcStepN.retW` and `ABAProcStepN.retWPub` in
-  `Protocol.lean`. That is deviation **D20**, and its effect is that a process sends
-  nothing in an instance it has left: every stage-side rule is guarded by
-  `c.proc.round = r`, a stage message addressed to a round the receiver has left is not
-  filed, and the Byzantine stage drives `byzCallG` and `byzRetG` have no row at the
-  process they name, a corrupted process's stage traffic entering through the network's
-  own `byzG` injection. The soundness of the omission is one-directional and safety-only:
-  `ProtocolSim.protocol_composed` makes every behaviour of the forgetting reading a
-  behaviour of `composed`, which retains every round's stage records as specification-side
-  state, so Validity and Agreement read across unchanged, while a liveness claim resting
-  on post-decision echoes has no counterpart here.
+- **Participation past the round advance.** ABDY22 separates deciding from terminating: a
+  process decides and then eventually terminates (Definitions 3.1 and 3.2), and the
+  amplification argument counts the echoes a decided process keeps sending (Lemmas 4.6 and
+  E.5, stated under the hypothesis that no non-faulty party terminates). The encoding
+  carries that shape, as deviation **D22**; what belongs here is what the shape leaves
+  uncovered. A process record holds the stage record of
+  every round the process has touched, in a `Finmap` read through
+  `Net.StageSideRec.stage`; each stage-side rule reads and writes the stage record of the
+  round its own label tags, under an instance-local guard and no round gate; and the round
+  advance, `ABAProcStepN.retW` and `ABAProcStepN.retWPub`, resets nothing. A process
+  therefore answers prior-round traffic and files deliveries of any round.
+  `ABAProcStepN.terminate` is the terminating step. It fires when the process's own return
+  has fired and DECIDED receipts from `2f + 1` distinct senders are on record, and it
+  writes `terminated` alone, so the stage records freeze where they stand. The DECIDED
+  rules `ABAProcStepN.dsndRelay` and `ABAProcStepN.ddlvRecv` carry no termination guard, so
+  a process that has terminated keeps relaying the committed broadcast (D12′). Three
+  residues remain.
+    - The amplification rule `ABAProcStepN.gsndRelay` is gated on the process holding an
+      input in that round's stage record (`hin : (p.stage r).proc.input ≠ none`, D8, and
+      `ImplStep.relay` carries the same gate one level down), where lines 3–4 of ABDY22's
+      Algorithm 6 gate the relay on the receipt count alone.
+    - A stage delivery at a process that has terminated is disabled rather than ignored.
+      `ABAProcStepN.gdlvRecv` carries `hterm : p.terminated = false` and
+      `ABAProcStepN.gdlvIdle` demands a different receiver, so the adversary has no
+      composite step delivering a stage message there at all.
+    - The `2f + 1` receipt count of `ABAProcStepN.terminate` is the encoding's commit
+      point. At most `f` senders are corrupted, so `2f + 1` receipts stand behind `f + 1`
+      honest senders of the payload, which is the threshold `ABAProcStepN.dsndRelay` reads;
+      the paper's own condition is that the process may stop without holding back any other.
 
 One divergence runs in the safe direction. The source's Validity restricts to correct
 processes ("if a correct process returns `b` then a correct process had `b` as input",

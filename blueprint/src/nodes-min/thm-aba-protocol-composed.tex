@@ -2,7 +2,7 @@
   \label{thm:aba-protocol-composed}
   \lean{PLTS.ABA.ProtocolState}\lean{PLTS.ABA.ProtocolRel}\lean{PLTS.ABA.protocolRel_mk}\lean{PLTS.ABA.protocolRel_init}\lean{PLTS.ABA.protocolSim}\lean{PLTS.ABA.protocol_composed}\leanok
   \uses{def:aba-composed, def:aba-procnet, def:aba-netadv, def:aba-protocol, def:forwardsim, def:pmfrel, def:achievable, thm:forward-sound}
-  The protocol is forward-simulated by its composed reading along the Dirac lift of $\mathrm{ProtocolRel}(P)$, the relation that pins of a composed state everything a state of the protocol determines and leaves the stage records of the rounds a process has left free (D20), and hence $\operatorname{ATD}(\mathrm{protocol}(P)) \subseteq \operatorname{ATD}(\mathrm{composed}(P))$: \leandecl{PLTS.ABA.protocolSim}, \leandecl{PLTS.ABA.protocol_composed}.
+  The protocol is forward-simulated by its composed reading along the Dirac lift of $\mathrm{ProtocolRel}(P)$, the relation that pins of a composed state everything a state of the protocol determines in five unguarded conjuncts, and hence $\operatorname{ATD}(\mathrm{protocol}(P)) \subseteq \operatorname{ATD}(\mathrm{composed}(P))$; the inclusion is one-directional because a round instance answers the Byzantine graded-agreement drives, for which no program has a row (D11), and answers a send or a delivery at a process the protocol has terminated (D22): \leandecl{PLTS.ABA.protocolSim}, \leandecl{PLTS.ABA.protocol_composed}.
 \end{theorem}
 
 \begin{proof}\leanok

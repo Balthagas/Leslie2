@@ -2,5 +2,5 @@
   \label{def:aba-composed}
   \lean{PLTS.ABA.Comp.CoreProcStepN}\lean{PLTS.ABA.Comp.coreProcN}\lean{PLTS.ABA.Comp.ANetState}\lean{PLTS.ABA.Comp.ANetState.corrupt}\lean{PLTS.ABA.Comp.ANetStep}\lean{PLTS.ABA.Comp.aNet}\lean{PLTS.ABA.Comp.ComposedState}\lean{PLTS.ABA.composedPre}\lean{PLTS.ABA.composedGroup}\lean{PLTS.ABA.composed}\leanok
   \uses{def:aba-gbcasub, def:aba-procnet, def:aba-netadv, def:aba-protocol, def:aba-core-vocab, def:relabel, def:syncproduct, def:process-algebra}
-  The protocol read as a composition of four components --- the family of round instances, the $n$ round loops, the ABA-side network and the coin oracle --- with the graded-agreement family in the refinable slot and the stage records and fabric of every round retained as specification-side state (D20): \leandecl{PLTS.ABA.composed}.
+  The protocol read as a composition of four components --- the family of round instances, the $n$ round loops, the ABA-side network and the coin oracle --- with the graded-agreement family in the refinable slot and one round instance per round at every moment, answering also at a process the protocol has terminated (D22): \leandecl{PLTS.ABA.composed}.
 \end{definition}

@@ -166,10 +166,15 @@ Ordered by expected value-for-effort:
    All three steps are inclusions in the same direction, `protocol ⊑ composed ⊑
    hybrid ⊑ ABA.spec`, so a mass bound established at `ABA.spec` has to be
    transported down all three, the composition link (`protocolSim`,
-   `ABA/ProtocolSim.lean`) included. Budget the instance forgetting of D20 as a
-   constraint on that link: a process sends nothing in a round it has left, so a
-   fairness marking that expects post-decision amplification echoes has no concrete
-   counterpart.
+   `ABA/ProtocolSim.lean`) included. That link imposes no constraint on the amplification
+   axis. Under D22 a process retains the stage record of every round it has touched and
+   answers that round's traffic under an instance-local guard, whichever round its loop is
+   in, which is the behaviour ABDY22's Lemmas 4.6 and E.5 are stated under; and
+   `ABAProcStepN.terminate` fires only once the process's own return has fired and `2f + 1`
+   DECIDED receipts are on record, so the concrete stopping point is a terminate in the
+   paper's sense — the endpoint a fairness marking would stop at. Nothing in the
+   development says when that step fires, or that it ever does: the marking itself and
+   every statement about it are what a campaign has to supply.
    Budget the corrupt-fairness mismatch as the primary risk: the fairness markings on
    both sides must be chosen so that ideal-side actions are fair only under honest
    enablement (state-dependent `fair_labels` — the witness already supports

@@ -1,20 +1,25 @@
 \begin{definition}[The program of one process]
   \label{def:aba-procnet}
-  \lean{PLTS.ABA.GBCA.StageRec}\lean{PLTS.ABA.CoreRec}\lean{PLTS.ABA.Net.ProcRec}\lean{PLTS.ABA.Net.NetEvt}\lean{PLTS.ABA.Net.NLab}\lean{PLTS.ABA.Net.netEvtLabels}\lean{PLTS.ABA.Net.ABAProcStepN}\lean{PLTS.ABA.Net.ABAProcN}\leanok
+  \lean{PLTS.ABA.GBCA.StageRec}\lean{PLTS.ABA.CoreRec}\lean{PLTS.ABA.Net.StageSideRec}\lean{PLTS.ABA.Net.ProcRec}\lean{PLTS.ABA.Net.NetEvt}\lean{PLTS.ABA.Net.NLab}\lean{PLTS.ABA.Net.netEvtLabels}\lean{PLTS.ABA.Net.ABAProcStepN}\lean{PLTS.ABA.Net.ABAProcN}\leanok
   \uses{def:aba-labels, def:aba-gbca-vocab, def:aba-core-vocab, def:relabel, def:syncproduct}
   The state of process $j$ is
   \[
     \mathrm{ProcRec}(n) \;=\;
-      \mathrm{CoreRec}(n) \times \mathrm{StageRec}(n),
+      \mathrm{CoreRec}(n) \times \mathrm{StageSideRec}(n),
   \]
-  its round-loop record --- the control record of Definition~\ref{def:aba-core-vocab} together with the DECIDED receipt rows $decIn(k)$ --- beside one stage record, that of Definition~\ref{def:aba-gbca-vocab} together with the inbox rows $inbox(k)$.
-  The stage record is that of the round the round loop is in, and the round advance resets it to the initial stage record, so a process holds nothing of a round it has left (D20).
-  Every stage-side row is accordingly guarded by $round = r$: a label whose round tag is not $j$'s round has no row at $j$, and a stage message addressed to a round $j$ has left is not filed.
+  its round-loop record --- the control record of Definition~\ref{def:aba-core-vocab} together with the DECIDED receipt rows $decIn(k)$ --- beside its stage-side record.
+  The stage-side record holds a finite map $stages$ from rounds to stage records of Definition~\ref{def:aba-gbca-vocab}, each with its inbox rows $inbox(k)$, and a flag $terminated$ (D22).
+  The stage record of round $r$ is read $\mathrm{stage}\,r$: the retained record where $j$ has touched round $r$, the initial stage record elsewhere.
+  The map is finite by its type, so $j$ holds finitely many stage records at every point of a run, and the round advance resets none of them.
+  Every stage-side row is accordingly round-indexed rather than round-gated: it reads and writes the stage record of the round its own label tags, whichever round the round loop is in, under the guards of that stage record and $terminated = \mathrm{false}$.
+  Process $j$ therefore answers the traffic of a round its round loop has passed, and a stage delivery of any round is filed.
+  The row $terminate$ fires on $j$'s own return and $2f+1$ DECIDED receipts, and its effect is to set $terminated$ and nothing else, so the retained stage records are frozen from that point.
+  The DECIDED rows carry no termination guard, so a process that has terminated keeps relaying the payloads it holds.
   There is no outbox, no copy of the corrupted set and no corruption flag, so every guard of the automaton $\mathrm{ABAProcN}(P,j)$ reads $j$'s own record.
   It runs over the extended alphabet $\mathrm{NLab}(n) = \mathrm{Lab}(n) \oplus \mathrm{NetEvt}(n)$, where $\mathrm{NetEvt}$ names the rendezvous the shared alphabet cannot: the stage multicast $\mathrm{gsnd}(r,j,m)$ and the stage delivery $\mathrm{gdlv}(r,i,j,m)$; the DECIDED relay $\mathrm{dsnd}(j,b)$ and the DECIDED delivery $\mathrm{ddlv}(i,j,b)$; the fused coin return $\mathrm{retWPub}(r,id,c,b)$, which carries beside the coin the payload to be published (D10); the graded-agreement call $\mathrm{gcallLoop}(r,id,b)$ against an already-opened stage record; and the five Byzantine drives $\mathrm{byzCallG}$, $\mathrm{byzCallGLoop}$, $\mathrm{byzRetG}$, $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ (D11).
   The set $\mathrm{netEvtLabels}(n)$ of these labels is what the composition hides, the silent label of $\mathrm{NLab}(n)$ being that of $\mathrm{Lab}(n)$.
-  Every transition is Dirac and no row fires on $\tau$.
-  Every label of either alphabet has a row of process $j$, the participant's or an idle self-loop, with two exceptions: $\mathrm{byzCallG}(r,k,b)$ and $\mathrm{byzRetG}(r,k,out)$ have no row at the process $k$ they name (D11, D20), and a corrupted process's stage traffic enters through the network's own $\mathrm{byzG}$ injection instead.
+  Every transition is Dirac, and $terminate$ is the one row of the table that fires on $\tau$.
+  Every label of either alphabet has a row of process $j$, the participant's or an idle self-loop, with two exceptions: $\mathrm{byzCallG}(r,k,b)$ and $\mathrm{byzRetG}(r,k,out)$ have no row at the process $k$ they name (D11, D22), and a corrupted process's stage traffic enters through the network's own $\mathrm{byzG}$ injection instead.
   Full synchronisation therefore lets a label's owner move while every other program stands.
-  Full rule table: \leandecl{PLTS.ABA.Net.ABAProcN}.
+  Full rule table, forty-one rows: \leandecl{PLTS.ABA.Net.ABAProcN}.
 \end{definition}

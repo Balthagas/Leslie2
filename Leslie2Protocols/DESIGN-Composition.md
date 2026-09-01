@@ -21,11 +21,16 @@ already weakens. The systems themselves are in `ABA/Protocol.lean`, `ABA/Spec.le
 The first link is where the chain passes from implementation to specification: `protocol`
 is the system that runs, and everything above it is specification. It is therefore an
 inclusion, `ProtocolSim.protocol_composed`, and not an equality. A process record of the
-protocol carries one graded-agreement stage record, that of the round its round loop is
-in, and the round advance resets it (D20); a composed state carries one graded-agreement
-instance per round at every moment. The stage records of the rounds a process has left
-are specification-side state, so `ProtocolRel` relates the two readings rather than
-mapping one onto the other.
+protocol carries the round-loop record beside the stage record of every round the process
+has touched, and a flag saying whether the process has terminated (D22). A composed state
+carries one graded-agreement instance per round at every moment, and no termination flag.
+`ProtocolRel` pins every composed coordinate against the protocol state: the entry of
+process `j` in the instance of round `r` is the stage record of round `r` that `j` holds.
+A composed state is therefore determined by any protocol state related to it. What makes
+the link one-directional is on the composed side. A round instance has a row for the
+Byzantine graded-agreement drives and no program of the protocol has one (D11), and the
+instance's stage rules carry no termination guard, so the instance answers a send or a
+delivery at a process the protocol has terminated.
 
 ## What the composition buys
 
@@ -68,9 +73,9 @@ inside a record. Weakening either network is a change to that one component.
 The property holds across the development, and a reader should not have to re-derive it.
 
 Each leaf record holds exactly one box's data: `ProcCore` and `CoreRec` for a round loop,
-`GBCA.ProcState` and `GBCA.StageRec` for a graded-agreement stage, `GSub.GNetState` for a
-round's fabric, `Comp.ANetState` for the DECIDED network, and one `SpecState` for each of
-the three specifications. Each composite state is an explicit product of those:
+`GBCA.ProcState` and `GBCA.StageRec` for a graded-agreement stage, `Net.StageSideRec` for
+the stage side of one process, `GSub.GNetState` for a round's fabric, `Comp.ANetState` for
+the DECIDED network, and one `SpecState` for each of the three specifications. Each composite state is an explicit product of those:
 `Net.ProcRec`, `GBCA.ImplState`, `ABAState`, `Comp.ComposedState`, `HybridState`.
 
 One record holds two kinds of message pool at once, and it is the right one to.

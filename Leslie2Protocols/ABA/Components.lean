@@ -48,7 +48,7 @@ both compositions, unchanged.
 relay and its delivery, and an idle row for every label the process does not
 act on. It writes no stage record. The composed system runs `n` of these
 automata (`coreProcN`) under a full-synchronisation product. The protocol
-composition fuses each round loop with a stage record into one program
+composition fuses each round loop with the stage-side record into one program
 (`Net.ABAProcStepN`), whose record is the pair.
 
 ## The ABA-side network
