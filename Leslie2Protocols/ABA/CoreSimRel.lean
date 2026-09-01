@@ -9,15 +9,15 @@ import Leslie2Protocols.ABA.Hybrid
 import Leslie2Protocols.ABA.GBCASafety
 
 /-!
-# The core-simulation relation: the lazy abstract twin
+# The core-simulation relation
 
-The relation and invariant for `coreSim : hybrid ⊑ ABA.spec`, following
-`DESIGN-CoreSim.md`. The abstract twin is *ultra-lazy* (D16): it answers
-every hidden (τ) row and the probabilistic coin row by stuttering under a
-constant coupling; the single τ-burst fires at the first `retABA` row, where
-the twin binds, fills the board, decides, and returns within one weak step.
+The relation and invariant for `coreSim : hybrid ⊑ ABA.spec`. The abstract
+twin never fires `SpecStep.coinFlip`: it answers every hidden row, the
+concrete coin included, by stuttering under a constant coupling, and its mode
+is `Mode.idle` throughout. It decides once, in the `SpecStep.decide` τ-step
+that leads the first `retABA` row.
 
-* `Abs` — the abstract-state constraints (C1 `F_eq`, C2 `ret_eq`, `coin_bot`,
+* `Abs` — the abstract-state constraints (C1 `F_eq`, C2 `ret_eq`, `mode_idle`,
   and C3/C7 `phase`).
 * `Inv` — the concrete invariant (thirty-nine fields, docstring-numbered
   I1–I30, a few numbers covering a small group of fields: F-lockstep, input
@@ -98,39 +98,36 @@ def AHolder (P : Params) (c : ABAState P) (id : Fin P.n) (b : Bool) : Prop :=
 
 /-! ### Abs: the abstract-twin constraints -/
 
-/-- Constraints tying the abstract twin `a` to the concrete state — the
-**ultra-lazy, never-flipping twin** (D16). The twin never fires rule 5
-(`coin` permanently `⊥`), and it never binds *between* rows: it lives in one
-of two phases keyed on `a.val`. In **phase 1** (before the first visible
-return) it is fully unbound, its `call` row mirrors the concrete write-once
-external inputs (banked by rule 1 at every genuine `callABA` — whose
-unconditional ghost overwrite also keeps `a.input` synced on every committed
-input), and it answers *every* hidden row with a stutter. In **phase 2**
-(after the first `retABA`, whose answering burst binds, fills, and decides in
-one τ-tail) the board is clear, `bind = val = some v`, and `v` is permanently
-certified by a concrete `A`-lock. Laziness is load-bearing (D16): any twin
-that binds before the last genuine input bank is killed by ghost junk — a
-`callABA` answered by the concrete self-loop force-banks rule 2's
-first-write-wins ghost, and once bound the twin can never overwrite it. -/
+/-- Constraints tying the abstract twin `a` to the concrete state. The twin
+never fires `SpecStep.coinFlip`: its mode is `Mode.idle` throughout, so
+`SpecStep.decide` stays enabled at every state it reaches. It lives in one of
+two phases keyed on `a.val`. In **phase 1**, before the first visible return,
+nothing is decided and the ghost record `a.input` carries every committed
+concrete input; every hidden row is answered by a stutter. In **phase 2**,
+entered by the `SpecStep.decide` step that answers the first `retABA` row,
+`a.val = some v` and `v` is certified by a concrete `A`-lock.
+
+The ghost record is synced only where the concrete input is committed. A
+`callABA` answered by the concrete self-loop banks junk under
+`SpecStep.callLoop`, and that junk lands only in slots where the sync clause
+is vacuous. -/
 structure Abs (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAState P)
     (w : ℕ → WCC.SpecState P.n) (a : SpecState P.n) : Prop where
   /-- C1: corrupted sets agree. -/
   F_eq : a.F = c.F
   /-- C2: returns agree. -/
   ret_eq : ∀ id, a.ret id = (c.procs id).returned
-  /-- The abstract twin never fires the coin-flip rule: its coin is always `⊥`. -/
-  coin_bot : a.coin = .bot
-  /-- C3/C7: the two-phase discipline. Phase 1 (pre-return): unbound,
-  undecided, `call` = concrete inputs, ghost synced on committed inputs.
-  Phase 2 (post-return): `bind = val = some v`, board clear, `v` certified by
-  a full `A`-certificate, and every honest `A`-decision holder — live grade or
-  pooled DECIDED — names `v` (the F-free universal that survives corruption of
-  the original witnesses). -/
+  /-- The twin never flips: its mode is `Mode.idle` at every reachable state. -/
+  mode_idle : a.mode = .idle
+  /-- C3/C7: the two-phase discipline. Phase 1 (pre-return): undecided, ghost
+  record synced on committed inputs. Phase 2 (post-return): `val = some v`
+  with `v` certified by a full `A`-certificate, and every honest `A`-decision
+  holder — live grade or pooled DECIDED — names `v` (the F-free universal that
+  survives corruption of the original witnesses). -/
   phase :
-    (a.bind = none ∧ a.val = none ∧
-      (∀ id, a.call id = (c.procs id).input) ∧
+    (a.val = none ∧
       (∀ id b, (c.procs id).input = some b → a.input id = some b)) ∨
-    (∃ v, a.bind = some v ∧ a.val = some v ∧ (∀ id, a.call id = none) ∧
+    (∃ v, a.val = some v ∧
       (∃ r, ACert P g c r v) ∧
       (∀ j b', j ∉ c.F → AHolder P c j b' → b' = v))
 
@@ -391,8 +388,7 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAState P)
   w_call_round : ∀ r id, id ∉ c.F → (w r).called id = true → r ≤ (c.procs id).round
   /-- I21 : a flip-threshold consequence — once round `r`'s coin has
   resolved, round `r` is either already `A`/`C`-graded or a `DissentResidue` certifies why a
-  `B`/`C`-return could have fired there. Used to decide rule 3 vs.\ rule 4 at
-  the flip burst. -/
+  `B`/`C`-return could have fired there. -/
   flip_alock : ∀ r, (w r).val ≠ .bot → (g r).grade ≠ none ∨ DissentResidue P g c r
   /-- I22 : an honest process that has never received its external input has never
   called any `WCC` instance (the sole idle-exit, `callABA`'s honest `input` ctor, is what first
@@ -512,23 +508,37 @@ theorem GBCA.callSupp_mono {P : Params} {s s' : GBCA.SpecState P.n} {b : Bool}
   exact hx.imp (hcall x) (fun h' => hF h')
 
 /-- **Quorum transfer** : a bound concrete round's firing quorum (`Inv.bound_quorum`)
-transfers to the abstract's quorum guard, for any abstract `F`/`call` that agrees with `c.F`
+transfers to the abstract's quorum guard, for any abstract `F`/`input` that agrees with `c.F`
 and is non-`⊥` on every honest process holding a committed external input. Stated on raw
-`aF`/`aCall` so it also serves the banked abstract at the `callABA` burst. -/
-theorem abstract_quorum_of_call {P : Params} {g : ℕ → GBCA.SpecState P.n}
+`aF`/`aInput` so it reads the ghost record of the twin at any phase. -/
+theorem abstract_quorum_of_input {P : Params} {g : ℕ → GBCA.SpecState P.n}
     {c : ABAState P} {w : ℕ → WCC.SpecState P.n} {aF : Finset (Fin P.n)}
-    {aCall : Fin P.n → Option Bool} (hI : Inv P g c w) (haF : aF = c.F)
-    (hcall : ∀ id, id ∉ c.F → (c.procs id).input ≠ none → aCall id ≠ none)
+    {aInput : Fin P.n → Option Bool} (hI : Inv P g c w) (haF : aF = c.F)
+    (hin : ∀ id, id ∉ c.F → (c.procs id).input ≠ none → aInput id ≠ none)
     {r : ℕ} (hr : (g r).dead ≠ ∅) :
-    P.n - P.f ≤ ((Finset.univ.filter (fun id => id ∉ aF ∧ aCall id ≠ none)) ∪ aF).card := by
+    P.n - P.f ≤
+      ((Finset.univ.filter (fun id => id ∉ aF ∧ aInput id ≠ none)) ∪ aF).card := by
   refine le_trans (hI.bound_quorum r hr) (Finset.card_le_card ?_)
   intro x hx
   have hFgr : (g r).F = c.F := hI.F_g r
   simp only [Finset.mem_union, Finset.mem_filter, Finset.mem_univ, true_and] at hx ⊢
   rcases hx with ⟨hxF, hxc⟩ | hxF
   · have hxc' : x ∉ c.F := hFgr ▸ hxF
-    exact Or.inl ⟨by rw [haF]; exact hxc', hcall x hxc' (hI.input_called r x hxc' hxc)⟩
+    exact Or.inl ⟨by rw [haF]; exact hxc', hin x hxc' (hI.input_called r x hxc' hxc)⟩
   · exact Or.inr (by rw [haF, ← hFgr]; exact hxF)
+
+/-- **Support transfer (D13)** : the concrete input-or-`F` pool for `b`
+(`Inv.bind_supp`) reads on the twin as the `SpecStep.decide` guard `SuppOK`,
+for any twin whose corrupted set is `c.F` and whose ghost record carries every
+committed concrete input. -/
+theorem suppOK_of_inputSupp {P : Params} {c : ABAState P} {a : SpecState P.n} {b : Bool}
+    (haF : a.F = c.F)
+    (hghost : ∀ id b', (c.procs id).input = some b' → a.input id = some b')
+    (h : InputSupp P c b) : SuppOK P a b := by
+  refine le_trans h (Finset.card_le_card ?_)
+  intro x hx
+  simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hx ⊢
+  exact hx.imp (hghost x b) (fun hF => by rw [haF]; exact hF)
 
 /-- **Pool establishment (D13).** A D15 count over round-`r` calls (`f + 1`
 callers-or-`F` of `b`) yields the permanent input-or-`F` pool for `b`: wholesale via
@@ -665,15 +675,14 @@ theorem Inv.initial (P : Params) :
     · exact absurd h (by simp [ABAState.initial])
     · exact absurd h (by simp [ABAState.initial])
 
-/-- The initial abstract state is a lazy twin of the initial hybrid state. -/
+/-- The initial abstract state is a twin of the initial hybrid state. -/
 theorem Abs.initial (P : Params) :
     Abs P (fun _ => GBCA.SpecState.initial P.n) (ABAState.initial P)
       (fun _ => WCC.SpecState.initial P.n) (SpecState.initial P.n) where
   F_eq := rfl
   ret_eq := fun _ => rfl
-  coin_bot := rfl
-  phase := Or.inl ⟨rfl, rfl, fun _ => rfl,
-    fun id b h => absurd h (by simp [ABAState.initial])⟩
+  mode_idle := rfl
+  phase := Or.inl ⟨rfl, fun id b h => absurd h (by simp [ABAState.initial])⟩
 
 end ABA
 end PLTS

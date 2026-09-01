@@ -17,7 +17,7 @@ file are the source blueprint's. The encoding follows the
 source blueprint; where the source blueprint departs from ABDY22 the encoding inherits
 the departure, with the single exception of §1.
 
-**The D-registry is elsewhere.** The catalogued deviations — D1, D3–D5, D8–D20, D12
+**The D-registry is elsewhere.** The catalogued deviations — D1, D4, D5, D8–D21, D12
 refined to D12′ — are cited at the point of use in the ABA module docstrings and glossed
 one by one in the blueprint chapter (the Deviations paragraph of
 `blueprint/src/content.tex`), which is the registry of record.
@@ -111,14 +111,21 @@ sender's inbox row unconditionally.
 
 ## 4. Source defects the encoding does not reproduce
 
-- **TS 1 violates Agreement** without the rule-7 re-propose guard and the papers'
-  Validity without the rule-4 support guard; both counterexample traces are in
-  `Spec.lean`'s module docstring (D3 at lines 36–43, D13 at 15–35), the second with the
-  `decide` witness at `Spec.lean:247–250` — the support guard failing on inputs
-  `1,0,0,0` at `n = 4, f = 1`.
+- **TS 1 violates Agreement and the papers' Validity.** The source's re-proposal rule
+  fires with `val` already written, so the unanimity rule can overwrite it and one run
+  returns `v` and then `1 − v`; and the free bind choice together with that same
+  re-proposal carries a bit input only by a later-corrupted process through to a return.
+  `Spec.lean` reproduces neither rule. `PLTS.ABA.SpecStep.decide` is the sole writer of
+  `val` and fires only from `val = ⊥`, so the decision value is written once and
+  Agreement is structural (`PLTS.ABA.SpecInv.val_stable`); and it carries the D13 support
+  guard `PLTS.ABA.SuppOK` beside the quorum, which is where the Validity trace dies —
+  the counterexample check closing `Spec.lean` records it, with inputs `1,0,0,0` at
+  `n = 4, f = 1` and the sole `1`-inputter corrupted leaving one supporter of `1` against
+  the `f + 1 = 2` the guard demands. The six-rule shape this leaves, with the control mode
+  carrying the flip, is deviation **D21**.
 - **TS 2's singular binding witness** (`∃ id ∉ F, call[id] = b`, source p. 19) loses
   provenance one level down, and `hybrid` over it violates Validity; the
-  deterministic trace is in `GBCASpec.lean`'s docstring (the D14 entry, lines 65–75).
+  deterministic trace is in `GBCASpec.lean`'s module docstring, under D14.
   Both TS 1 defects and this one are annotated in the source blueprint's TeX
   (`Leslie/blueprint/src/sections/Specification.tex`, red notes at the affected
   rules). D14 and D15
@@ -129,10 +136,10 @@ sender's inbox row unconditionally.
   return `(b, X)` and `(b′, X′)` then `b = 0 ⟹ b′ ≠ 1` and `X = A ⟹ X′ ≠ ⊥`" (p. 6),
   with `⊥` in a grade slot ranging over `{A, B, C}`. It reads as grade `C`, and is
   realized as the `grade` latch's `A`/`C` exclusivity, the `hg` guards of
-  `SpecStep.retA` and `SpecStep.retC`.
+  `PLTS.ABA.GBCA.Step.retA` and `PLTS.ABA.GBCA.Step.retC`.
 - **TS 1's `Initial` clause names an undeclared field** `out` (source p. 18), absent
-  from the same system's `State` line. It is omitted, and `Spec.lean`'s module
-  docstring records the omission.
+  from the same system's `State` line. It is omitted: `PLTS.ABA.SpecState` declares
+  `input`, `ret`, `F`, `val` and `mode`, and nothing else.
 
 ## 5. Scope boundaries
 

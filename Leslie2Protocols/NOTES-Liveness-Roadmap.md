@@ -17,20 +17,31 @@ with probability at least `1 − g(ε, δ_f)` — in general.
 The failure mass is in the encoding, not in the statement of the goal. Both coin
 resolutions of the development follow `ABA.Params.wccPMF` (`ABA/Params.lean`), which puts
 mass `δ_f` (the Lean field `Params.δ`, `δ_f` in the blueprint) on the outcome `dead`: the
-coin resolves without delivering. In TS 3 that outcome is absorbing — `Step.flip` fires
-once per instance and `Step.ret` has a positive guard (`ABA/WCCSpec.lean:91,97`) — so the
+coin resolves without delivering. In TS 3 that outcome is absorbing — `WCC.Step.flip`
+fires once per instance and `WCC.Step.ret` has a positive guard — so the
 processes awaiting a `dead` round's return never return, in any extension, under any
 scheduler. A single such round therefore strands positive mass, and no fairness
 assumption recovers it. The honest target carries the failure mass.
 
-The function `g` is left open here. Each round is a race between the `δ_f` failure mass
-and a decision: a resolution matches the bound bit with probability `ε` and fails to
-deliver with probability `δ_f`, and how those compound over the round sequence depends on
-the fairness constraint chosen and on the round structure the proof exposes. Fixing `g` —
-including whether it is simply `δ_f`, or a ratio of the two masses — is part of the work
-below, not an input to it. What is settled is the shape: `g(ε, 0) = 0`, so the `δ_f = 0`
-instance is exact fair AST, and the safety chain already proved is indifferent to
-`δ_f` either way.
+The function `g` is protocol-side, and its value there is left open. Each round is a race
+between the `δ_f` failure mass and a decision: a resolution matches the round's surviving
+bit with probability `ε` and fails to deliver with probability `δ_f`, and how those
+compound over the round sequence depends on the fairness constraint chosen and on the
+round structure the proof exposes.
+
+The specification pins the target the race is measured against. `ABA.spec` runs that race
+at one point, in the mode loop of §5: from `Mode.idle` a flip locks with probability `ε`
+and kills with probability `δ_f`, the release mass `1 − ε − δ_f` returns to `Mode.idle`,
+and a lock is never discarded. A flip-only scheduler therefore reaches the terminal mode
+`Mode.dead` with probability `δ_f / (ε + δ_f)`, and that is the specification-level bound
+a transfer would carry:
+
+```
+g(ε, δ_f) ≤ δ_f / (ε + δ_f),    g(ε, 0) = 0
+```
+
+so the `δ_f = 0` instance is exact fair AST. The safety chain already proved is
+indifferent to `δ_f` either way.
 
 Both quantifiers of the `δ_f = 0` instance are irreducible (validated against
 `Papers/consensus-src`, which proves fair AST for Ben-Or and graded consensus via ranking
@@ -163,53 +174,50 @@ Ordered by expected value-for-effort:
    both sides must be chosen so that ideal-side actions are fair only under honest
    enablement (state-dependent `fair_labels` — the witness already supports
    state-dependence; the BRB/BCA failure was a modeling choice as much as a theorem gap).
-   The dead-coin asymmetry of §5 is a second constraint on the same markings.
+   The two failure outcomes agree by construction (§5), so the markings have nothing to
+   reconcile on that axis.
 3. **Model unification** (background hygiene): Leslie_LTS's PLTS + adapters are
    step-shape-identical to Leslie2's `System`; its sorried `WeakProbabilistic`/
    `ProbSimulation` layers are subsumed by Leslie2's proven ones. Converging on one
    probabilistic model would let the LTS liveness toolkit and Leslie2's simulation
    stack meet without duplication.
 
-## 5. Design note: the two dead coins under fairness
+## 5. Design note: the two failure outcomes under fairness
 
-The `dead` outcome is encoded twice, and the two encodings are not symmetric. The
-asymmetry is invisible to safety and load-bearing for any fair-inclusion proof.
+The `δ_f` mass is encoded twice, and the two encodings agree. Neither is visible to
+safety; both matter to any fair-inclusion proof.
 
-In TS 3 (`ABA/WCCSpec.lean:91,97`) `dead` is **absorbing**. `Step.flip` requires
-`hv : s.val = .bot`, so an instance resolves once; `Step.ret`'s guard
-`s.val = .top ∨ s.val = .bit b` is positive, so a `dead` instance enables no return in
-any extension.
+In TS 3 the failure outcome is absorbing. `WCC.Step.flip` requires `hv : s.val = .bot`,
+so an instance resolves once, and `WCC.Step.ret`'s guard `s.val = .top ∨ s.val = .bit b`
+is positive, so a resolution at `TVal.dead` enables no return in any extension.
 
-In TS 1 (`ABA/Spec.lean:201,220,228`) `dead` **freezes the round but is re-flippable**.
-Rule 6 is disabled because `TVal.agrees` fails on `dead`, and rule 7 by its
-`hd : s.coin ≠ .dead` conjunct, so the round takes no honest input. Rule 5's own guard —
-every call slot empty, `bind` set — is still satisfied in that state, so a second
-resolution is enabled and can unfreeze the round. Only the Byzantine fill (rule 10,
-`callByzFill`) makes the freeze permanent: it occupies a call slot, which disables rule 5,
-and from `f` corrupted callers alone no quorum is reachable, so rules 3 and 4 never reset
-the slots.
+In TS 1 the same mass drives the control mode `Mode.dead`, which is globally absorbing
+(D17). `PLTS.ABA.SpecStep.coinFlip` is one-shot: its guard `hm : s.mode = .idle` admits it
+only at `Mode.idle`, and its `kill` outcome — mass `δ_f` under `PLTS.ABA.flipPMF` — leaves
+the state at `Mode.dead`. The only other `τ`-rule is `PLTS.ABA.SpecStep.decide`, whose
+guard `hm : s.mode ≠ .dead` excludes exactly that mode. A killed specification therefore
+decides nothing and returns nothing, in any extension, under any scheduler, which is what
+the absorbed TS 3 instance does one level down. The two encodings agree on what a fair
+scheduler can be obliged to do, and no marking has anything to reconcile between them.
 
-Under fairness the two encodings diverge. A fairness marking that counts rule 5 as fair
-obliges every fair scheduler to re-resolve a `dead` round of TS 1, so the specification
-recovers the `δ_f` mass that the implementation cannot: behind that round sits a TS 3
-instance already absorbed in `dead`, and no scheduler makes it deliver. The
-implementation would then have a fair-achievable trace distribution — stranded mass on a
-never-returning round — that the specification does not, and fair trace-distribution
-inclusion fails in exactly the direction item 2 of §4 needs it.
+The lock is the symmetric half. `flipPMF` puts mass `ε` on `lock`, whose post-state is
+`Mode.locked`; there `SpecStep.decide` is the only enabled `τ`-rule, since the flip
+demands `Mode.idle` and the quorum that enabled the flip already supplies a supported bit
+(`PLTS.ABA.quorum_exists_suppOK`). A lock is never discarded: at a locked state the one
+internal move a scheduler has is the decision. The release mass `1 − ε − δ_f` returns the
+state to `Mode.idle`, where the flip is enabled again, so a flip-only scheduler runs the
+`ε`-versus-`δ_f` race to absorption and locks with probability `ε / (ε + δ_f)`. That is
+the bound §1 records.
 
-Two repairs are available; this note records both and decides neither.
-
-- **Mark rule 5 unfair.** No fair scheduler is then obliged to re-flip, a `dead` round of
-  TS 1 may stand frozen, and the two systems agree on what a fair scheduler must do. A
-  marking is not part of the step relation, so nothing already discharged about TS 1 is
-  touched.
-- **Make TS 1's `dead` absorbing.** Add a once-per-round flip guard to rule 5 — the
-  analogue of TS 3's `hv` — so that a resolved round is not re-resolved and the two
-  `dead` states agree by construction. This changes the step relation, so the core
-  simulation and the safety chain over TS 1 have to be re-checked against it.
-
-Which is right depends on what the fair-inclusion proof needs from the markings, so the
-choice belongs to that proof rather than to this note.
+**The transfer hook.** The specification names no coin bit. `flipPMF` is `Params.wccPMF`
+pushed forward along a map that forgets which bit was delivered: one bit to `lock`, the
+other bit and the adversarial outcome to `release`, the failure outcome to `kill`. The
+three masses are all the rules read. Reading `lock` as "the coin agreed with the round's
+surviving bit" is accordingly not a component of TS 1 — it is what a liveness refinement
+would supply, as an outcome coupling between the concrete flip and `flipPMF`: the
+agree-outcome, of mass `ε`, coupled to `lock`; the disagree- and adversarial outcomes to
+`release`; the failure outcome, of mass `δ_f`, to `kill`. Safety needs none of it, which
+is why the specification carries the mode and not the bit.
 
 ## 6. Design note: the GBCA kill under fairness
 
@@ -233,8 +241,9 @@ implementation side could repair it.
 The `dead = ∅` guard removes those states rather than the obligation. Every reachable state
 has `dead ∈ {∅, {b}}` (`GBCASafety.dead_card_le_one`), the surviving bit stays alive, and
 the A-latch still admits `A`- and `B`-returns. The resolution is structural, so no marking
-has anything to decide here. That is the opposite of TS 1's rule 5 (§5), where the two
-repairs on the table each cost something a proof depends on and the choice is open.
+has anything to decide here. The same holds of TS 1's flip (§5), where the one-shot guard
+and the absorbing `Mode.dead` settle the question in the step relation rather than in a
+marking.
 
 **Termination proof sketch for the specification as encoded.** Assume the `n − f` honest
 processes have called, so the quorum guard holds and holds forever (the count is monotone

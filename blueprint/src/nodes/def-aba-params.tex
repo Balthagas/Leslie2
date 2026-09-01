@@ -2,7 +2,7 @@
   \label{def:aba-params}
   \lean{PLTS.ABA.Params}\lean{PLTS.ABA.Params.wccPMF}\leanok
   The parameters: $n$ processes, at most $f$ corrupted with $3f < n$, coin goodness $\varepsilon$, and coin failure probability $\failmass$, subject to $2\varepsilon + \failmass \le 1$; the Lean field carrying $\failmass$ is named $\delta$.
-  One distribution resolves both coins of the case study, that of rule~5 of Transition System~1 and that of the coin-resolution rule \leandeclnamed{flip}{PLTS.ABA.WCC.Step.flip}:
+  One distribution resolves both coins of the case study, the coin-resolution rule \leandeclnamed{flip}{PLTS.ABA.WCC.Step.flip} of Transition System~3 reading it directly and rule~3 of Transition System~1 reading it through the map that forgets the bit (D21):
   \[
     \mathrm{wccPMF} \ =\ \varepsilon \cdot \delta(0) \ +\
       \varepsilon \cdot \delta(1) \ +\

@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Spec
+import Leslie2Protocols.ABA.Labels
 import Leslie2Protocols.Framework.IdleFamily
 
 /-!
@@ -17,6 +17,10 @@ have called, `val` resolves by `wccPMF` — each bit with probability `ε` (all
 correct processes receive that bit), the failure outcome with probability `δ`,
 and `⊤` with the remaining mass (the adversary controls per-process return
 values).
+
+The coin's value domain `ABA.TVal` is declared here, together with the map
+`ABA.CoinOutcome.toTVal` that sends a `wccPMF` outcome to the value the
+resolution writes.
 
 Deviations: the `guess` label is omitted (D4 — it exists solely for the
 out-of-scope Unpredictability property), and `fail` is the determinised
@@ -40,6 +44,34 @@ label.
 
 namespace PLTS
 namespace ABA
+
+/-- A `⊤`-completed value: `⊥`, `⊤`, a bit, or a failed resolution. The value
+domain of the weak common coin, written by `WCC.Step.flip` and read by
+`WCC.Step.ret`. -/
+inductive TVal : Type
+  /-- Unresolved (`⊥`). -/
+  | bot
+  /-- Adversarial outcome (`⊤`): every process may receive either bit. -/
+  | top
+  /-- The common bit `b`. -/
+  | bit (b : Bool)
+  /-- Failed resolution: the coin resolved without delivering, so no process
+  ever receives a value. Distinct from `⊥` (not yet resolved) and from `⊤`
+  (delivered, with the adversary choosing each process's bit). -/
+  | dead
+  deriving DecidableEq, Repr
+
+/-- The `TVal` recorded by a coin resolution with the given outcome: the common
+bit, `⊤` for the adversarial outcome, and `dead` for delivery failure. -/
+def CoinOutcome.toTVal : CoinOutcome → TVal
+  | .bit b => .bit b
+  | .adv => .top
+  | .dead => .dead
+
+/-- `toTVal` is injective: the four coin outcomes land on four distinct
+`TVal`s. -/
+theorem CoinOutcome.toTVal_injective : Function.Injective CoinOutcome.toTVal := by
+  intro a b h; cases a <;> cases b <;> simp_all [CoinOutcome.toTVal]
 
 namespace WCC
 

@@ -1,7 +1,7 @@
 % ABA specification, Transition System 1 rule graph (PLTS.ABA.SpecStep).
-% Six control states keyed on (bind, coin, val). Rule 5 is drawn as a
-% probabilistic branch: the undirected stem carries the tau-step, and the four
-% outcome edges carry the wccPMF masses.
+% Four control states keyed on (mode, val). Rule 3 is drawn as a
+% probabilistic branch: the undirected stem carries the tau-step, and the
+% three outcome edges carry the flip masses.
 \begin{tikzpicture}[
     ->, >={Stealth[round]}, auto, semithick, on grid,
     every state/.style={draw, minimum size=1.15cm, align=center, font=\small},
@@ -9,42 +9,30 @@
     lbl/.style={font=\footnotesize, align=center, fill=white, inner sep=1.5pt},
     plbl/.style={font=\footnotesize, align=center, fill=white, inner sep=1.5pt}]
 
-  \node[state, initial, initial text={}] (unb) at (0,0)      {unbound\\$bind{=}\bot$};
-  \node[state]                           (bnd) at (4.4,0)    {bound\\$coin{=}\bot$};
-  \node[branch]                          (br)  at (6.8,0)    {};
-  \node[state]                           (dif) at (9.8,2.1)  {coin differs\\$coin{=}1{-}bind$\\or $coin{=}\top$};
-  \node[state]                           (agr) at (9.8,-2.1) {coin agrees\\$coin{=}bind$};
-  \node[state]                           (dea) at (9.8,-5.6) {coin dead\\$coin{=}\dagger$\\round frozen};
-  \node[state, accepting]                (dec) at (4.4,-4.7) {decided\\$val$ set};
+  \node[state, initial, initial text={}] (idl) at (0,0)      {idle\\$val{=}\bot$};
+  \node[branch]                          (br)  at (3.9,0)    {};
+  \node[state]                           (dea) at (7.4,2.0)  {dead\\terminal};
+  \node[state]                           (loc) at (7.4,-2.0) {locked};
+  \node[state, accepting]                (dec) at (3.9,-4.5) {decided\\$val$ set};
 
   % self-loops
   \path
-    (unb) edge[loop above, looseness=5]
-      node[lbl, above]{1 \texttt{callSet}\\2 \texttt{callLoop}} (unb)
-    (bnd) edge[loop above, looseness=5]
-      node[lbl, above]{7 \texttt{repropose}} (bnd)
-    (dif) edge[loop above, looseness=5]
-      node[lbl, above]{7 \texttt{repropose}} (dif)
-    (agr) edge[loop below, looseness=5]
-      node[lbl, below]{6 \texttt{adopt}} (agr)
+    (idl) edge[loop above, looseness=5]
+      node[lbl, above]{1 \texttt{callSet}\\2 \texttt{callLoop}} (idl)
     (dec) edge[loop below, looseness=5]
-      node[lbl, below]{8 \texttt{ret}} (dec);
+      node[lbl, below]{5 \texttt{ret}} (dec);
 
-  % binding, then the coin as a probabilistic branch
+  % the flip as a probabilistic branch
+  \draw[-] (idl) -- node[lbl, above, pos=0.45]{3 \texttt{coinFlip}, $\tau$} (br);
   \path
-    (unb) edge node[lbl, above]{4 \texttt{mixed}} (bnd);
-  \draw[-] (bnd) -- node[lbl, above]{5 \texttt{coinFlip}, $\tau$} (br);
-  \path
-    (br) edge[bend left=10]  node[plbl, left]{$\varepsilon$} (dif)
-    (br) edge[bend right=22] node[plbl, right]{$1{-}2\varepsilon{-}\delta_{\mathrm f}$} (dif)
-    (br) edge[bend left=10]  node[plbl, right]{$\varepsilon$} (agr)
-    (br) edge[bend right=18] node[plbl, left]{$\delta_{\mathrm f}$} (dea);
+    (br) edge[bend right=14] node[plbl, left]{$\delta_{\mathrm f}$ (kill)} (dea)
+    (br) edge[bend left=14]  node[plbl, right]{$\varepsilon$ (lock)} (loc)
+    (br) edge[bend right=55, looseness=1.3]
+      node[plbl, above]{$1{-}\varepsilon{-}\delta_{\mathrm f}$ (release)} (idl);
 
-  % re-binding and the decisions
+  % the decisions
   \path
-    (dif) edge[bend right=30] node[lbl, above]{4 \texttt{mixed}} (bnd)
-    (agr) edge[bend left=12]  node[lbl, below]{3 \texttt{unanim}} (dec)
-    (bnd) edge                node[lbl, right]{3 \texttt{unanim}} (dec);
-  \draw[->] (unb) to[bend right=28]
-    node[lbl, below]{3 \texttt{unanim} (direct)} (dec);
+    (loc) edge[bend left=12]  node[lbl, below]{4 \texttt{decide}} (dec);
+  \draw[->] (idl) to[bend right=28]
+    node[lbl, below]{4 \texttt{decide}} (dec);
 \end{tikzpicture}

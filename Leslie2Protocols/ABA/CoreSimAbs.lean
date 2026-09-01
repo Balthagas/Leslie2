@@ -9,13 +9,13 @@ import Leslie2Protocols.ABA.CoreSimInv
 /-!
 # The core simulation's stutter rows: `Abs` preservation, and the assembly
 
-Stage C of the proof that `coreR` is a simulation relation
-(`DESIGN-CoreSim.md`), and the assembly of Stages A–C.
+Stage C of the proof that `coreR` is a simulation relation, and the assembly
+of Stages A–C.
 
 * **Stage C** — `Abs` preservation for the stutter rows. The abstract twin is
-  ultra-lazy (D16): it is untouched by every hidden row and moves only at the
-  visible ones (`callABA`/`retABA`/`fail`, handled in `CoreSim.lean`). All six
-  lemmas are instances of one frame argument, `Abs.frame`.
+  untouched by every hidden row and moves only at the visible ones
+  (`callABA`/`retABA`/`fail`, handled in `CoreSim.lean`). All six lemmas are
+  instances of one frame argument, `Abs.frame`.
 * **Assembly** — `Inv.step`: `Inv` is preserved by every `hybrid` step,
   dispatching on the label class through Stage A's inversion lemmas and calling
   the matching Stage B helper (`CoreSimInv.lean`) in each case.
@@ -30,11 +30,11 @@ variable {P : Params}
 
 /-! ### Stage C: `Abs` preservation for the stutter rows
 
-Every one of `hybrid_step_tau`'s seven disjuncts is answered by a stutter — the
-ultra-lazy twin (D16) is untouched by every hidden row and only moves at the
-visible rows (`callABA`/`retABA`/`fail`), handled in `CoreSim.lean`. All six
-lemmas below are instances of a single frame argument: `Abs` inspects only `F`,
-the per-process `input`/`returned` projections, and the `g`-side `A`-lock
+Every one of `hybrid_step_tau`'s seven disjuncts is answered by a stutter: the
+twin is untouched by every hidden row and only moves at the visible rows
+(`callABA`/`retABA`/`fail`), handled in `CoreSim.lean`. All six lemmas below
+are instances of a single frame argument: `Abs` inspects only `F`, the
+per-process `input`/`returned` projections, and the `g`-side `A`-lock
 certificate — and each row preserves all three. -/
 
 /-- `Abs` transfers along any frame that preserves `F`, the per-process
@@ -47,13 +47,12 @@ theorem Abs.frame {P : Params} {g g' : ℕ → GBCA.SpecState P.n} {c c' : ABASt
     (hAF : AbsFrame P g g' c c') :
     Abs P g' c' w' a := by
   refine ⟨hA.F_eq.trans hF.symm, fun id => (hA.ret_eq id).trans (hret id).symm,
-    hA.coin_bot, ?_⟩
-  rcases hA.phase with ⟨hb, hv, hcall, hghost⟩ | ⟨v, hb, hv, hcall, ⟨r, hcv⟩, hpin⟩
-  · exact Or.inl ⟨hb, hv, fun id => (hcall id).trans (hin id).symm,
-      fun id b h => hghost id b (by rw [← hin id]; exact h)⟩
-  · exact Or.inr ⟨v, hb, hv, hcall, hAF.1 r v hcv, hAF.2 v ⟨r, hcv⟩ hpin⟩
+    hA.mode_idle, ?_⟩
+  rcases hA.phase with ⟨hv, hghost⟩ | ⟨v, hv, ⟨r, hcv⟩, hpin⟩
+  · exact Or.inl ⟨hv, fun id b h => hghost id b (by rw [← hin id]; exact h)⟩
+  · exact Or.inr ⟨v, hv, hAF.1 r v hcv, hAF.2 v ⟨r, hcv⟩ hpin⟩
 
-/-- `Abs` never reads `w`: the twin never fires rule 5. -/
+/-- `Abs` never reads `w`: the twin never fires `SpecStep.coinFlip`. -/
 theorem Abs.w_swap {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAState P}
     {w w' : ℕ → WCC.SpecState P.n} {a : SpecState P.n} (hA : Abs P g c w a) :
     Abs P g c w' a :=

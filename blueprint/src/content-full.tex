@@ -304,12 +304,11 @@ Algorithm~$k$'' and ``ABDY22's Algorithm~$k$''.
 
 \paragraph{Deviations.}
 The encodings depart from~\cite{LeslieBP} in catalogued ways.
-Each departure carries a label D1--D20 and is cited at the point where it
+Each departure carries a label D1--D21 and is cited at the point where it
 applies.
-The labels D2, D6 and D7 are unused.
+The labels D2, D3, D6 and D7 are unused.
 \begin{itemize}
   \item D1: corruption is a total deterministic transform.
-  \item D3: the re-propose guard on rule~7 of Transition System~1.
   \item D4: the WCC \texttt{guess} label and the \texttt{guess} state field are
     omitted.
   \item D5: a set-based authenticated network with per-sender message pools.
@@ -321,23 +320,34 @@ The labels D2, D6 and D7 are unused.
   \item D12$'$: per-process DECIDED sent and received pools, delivery per
     (receiver, sender, bit), and Byzantine equivocation in those pools.
   \item D13: the Validity provenance apparatus on Transition System~1, namely a
-    ghost record of genuine calls, an $f+1$ support guard on the mixed-bind
-    rule, a provenance guard on re-proposal, and a Byzantine fill rule.
+    ghost record $input$ of the genuine $\mathrm{callABA}$ events and an $f+1$
+    support guard on the decision, rule~4.
+    The record has two writers, the interface rules~1 and~2: rule~1 overwrites
+    while nothing is decided, and rule~2, the unguarded loop that makes
+    $\mathrm{callABA}$ input-enabled, records first-write-wins.
+    Neither write is a claim about who called honestly.
+    The support guard on rule~4 is what turns the record into provenance.
   \item D14: $f+1$ support guards on the GBCA specification's binding, on the
     dissenting bit at its $B$-return, and on each of the two bits at its
     $C$-return.
   \item D15: the $F$-blind form of those support counts, namely $f+1$ distinct
     callers-or-corrupted.
-  \item D16: the two-phase abstract twin used by the core simulation.
+  \item D16: the two-phase abstract twin used by the core simulation, which
+    defers the specification's $\tau$-progress to a single $decide$ step under
+    the first visible return.
+    The overwrite performed by rule~1 of Transition System~1 is what makes the
+    deferral sound: a bit written to the record by the unguarded loop rule
+    stays revisable until a value is decided.
   \item D17: a fourth outcome $\dagger$, of mass $\failmass$, on the single
-    distribution both coin resolutions follow, rule~5 of Transition System~1 and
+    distribution both coin resolutions follow, rule~3 of Transition System~1 and
     rule~3 of Transition System~3.
     It carries the delivery failure of the $\varepsilon$-correct secret-sharing
     coin implementation that the source builds on, where both of the source's
     resolutions range over $\{0,1,\top\}$ only.
     A $\dagger$ round of Transition System~3 enables no return.
-    A $\dagger$ round of Transition System~1 is frozen: no process adopts the
-    bound value and none re-proposes.
+    At Transition System~1 the outcome of mass $\failmass$ is the kill branch of
+    the flip, which drives the system into the terminal mode $dead$.
+    The mode $dead$ enables no $\tau$-rule.
   \item D18: the GBCA implementation transcribes ABDY22's Algorithm~6 in full
     --- six rounds, the message levels INPUT, ECHO, VOTE, BIND and SEAL, and
     the decide conditions of that algorithm --- in place of the source
@@ -393,6 +403,16 @@ The labels D2, D6 and D7 are unused.
     (Theorem~\ref{thm:aba-protocol-composed}), so the safety headline is
     unaffected.
     Liveness is outside the scope of this development.
+  \item D21: Transition System~1 is six rules over the record
+    $\{input, ret, F, val, mode\}$, in place of the source's per-process call
+    row and five-valued coin.
+    The coin is an abstract flip, rule~3, which resolves once per firing into a
+    lock, a release or a kill and names no bit; the mode
+    $mode \in \{idle, locked, dead\}$ it writes is the whole of the round
+    structure the source spreads over a call row, a bound value and a coin
+    field.
+    The decision is a single guarded write, rule~4, of a bit carrying $f+1$
+    $F$-blind support under an $n-f$ quorum on the recorded inputs.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -413,23 +433,22 @@ The fairness markings bear only on liveness, which is out of scope.
 Write $[n]$ for the identifier set and $F \subseteq [n]$ for the corrupted set.
 The quorum predicate is
 \[
-  |\{ id \in [n] \setminus F : call[id] \neq \bot \} \cup F| \ \geq\ n - f .
+  |\{ id \in [n] \setminus F : input[id] \neq \bot \} \cup F| \ \geq\ n - f .
 \]
-Values range over $\{0,1,\bot,\top,\dagger\}$, the type \leandecl{PLTS.ABA.TVal}, where $\bot$ is unresolved,
-$\top$ is an adversarially resolved outcome, and $\dagger$ is a resolution that
-delivers to no process (D17).
-The cross-domain equality $agrees$, \leandecl{PLTS.ABA.TVal.agrees}, holds of $\bot$ with $\bot$ and of $b$ with
-$b$.
-Both $\top$ and $\dagger$ agree with nothing.
+The value domain of Transition System~3 is $\{0,1,\bot,\top,\dagger\}$, the type
+\leandecl{PLTS.ABA.TVal}, where $\bot$ is unresolved, $\top$ is an adversarially
+resolved outcome, and $\dagger$ is a resolution that delivers to no process
+(D17).
 
 Every transition rule is displayed as a guard above a labelled step into an
 explicit distribution.
 A Dirac target and a genuinely probabilistic one are therefore distinguishable
 at sight.
-Exactly two transitions in the whole development are non-Dirac: the coin rule
-of Transition System~1 and the coin rule of Transition System~3.
-Each resolves one coin, and both follow the same distribution, displayed in
-Definition~\ref{def:aba-params}.
+Exactly two transitions in the whole development are non-Dirac: the flip of
+Transition System~1 and the coin resolution of Transition System~3.
+Both follow the same distribution, displayed in
+Definition~\ref{def:aba-params}; the flip reads it through the map that
+forgets the bit (D21).
 
 \subsection{Parameters and the shared alphabet}
 
@@ -1117,9 +1136,9 @@ network-adversary PLTS, which owns the corrupted set together with its budget
 and authorises every Byzantine action by the guard $k \in F$ of a component.
 A specification carries no network component at all.
 Its adversarial transitions are bare nondeterministic choices, resolved by the
-scheduler: the Byzantine call fill and the total corruption rule of Transition
-System~1, the adversary-chosen returns under $\top$ at Transition System~3, and
-the disjunct $id \in F$ in the $F$-blind support counts of Transition System~2.
+scheduler: the total corruption rule of Transition System~1, the
+adversary-chosen returns under $\top$ at Transition System~3, and the disjunct
+$id \in F$ in the $F$-blind support counts of Transition Systems~1 and~2.
 Leaving those choices unstructured is sound, because a specification constrains
 from above.
 An unstructured adversary makes the specification more permissive, never less.
@@ -1131,59 +1150,57 @@ obligation.
 
 \input{nodes/def-aba-spec}
 
-The specification has six control states: \emph{unbound} ($bind = \bot$), \emph{bound} ($bind \neq \bot$, $coin = \bot$), \emph{coin differs} ($coin$ is the other bit or $\top$), \emph{coin agrees} ($coin$ is the bound bit), \emph{coin dead} ($coin = \dagger$), and \emph{decided} ($val \neq \bot$).
-Rule 5 (\leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}) is the branch out of \emph{bound}, and it is the only probabilistic transition of the system.
-Its outcomes carry $\varepsilon$, $\varepsilon$, $1-2\varepsilon-\failmass$ and $\failmass$, so a resolution matches the bound bit with probability $\varepsilon$ and fails to deliver with probability $\failmass$ (D17).
-On a match rule 6 (\leandeclnamed{adopt}{PLTS.ABA.SpecStep.adopt}) writes the bound bit into an empty honest slot and rule 7 (\leandeclnamed{repropose}{PLTS.ABA.SpecStep.repropose}) is disabled.
-On a mismatch rule 7 is enabled and rule 6 is disabled.
-On $coin = \dagger$ both are disabled, rule 6 because $\dagger$ agrees with nothing and rule 7 by its $coin \neq \dagger$ conjunct.
-Rule 4 (\leandeclnamed{mixed}{PLTS.ABA.SpecStep.mixed}) binds under a quorum on both bits, with an $f{+}1$-support guard on the bound bit.
-Rule 3 (\leandeclnamed{unanim}{PLTS.ABA.SpecStep.unanim}) writes $val \leftarrow\,!b$ when no honest process holds $b$.
+The specification has four control states, keyed on the mode and on whether a value is decided: \emph{idle} ($mode = idle$, $val = \bot$), \emph{locked} ($mode = locked$), \emph{dead} ($mode = dead$) and \emph{decided} ($val \neq \bot$).
+Rule 3 (\leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}) is the branch out of \emph{idle}, and it is the only probabilistic transition of the system.
+Its three outcomes carry $\varepsilon$, $1-\varepsilon-\failmass$ and $\failmass$: the flip locks, leaves the state unchanged, or kills (D17).
+Rule 4 (\leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}) is the sole writer of $val$, and it is the only $\tau$-rule enabled at \emph{locked}.
 Enabledness is wider than the control graph shows.
-Rule 2 fires in every state, rule 3 is also enabled on \emph{coin differs}, and rules 3 and 5 to 8 remain enabled on \emph{decided}, where rule 3 rewrites $val$ to itself.
-Rule 5 is enabled again on \emph{coin dead}, where the round is still reset and bound, and a second resolution is the only transition that leaves that state.
-The provenance guards on rules 4 and 7 exclude the unanimity-overwrite (D3) and later-corrupted-input (D13) traces.
+Rules 2 and 6 fire in every state, and rule 1 wherever $val = \bot$.
+Rule 4 is enabled at every state with $val = \bot$, $mode \neq dead$ and a quorum of recorded inputs, hence at \emph{idle} as well as at \emph{locked}.
+At \emph{decided} the enabled rules are 2, 5 and 6, and at \emph{dead} they are 1, 2 and 6; neither state enables a $\tau$-rule.
+The guards on rule 4 are the entire constraint on the value decided (D13).
 
-\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification \leandecl{PLTS.ABA.spec}: the six control states and the coin branch of rule 5, whose $\tau$-step is drawn with an undirected stem and one edge per outcome.
-The branch $coin{=}\dagger$ of mass $\failmass$ (D17) freezes the round: rule 6 is disabled because $\dagger$ agrees with nothing, rule 7 by its $coin \neq \dagger$ conjunct, and no quorum is reachable from there.
-The one transition that leaves that state, a second firing of rule 5, is not drawn.
-Rule 9 (\leandeclnamed{fail}{PLTS.ABA.SpecStep.fail}), the total corruption rule (D1), and rule 10 (\leandeclnamed{callByzFill}{PLTS.ABA.SpecStep.callByzFill}), by which a corrupted $id \in F$ fills an empty call slot with no ghost record (D13), are not drawn.}
+\blueprintfig{fig-ts1-rules}{Transition System 1, the ABA specification \leandecl{PLTS.ABA.spec}: the four control states, keyed on the mode, and the flip branch of rule 3, whose $\tau$-step is drawn with an undirected stem and one edge per outcome — lock, release and kill, naming no coin bit.
+A locked flip cannot be discarded: at $locked$ the decision is the only enabled $\tau$-rule.
+The kill branch of mass $\failmass$ (D17) is terminal: $dead$ enables no $\tau$-rule.
+Rules 1 and 2 are drawn on $idle$ alone; rule 1 is enabled wherever no value is decided, rule 2 everywhere; rule 6 (\leandeclnamed{fail}{PLTS.ABA.SpecStep.fail}), the total corruption rule (D1), is not drawn.}
 
 \noindent\textbf{Transition System 1: the ABA specification.}
 
 \medskip
 \noindent\textbf{State.} The record \leandecl{PLTS.ABA.SpecState}.
 \begin{itemize}
-  \item $call : [n] \to \{0,1,\bot\}$, the pending round input of each process, $\bot$ when unset.
-  \item $ret : [n] \to \mathbb{B}$, which processes have returned.
-  \item $bind : \{0,1,\bot\}$, the bound value, the write-target of the unanimity and mixed rules.
-  \item $val : \{0,1,\bot\}$, the decision value; once it is a bit, every return carries it.
-  \item $coin : \{0,1,\bot,\top,\dagger\}$, the current coin outcome: $\bot$ until resolved, $\top$ the adversarial one, and $\dagger$ the failed one (D17).
-  \item $F \subseteq [n]$, the corrupted set.
   \item $input : [n] \to \{0,1,\bot\}$, a ghost record of the genuine $\mathrm{callABA}$ events (D13).
+  \item $ret : [n] \to \mathbb{B}$, which processes have returned.
+  \item $F \subseteq [n]$, the corrupted set.
+  \item $val : \{0,1,\bot\}$, the decision value; once it is a bit, every return carries it.
+  \item $mode \in \{idle, locked, dead\}$, the control mode, \leandecl{PLTS.ABA.Mode} (D21).
 \end{itemize}
 \noindent Here $\mathbb{B}$ is the two-element type, written $0,1$ for protocol bits and $\mathrm{false},\mathrm{true}$ for flags.
-The equation $bind = coin$ is the cross-domain equality of $\{0,1,\bot\}$ with $\{0,1,\bot,\top,\dagger\}$: either both sides are $\bot$, or both are the same bit.
-The outcomes $\top$ and $\dagger$ agree with nothing.
+The record carries no per-process call row, no bound value and no coin field: the mode is what the three of them are replaced by (D21).
 The source blueprint's $Initial$ clause mentions an undeclared $out$ field; the field is omitted.
 
 \noindent\textbf{Labels.}
 $\mathrm{callABA}(id,b)$, $\mathrm{retABA}(id,b)$, $\mathrm{fail}(id)$ and $\tau$, for $id \in [n]$ and $b \in \mathbb{B}$.
 
 \noindent\textbf{Input-enabled labels.}
-$\mathrm{callABA}(id,b)$, by the unconditional loop rule~2, and $\mathrm{fail}(id)$, whose rule~9 is total (D1).
+$\mathrm{callABA}(id,b)$, by the unconditional loop rule~2, and $\mathrm{fail}(id)$, whose rule~6 is total (D1).
 
 \noindent\textbf{Initial.}
-$call = \bot^{[n]}$, $ret = \mathrm{false}^{[n]}$, $bind = \bot$, $val = \bot$, $coin = \bot$, $F = \emptyset$ and $input = \bot^{[n]}$, the superscript marking a constant map on $[n]$.
+$input = \bot^{[n]}$, $ret = \mathrm{false}^{[n]}$, $F = \emptyset$, $val = \bot$ and $mode = idle$, the superscript marking a constant map on $[n]$.
 
 \medskip
 \noindent In each rule $id \in [n]$ and $b \in \mathbb{B}$ are parameters, and $s$ is the source state.
+Write $quorum(s)$ for the quorum predicate of the Notation paragraph, read on $input$, and $SuppOK(s,b)$ for
+\[ \bigl|\{ id \in [n] : input[id] = b \ \vee\ id \in F \}\bigr| \ \geq\ f + 1 , \]
+the $f{+}1$ $F$-blind support of $b$ (D13, D15), \leandecl{PLTS.ABA.SuppOK}.
 
 \medskip
-\noindent\textbf{1.} \leandeclnamed{callSet}{PLTS.ABA.SpecStep.callSet} (D13).
-Guard $call[id] = \bot$ and $bind = \bot$.
+\noindent\textbf{1.} \leandeclnamed{callSet}{PLTS.ABA.SpecStep.callSet} (D13, D16).
+Guard $val = \bot$.
 \[ s \xrightarrow{\;\mathrm{callABA}(id,b)\;}
-   \delta\bigl(s[\,call[id] := b,\ input[id] := b\,]\bigr) \]
+   \delta\bigl(s[\,input[id] := b\,]\bigr) \]
+The write is an overwrite: while nothing is decided the record is revisable, so it holds the bit of the last such call.
 
 \noindent\textbf{2.} \leandeclnamed{callLoop}{PLTS.ABA.SpecStep.callLoop} (D13).
 No guard.
@@ -1193,56 +1210,28 @@ No guard.
      \delta(s) & \text{otherwise.}
    \end{cases} \]
 
-\noindent\textbf{3.} \leandeclnamed{unanim}{PLTS.ABA.SpecStep.unanim}.
-Guard
-\[ \begin{aligned}
-     &\bigl|\{id \in [n]\setminus F \mid call[id] \neq \bot\} \cup F\bigr| \ge n - f,\\
-     &\forall\, id \in [n]\setminus F,\ call[id] \neq b.
-   \end{aligned} \]
-\[ s \xrightarrow{\;\tau\;}
-   \delta\bigl(s[\,call := \bot^{[n]},\ bind := 1-b,\ val := 1-b,\ coin := \bot\,]\bigr) \]
-
-\noindent\textbf{4.} \leandeclnamed{mixed}{PLTS.ABA.SpecStep.mixed} (D13).
-Guard
-\[ \begin{aligned}
-     &\bigl|\{id \in [n]\setminus F \mid call[id] \neq \bot\} \cup F\bigr| \ge n - f,\\
-     &\exists\, id \in [n]\setminus F,\ call[id] = 1,\\
-     &\exists\, id \in [n]\setminus F,\ call[id] = 0,\\
-     &\bigl|\{id \in [n] \mid call[id] = b\}\bigr| \ge f + 1.
-   \end{aligned} \]
-\[ s \xrightarrow{\;\tau\;}
-   \delta\bigl(s[\,call := \bot^{[n]},\ bind := b,\ coin := \bot\,]\bigr) \]
-
-\noindent\textbf{5.} \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip} (D17).
-Guard $call = \bot^{[n]}$ and $bind \neq \bot$.
+\noindent\textbf{3.} \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip} (D17, D21).
+Guard $mode = idle$, $val = \bot$ and $quorum(s)$.
 \[ \begin{aligned}
      s \xrightarrow{\;\tau\;}\ \
-     &\varepsilon\cdot\delta\bigl(s[\,coin := 0\,]\bigr)
-     + \varepsilon\cdot\delta\bigl(s[\,coin := 1\,]\bigr)\\
-     &{}+ (1-2\varepsilon-\failmass)\cdot\delta\bigl(s[\,coin := \top\,]\bigr)
-     + \failmass\cdot\delta\bigl(s[\,coin := \dagger\,]\bigr)
+     &\varepsilon\cdot\delta\bigl(s[\,mode := locked\,]\bigr)
+     + (1-\varepsilon-\failmass)\cdot\delta(s)\\
+     &{}+ \failmass\cdot\delta\bigl(s[\,mode := dead\,]\bigr)
    \end{aligned} \]
+The three masses are the image of the coin distribution of Definition~\ref{def:aba-params} under the map that forgets the bit, \leandecl{PLTS.ABA.flipPMF}: one bit goes to the lock, the other bit and the adversarial outcome to the release, and $\dagger$ to the kill.
+No rule of the system reads a coin bit.
 
-\noindent\textbf{6.} \leandeclnamed{adopt}{PLTS.ABA.SpecStep.adopt}.
-Guard $call[id] = \bot$ and $bind = coin$.
-\[ s \xrightarrow{\;\tau\;} \delta\bigl(s[\,call[id] := bind\,]\bigr) \]
+\noindent\textbf{4.} \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide} (D13).
+Guard $val = \bot$, $SuppOK(s,b)$, $mode \neq dead$ and $quorum(s)$.
+\[ s \xrightarrow{\;\tau\;}
+   \delta\bigl(s[\,val := b,\ mode := idle\,]\bigr) \]
 
-\noindent\textbf{7.} \leandeclnamed{repropose}{PLTS.ABA.SpecStep.repropose} (D3, D13, D17).
-Guard
-\[ \begin{aligned}
-     &call[id] = \bot,\quad bind \neq coin,\quad coin \neq \dagger,\\
-     &\bigl(val = \bot \wedge (input[id] = b \vee bind = b)\bigr) \vee val = b.
-   \end{aligned} \]
-\[ s \xrightarrow{\;\tau\;} \delta\bigl(s[\,call[id] := b\,]\bigr) \]
-The conjunct $coin \neq \dagger$ is the freeze of D17: a resolution that delivers to no process leaves a process nothing to re-propose from.
-
-\medskip
-\noindent\textbf{8.} \leandeclnamed{ret}{PLTS.ABA.SpecStep.ret}.
+\noindent\textbf{5.} \leandeclnamed{ret}{PLTS.ABA.SpecStep.ret}.
 Guard $val = b$ and $ret[id] = \mathrm{false}$.
 \[ s \xrightarrow{\;\mathrm{retABA}(id,b)\;}
    \delta\bigl(s[\,ret[id] := \mathrm{true}\,]\bigr) \]
 
-\noindent\textbf{9.} \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} (D1).
+\noindent\textbf{6.} \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} (D1).
 No guard.
 \[ s \xrightarrow{\;\mathrm{fail}(id)\;}
    \begin{cases}
@@ -1251,55 +1240,50 @@ No guard.
      \delta(s) & \text{otherwise.}
    \end{cases} \]
 
-\noindent\textbf{10.} \leandeclnamed{callByzFill}{PLTS.ABA.SpecStep.callByzFill} (D13).
-Guard $id \in F$ and $call[id] = \bot$.
-\[ s \xrightarrow{\;\tau\;} \delta\bigl(s[\,call[id] := b\,]\bigr) \]
-
 \medskip
-\noindent The guards on rules~4 and~7 are load-bearing.
-Without the rule-7 guard the specification violates Agreement.
-After a unanimous-$v$ round sets $val := v$ and a process returns $v$, an arbitrary re-proposal of $1-v$ lets rule~3 overwrite $val := 1-v$, and a second process returns $1-v$.
-Without the rule-4 support guard the specification violates Validity.
-At $n = 4$, $f = 1$ with inputs $1,0,0,0$ the value $1$ binds off its sole holder, that holder is then corrupted, and $1$ is re-proposed everywhere and decided, yet every never-corrupted process inputs $0$.
+\noindent Two of the four guards on rule~4 are load-bearing for safety.
+Without $val = \bot$ the specification violates Agreement: a second firing rewrites the decision value between two returns, and the two returns carry different bits.
+With it, rule~4 being the sole writer of $val$, the decision value is write-once by the shape of the system and not by an invariant.
+Without $SuppOK(s,b)$ the specification violates Validity.
+Take $n = 4$, $f = 1$, the recorded inputs $1,0,0,0$ and the sole holder of $1$ corrupted.
+A decision of $1$ there has every never-corrupted process inputting $0$, and the guard, demanding $f + 1 = 2$ recorded-or-corrupt supporters of $1$, is what rules that trace out.
+The other two guards carry no safety weight.
+The guard $quorum(s)$ is what \leandecl{PLTS.ABA.quorum_exists_suppOK} converts into a supported bit: the supporters of $0$ and the supporters of $1$, each set taken together with $F$, cover the quorum set, so their cardinalities sum to at least $n - f \ge 2f + 1$ and one of the two reaches $f + 1$.
+Rule~4 is therefore enabled wherever rule~3 is.
+The guard $mode \neq dead$ is the freeze of D17: a killed flip takes the decision away with every other $\tau$-rule.
 
 \dynamics{How a decision arises}{%
 Which rule fires is scheduler nondeterminism, resolved by the adversary; the
-coin is the only source of randomness.
-The coin rule is enabled only on a round that is already reset and bound, so
-the bound bit is committed before the coin resolves.
-A coin outcome matching the bound bit has probability $\varepsilon$.
-On such a match the re-propose rule is disabled, since its guard requires
-disagreement, and a fresh call is disabled, since rule~1 requires the round
-unbound.
-Adoption, which writes the bound bit into the call slot, is then the only rule
-that refills the slot of an honest process.
-Corrupted slots may still be filled with either bit by the Byzantine fill rule,
-but the unanimity rule's blocking condition quantifies over honest processes
-only.
-Once a quorum has spoken and no honest process holds the opposite bit,
-unanimity is \emph{enabled}, never forced: the
-scheduler may decline it forever.
-No safety argument therefore uses $\varepsilon$, and the claim that the
-protocol decides with probability $1$ under fair scheduling is a separate
-liveness statement, not proved here.
+flip is the only source of randomness.
+The flip is enabled at $mode = idle$ once the ghost record meets the quorum and
+nothing is decided.
+One firing resolves into exactly one of three outcomes.
+A release leaves the state unchanged, so the flip is enabled again.
+A lock sets $mode := locked$, and there the decision is the only enabled
+$\tau$-rule: the flip asks for $mode = idle$, and the quorum that enabled the
+flip persists, since no rule sets a recorded input back to $\bot$ and no rule
+removes an identifier from $F$, so
+\leandecl{PLTS.ABA.quorum_exists_suppOK} supplies a bit with $f{+}1$ support.
+A lock is therefore never discarded.
+A kill sets $mode := dead$, which enables no $\tau$-rule at all (D17), so a
+killed flip leaves the system with no decision and no return.
 
-With probability $\failmass$ the coin resolves to $\dagger$ instead, and the
-round freezes.
-The round is reset when the coin resolves, so every call slot is empty at that
-point.
-Adoption is disabled, since $\dagger$ agrees with nothing, and re-proposal is
-disabled by its $coin \neq \dagger$ conjunct, so no honest slot is filled
-afterwards either.
-The Byzantine fill rule does not compensate: the quorum count
-$|\{id \in [n]\setminus F : call[id] \neq \bot\} \cup F|$ counts a corrupted
-process through $F$ whether its slot is filled or not.
-That count therefore stays at $|F| \le f$, and $3f < n$ gives $f < n - f$, so
-while the coin reads $\dagger$ neither the unanimity rule nor the mixed bind is
-enabled, and the round produces no bind and no decision.
-The freeze lifts only by a second resolution of the coin, rule~5 asking just
-that the round be reset and bound, which a $\dagger$ outcome leaves true.
-A single Byzantine fill closes that exit too, since rule~5 requires every call
-slot to be empty.
+The three masses read as a liveness statement, which is stated here and not
+proved in Lean.
+Each firing locks with probability $\varepsilon$ and kills with probability
+$\failmass$.
+A run that keeps flipping therefore locks or dies almost surely, and under a
+scheduler that fires nothing but the flip it locks with probability
+$\varepsilon/(\varepsilon+\failmass)$.
+No safety argument uses either mass.
+The decision is \emph{enabled}, never forced, and the scheduler may decline it
+forever, so the claim that the protocol decides with probability $1$ under fair
+scheduling is a separate statement, not proved here.
+
+The flip names no coin bit.
+Reading a lock as the coin agreeing with the round's reference value is an
+outcome coupling carried by a refinement, not a component of Transition
+System~1.
 }
 
 \input{nodes/thm-aba-spec-safe}
@@ -1719,7 +1703,7 @@ simulation and every guard the relation quotes is a guard of a named component.
 
 \input{nodes/thm-aba-hybrid-spec}
 
-\blueprintfig{fig-coresim}{The simulation of Theorem~\ref{thm:aba-hybrid-spec}, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
+\blueprintfig{fig-coresim}{The simulation of Theorem~\ref{thm:aba-hybrid-spec}, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide} step that leads the first $\mathrm{retABA}$, the two together forming one weak step.}
 
 \dynamics{What the simulation buys}{%
 The abstract twin of a state of the hybrid is lazy.
@@ -1730,8 +1714,12 @@ The probabilistic coin row is answered the same way, under the constant
 coupling that sends every outcome of the flip to the one unchanged twin, so the
 twin never fires its own coin rule.
 The entire decision is deferred to the first visible return, where a single
-weak step binds, clears the call row and writes the decision value before the
-return label is emitted.
+weak step writes the decision value before the return label is emitted.
+The twin's mode is $idle$ at every state it reaches, so the decision is
+enabled when that return arrives.
+What licenses the deferral is the overwrite of rule~1 of Transition System~1
+(D16): a bit written to the ghost record by the unguarded loop rule stays
+revisable until a value is decided.
 The payoff comes from the soundness theorem for probabilistic forward
 simulation: every achievable trace distribution of the protocol is an
 achievable trace distribution of the specification.

@@ -21,9 +21,10 @@ The protocol parameters shared by every system in the ABA case study:
   probability `1 - (2 * ε + δ)`, and `dead` — the coin fails and never
   delivers — with probability `δ`.
 
-Both coin resolutions of the case study resolve by `wccPMF`: `ABA.Spec`'s coin
-transition (rule 5) and `WCC.Spec`'s. Each is a `PMF.map` of `wccPMF` into its
-own state update, so the two agree outcome-for-outcome.
+Both coin resolutions of the case study read `wccPMF`. `WCC.Spec`'s flip maps
+it into its own state update. `ABA.Spec`'s flip (`SpecStep.coinFlip`) reads it
+through the bit-forgetting map `ABA.flipPMF`, which keeps the masses
+`ε` / `1 - (ε + δ)` / `δ` and names no bit.
 -/
 
 namespace PLTS

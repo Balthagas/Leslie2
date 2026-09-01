@@ -142,10 +142,9 @@ Transition System~1 is the ABA specification, Transition System~2 the GBCA speci
 A rule is cited by its Lean constructor name, a deviation label in parentheses marks a point where an encoding departs from~\cite{LeslieBP}, and where a node names ABDY22's Algorithm~$k$ it means the numbering of~\cite{ABDY22}.
 
 \paragraph{Deviations.}
-Each departure from~\cite{LeslieBP} carries a label D1--D20, cited at the point where it applies; the labels D2, D6 and D7 are unused.
+Each departure from~\cite{LeslieBP} carries a label D1--D21, cited at the point where it applies; the labels D2, D3, D6 and D7 are unused.
 \begin{itemize}
   \item D1: corruption is a total deterministic transform.
-  \item D3: the re-propose guard on \leandeclnamed{repropose}{PLTS.ABA.SpecStep.repropose} of Transition System~1.
   \item D4: the WCC \texttt{guess} label and the \texttt{guess} state field are omitted.
   \item D5: a set-based authenticated network with per-sender message pools.
   \item D8: protocol sends gated on prior participation.
@@ -153,14 +152,21 @@ Each departure from~\cite{LeslieBP} carries a label D1--D20, cited at the point 
   \item D10: the per-round bookkeeping between the coin return and the next call fused into the $retW$ step, which multicasts DECIDED on an $A$ grade.
   \item D11: Byzantine call- and return-driver rules at each handshake.
   \item D12$'$: per-process DECIDED sent and received pools, delivery per (receiver, sender, bit), and Byzantine equivocation in those pools.
-  \item D13: the Validity provenance apparatus on Transition System~1, namely a ghost record of genuine calls, an $f+1$ support guard on the mixed-bind rule, a provenance guard on re-proposal, and a Byzantine fill rule.
+  \item D13: the Validity provenance apparatus on Transition System~1, namely a ghost record $input$ of the genuine $\mathrm{callABA}$ events and an $f+1$ support guard \leandecl{PLTS.ABA.SuppOK} on the decision.
+    The record has two writers, the interface rules \leandeclnamed{callSet}{PLTS.ABA.SpecStep.callSet} and \leandeclnamed{callLoop}{PLTS.ABA.SpecStep.callLoop}, and the support guard on the decision is what turns it into provenance.
   \item D14: $f+1$ support guards on the GBCA specification's binding, on the dissenting bit at its $B$-return, and on each of the two bits at its $C$-return.
   \item D15: the $F$-blind form of those support counts, namely $f+1$ distinct callers-or-corrupted.
-  \item D16: the two-phase abstract twin used by the core simulation.
-  \item D17: a fourth coin outcome $\dagger$, of mass $\failmass$, on the single distribution both coin resolutions follow, which delivers to no process and freezes the round it resolves.
+  \item D16: the two-phase abstract twin used by the core simulation, which defers the specification's $\tau$-progress to a single \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide} step under the first visible return.
+    The overwrite performed by \leandeclnamed{callSet}{PLTS.ABA.SpecStep.callSet} is what makes the deferral sound: a bit written to the record by the unguarded loop rule stays revisable until a value is decided.
+  \item D17: a fourth outcome $\dagger$, of mass $\failmass$, on the single distribution both coin resolutions follow.
+    At Transition System~3 it is a resolution that delivers to no process.
+    At Transition System~1 it is the kill outcome of the flip, which drives the system into the terminal mode $dead$, and $dead$ enables no $\tau$-rule.
   \item D18: the GBCA implementation transcribes ABDY22's Algorithm~6 in full, six rounds over the message levels INPUT, ECHO, VOTE, BIND and SEAL, in place of the source's four-round compression of it, which elides the SEAL level and takes $f{+}1$ $\mathrm{VOTE}\,v$ receipts as the grade-$1$ witness and thereby violates Binding.
   \item D19: the GBCA specification state carries an exclusion set $dead \subseteq \{0,1\}$, the bits the instance is barred from handing out, in place of the source's bound value $bind \in \{0,1,\bot\}$, which makes Binding negative and monotone.
   \item D20: instance forgetting at the round advance.
+  \item D21: Transition System~1 is six rules over the record $\{input, ret, F, val, mode\}$, in place of the source's per-process call row and five-valued coin.
+    The coin is an abstract flip, \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}, which resolves once per firing into a lock, a release or a kill and names no bit.
+    The decision is a single guarded write, \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}, of a bit carrying $f+1$ $F$-blind support under an $n-f$ quorum on the recorded inputs.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -168,7 +174,6 @@ Two features of~\cite{LeslieBP} are deliberately not encoded: fairness, whose ma
 
 \paragraph{Notation.}
 Write $[n]$ for the identifier set and $F \subseteq [n]$ for the corrupted set.
-Values range over $\{0,1,\bot,\top,\dagger\}$, the type \leandecl{PLTS.ABA.TVal}, where $\bot$ is unresolved, $\top$ is an adversarially resolved outcome and $\dagger$ is a resolution that delivers to no process (D17); the cross-domain equality \leandecl{PLTS.ABA.TVal.agrees} holds of $\bot$ with $\bot$ and of $b$ with $b$ alone.
 
 \subsection{Parameters and the shared alphabet}
 
@@ -229,14 +234,17 @@ The three specification systems locate the adversary differently from the implem
 An implementation pairs corruption-blind processes with an explicit network-adversary PLTS, which owns the corrupted set together with its budget and authorises every Byzantine action by the guard $k \in F$ of a component; a specification carries no network component at all, and its adversarial transitions are bare nondeterministic choices resolved by the scheduler.
 Leaving those choices unstructured is sound because a specification constrains from above: an unstructured adversary makes the specification more permissive, never less, and trace-distribution inclusion asks only that every behaviour of the implementation be matched by some resolution of the specification's nondeterminism.
 
-Transition System~1 is ten rules over the record \leandecl{PLTS.ABA.SpecState}, and its coin rule is the only probabilistic transition of the system.
-Safety is proved by induction over those ten rules under two invariants, one making the decision value write-once and one carrying the provenance of each bind and each decision back to an $F$-blind support; the budget pigeonhole then leaves one supporter never corrupted and ghost-recorded as having called the value, which is the caller Validity names.
+Transition System~1 is six rules over the record \leandecl{PLTS.ABA.SpecState}, and its flip rule is the only probabilistic transition of the system.
+Safety is proved by induction over those six rules under two invariants, one on the state and one reading the label history.
+The decision value $val$ is written once, by one rule guarded on $val = \bot$, and the $f+1$ $F$-blind support of the bit it writes is that same rule's guard, so provenance needs no separate invariant conjunct.
+The budget pigeonhole then leaves one supporter never corrupted and ghost-recorded as having called the value, which is the caller Validity names.
 See \leanmodule{Leslie2Protocols/ABA/Spec} and \leanmodule{Leslie2Protocols/ABA/SpecSafety}.
 
 \input{nodes-min/def-aba-spec}
 
-\blueprintfig{fig-ts1-rules}{Transition System 1, the repaired ABA specification \leandecl{PLTS.ABA.spec}: the six control states and the coin branch of \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}, whose $\tau$-step is drawn with an undirected stem and one edge per outcome.
-The total corruption rule \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} (D1) and the rule \leandeclnamed{callByzFill}{PLTS.ABA.SpecStep.callByzFill}, by which a corrupted $id \in F$ fills an empty call slot with no ghost record (D13), are not drawn.}
+\blueprintfig{fig-ts1-rules}{Transition System 1, the ABA specification \leandecl{PLTS.ABA.spec}: the four control states, keyed on the mode, and the flip branch of \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}, whose $\tau$-step is drawn with an undirected stem and one edge per outcome — lock, release and kill, naming no coin bit.
+The state $dead$ enables no $\tau$-rule.
+Rules 1 and 2 are drawn on $idle$ alone; rule 1 is enabled wherever no value is decided, rule 2 everywhere; the total corruption rule \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} (D1) is not drawn.}
 
 \input{nodes-min/thm-aba-spec-safe}
 
@@ -259,6 +267,7 @@ The $\varepsilon$-Goodness assumption is inert for what is proved, since $\dagge
 \input{nodes-min/thm-gbca-spec-validity}
 
 The WCC instance, over \leandecl{PLTS.ABA.WCC.SpecState}, resolves its coin once into four outcomes, and that resolution is the second and last non-Dirac transition of the development.
+Its value domain is \leandecl{PLTS.ABA.TVal}, ranging over $\{0,1,\bot,\top,\dagger\}$, where $\bot$ is unresolved, $\top$ is an adversarially resolved outcome and $\dagger$ is a resolution that delivers to no process (D17).
 See \leanmodule{Leslie2Protocols/ABA/WCCSpec}.
 
 \input{nodes-min/def-aba-wcc-spec}
@@ -316,7 +325,7 @@ See \leanmodule{Leslie2Protocols/ABA/ABAState} and \leanmodule{Leslie2Protocols/
 
 \input{nodes-min/thm-aba-hybrid-spec}
 
-\blueprintfig{fig-coresim}{The simulation of Theorem~\ref{thm:aba-hybrid-spec}, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single $\mathrm{decide\_burst}$ weak step aligned under the first $\mathrm{retABA}$.}
+\blueprintfig{fig-coresim}{The simulation of Theorem~\ref{thm:aba-hybrid-spec}, \leandecl{PLTS.ABA.coreSim}: the two-phase abstract twin, its stutter answering every concrete row --- including the probabilistic coin flip --- under a constant coupling, and the single \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide} step that leads the first $\mathrm{retABA}$, the two together forming one weak step.}
 
 \subsection{The main theorems}
 

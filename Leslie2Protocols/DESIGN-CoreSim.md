@@ -4,10 +4,12 @@ Companion design document to the Lean proof in `ABA/CoreSimRel.lean` (relation +
 invariant), `ABA/CoreSimInv.lean` (step inversion and invariant preservation),
 `ABA/CoreSimAbs.lean` (the stutter rows and the assembly),
 `ABA/CoreSimBurst.lean` (abstract τ-burst kit), and `ABA/CoreSim.lean`
-(the per-row simulation proof). The `coreSim` proof prose in
-`blueprint/src/content.tex` condenses this document. The spec-level repairs the simulation
-depends on are labelled D13/D14/D15 (Validity provenance) and D12′ (DECIDED
-equivocation).
+(the per-row simulation proof). It is the narrative account of that proof: what the
+relation is, why it has the shape it has, and how each class of concrete step is answered.
+Each Lean file's module docstring is the account of record for its own contents. The
+`coreSim` proof prose in `blueprint/src/content.tex` condenses this document. The
+spec-level repairs the simulation depends on are labelled D13/D14/D15 (Validity
+provenance) and D12′ (DECIDED equivocation).
 
 ## Systems
 
@@ -33,39 +35,40 @@ components are read as one object `c : ABAState := (C, A)` through the accessors
 names them, so the relation reads the hybrid state with no change of system.
 Abstract state: `a : ABA.SpecState`.
 
-## The relation: the ultra-lazy two-phase twin (deviation D16)
+## The relation: the lazy two-phase twin (deviation D16)
 
 `coreRel := diracRel R₀` with `R₀ (g,(c,w)) a := Inv (g,c,w) ∧ Abs (g,c,w) a` — all
 randomness couples outcome-to-outcome, so the abstract side stays Dirac.
 
-The twin is **ultra-lazy** and **never-flipping**. It never fires rule 5, so its coin
-is permanently `⊥` (field `coin_bot`); with `TVal.agrees (some u) ⊥` false the rule-7
-filler stays available at every post-bind moment and every concrete coin-flip row
-couples to a stutter. And it never binds *between* rows: it occupies one of two phases,
-keyed on `a.val`, and moves only at the visible `retABA` that opens phase 2.
+The twin is **lazy** and **never-flipping**. It never fires `SpecStep.coinFlip`, so its
+mode is `Mode.idle` at every state it reaches (field `mode_idle`), `SpecStep.decide` is
+enabled throughout, and every concrete coin-flip row couples to a stutter. And it never
+decides *between* rows: it occupies one of two phases, keyed on `a.val`, and crosses from
+the first to the second at the visible `retABA` that opens phase 2.
 
 ### `Abs` fields (`CoreSimRel.lean`)
 
 - `F_eq : a.F = c.F`
 - `ret_eq : ∀ id, a.ret id = (c.procs id).returned`
-- `coin_bot : a.coin = ⊥` (the twin never fires rule 5)
+- `mode_idle : a.mode = .idle` (the twin never fires `SpecStep.coinFlip`)
 - `phase` — the two-phase disjunction on `a.val`:
-  - **Phase 1** (pre-first-return): `a.bind = none ∧ a.val = none`, the abstract call
-    row mirrors the concrete write-once external inputs
-    (`∀ id, a.call id = (c.procs id).input`), and the ghost is synced on every committed
-    input (`∀ id b, (c.procs id).input = some b → a.input id = some b`).
-  - **Phase 2** (post-first-return): `∃ v, a.bind = some v ∧ a.val = some v`, the board
-    is clear (`∀ id, a.call id = none`), `v` is permanently certified by a concrete
-    `A`-lock (`∃ r, ACert P g c r v` — § Certificates), and every honest holder of an
-    `A`-decision names `v` (`∀ j b', j ∉ c.F → AHolder P c j b' → b' = v`, the `F`-free
-    universal that survives corruption of the original witnesses).
+  - **Phase 1** (pre-first-return): `a.val = none`, and the ghost record is synced on
+    every committed input
+    (`∀ id b, (c.procs id).input = some b → a.input id = some b`). The clause is
+    one-way: it constrains `a.input` only at the slots where the concrete input is
+    committed, and says nothing about the others.
+  - **Phase 2** (post-first-return): `∃ v, a.val = some v`, `v` is permanently certified
+    by a concrete `A`-lock (`∃ r, ACert P g c r v` — § Certificates), and every honest
+    holder of an `A`-decision names `v` (`∀ j b', j ∉ c.F → AHolder P c j b' → b' = v`,
+    the `F`-free universal that survives corruption of the original witnesses).
 
-Phase 1 banks each genuine `callABA` with rule 1, whose unconditional ghost overwrite
-keeps `a.input` in step with the concrete inputs; the twin stays fully unbound and
-answers every hidden row with a stutter. The single `retABA` answer runs the phase-1
-decide burst (§ Row dispositions), which binds, fills, decides, and clears the board in
-one τ-tail, landing the twin in phase 2. From there `a.val` pins the decided value for
-good, so every later row is a stutter or a direct rule-8 return.
+Phase 1 banks each genuine `callABA` with `SpecStep.callSet`, whose ghost overwrite —
+licensed by the guard `val = ⊥` — restores the sync however much junk a concrete
+self-loop has banked through `SpecStep.callLoop`. The twin stays undecided and answers
+every hidden row with a stutter. The single `retABA` answer runs `SpecStep.decide` as the
+τ-tail leading the return (§ Row dispositions), landing the twin in phase 2. From there
+`a.val` pins the decided value for good, so every later row is a stutter, a
+`SpecStep.callLoop`, or a direct `SpecStep.ret`.
 
 ### The frame lemma
 
@@ -147,30 +150,30 @@ its four components; each class is one row of `CoreSim.lean`.
 |---|---|---|
 | every hidden handshake (`callG`/`retG`/`callW`/`retW`), `bindUnset`, DECIDED gossip τ | τ | stutter (`Abs.frame`; only `Inv` moves) |
 | **every** `WCC_r` coin flip | τ | constant-coupled stutter via the generic `stutter_step` (`CoreSim.lean`): coupling `Ω := μ_C.map (·, pure a)`, so `ω = pure (pure a)` and `ω.bind id = pure a` (`Abs.w_swap`; the twin never flips) |
-| `callABA id b`, phase 1, genuine (idle-exit input) | `callABA id b` | rule 1 (banks the concrete input into `a.call` and the ghost) |
-| `callABA id b`, otherwise (phase 2, or a self-loop re-call) | `callABA id b` | rule 2 (first-write-wins; no `Abs`-field change) |
-| `retABA id b`, phase 1 | `retABA id b` | `decide_burst` then rule 8 (`weakStep_of_burst_then_step`) — see below |
-| `retABA id b`, phase 2 | `retABA id b` | rule 8 directly (phase 2's holder universal, applied to the harvested honest DECIDED sender, pins `b = v`) |
-| `fail id` | `fail id` | rule 9 (same corrupt guard via `F_eq`; robust in both phases) |
+| `callABA id b`, phase 1, genuine (idle-exit input) | `callABA id b` | `SpecStep.callSet` (the overwrite banks the concrete input and restores the ghost sync) |
+| `callABA id b`, otherwise (phase 2, or a concrete self-loop) | `callABA id b` | `SpecStep.callLoop` (first-write-wins; no `Abs`-field change) |
+| `retABA id b`, phase 1 | `retABA id b` | `decide_step` then `SpecStep.ret` (`weakStep_of_burst_then_step`) — see below |
+| `retABA id b`, phase 2 | `retABA id b` | `SpecStep.ret` directly (phase 2's holder universal, applied to the harvested honest DECIDED sender, pins `b = v`) |
+| `fail id` | `fail id` | `SpecStep.fail` (same corrupt guard via `F_eq`; robust in both phases) |
 
-The single burst is `decide_burst` (`CoreSim.lean`), fired at the phase-1 `retABA`. From
-an unbound, undecided twin with `coin = ⊥`, a quorum on the standing calls, and `f + 1`
-call-and-ghost-or-`F` material for the returned bit `b` (supplied by the concrete pool
-`Inv.bind_supp`, read at the round of the harvested `ACert` off its permanent residue
-`(!b) ∈ dead`, and transferred through phase 1's call/ghost sync),
-it reaches `bind = val = some b` with the board clear:
+The single burst is `decide_step` (`CoreSimBurst.lean`), fired at the phase-1 `retABA`.
+`SpecStep.decide` is Dirac, so the burst is one step; what the row supplies is its four
+guards, each read off the concrete state at the round `rA` of the `ACert` harvested from a
+never-corrupted DECIDED sender of `b`.
 
-- (i) if no honest call dissents from `b`, one rule-3 step decides outright;
-- (ii) otherwise byz-fill the empty `F`-slots with the majority bit `v'` (the quorum
-  pigeonholes its `n − f ≥ 2f + 1` callers-or-`F` onto two bits) and rule-4 rebind to
-  `v'`, *clearing the board* — which is what makes every `F`-slot fillable afterwards
-  (the fill-only wall of § Why this shape does not bite TS 1: rules 3/4 reset `call`);
-- (iii) fill the `f + 1` material for `b` (ghost/byz branches) and the rest with `v'`
-  (bind branch), then rule-4 rebind to `b` (rule 3 if everything is material);
-- (iv) `val_force'` (all-`b` bind-branch fill + rule 3), rule 8.
+- `hv : a.val = none` — phase 1 itself.
+- `hm : a.mode ≠ .dead` — the `mode_idle` field: a twin that never flips is never killed.
+- `hq : a.quorum P` — `abstract_quorum_of_input` (`CoreSimRel.lean`) reads
+  `Inv.bound_quorum` at `rA`, whose exclusion set is non-empty off the certificate's
+  permanent residue `(!b) ∈ (g rA).dead`, and carries the count onto the twin through
+  `Inv.input_called` and phase 1's ghost sync.
+- `hs : SuppOK P a b` — `suppOK_of_inputSupp` (`CoreSimRel.lean`) reads the concrete
+  input-or-`F` pool `Inv.bind_supp rA b` through that same sync.
 
-The trailing rule 8 is glued on by `weakStep_of_burst_then_step`: the burst is the
-leading τ-closure and the visible `retABA` the middle hyper-step.
+The step writes `val := some b` and returns the mode to `Mode.idle`, so `mode_idle`
+survives it and phase 2 is entered with the certificate at `rA` in hand. The trailing
+`SpecStep.ret` is glued on by `weakStep_of_burst_then_step`: the burst is the leading
+τ-closure and the visible `retABA` the middle hyper-step.
 
 ## The spec repairs as design
 
@@ -182,49 +185,55 @@ harvest; D12′ closes a DECIDED-equivocation gap.
 
 ### D13 — TS 1 Validity (ghost provenance)
 
-The blueprint's TS 1 fails the papers' Validity: rule 7's free re-propose (while
-`val = ⊥`) and rule 4's free mixed-bind lose input provenance, so a bit input only by a
+The source blueprint's TS 1 fails the papers' Validity: its free re-propose (while
+`val = ⊥`) and its free mixed-bind lose input provenance, so a bit input only by a
 later-corrupted process can win. The repair principle: a value may circulate only with
 `f + 1` distinct supporters — at most `f` processes are *ever* corrupted, so `f + 1`
 supporters always include a never-corrupted one, and provenance survives dynamic
 corruption with no future-peeking guard (`3f < n` supplies `n − 2f ≥ f + 1`).
 
-Deltas to `Spec.lean`:
+What `Spec.lean` carries:
 
-- **Ghost** `input : Fin n → Option Bool` in `SpecState`. Rule 1 records
-  unconditionally; rule 2 records first-write-wins
-  (`input := if s.input id = none then update … else s.input`) — sound (rule-2 events
-  are genuine `callABA` trace events) and load-bearing: it is what lets the twin mirror
-  inputs banked after it binds. No honesty guards anywhere; every support count is
-  `F`-blind, hence immune to later `fail`s.
-- **Rule 4** gains `hs : f + 1 ≤ #{id | s.call id = some b}` (support among all
-  callers). This genuinely shrinks enabledness — `n − 2f` honest callers can split as
-  low as `⌈(f+1)/2⌉` per bit — by design; spec liveness is unclaimed.
-- **Rule 7**: `h₃` becomes
-  `(s.val = none ∧ (s.input id = some b ∨ s.bind = some b)) ∨ s.val = some b`. Coin
-  values are deliberately not licensed (`b = coin-bit` would re-admit a
-  Validity-breaking decision via a probability-ε coin flip).
-- **New rule** `callByzFill` (τ):
-  `id ∈ s.F → s.call id = none → call := update s.call id (some b)`, no ghost record.
-  Necessity: the concrete adversary fills GBCA call slots via hidden byz `callG` drivers
-  with no `callABA` event, so without an abstract counterpart the rule-4 `hs` is
-  undischargeable on exactly the validity-*satisfying* traces where byz phantoms complete
-  the `f + 1` pool around one never-corrupted inputter. Byz entries are paid for by the
-  `F` budget through the `id ∈ F` disjunct, not the ghost; `decide_burst`'s
-  `byz_fill_chain` is the twin's use of this rule.
-- Rules 3, 5, 6, 8, 9 unchanged (rule 3's quorum already leaves `≥ n − 2f ≥ f + 1`
-  honest callers of the decided bit).
+- **Ghost** `input : Fin n → Option Bool` in `SpecState`. `SpecStep.callSet` records by
+  overwrite under the guard `val = ⊥`; `SpecStep.callLoop` is unguarded and records
+  first-write-wins (`input := if s.input id = none then update … else s.input`). Both are
+  sound — every event of either rule is a genuine `callABA` trace event — and the
+  overwrite is load-bearing: it is what keeps the record revisable while the twin is
+  undecided (§ Why this shape, item 7). No honesty guards anywhere; every support count
+  is `F`-blind, hence immune to later `fail`s.
+- **`SpecStep.decide`** is the sole writer of `val`, and its two provenance guards are
+  the entire constraint on the value decided: `hs : SuppOK P s b`, the `f + 1`
+  recorded-or-corrupt supporters of `b`, and `hq : s.quorum P`, a quorum of recorded
+  inputs. The support guard restricts which bit may be decided, and does so by design:
+  `n − 2f` honest callers can split as low as `⌈(f+1)/2⌉` per bit, so a given bit need not
+  be supported. `quorum_exists_suppOK` shows that under the quorum some bit always is —
+  the two supporter sets cover the quorum set and their cards sum to `n − f ≥ 2f + 1`, so
+  one of them reaches `f + 1`. Spec liveness is unclaimed beyond that.
+- **The mode loop (D21) carries no value.** `SpecStep.coinFlip` names no coin bit and
+  writes nothing but `mode`, so no bit can enter the system through the one probabilistic
+  rule; licensing a coin bit would re-admit a Validity-breaking decision at probability
+  `ε`. `quorum_exists_suppOK` is also why `SpecStep.decide` is enabled at `Mode.locked`,
+  where it is the only enabled `τ`-rule: the flip's own quorum guard already supplies the
+  supported bit the decision needs.
+- **No spec-side fill rule.** The concrete adversary fills GBCA call slots through hidden
+  byz `callG` drivers that carry no `callABA` event. Those slots are paid for by the
+  `F` budget inside the count itself — the `id ∈ s.F` disjunct of `SuppOK` — rather than
+  by a phantom ghost entry. A fill rule would have to place its entries knowing which
+  process is corrupted later, a prophecy no forward simulation has
+  (§ Why this shape, item 6).
 
-Provenance invariant (extending `SpecSafety.SpecInv`), with
+Provenance invariant (`SpecSafety.SpecInv`), with
 `SuppOK s v := f + 1 ≤ #{id | s.input id = some v ∨ id ∈ s.F}` (monotone in `F` and
-`input`): **V-P0** `bind = none →` every call is an input-holder or in `F`; **V-P1**
-`bind = some v → SuppOK s v`; **V-P2** `val = some v → SuppOK s v`; **V-P3** the
-post-`val` collapse of rule 7's `val`-branch writes into `b = v`. Preservation is by
-monotonicity: rule 4 harvests its `f + 1` callers through V-P0/V-P3, rule 3 through its
-`n − 2f` honest callers, `callByzFill` lands in the `id ∈ F` disjunct. Validity endgame
-(the budget pigeonhole): at any `retABA _ v`, V-P2 gives `f + 1` supporters; they cannot
-all lie in the final `F` (`|F| ≤ f`), so some supporter is never corrupted and its
-recorded input is a genuine prior `callABA`.
+`input`, `SuppOK.mono`), in two clauses: `F_le`, the corrupted set within budget, and
+`val_supp`, `val = some v → SuppOK s v`. The second is `SpecStep.decide`'s own guard at
+the one rule that writes `val`; every other rule carries it by `SuppOK.mono`, the ghost
+record and the corrupted set being monotone. Attribution of the record to genuine trace
+events is the separate label-history invariant `SpecSafety.ValInv`, whose `input_src`
+clause both `callABA` rules restore by recording the bit their own label carries.
+Validity endgame (the budget pigeonhole): at any `retABA _ v`, `val_supp` gives `f + 1`
+supporters; they cannot all lie in the final `F` (`|F| ≤ f`), so some supporter is never
+corrupted (`exists_neverCorrupted_supporter`) and its recorded input is a genuine prior
+`callABA`.
 
 ### D14 — TS 2 Validity (SuppOK guards)
 
@@ -323,8 +332,8 @@ pools never shrink); `decided_src` becomes per pooled bit
 (`id ∉ F → b ∈ decidedSent id → ∃ r` A-lock cert for `b`) — the equivocation-robust
 form: corrupted equivocators may pad any bit's tally, but the `retABA`-row pigeonhole
 (`n − f` distinct senders of `b`, `|F| ≤ f`, `n − f > f`) recovers a never-corrupted
-sender of `b`, whose pooled `b` carries the A-lock certificate that `decide_burst` and
-phase 2's `Abs` certificate need.
+sender of `b`, whose pooled `b` carries the A-lock certificate that the phase-1
+`SpecStep.decide` step and phase 2's `Abs` certificate both need.
 
 ## `Inv`: the concrete invariant (`CoreSimRel.lean`)
 
@@ -353,20 +362,22 @@ fields), grouped:
   (A-side only: `retA` reads the live pair, so an `A`-graded round has a non-empty
   exclusion set — a `C`-return reads no pair and constrains none), `grade_A_src` and
   `decided_src` (both producing an `ACert`, the pair-free form), `recv_sound` (D12′
-  per-bit and honesty-free — see above), `bound_quorum`.
+  per-bit and honesty-free — see above), `bound_quorum` (a round with a non-empty
+  exclusion set has met the quorum, which `abstract_quorum_of_input` reads onto the twin
+  as `SpecStep.decide`'s `hq`).
 - **Certificates**: `dead_supp` (I28), `carrier_agree` (I29), `alock_agree` (I30) — the
   three conjuncts that state a round's value without the live pair; see § Certificates.
 - **Support pools**: `bind_supp` (I26) — a round whose exclusion set names `!v` carries a
   permanent `f + 1` input-or-`F` pool for `v` (`InputSupp`, the concrete mirror of TS 1's
-  V-P1), established
+  `SuppOK`), established
   at `bindUnset` — and `clock_supp` (I27), which keeps a `C`-locked round's `retC` guards
   themselves: `f + 1` F-blind call-or-`F` support for *each* bit, in count form. Both are
   permanent and monotone (`call` and `F` only grow). `supp_of_call_count` reads any such
   count back as an input pool by strong induction on the round — round 0 wholesale via
   `input_g0_perm`, `r ≥ 1` by harvesting one honest caller whose `call_prov` provenance
   routes into the previous round's `bind_supp` or into its `clock_supp` count, a smaller
-  instance of the same statement — and that is what supplies `decide_burst`'s `f + 1`
-  material through phase 1's call/ghost sync. The both-bit shape of `clock_supp` is also
+  instance of the same statement — and that is what supplies `SpecStep.decide`'s `hs`
+  through phase 1's ghost sync, by `suppOK_of_inputSupp`. The both-bit shape of `clock_supp` is also
   what keeps a `C`-lock incompatible with an agreeing coin underneath it
   (`no_cgrade_succ_of_supp`), and what forces a `C`-lock one round down
   (`c_chain_of_both_supports`): `exists_honest_caller` turns the two counts into honest
@@ -384,21 +395,19 @@ Each row of `CoreSim.lean` proves `Inv`-preservation for its step class and then
 
 ## The burst kit (`CoreSimBurst.lean`)
 
-Pure `ABA.spec`-side weak-τ chains, no `Inv`/`Abs` reasoning:
+Pure `ABA.spec`-side weak-τ lemmas, no `Inv`/`Abs` reasoning and no mention of the
+concrete `(g, c, w)` state:
 
-- `fill_chain` — from a bound `Abs`-state, a rule-7 τ-chain reaching any `val`-compatible
-  target call vector (induction over the process list).
-- `byz_fill_chain` — the `callByzFill` analogue: fills empty `F`-slots to any target,
-  paying through the `F` budget rather than the ghost.
-- `rebind_mixed` / `rebind_unanim` — filled calls with a quorum reach a rule-4 (resp.
-  rule-3) rebind: `bind := b`, `call := ⊥ⁿ`, `val` untouched (resp. set, certified).
-- `weakStep_of_burst_then_step` — packaging: a τ-burst then a visible step is a
-  `weakStep`.
+- `decide_step` — `SpecStep.decide` as a one-step `weakTau` burst, built by
+  `weakTau_of_step`. The rule is Dirac, so there is no chain to assemble.
+- `weakStep_of_burst_then_step` — packaging: a τ-burst followed by a genuine step is a
+  `weakStep`, with the burst as the leading τ-closure, the step as the middle hyper-step
+  (`hyperStep_pure_of_step`), and `weakTau_refl` as the trailing closure.
 
-All assembled with `weakTau_of_step`/`weakTau_trans`; `val_force'` — the
-`bind`-value-decoupled fill-and-decide that closes `decide_burst` — lives in
-`CoreSim.lean` (its `coin = ⊥` hypothesis makes `TVal.agrees` false, so the all-`b` fill
-is licensed only from `a.bind = some b`, exactly how the burst invokes it).
+That is the whole kit. The specification has two `τ`-rules, `SpecStep.coinFlip` and
+`SpecStep.decide`; the twin never fires the first and fires the second once, so no row
+needs a multi-step τ-chain and every guard discharge sits on the `Inv` side
+(§ Row dispositions).
 
 ## Why this shape
 
@@ -406,25 +415,26 @@ Each of the following adversarial-timing traces kills a natural simpler alternat
 recording them is what pins the design.
 
 1. **Eager functional abstraction fails.** If the abstract state is a total function of
-   the concrete (`a = absMap (g,c,w)`) with `a.bind`/`a.val` tied to the concrete
-   `bindUnset` row, abstract rule 3 is forced the moment a round kills the dissenting bit
-   under unanimous calls — but a
+   the concrete (`a = absMap (g,c,w)`) with `a.val` tied to the concrete `bindUnset` row,
+   `SpecStep.decide` is forced the moment a round kills the dissenting bit under unanimous
+   calls — but a
    late joiner can then submit a dissenting `callABA`, enable a `C`-grade at that round,
    steer the next round to spare the opposite value, `A`-lock it, and DECIDE against the
    already-committed abstract `val`. Hence laziness: the twin commits as late as possible.
-2. **Flip-anchored abstraction fails.** Anchoring `a.bind` to the concrete flip frontier
-   is broken twice over: the honest witness backing the frontier round's rebind can be
-   corrupted *before* the flip row (stranding the abstract quorum), and when the abstract
-   coin agrees with its bind, rule 6 is the only filler and can force a wrong-value `val`.
-   Hence the never-flipping twin: with `coin = ⊥`, rule 7 is always available and the
-   rule-5/rule-6 timing issues vanish.
+2. **A flipping twin fails.** The twin could in principle answer the concrete coin row
+   with `SpecStep.coinFlip` rather than a stutter. Two things break. `coinFlip` is the
+   system's one non-Dirac rule, and `coreRel` is a `diracRel`, so the abstract side must
+   stay a point mass at every reachable pair. And `flipPMF` puts mass `δ` on `kill`: that
+   branch reaches `Mode.dead`, where `SpecStep.decide` is disabled forever, so on positive
+   mass the twin could no longer answer the `retABA` that arrives later. Hence
+   `mode_idle`: the twin stutters at every flip and keeps `SpecStep.decide` enabled.
 3. **Unconditional honest-unanimity fails.** Requiring pairwise agreement of honest
-   inputs whenever the twin is unbound is too strong: two opposite fresh inputs with
-   nothing bound yet are reachable and would force a bind no quorum supports. The
-   ultra-lazy twin sidesteps the question entirely — it carries no unanimity constraint,
-   because phase 1 never binds.
-4. **Free re-propose loses provenance (TS 1).** In the blueprint's TS 1, rule 7's free
-   re-propose and rule 4's free mixed-bind let a bit input only by a later-corrupted
+   inputs whenever the twin is undecided is too strong: two opposite fresh inputs with
+   nothing decided yet are reachable and would force a decision no quorum supports. The
+   lazy twin sidesteps the question entirely — it carries no unanimity constraint,
+   because phase 1 decides nothing.
+4. **Free re-propose loses provenance (TS 1).** In the source blueprint's TS 1, the free
+   re-propose and the free mixed-bind let a bit input only by a later-corrupted
    process win a return: input `1` from a lone process that is then `fail`ed is
    re-proposed and bound while every never-corrupted process input `0`. This forces the
    D13 `f + 1` `F`-blind support discipline.
@@ -445,15 +455,18 @@ recording them is what pins the design.
    choice needs knowledge of the later `fail`, a prophecy out of reach of any forward
    simulation. So provenance must be carried by `F`-blind *counts* (D14/`input_supp`), not
    by spec-side fills — the pool guards beat the fills.
-7. **Eager binding junks the ghost (the ultra-lazy wall).** Even the lazy twin must not
-   bind *between* rows. Rule 2's ghost is first-write-wins and rule 1's unconditional
-   overwrite is dead once the twin binds; so if the twin binds early, a concrete
-   `inputLoop` that answers `callABA id b̂` as a no-op while `id`'s input is uncommitted
-   forces the bound twin onto rule 2, banking ghost `b̂`, and a later genuine
-   `callABA id b` (`b ≠ b̂`) can never overwrite it — leaving `a.input id` permanently
-   wrong. At `n = 4, f = 1`, mixed round-0 inputs force an eager bind, pre-emptive
-   self-loops junk every future `b`-inputter, and a round-0 `retC` plus a `⊤`-coin flip
-   develop an `A`-lock for `b` whose `f + 1` support is carried entirely by junked
-   inputters — leaving rule 4's `hs` for `b` undischargeable. Hence the ultra-lazy
-   two-phase twin: it never binds until the first return, so genuine banks always answer
-   rule 1 and the ghost never diverges.
+7. **Deciding early junks the ghost (the lazy wall).** This is the argument D16 rests on,
+   and with it `SpecStep.callSet`'s overwrite. `SpecStep.callLoop`'s ghost write is
+   first-write-wins, and `SpecStep.callSet` is guarded by `val = ⊥`, so once the twin has
+   decided, a `callABA` row can only answer with `callLoop` and the record is frozen
+   wherever it is already set. Suppose the twin decided before the first return. A
+   concrete `inputLoop` answers `callABA id b̂` as a no-op while `id`'s input is
+   uncommitted; the decided twin must answer it with `callLoop`, banking ghost `b̂`; and a
+   later genuine `callABA id b` (`b ≠ b̂`) can never overwrite it, leaving `a.input id`
+   permanently wrong. At `n = 4, f = 1`, mixed round-0 inputs force the early decision,
+   pre-emptive self-loops junk every future `b`-inputter, and a round-0 `retC` plus a
+   `⊤`-coin flip develop an `A`-lock for `b` whose `f + 1` support is carried entirely by
+   junked inputters — leaving `SpecStep.decide`'s `hs` for `b` undischargeable. Hence the
+   two-phase twin (D16): it decides only under the first return, so a genuine call always
+   answers `SpecStep.callSet` and the overwrite repairs whatever a self-loop banked. The
+   overwrite and the laziness are one design: each is useless without the other.

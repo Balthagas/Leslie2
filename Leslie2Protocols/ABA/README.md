@@ -43,8 +43,8 @@ unpredictability or fairness.
 
 ## Deviations
 
-Each departure from the source blueprint carries a label cited at the point where it
-applies. The registry — every label glossed, with D2, D6 and D7 declared unused — is the
+Each departure from the source blueprint carries a label D1–D21, cited at the point where
+it applies. The registry — every label glossed, with D2, D3, D6 and D7 declared unused — is the
 Deviations paragraph of `../../blueprint/src/content.tex`. `../NOTES-Fidelity.md` covers
 how the encoding stands against its two sources beyond that registry.
 
@@ -57,10 +57,10 @@ the file is. The order is the dependency order.
 |---|---|---|
 | `Params.lean` | 124 | The parameters `P` — `n`, `f` with `n > 3f`, and the coin distribution `wccPMF` with its ε/δ bounds. |
 | `Labels.lean` | 141 | The shared label alphabet `Lab n`: the visible API, the hidden sub-protocol handshakes, `τ`. |
-| `Spec.lean` | 263 | **The top-level ABA specification**, the system all safety is measured against. Ten rules over `SpecState`. |
-| `WCCSpec.lean` | 131 | The weak common coin specification, per round. Held at specification level by design. |
+| `Spec.lean` | 233 | **The top-level ABA specification**, the system all safety is measured against. Six rules over `SpecState`, whose control mode carries the flip (D21). |
+| `WCCSpec.lean` | 163 | The weak common coin specification, per round, and the coin value domain `TVal`. Held at specification level by design. |
 | `GBCASpec.lean` | 267 | The graded binding crusader agreement specification, per round. Binding is negative (D19). |
-| `SpecSafety.lean` | 929 | `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. The trace predicates live here. |
+| `SpecSafety.lean` | 567 | `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. The trace predicates live here. |
 | `GBCASafety.lean` | 590 | Binding, graded agreement and Validity's safety half for the GBCA specification instance. |
 | `GBCAImpl.lean` | 702 | **The GBCA implementation**, ABDY22's Algorithm 6 in full (D18). Its state is the stage records beside the round's fabric. |
 | `GBCASim.lean` | 1808 | The per-instance refinement `implRefines`, by kill-on-demand: `dead` carried as a receipt-pattern certificate; and the broadcast compatibility of its relation with the `fail` act (`instRel_corrupt`), which the family lifting consumes. |
@@ -70,11 +70,11 @@ the file is. The order is the dependency order.
 | `Protocol.lean` | 1191 | **The protocol as it runs**, and the subject of the whole chain: the programs, the network adversary, and the pipeline that composes them beside the coin oracle. |
 | `GBCAInstances.lean` | 1550 | **The round's graded-agreement instance** and the licence to replace it, `subSim`. |
 | `Hybrid.lean` | 728 | **`composed`**, **`substSim`**: the same protocol read as four components, one round instance per round retained at every moment, and that graded-agreement component then replaced by its specification under the four congruences. |
-| `CoreSimRel.lean` | 679 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
+| `CoreSimRel.lean` | 688 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
 | `CoreSimInv.lean` | 3809 | Step inversion for `hybrid`, then preservation of `Inv` across every row. The bulk of the proof text. |
-| `CoreSimAbs.lean` | 336 | `Abs` preservation for the stutter rows, and the assembly `Inv.step`. |
-| `CoreSimBurst.lean` | 187 | The abstract-twin burst kit: how the twin catches up in one weak step. |
-| `CoreSim.lean` | 699 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
+| `CoreSimAbs.lean` | 335 | `Abs` preservation for the stutter rows, and the assembly `Inv.step`. |
+| `CoreSimBurst.lean` | 53 | The abstract-twin burst kit: `SpecStep.decide` as a τ-burst (`decide_step`), and a burst closed by a visible step (`weakStep_of_burst_then_step`). |
+| `CoreSim.lean` | 412 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
 | `ProtocolSim.lean` | 1088 | **`protocolSim`**, **`protocol_composed`**: the protocol carried into the composed reading along `ProtocolRel`. |
 | `Results.lean` | 209 | The deliverables, gathered so every citable statement is in one file. Twelve `#guard_msgs` axiom firewalls. |
 | `NonVacuity.lean` | 623 | A concrete 21-step run of `hybrid P4` to a `retABA` decision, so the simulation about it is not vacuous. |
@@ -118,6 +118,6 @@ pseudocode and the proof bodies).
   `Protocol.lean` the budget is a component guard on the one box that owns the corrupted
   set, so `protocol_safe` and `protocol_traces` need no hypothesis on the trace.
 - **`ValidityTrace` witness strengthening**: the current witness clause accepts any
-  preceding `callABA id' b`; the proof yields a stronger ghost-backed witness. Care: the
-  D13 ghost is *last*-rule-1-write (D16 junk-erasure), so a "first call" restatement is not
-  immediate.
+  preceding `callABA id' b`; the proof yields a stronger ghost-backed witness. Care: while
+  nothing is decided the D13 ghost record holds the bit of the *last* `SpecStep.callSet`
+  (D16 overwrite), so a "first call" restatement is not immediate.

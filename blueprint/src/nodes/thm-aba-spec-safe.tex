@@ -10,9 +10,9 @@
 
 \begin{proof}\leanok
   \uses{def:aba-spec, thm:trace-support}
-  By Theorem~\ref{thm:trace-support} it suffices to prove the two predicates on the events of every genuine execution, which we do by induction over the ten rules with the invariants $\mathrm{SpecInv}$ and $\mathrm{ValInv}$.
-  For Agreement, $\mathrm{SpecInv}$ makes the decision value $val$ write-once: the unanimity rule can rewrite $val$ only to itself, since a $b$-quorum and a $(1-b)$-quorum would meet under $f < n - f$, and the rule-7 (D3) guard blocks the re-proposal that would otherwise flip it.
-  For Validity, $\mathrm{ValInv}$ carries provenance conjuncts tying each $bind$ and $val$ to an $f{+}1$ $F$-blind support, each member of which is either ghost-recorded as inputting the value or corrupted.
+  By Theorem~\ref{thm:trace-support} it suffices to prove the two predicates on the events of every genuine execution, which we do by induction over the six rules with the invariants $\mathrm{SpecInv}$ and $\mathrm{ValInv}$.
+  For Agreement, the decision value $val$ is write-once by the shape of the system: \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide} is its only writer and fires only from $val = \bot$, so two returns read the same bit.
+  For Validity, $\mathrm{SpecInv}$ ties $val$ to an $f{+}1$ $F$-blind support, each member of which is either ghost-recorded as inputting the value or corrupted, and $\mathrm{ValInv}$ attributes each ghost record to a $\mathrm{callABA}$ event of the label history.
   The at most $f$ ever-corrupted processes, obtained as a trace-level fold of the $\mathrm{failSet}$, leave one of the $f{+}1$ supporters a never-corrupted recorded caller by a budget pigeonhole.
   Positionality of that caller, a call at some $k < m$, is read off the same label-history fold.
 \end{proof}

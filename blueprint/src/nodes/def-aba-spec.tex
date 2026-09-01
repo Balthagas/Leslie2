@@ -2,7 +2,9 @@
   \label{def:aba-spec}
   \lean{PLTS.ABA.SpecStep}\lean{PLTS.ABA.spec}\leanok
   \uses{def:aba-labels}
-  Transition System 1 of~\cite{LeslieBP}, the ABA specification $\mathrm{spec}(P)$: ten rules over the ABA interface, on a state carrying the pending call of each process, the bound value $bind$, the decision value $val$, the coin outcome $coin$ and the corrupted set $F$, with four deviations.
-  Corruption is a total deterministic transform (D1), and the Validity provenance apparatus (D13) supplies a ghost map $input$ recording genuine $\mathrm{callABA}$ events, an $f{+}1$ $F$-blind support guard on the mixed-bind rule~4, a provenance guard on the re-propose rule~7 (D3), and a tenth rule $\mathrm{callByzFill}$ by which a corrupted process fills an empty call slot with no ghost record, the abstract image of the concrete adversary's hidden Byzantine $\mathrm{callG}$ drivers.
+  Transition System 1 of~\cite{LeslieBP}, the ABA specification $\mathrm{spec}(P)$: six rules over the ABA interface, on a state carrying a ghost record $input$ of the genuine $\mathrm{callABA}$ events, the processes that have returned, the corrupted set $F$, the decision value $val$ and a control mode $mode \in \{idle, locked, dead\}$, with four deviations.
+  Corruption is a total deterministic transform (D1).
+  The mode carries the round structure (D21): \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip} is an abstract flip, resolving once per firing into a lock, a release or a kill, and it names no coin bit; the kill outcome, of mass $\failmass$, lands in the terminal mode $dead$, which enables no $\tau$-rule (D17).
+  The Validity provenance apparatus (D13) is the ghost record, written by \leandeclnamed{callSet}{PLTS.ABA.SpecStep.callSet} and \leandeclnamed{callLoop}{PLTS.ABA.SpecStep.callLoop}, together with the $f{+}1$ $F$-blind support guard \leandecl{PLTS.ABA.SuppOK} on \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}, the sole writer of $val$.
   Full rule table: \leandecl{PLTS.ABA.spec}.
 \end{definition}

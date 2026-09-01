@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Sathiya / Claude
 -/
 
-import Leslie2Protocols.ABA.Spec
+import Leslie2Protocols.ABA.Labels
 import Leslie2Protocols.Framework.IdleFamily
 
 /-!
@@ -69,7 +69,8 @@ to hand out its complement or hands out nothing at all.
 * **D14 (repair, load-bearing).** The source blueprint's TS 2 certifies binding
   by a *single* honest witness (`∃ id ∉ F, call id = b`), and `B`/`C` dissent
   likewise by a single honest dissenter. That singular witness is the same
-  provenance loss as the pre-D13 top-level spec, one level down: the witness may
+  provenance loss the D13 repair removes from Transition System 1, one level
+  down: the witness may
   be corrupted later in the trace, after which nothing attributes the outcome to
   a never-corrupted input — and `hybrid` built on this TS 2 provably violates
   the papers' Validity (deterministic witness at `n = 4, f = 1`, inputs

@@ -13,16 +13,16 @@
   \node[conc] (t6) at (12.0,2.4){\texttt{retABA}};
   % bottom row: the twin's two nodes
   \node[state, initial, initial text={}] (p1) at (4.8,0)
-    {Phase 1\\ $bind=val=\bot$\\ $call=input$};
+    {Phase 1\\ $val=\bot$\\ ghost sync};
   \node[state, accepting] (p2) at (12.0,0)
-    {Phase 2\\ $bind=val=v$\\ ($A$-lock)};
+    {Phase 2\\ $val=v$\\ ($A$-certificate)};
   \draw[->] (p1) to[loop left, looseness=4]
     node[left=2pt, font=\footnotesize, align=center]{stutter\\ (constant\\ coupling)} (p1);
   \draw[->, thick] (p1) -- (p2)
     node[pos=0.45, below=3pt, font=\footnotesize, align=center]
-      {\texttt{decide\_burst}\\ bind${+}$fill${+}$decide${+}$ret\\ (one weak step)};
+      {\texttt{decide}${+}$\texttt{ret}\\ (one weak step)};
   \foreach \x in {t1,t2,t3,t4,t5} \draw[dashed, ->] (\x) -- (p1);
   \draw[dashed, ->] (t6.south) -- (10.8,0.15);
   \node[font=\footnotesize, align=center] at (6.0,-2.3)
-    {$Inv\wedge Abs$: pins $F$, \texttt{ret}, $coin=\bot$; phase-1 $call=input$ coupling};
+    {$Inv\wedge Abs$: pins $F$, \texttt{ret}, $mode=idle$; phase-1 ghost sync on committed inputs};
 \end{tikzpicture}

@@ -12,42 +12,42 @@ import Leslie2Protocols.Framework.TraceSupport
 
 Validity and Agreement, stated as predicates on traces and proven for every
 trace in the support of every achievable trace distribution of `ABA.spec`
-(`ABA.spec_safe`). This validates the D3 and D13 repairs: Agreement is
-*false* for the blueprint's unrepaired Transition System 1, and the papers'
-Validity is false for the D3-only repair (a later-corrupted caller's input can win).
-
-The proof is invariant reasoning along genuine executions (via
-`TraceSupport`):
-
-* `SpecInv` — the state invariant: `|F| ≤ f`; once `val = some v` the bound
-  value equals `val` and every honest pending input is `⊥` or `val`; and the
-  D13 provenance conjuncts V-P0–V-P3: while unbound every pending input is
-  ghost-recorded or corrupt (`call_prov`), bound and decided values carry
-  `f + 1` supporters (`bind_supp`, `val_supp`), and while bound every
-  pending input is recorded, the bound value, or corrupt (`bound_prov`).
-* `SpecInv.val_stable` — the decision value is write-once: the unanimity rule
-  can only rewrite `val` to itself (the quorum argument, using `f < n − f`).
-* `ValInv` — the label-history-aware invariant: ghost-recorded inputs are
-  attributed to `callABA` events in the history (`input_src`), and the
-  corrupted set is exactly the fold of D1-`corrupt` over the labels seen so
-  far (`F_eq`).
+(`ABA.spec_safe`).
 
 `AgreementTrace` requires *any* two returns (honest or not) to agree —
 stronger than the blueprint's correct-process phrasing, since `ABA.spec`'s
-return rule does not inspect `F`. `ValidityTrace` is the paper-form
-statement (D13): every return of `b` is *preceded* (positionally) by a
-`callABA _ b` event whose caller is never corrupted anywhere along the
-trace (`NeverCorrupted`, via the trace-level corruption fold `failSet`) —
-returner-unconditional, hence stronger than the papers on the returns axis
-and faithful on the witness axis: the witnessing caller must be never
-corrupted, not merely a member of some support set that a later `fail`
-could taint.
+return rule does not inspect `F`. `ValidityTrace` is the paper-form statement
+(D13): every return of `b` is *preceded* (positionally) by a `callABA _ b`
+event whose caller is never corrupted anywhere along the trace
+(`NeverCorrupted`, via the trace-level corruption fold `failSet`) —
+returner-unconditional, hence stronger than the papers on the returns axis and
+faithful on the witness axis: the witnessing caller must be never corrupted,
+not merely a member of some support set that a later `fail` could taint.
 
-The Validity endgame is a budget pigeonhole: at any return, `val_supp`
-yields `f + 1` supporters of the returned bit; every supporter is either
-ghost-recorded (hence a genuine preceding `callABA`, by `input_src`) or
-ever-corrupted, and at most `f` ids are *ever* corrupted (`failSet` never
-exceeds the budget) — so some recorded supporter is never corrupted.
+The proof is invariant reasoning along genuine executions (via
+`TraceSupport`), on two invariants:
+
+* `SpecInv` — the state invariant, in two clauses: the corrupted set respects
+  the budget (`F_le`), and the decision value carries `f + 1` F-blind
+  supporters (`val_supp`). The second clause is `SpecStep.decide`'s own guard
+  at the one rule that writes `val`, and every other rule carries it by
+  `SuppOK.mono`, the ghost record and the corrupted set being monotone.
+* `ValInv` — the label-history-aware invariant: ghost-recorded inputs are
+  attributed to `callABA` events in the history (`input_src`), and the
+  corrupted set is exactly the fold of D1-`corrupt` over the labels seen so
+  far (`F_eq`). The `callABA` rules record the bit their own label carries,
+  which is what restores `input_src` under the D16 overwrite.
+
+Agreement rests on `SpecInv.val_stable`: `SpecStep.decide` is the sole writer
+of `val` and fires only from `val = ⊥`, so the decision value never changes
+once written and two returns read the same one.
+
+Validity is a budget pigeonhole at the return. `retABA_inv` reads the returned
+bit off the pre-state's decision value and `SpecInv.val_supp` yields `f + 1`
+supporters of that bit. Every supporter is either ghost-recorded — hence a
+genuine preceding `callABA`, by `ValInv.input_src` — or ever-corrupted, and at
+most `f` ids are ever corrupted (`failSet` never exceeds the budget), so some
+recorded supporter is never corrupted (`exists_neverCorrupted_supporter`).
 -/
 
 open Stream'
@@ -226,54 +226,19 @@ theorem exists_uniform_stage (t : Seq (Lab P.n)) (S : Finset (Fin P.n)) :
     · exact failSet_mono t (le_max_left ka K) hka
     · exact failSet_mono t (le_max_right ka K) (hK id hid)
 
-/-! ### `f + 1`-support -/
-
-/-- D13 support for `v`: `f + 1` ids, each either ghost-recorded as
-inputting `v` or corrupted. Monotone in `input` and `F`, hence stable under
-`fail` and banking. -/
-def SuppOK (P : Params) (s : SpecState P.n) (v : Bool) : Prop :=
-  P.f + 1 ≤ (Finset.univ.filter (fun id => s.input id = some v ∨ id ∈ s.F)).card
-
-theorem SuppOK.mono {s s' : SpecState P.n} {v : Bool} (h : SuppOK P s v)
-    (hin : ∀ id, s.input id = some v → s'.input id = some v)
-    (hF : s.F ⊆ s'.F) : SuppOK P s' v := by
-  refine le_trans h (Finset.card_le_card ?_)
-  intro id hid
-  rw [Finset.mem_filter] at hid ⊢
-  exact ⟨hid.1, hid.2.imp (hin id) (fun hm => hF hm)⟩
-
 /-! ### The state invariant -/
 
-/-- The core state invariant of `ABA.spec`: the corrupted set respects the
-budget; once the decision value is fixed it agrees with the bound value and
-dominates every honest pending input; and the D13 provenance conjuncts
-V-P0–V-P3 (`call_prov`, `bind_supp`, `val_supp`, `bound_prov`). -/
+/-- The state invariant of `ABA.spec`: the corrupted set respects the budget,
+and the decision value carries `f + 1` F-blind supporters (D13). -/
 structure SpecInv (P : Params) (s : SpecState P.n) : Prop where
+  /-- The corrupted set stays inside the budget. -/
   F_le : s.F.card ≤ P.f
-  bind_val : s.val ≠ none → s.bind = s.val
-  call_val : ∀ id, id ∉ s.F → s.val ≠ none →
-    s.call id = none ∨ s.call id = s.val
-  /-- V-P0: while unbound, every pending input is ghost-recorded or corrupt. -/
-  call_prov : s.bind = none → ∀ id b, s.call id = some b →
-    s.input id = some b ∨ id ∈ s.F
-  /-- V-P1: the bound value has `f + 1` supporters. -/
-  bind_supp : ∀ v, s.bind = some v → SuppOK P s v
-  /-- V-P2: the decision value has `f + 1` supporters. -/
+  /-- The decision value has `f + 1` supporters. -/
   val_supp : ∀ v, s.val = some v → SuppOK P s v
-  /-- V-P3: while bound, every pending input is ghost-recorded, the bound
-  value, or corrupt (post-`val`, `bind_val` collapses rule 7's `val`-branch
-  writes into the middle disjunct). -/
-  bound_prov : ∀ v, s.bind = some v → ∀ id b, s.call id = some b →
-    s.input id = some b ∨ b = v ∨ id ∈ s.F
 
 theorem SpecInv.initial (P : Params) : SpecInv P (SpecState.initial P.n) where
   F_le := by simp [SpecState.initial]
-  bind_val := fun h => absurd rfl h
-  call_val := fun _ _ h => absurd rfl h
-  call_prov := fun _ _ _ h => absurd h (by simp [SpecState.initial])
-  bind_supp := fun _ h => absurd h (by simp [SpecState.initial])
   val_supp := fun _ h => absurd h (by simp [SpecState.initial])
-  bound_prov := fun _ h => absurd h (by simp [SpecState.initial])
 
 /-! Field stability of `corrupt`. -/
 
@@ -281,22 +246,16 @@ section Corrupt
 
 variable (s : SpecState P.n) (id : Fin P.n)
 
-@[simp] theorem corrupt_call : (s.corrupt P id).call = s.call := by
+@[simp] theorem corrupt_input : (s.corrupt P id).input = s.input := by
   unfold SpecState.corrupt; split <;> rfl
 
 @[simp] theorem corrupt_ret : (s.corrupt P id).ret = s.ret := by
   unfold SpecState.corrupt; split <;> rfl
 
-@[simp] theorem corrupt_bind : (s.corrupt P id).bind = s.bind := by
-  unfold SpecState.corrupt; split <;> rfl
-
 @[simp] theorem corrupt_val : (s.corrupt P id).val = s.val := by
   unfold SpecState.corrupt; split <;> rfl
 
-@[simp] theorem corrupt_coin : (s.corrupt P id).coin = s.coin := by
-  unfold SpecState.corrupt; split <;> rfl
-
-@[simp] theorem corrupt_input : (s.corrupt P id).input = s.input := by
+@[simp] theorem corrupt_mode : (s.corrupt P id).mode = s.mode := by
   unfold SpecState.corrupt; split <;> rfl
 
 /-- `corrupt` acts on `F` exactly as the bare-set fold step `corruptF`. -/
@@ -322,140 +281,17 @@ theorem corrupt_card_le (hF : s.F.card ≤ P.f) : (s.corrupt P id).F.card ≤ P.
 
 end Corrupt
 
-/-- A quorum with a bounded corrupted set contains an honest pending input. -/
-theorem exists_honest_call {s : SpecState P.n}
-    (hq : s.quorum P) (hF : s.F.card ≤ P.f) :
-    ∃ id, id ∉ s.F ∧ s.call id ≠ none := by
-  by_contra hc
-  push_neg at hc
-  have h_empty : Finset.univ.filter (fun id => id ∉ s.F ∧ s.call id ≠ none) = ∅ := by
-    rw [Finset.filter_eq_empty_iff]
-    rintro id - ⟨h1, h2⟩
-    exact h2 (hc id h1)
-  unfold SpecState.quorum at hq
-  rw [h_empty, Finset.empty_union] at hq
-  have := P.f_lt_n_sub_f
-  omega
-
-/-- A quorum with a bounded corrupted set has `f + 1` *honest* callers
-(`n − 2f ≥ f + 1` from `3f < n`). -/
-theorem honest_callers_ge {s : SpecState P.n}
-    (hq : s.quorum P) (hF : s.F.card ≤ P.f) :
-    P.f + 1 ≤ (Finset.univ.filter (fun id => id ∉ s.F ∧ s.call id ≠ none)).card := by
-  unfold SpecState.quorum at hq
-  have hu := Finset.card_union_le
-    (Finset.univ.filter (fun id => id ∉ s.F ∧ s.call id ≠ none)) s.F
-  have hn := P.hf
-  omega
-
-/-- Harvest for the unanimity rule: its `f + 1` honest callers all carry
-`!b`, and each is a recorded supporter — or the bound value equals `!b` and
-V-P1 closes directly. -/
-theorem unanim_suppOK {s : SpecState P.n} {b : Bool} (hI : SpecInv P s)
-    (hq : s.quorum P) (hb : ∀ id, id ∉ s.F → s.call id ≠ some b) :
-    SuppOK P s (!b) := by
-  -- every honest caller calls `!b`
-  have hcall : ∀ id, id ∉ s.F → s.call id ≠ none → s.call id = some (!b) := by
-    intro id hid hne
-    obtain ⟨c, hc⟩ : ∃ c, s.call id = some c := by
-      cases h : s.call id with
-      | none => exact absurd h hne
-      | some c => exact ⟨c, rfl⟩
-    have hcb : c ≠ b := fun h => hb id hid (h ▸ hc)
-    rw [hc]
-    cases c <;> cases b <;> simp_all
-  cases hbind : s.bind with
-  | some v =>
-    by_cases hveq : v = !b
-    · exact hveq ▸ hI.bind_supp v hbind
-    · refine le_trans (honest_callers_ge hq hI.F_le) (Finset.card_le_card ?_)
-      intro id hid
-      rw [Finset.mem_filter] at hid ⊢
-      obtain ⟨-, hnF, hne⟩ := hid
-      rcases hI.bound_prov v hbind id (!b) (hcall id hnF hne) with h | h | h
-      · exact ⟨Finset.mem_univ id, Or.inl h⟩
-      · exact absurd h.symm hveq
-      · exact absurd h hnF
-  | none =>
-    refine le_trans (honest_callers_ge hq hI.F_le) (Finset.card_le_card ?_)
-    intro id hid
-    rw [Finset.mem_filter] at hid ⊢
-    obtain ⟨-, hnF, hne⟩ := hid
-    rcases hI.call_prov hbind id (!b) (hcall id hnF hne) with h | h
-    · exact ⟨Finset.mem_univ id, Or.inl h⟩
-    · exact absurd h hnF
-
-/-- Harvest for the mixed rule: its `f + 1` callers of `b` are supporters
-through V-P0/V-P3 — or the bound value equals `b` and V-P1 closes. -/
-theorem mixed_suppOK {s : SpecState P.n} {b : Bool} (hI : SpecInv P s)
-    (hs : P.f + 1 ≤ (Finset.univ.filter (fun id => s.call id = some b)).card) :
-    SuppOK P s b := by
-  cases hbind : s.bind with
-  | some v =>
-    by_cases hveq : b = v
-    · exact hveq.symm ▸ hI.bind_supp v hbind
-    · refine le_trans hs (Finset.card_le_card ?_)
-      intro id hid
-      rw [Finset.mem_filter] at hid ⊢
-      rcases hI.bound_prov v hbind id b hid.2 with h | h | h
-      · exact ⟨hid.1, Or.inl h⟩
-      · exact absurd h hveq
-      · exact ⟨hid.1, Or.inr h⟩
-  | none =>
-    refine le_trans hs (Finset.card_le_card ?_)
-    intro id hid
-    rw [Finset.mem_filter] at hid ⊢
-    exact ⟨hid.1, hI.call_prov hbind id b hid.2⟩
-
-/-- If the unanimity rule fires while `val = some v` (under the invariant),
-the value it writes is again `v`. -/
-theorem unanim_rewrites_val {s : SpecState P.n} {b' v : Bool}
-    (hI : SpecInv P s) (hv : s.val = some v)
-    (hq : s.quorum P) (hb : ∀ id, id ∉ s.F → s.call id ≠ some b') :
-    (!b') = v := by
-  obtain ⟨id, h_hon, h_ne⟩ := exists_honest_call hq hI.F_le
-  rcases hI.call_val id h_hon (by rw [hv]; simp) with h0 | h0
-  · exact absurd h0 h_ne
-  · have h_call : s.call id = some v := by rw [h0, hv]
-    have h_neq : v ≠ b' := fun h => hb id h_hon (h ▸ h_call)
-    cases v <;> cases b' <;> simp_all
-
 /-- **Invariant preservation.** `SpecInv` is preserved by every step. -/
 theorem SpecInv.step {s : SpecState P.n} {l : Lab P.n} {μ : PMF (SpecState P.n)}
     {s' : SpecState P.n} (hI : SpecInv P s)
     (hstep : SpecStep P s l μ) (hs' : s' ∈ μ.support) : SpecInv P s' := by
   cases hstep with
-  | callSet id b h₁ h₂ =>
+  | callSet id b hv =>
+    -- `val` stays `⊥`, so `val_supp` has nothing to prove
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    have hval : s.val = none := by
-      by_contra hv
-      have := hI.bind_val hv
-      rw [h₂] at this
-      exact hv this.symm
-    refine ⟨hI.F_le, fun h => absurd hval h, fun id' _ h => absurd hval h,
-      ?_, ?_, ?_, ?_⟩
-    · -- call_prov: the fresh caller is freshly recorded
-      intro _ id' b' h_call
-      replace h_call : Function.update s.call id (some b) id' = some b' := h_call
-      by_cases h_eq : id' = id
-      · subst h_eq
-        rw [Function.update_self] at h_call
-        refine Or.inl ?_
-        change Function.update s.input id' (some b) id' = some b'
-        rw [Function.update_self]
-        exact h_call
-      · rw [Function.update_of_ne h_eq] at h_call
-        refine (hI.call_prov h₂ id' b' h_call).imp (fun h => ?_) (fun h => h)
-        change Function.update s.input id (some b) id' = some b'
-        rw [Function.update_of_ne h_eq]
-        exact h
-    · intro v hv
-      exact absurd (show s.bind = some v from hv) (by rw [h₂]; simp)
-    · intro v hv
-      exact absurd (show s.val = some v from hv) (by rw [hval]; simp)
-    · intro v hv
-      exact absurd (show s.bind = some v from hv) (by rw [h₂]; simp)
+    exact ⟨hI.F_le, fun v hvv => absurd (show s.val = some v from hvv) (by rw [hv]; simp)⟩
   | callLoop id b =>
+    -- the ghost record only grows, so `SuppOK.mono` carries the support
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     have hnew : ∀ id' v, s.input id' = some v →
         (if s.input id = none then Function.update s.input id (some b)
@@ -467,216 +303,47 @@ theorem SpecInv.step {s : SpecState P.n} {l : Lab P.n} {μ : PMF (SpecState P.n)
         · subst h_eq; rw [hv] at hcond; exact absurd hcond (by simp)
         · rw [Function.update_of_ne h_eq]; exact hv
       · rw [if_neg hcond]; exact hv
-    refine ⟨hI.F_le, hI.bind_val, hI.call_val, ?_, ?_, ?_, ?_⟩
-    · intro hb id' b' h_call
-      exact (hI.call_prov hb id' b' h_call).imp (hnew id' b') (fun h => h)
-    · intro v hv
-      exact (hI.bind_supp v hv).mono (fun i => hnew i v) (Finset.Subset.refl _)
-    · intro v hv
-      exact (hI.val_supp v hv).mono (fun i => hnew i v) (Finset.Subset.refl _)
-    · intro v hv id' b' h_call
-      rcases hI.bound_prov v hv id' b' h_call with h | h | h
-      · exact Or.inl (hnew id' b' h)
-      · exact Or.inr (Or.inl h)
-      · exact Or.inr (Or.inr h)
-  | unanim b hq hb =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨hI.F_le, fun _ => rfl, fun id' _ _ => Or.inl rfl, ?_, ?_, ?_, ?_⟩
-    · intro hbind
-      exact absurd (show (some (!b) : Option Bool) = none from hbind) (by simp)
-    · intro v hv
-      have hbv : (some (!b) : Option Bool) = some v := hv
-      obtain rfl : (!b) = v := Option.some.inj hbv
-      exact unanim_suppOK (s := s) hI hq hb
-    · intro v hv
-      have hbv : (some (!b) : Option Bool) = some v := hv
-      obtain rfl : (!b) = v := Option.some.inj hbv
-      exact unanim_suppOK (s := s) hI hq hb
-    · intro v hv id' b' h_call
-      exact absurd (show (none : Option Bool) = some b' from h_call) (by simp)
-  | mixed b hq h1 h0 hs =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    have hval : s.val = none := by
-      by_contra hv
-      obtain ⟨i, hi, hci⟩ := h1
-      obtain ⟨j, hj, hcj⟩ := h0
-      rcases hI.call_val i hi hv with h | h
-      · rw [h] at hci; exact absurd hci (by simp)
-      · rcases hI.call_val j hj hv with h' | h'
-        · rw [h'] at hcj; exact absurd hcj (by simp)
-        · rw [h] at hci; rw [h'] at hcj; rw [hci] at hcj
-          exact absurd (Option.some.inj hcj) (by simp)
-    refine ⟨hI.F_le, fun h => absurd hval h, fun id' _ h => absurd hval h,
-      ?_, ?_, ?_, ?_⟩
-    · intro hbind
-      exact absurd (show (some b : Option Bool) = none from hbind) (by simp)
-    · intro v hv
-      have hbv : (some b : Option Bool) = some v := hv
-      obtain rfl : b = v := Option.some.inj hbv
-      exact mixed_suppOK (s := s) hI hs
-    · intro v hv
-      exact absurd (show s.val = some v from hv) (by rw [hval]; simp)
-    · intro v hv id' b' h_call
-      exact absurd (show (none : Option Bool) = some b' from h_call) (by simp)
-  | coinFlip hcall hbind =>
+    exact ⟨hI.F_le, fun v hv =>
+      (hI.val_supp v hv).mono (fun i => hnew i v) (Finset.Subset.refl _)⟩
+  | coinFlip hm hv hq =>
+    -- every branch writes `mode` alone
     rw [PMF.mem_support_map_iff] at hs'
     obtain ⟨o, -, rfl⟩ := hs'
-    exact ⟨hI.F_le, hI.bind_val, hI.call_val, hI.call_prov, hI.bind_supp,
-      hI.val_supp, hI.bound_prov⟩
-  | adopt id h₁ h₂ =>
+    cases o <;> exact ⟨hI.F_le, hI.val_supp⟩
+  | decide b hv hs hm hq =>
+    -- the guard `hs` is the conclusion
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨hI.F_le, hI.bind_val, ?_, ?_, hI.bind_supp, hI.val_supp, ?_⟩
-    · intro id' h_hon hv
-      by_cases h_eq : id' = id
-      · subst h_eq
-        simp only [Function.update_self]
-        exact Or.inr (hI.bind_val hv)
-      · simp only [Function.update_of_ne h_eq]
-        exact hI.call_val id' h_hon hv
-    · intro hb id' b' h_call
-      replace h_call : Function.update s.call id s.bind id' = some b' := h_call
-      by_cases h_eq : id' = id
-      · subst h_eq
-        rw [Function.update_self, hb] at h_call
-        exact absurd h_call (by simp)
-      · rw [Function.update_of_ne h_eq] at h_call
-        exact hI.call_prov hb id' b' h_call
-    · intro v hv id' b' h_call
-      replace h_call : Function.update s.call id s.bind id' = some b' := h_call
-      by_cases h_eq : id' = id
-      · subst h_eq
-        rw [Function.update_self, show s.bind = some v from hv] at h_call
-        exact Or.inr (Or.inl (Option.some.inj h_call).symm)
-      · rw [Function.update_of_ne h_eq] at h_call
-        exact hI.bound_prov v hv id' b' h_call
-  | repropose id b h₁ h₂ hd h₃ =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨hI.F_le, hI.bind_val, ?_, ?_, hI.bind_supp, hI.val_supp, ?_⟩
-    · intro id' h_hon hv
-      by_cases h_eq : id' = id
-      · subst h_eq
-        simp only [Function.update_self]
-        rcases h₃ with ⟨hvn, -⟩ | h
-        · exact absurd hvn hv
-        · exact Or.inr h.symm
-      · simp only [Function.update_of_ne h_eq]
-        exact hI.call_val id' h_hon hv
-    · intro hb id' b' h_call
-      replace h_call : Function.update s.call id (some b) id' = some b' := h_call
-      by_cases h_eq : id' = id
-      · subst h_eq
-        rw [Function.update_self] at h_call
-        obtain rfl := Option.some.inj h_call
-        rcases h₃ with ⟨hvn, hin | hbind⟩ | hval
-        · exact Or.inl hin
-        · exact absurd hbind (by rw [hb]; simp)
-        · have hbv := hI.bind_val (by rw [hval]; simp)
-          rw [hb, hval] at hbv
-          exact absurd hbv (by simp)
-      · rw [Function.update_of_ne h_eq] at h_call
-        exact hI.call_prov hb id' b' h_call
-    · intro v hv id' b' h_call
-      replace h_call : Function.update s.call id (some b) id' = some b' := h_call
-      by_cases h_eq : id' = id
-      · subst h_eq
-        rw [Function.update_self] at h_call
-        obtain rfl := Option.some.inj h_call
-        rcases h₃ with ⟨hvn, hin | hbind⟩ | hval
-        · exact Or.inl hin
-        · rw [show s.bind = some v from hv] at hbind
-          exact Or.inr (Or.inl (Option.some.inj hbind).symm)
-        · have hbv := hI.bind_val (by rw [hval]; simp)
-          rw [show s.bind = some v from hv, hval] at hbv
-          exact Or.inr (Or.inl (Option.some.inj hbv).symm)
-      · rw [Function.update_of_ne h_eq] at h_call
-        exact hI.bound_prov v hv id' b' h_call
-  | callByzFill id b hF h =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨hI.F_le, hI.bind_val, ?_, ?_, hI.bind_supp, hI.val_supp, ?_⟩
-    · intro id' h_hon hv
-      by_cases h_eq : id' = id
-      · subst h_eq
-        exact absurd hF h_hon
-      · simp only [Function.update_of_ne h_eq]
-        exact hI.call_val id' h_hon hv
-    · intro hb id' b' h_call
-      by_cases h_eq : id' = id
-      · subst h_eq
-        exact Or.inr hF
-      · replace h_call : Function.update s.call id (some b) id' = some b' := h_call
-        rw [Function.update_of_ne h_eq] at h_call
-        exact hI.call_prov hb id' b' h_call
-    · intro v hv id' b' h_call
-      by_cases h_eq : id' = id
-      · subst h_eq
-        exact Or.inr (Or.inr hF)
-      · replace h_call : Function.update s.call id (some b) id' = some b' := h_call
-        rw [Function.update_of_ne h_eq] at h_call
-        exact hI.bound_prov v hv id' b' h_call
+    refine ⟨hI.F_le, fun v hvv => ?_⟩
+    obtain rfl : b = v := Option.some.inj (show (some b : Option Bool) = some v from hvv)
+    exact hs
   | ret id b h₁ h₂ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    exact ⟨hI.F_le, hI.bind_val, hI.call_val, hI.call_prov, hI.bind_supp,
-      hI.val_supp, hI.bound_prov⟩
+    exact ⟨hI.F_le, hI.val_supp⟩
   | fail id =>
+    -- `F` grows inside the budget, and `SuppOK` is monotone in it
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨corrupt_card_le s id hI.F_le, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · rw [corrupt_bind, corrupt_val]; exact hI.bind_val
-    · intro id' h_hon hv
-      rw [corrupt_call, corrupt_val]
-      rw [corrupt_val] at hv
-      exact hI.call_val id' (fun hm => h_hon (corrupt_F_subset s id hm)) hv
-    · rw [corrupt_bind]
-      intro hb id' b' h_call
-      rw [corrupt_call] at h_call
-      rw [corrupt_input]
-      exact (hI.call_prov hb id' b' h_call).imp (fun hh => hh)
-        (fun hh => corrupt_F_subset s id hh)
-    · intro v hv
-      rw [corrupt_bind] at hv
-      exact (hI.bind_supp v hv).mono
-        (fun i hh => by rw [corrupt_input]; exact hh) (corrupt_F_subset s id)
-    · intro v hv
-      rw [corrupt_val] at hv
-      exact (hI.val_supp v hv).mono
-        (fun i hh => by rw [corrupt_input]; exact hh) (corrupt_F_subset s id)
-    · intro v hv id' b' h_call
-      rw [corrupt_bind] at hv
-      rw [corrupt_call] at h_call
-      rw [corrupt_input]
-      rcases hI.bound_prov v hv id' b' h_call with hh | hh | hh
-      · exact Or.inl hh
-      · exact Or.inr (Or.inl hh)
-      · exact Or.inr (Or.inr (corrupt_F_subset s id hh))
+    refine ⟨corrupt_card_le s id hI.F_le, fun v hv => ?_⟩
+    rw [corrupt_val] at hv
+    exact (hI.val_supp v hv).mono
+      (fun i hh => by rw [corrupt_input]; exact hh) (corrupt_F_subset s id)
 
-
-/-- **Write-once decision.** Under the invariant, `val = some b` is preserved
-by every step (the unanimity rule can only rewrite `val` to itself). -/
+/-- **Write-once decision.** `SpecStep.decide` is the sole writer of `val` and
+fires only from `val = ⊥`, so `val = some b` is preserved by every step. -/
 theorem SpecInv.val_stable {s : SpecState P.n} {l : Lab P.n}
     {μ : PMF (SpecState P.n)} {s' : SpecState P.n} {b : Bool}
-    (hI : SpecInv P s) (hv : s.val = some b)
-    (hstep : SpecStep P s l μ) (hs' : s' ∈ μ.support) : s'.val = some b := by
+    (hv : s.val = some b) (hstep : SpecStep P s l μ) (hs' : s' ∈ μ.support) :
+    s'.val = some b := by
   cases hstep with
-  | callSet id b' h₁ h₂ =>
+  | callSet id b' hv' =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
   | callLoop id b' =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
-  | unanim b' hq hb =>
-    rw [PMF.mem_support_pure_iff] at hs'
-    subst hs'
-    show some (!b') = some b
-    rw [unanim_rewrites_val hI hv hq hb]
-  | mixed b' hq h1 h0 hs =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
-  | coinFlip hcall hbind =>
+  | coinFlip hm hv' hq =>
     rw [PMF.mem_support_map_iff] at hs'
-    obtain ⟨o, _, rfl⟩ := hs'
-    exact hv
-  | adopt id h₁ h₂ =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
-  | repropose id b' h₁ h₂ hd h₃ =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
-  | callByzFill id b' hF h =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
+    obtain ⟨o, -, rfl⟩ := hs'
+    cases o <;> exact hv
+  | decide b' hv' hs hm hq =>
+    exact absurd hv (by rw [hv']; simp)
   | ret id b' h₁ h₂ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
   | fail id =>
@@ -687,9 +354,7 @@ theorem SpecInv.val_stable {s : SpecState P.n} {l : Lab P.n}
 
 /-- The history-aware invariant: ghost-recorded inputs are attributed to
 `callABA` events in the label history, and the corrupted set is exactly the
-fold of D1-`corrupt` over the labels seen so far. Byzantine `call` fills
-have no event — which is why attribution rides the ghost `input` (never
-Byzantine-written), not `call`. -/
+fold of D1-`corrupt` over the labels seen so far. -/
 structure ValInv (P : Params) (pre : List (Lab P.n)) (s : SpecState P.n) : Prop where
   inv : SpecInv P s
   input_src : ∀ id b, s.input id = some b → Lab.callABA id b ∈ pre
@@ -709,7 +374,8 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
     fun h => List.mem_append_left _ h
   have h_inv' := hI.inv.step hstep hs'
   cases hstep with
-  | callSet id b h₁ h₂ =>
+  | callSet id b hv =>
+    -- the overwritten bit is the label's own bit
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     refine ⟨h_inv', ?_, ?_⟩
     · intro id' b' h_in
@@ -744,38 +410,14 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
     · change s.F = failSetL P (pre ++ [Lab.callABA id b])
       rw [failSetL_append]
       exact hI.F_eq
-  | unanim b hq hb =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
-    change s.F = failSetL P (pre ++ [Lab.tau])
-    rw [failSetL_append]
-    exact hI.F_eq
-  | mixed b hq h1 h0 hs =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
-    change s.F = failSetL P (pre ++ [Lab.tau])
-    rw [failSetL_append]
-    exact hI.F_eq
-  | coinFlip hcall hbind =>
+  | coinFlip hm hv hq =>
     rw [PMF.mem_support_map_iff] at hs'
     obtain ⟨o, -, rfl⟩ := hs'
-    refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
-    change s.F = failSetL P (pre ++ [Lab.tau])
-    rw [failSetL_append]
-    exact hI.F_eq
-  | adopt id h₁ h₂ =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
-    change s.F = failSetL P (pre ++ [Lab.tau])
-    rw [failSetL_append]
-    exact hI.F_eq
-  | repropose id b h₁ h₂ hd h₃ =>
-    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
-    refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
-    change s.F = failSetL P (pre ++ [Lab.tau])
-    rw [failSetL_append]
-    exact hI.F_eq
-  | callByzFill id b hF h =>
+    have hFeq : s.F = failSetL P (pre ++ [Lab.tau]) := by
+      rw [failSetL_append]; exact hI.F_eq
+    cases o <;>
+      exact ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), hFeq⟩
+  | decide b hv hs hm hq =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
     change s.F = failSetL P (pre ++ [Lab.tau])
@@ -814,14 +456,10 @@ private theorem val_agree_le {e : AlterSeq (SpecState P.n) (Lab P.n)}
     {s₁ s₂ : SpecState P.n} {b b' : Bool}
     (hst₁ : e.stateAt k₁ = some s₁) (hst₂ : e.stateAt k₂ = some s₂)
     (hv₁ : s₁.val = some b) (hv₂ : s₂.val = some b') : b = b' := by
-  have h_inv := is_exec_induction (sys := spec P) (SpecInv P) (SpecInv.initial P)
-    (fun s l μ s' hI hstep hs' => hI.step hstep hs') he k₁ s₁ hst₁
-  have h_stable := is_exec_stable (sys := spec P)
-    (fun s => SpecInv P s ∧ s.val = some b)
-    (fun s l μ s' ⟨hI, hv⟩ hstep hs' =>
-      ⟨hI.step hstep hs', hI.val_stable hv hstep hs'⟩)
-    he k₁ k₂ s₁ s₂ hk hst₁ hst₂ ⟨h_inv, hv₁⟩
-  rw [h_stable.2] at hv₂
+  have h_stable := is_exec_stable (sys := spec P) (fun s => s.val = some b)
+    (fun s l μ s' hv hstep hs' => SpecInv.val_stable hv hstep hs')
+    he k₁ k₂ s₁ s₂ hk hst₁ hst₂ hv₁
+  rw [h_stable] at hv₂
   exact Option.some.inj hv₂
 
 /-- The budget pigeonhole: `f + 1` supporters minus at most `f`
