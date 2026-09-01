@@ -305,12 +305,12 @@ theorem SpecInv.step {s : SpecState P.n} {l : Lab P.n} {μ : PMF (SpecState P.n)
       · rw [if_neg hcond]; exact hv
     exact ⟨hI.F_le, fun v hv =>
       (hI.val_supp v hv).mono (fun i => hnew i v) (Finset.Subset.refl _)⟩
-  | coinFlip hm hv hq =>
+  | coinFlip hm hv =>
     -- every branch writes `mode` alone
     rw [PMF.mem_support_map_iff] at hs'
     obtain ⟨o, -, rfl⟩ := hs'
     cases o <;> exact ⟨hI.F_le, hI.val_supp⟩
-  | decide b hv hs hm hq =>
+  | decide b hv hs hm =>
     -- the guard `hs` is the conclusion
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     refine ⟨hI.F_le, fun v hvv => ?_⟩
@@ -338,11 +338,11 @@ theorem SpecInv.val_stable {s : SpecState P.n} {l : Lab P.n}
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
   | callLoop id b' =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
-  | coinFlip hm hv' hq =>
+  | coinFlip hm hv' =>
     rw [PMF.mem_support_map_iff] at hs'
     obtain ⟨o, -, rfl⟩ := hs'
     cases o <;> exact hv
-  | decide b' hv' hs hm hq =>
+  | decide b' hv' hs hm =>
     exact absurd hv (by rw [hv']; simp)
   | ret id b' h₁ h₂ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
@@ -410,14 +410,14 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
     · change s.F = failSetL P (pre ++ [Lab.callABA id b])
       rw [failSetL_append]
       exact hI.F_eq
-  | coinFlip hm hv hq =>
+  | coinFlip hm hv =>
     rw [PMF.mem_support_map_iff] at hs'
     obtain ⟨o, -, rfl⟩ := hs'
     have hFeq : s.F = failSetL P (pre ++ [Lab.tau]) := by
       rw [failSetL_append]; exact hI.F_eq
     cases o <;>
       exact ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), hFeq⟩
-  | decide b hv hs hm hq =>
+  | decide b hv hs hm =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
     change s.F = failSetL P (pre ++ [Lab.tau])

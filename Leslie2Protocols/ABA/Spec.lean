@@ -23,18 +23,20 @@ is Dirac except `SpecStep.coinFlip`.
 The mode loop is the specification's liveness reading. From `Mode.idle` a
 flip locks with probability `ε`, kills with probability `δ`, and releases back
 to `Mode.idle` with the remaining mass. At `Mode.locked` the decision is the
-only enabled `τ`-rule, so a lock is never discarded; `Mode.dead` enables no
-`τ`-rule at all (D17). The flip names no coin bit. Reading `lock` as the coin
+only `τ`-rule the mode can enable, so a lock is never discarded; `Mode.dead`
+enables no `τ`-rule at all (D17). The flip names no coin bit. Reading `lock` as the coin
 agreeing with a round's reference value is an outcome coupling of a
 refinement, not a component of this system.
 
 Provenance rests on the ghost record and the support guard `SuppOK` (D13).
-`SpecStep.decide` is the sole writer of `val`, and its two guards — `f + 1`
-recorded-or-corrupt supporters of the decided bit, and a quorum of recorded
-inputs — are the entire constraint on the value decided. `SpecStep.callSet`
-overwrites the ghost record while nothing is decided, so the record holds the
-bit of the last such call (D16); `SpecStep.callLoop` is the input-enabledness
-loop and records first-write-wins.
+`SpecStep.decide` is the sole writer of `val`. Its guards are `val = ⊥`,
+`SuppOK b` and `mode ≠ dead`, and the support guard is the entire constraint
+on the value decided. The rule is therefore enabled whenever some bit carries
+`f + 1` recorded-or-corrupt supporters and the mode is not `Mode.dead`; no
+count of participating processes is read anywhere in the system.
+`SpecStep.callSet` overwrites the ghost record while nothing is decided, so
+the record holds the bit of the last such call (D16); `SpecStep.callLoop` is
+the input-enabledness loop and records first-write-wins.
 -/
 
 namespace PLTS
@@ -78,14 +80,6 @@ def initial (n : ℕ) : SpecState n where
   F := ∅
   val := none
   mode := .idle
-
-/-- The quorum guard `|{id ∉ F | input[id] ≠ ⊥} ∪ F| ≥ n − f`, read on the
-ghost record. -/
-def quorum (P : Params) (s : SpecState P.n) : Prop :=
-  P.n - P.f ≤ ((Finset.univ.filter (fun id => id ∉ s.F ∧ s.input id ≠ none)) ∪ s.F).card
-
-instance (P : Params) (s : SpecState P.n) : Decidable (s.quorum P) := by
-  unfold quorum; infer_instance
 
 /-- Corruption of `id` (deviation D1): total, Dirac, monotone in `F`. -/
 def corrupt (P : Params) (id : Fin P.n) (s : SpecState P.n) : SpecState P.n :=
@@ -147,25 +141,25 @@ inductive SpecStep (P : Params) :
                              then Function.update s.input id (some b)
                              else s.input })
   /-- Rule 3 (the flip): the only non-Dirac rule of the system. From
-  `Mode.idle`, with nothing decided and a quorum of recorded inputs, one flip
-  resolves by `flipPMF` into `Mode.locked` with probability `ε`, back into
-  `Mode.idle` with probability `1 − ε − δ`, and into `Mode.dead` with
-  probability `δ` (D17). It is one-shot: the three outcomes are the three
-  modes, and the rule names no coin bit. -/
-  | coinFlip (s : SpecState P.n) (hm : s.mode = .idle) (hv : s.val = none)
-      (hq : s.quorum P) :
+  `Mode.idle`, with nothing decided, one flip resolves by `flipPMF` into
+  `Mode.locked` with probability `ε`, back into `Mode.idle` with probability
+  `1 − ε − δ`, and into `Mode.dead` with probability `δ` (D17). It is
+  one-shot: the three outcomes are the three modes, and the rule names no coin
+  bit. -/
+  | coinFlip (s : SpecState P.n) (hm : s.mode = .idle) (hv : s.val = none) :
       SpecStep P s .tau
         ((flipPMF P).map (fun o => match o with
           | .lock => { s with mode := .locked }
           | .release => s
           | .kill => { s with mode := .dead }))
-  /-- Rule 4 (decide): the sole writer of `val`. Its guards are the entire
-  constraint on the decided value: the bit `b` carries `f + 1`
-  recorded-or-corrupt supporters (`hs`, D13) and the ghost record meets the
-  quorum (`hq`). A killed flip disables the rule (`hm`, D17); at `Mode.locked`
-  it is the only enabled `τ`-rule. The mode returns to `Mode.idle`. -/
+  /-- Rule 4 (decide): the sole writer of `val`. Its guards are `val = ⊥`
+  (`hv`), `SuppOK b` (`hs`) and `mode ≠ dead` (`hm`), and the support guard is
+  the entire constraint on the decided value: the bit `b` carries `f + 1`
+  recorded-or-corrupt supporters (D13). A killed flip disables the rule (D17);
+  at `Mode.locked` it is the only enabled `τ`-rule, and it is enabled there
+  whenever some bit carries `f + 1` support. The mode returns to `Mode.idle`. -/
   | decide (s : SpecState P.n) (b : Bool) (hv : s.val = none) (hs : SuppOK P s b)
-      (hm : s.mode ≠ .dead) (hq : s.quorum P) :
+      (hm : s.mode ≠ .dead) :
       SpecStep P s .tau
         (PMF.pure { s with val := some b, mode := .idle })
   /-- Rule 5 (return): a process returns the decision value. -/
@@ -187,37 +181,6 @@ example :
     let F : Finset (Fin 4) := {0}
     ¬ (1 + 1 ≤ (Finset.univ.filter (fun id => input id = some true ∨ id ∈ F)).card) := by
   decide
-
-/-- The quorum guard supplies a supported bit, which is why `SpecStep.decide`
-is enabled at `Mode.locked`. The recorded inputs split by their bit into two
-sets, each closed under adding the corrupted set, and the two together cover
-the quorum; since `n − f ≥ 2f + 1` one of them has `f + 1` members. -/
-theorem quorum_exists_suppOK {P : Params} {s : SpecState P.n}
-    (hq : s.quorum P) : ∃ b, SuppOK P s b := by
-  classical
-  have hsub : ((Finset.univ.filter (fun id => id ∉ s.F ∧ s.input id ≠ none)) ∪ s.F) ⊆
-      (Finset.univ.filter (fun id => s.input id = some true ∨ id ∈ s.F)) ∪
-      (Finset.univ.filter (fun id => s.input id = some false ∨ id ∈ s.F)) := by
-    intro id hid
-    rw [Finset.mem_union] at hid ⊢
-    rcases hid with h | h
-    · rw [Finset.mem_filter] at h
-      cases hv : s.input id with
-      | none => exact absurd hv h.2.2
-      | some c =>
-        cases c
-        · exact Or.inr (Finset.mem_filter.mpr ⟨Finset.mem_univ id, Or.inl hv⟩)
-        · exact Or.inl (Finset.mem_filter.mpr ⟨Finset.mem_univ id, Or.inl hv⟩)
-    · exact Or.inl (Finset.mem_filter.mpr ⟨Finset.mem_univ id, Or.inr h⟩)
-  have h1 := le_trans hq (Finset.card_le_card hsub)
-  have h2 := Finset.card_union_le
-    (Finset.univ.filter (fun id => s.input id = some true ∨ id ∈ s.F))
-    (Finset.univ.filter (fun id => s.input id = some false ∨ id ∈ s.F))
-  have h3 := P.hf
-  by_cases hb : P.f + 1 ≤
-      (Finset.univ.filter (fun id => s.input id = some true ∨ id ∈ s.F)).card
-  · exact ⟨true, hb⟩
-  · exact ⟨false, by unfold SuppOK; omega⟩
 
 /-- The ABA specification system (blueprint Transition System 1). -/
 noncomputable def spec (P : Params) : System (SpecState P.n) (Lab P.n) where

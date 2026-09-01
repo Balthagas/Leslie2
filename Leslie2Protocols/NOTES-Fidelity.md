@@ -200,7 +200,7 @@ repaired at the rule; the sixth entry is a cross-reference.
   `Spec.lean` reproduces neither rule. `PLTS.ABA.SpecStep.decide` is the sole writer of
   `val` and fires only from `val = ⊥`, so the decision value is written once and
   Agreement is structural (`PLTS.ABA.SpecInv.val_stable`); and it carries the D13 support
-  guard `PLTS.ABA.SuppOK` beside the quorum, which is where the Validity trace dies —
+  guard `PLTS.ABA.SuppOK`, which is where the Validity trace dies —
   the counterexample check in `Spec.lean` records it, with inputs `1,0,0,0` at
   `n = 4, f = 1` and the sole `1`-inputter corrupted leaving one supporter of `1` against
   the `f + 1 = 2` the guard demands. The six-rule shape this leaves, with the control mode

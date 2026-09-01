@@ -83,8 +83,9 @@ diffusion state (conjunct 6), and input coherence (conjunct 5 — the honest
   inconsistent with graded agreement.
 
 Two further notes: the return rule has **no** honesty check — corrupted
-returns must pass the same `n − f` quorum guard, exactly like the spec's
-return rule — and `lastGrade` always refers to the *current* round's GBCA
+returns must pass the same `n − f` DECIDED count as honest ones, and the
+specification's return rule is likewise blind to honesty — and
+`lastGrade` always refers to the *current* round's GBCA
 return (it is cleared by the round advance).
 -/
 

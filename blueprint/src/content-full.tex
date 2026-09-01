@@ -394,7 +394,7 @@ The labels D2, D3, D6, D7 and D20 are not in use.
     structure the source spreads over a call row, a bound value and a coin
     field.
     The decision is a single guarded write, rule~4, of a bit carrying $f+1$
-    $F$-blind support under an $n-f$ quorum on the recorded inputs.
+    $F$-blind support.
   \item D22: retention with termination.
     A process record is the pair $\mathrm{ProcRec}(n) = \mathrm{CoreRec}(n)
     \times \mathrm{StageSideRec}(n)$, and the stage-side record holds a finite
@@ -448,10 +448,6 @@ The fairness markings bear only on liveness, which is out of scope.
 
 \paragraph{Notation.}
 Write $[n]$ for the identifier set and $F \subseteq [n]$ for the corrupted set.
-The quorum predicate is
-\[
-  |\{ id \in [n] \setminus F : input[id] \neq \bot \} \cup F| \ \geq\ n - f .
-\]
 The value domain of Transition System~3 is $\{0,1,\bot,\top,\dagger\}$, the type
 \leandecl{PLTS.ABA.TVal}, where $\bot$ is unresolved, $\top$ is an adversarially
 resolved outcome, and $\dagger$ is a resolution that delivers to no process
@@ -1137,8 +1133,8 @@ Only the four Byzantine drives test membership of $F$, and each of them tests
 it at the network; no rule of a round loop names corruption at all, so the
 remaining rules apply to corrupted and honest processes alike.
 The return row is the notable case:
-a corrupted process must pass the same $n - f$ quorum guard, exactly as in the
-specification.
+a corrupted process must pass the same $n - f$ DECIDED count as an honest one,
+and the specification's return rule is likewise blind to honesty.
 The corruption rule \leandeclnamed{fail}{PLTS.ABA.Comp.ANetStep.fail} is a synchronisation of every component of the
 composition, each keeping its own copy of $F$; the round loops' half is
 \leandeclnamed{failIdle}{PLTS.ABA.Comp.CoreProcStepN.failIdle}, corruption being no business of theirs.
@@ -1214,15 +1210,15 @@ obligation.
 The specification has four control states, keyed on the mode and on whether a value is decided: \emph{idle} ($mode = idle$, $val = \bot$), \emph{locked} ($mode = locked$), \emph{dead} ($mode = dead$) and \emph{decided} ($val \neq \bot$).
 Rule 3 (\leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}) is the branch out of \emph{idle}, and it is the only probabilistic transition of the system.
 Its three outcomes carry $\varepsilon$, $1-\varepsilon-\failmass$ and $\failmass$: the flip locks, leaves the state unchanged, or kills (D17).
-Rule 4 (\leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}) is the sole writer of $val$, and it is the only $\tau$-rule enabled at \emph{locked}.
+Rule 4 (\leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}) is the sole writer of $val$, and it is the only $\tau$-rule that \emph{locked} can enable.
 Enabledness is wider than the control graph shows.
 Rules 2 and 6 fire in every state, and rule 1 wherever $val = \bot$.
-Rule 4 is enabled at every state with $val = \bot$, $mode \neq dead$ and a quorum of recorded inputs, hence at \emph{idle} as well as at \emph{locked}.
+Rule 4 is enabled at every state with $val = \bot$, $mode \neq dead$ and some bit carrying $f{+}1$ support, hence at \emph{idle} as well as at \emph{locked}.
 At \emph{decided} the enabled rules are 2, 5 and 6, and at \emph{dead} they are 1, 2 and 6; neither state enables a $\tau$-rule.
 The guards on rule 4 are the entire constraint on the value decided (D13).
 
 \blueprintfig{fig-ts1-rules}{Transition System 1, the ABA specification \leandecl{PLTS.ABA.spec}: the four control states, keyed on the mode, and the flip branch of rule 3, whose $\tau$-step is drawn with an undirected stem and one edge per outcome — lock, release and kill, naming no coin bit.
-A locked flip cannot be discarded: at $locked$ the decision is the only enabled $\tau$-rule.
+A locked flip cannot be discarded: at $locked$ the decision is the only $\tau$-rule the mode can enable.
 The kill branch of mass $\failmass$ (D17) is terminal: $dead$ enables no $\tau$-rule.
 Rules 1 and 2 are drawn on $idle$ alone; rule 1 is enabled wherever no value is decided, rule 2 everywhere; rule 6 (\leandeclnamed{fail}{PLTS.ABA.SpecStep.fail}), the total corruption rule (D1), is not drawn.}
 
@@ -1252,7 +1248,7 @@ $input = \bot^{[n]}$, $ret = \mathrm{false}^{[n]}$, $F = \emptyset$, $val = \bot
 
 \medskip
 \noindent In each rule $id \in [n]$ and $b \in \mathbb{B}$ are parameters, and $s$ is the source state.
-Write $quorum(s)$ for the quorum predicate of the Notation paragraph, read on $input$, and $SuppOK(s,b)$ for
+Write $SuppOK(s,b)$ for
 \[ \bigl|\{ id \in [n] : input[id] = b \ \vee\ id \in F \}\bigr| \ \geq\ f + 1 , \]
 the $f{+}1$ $F$-blind support of $b$ (D13, D15), \leandecl{PLTS.ABA.SuppOK}.
 
@@ -1272,7 +1268,7 @@ No guard.
    \end{cases} \]
 
 \noindent\textbf{3.} \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip} (D17, D21).
-Guard $mode = idle$, $val = \bot$ and $quorum(s)$.
+Guard $mode = idle$ and $val = \bot$.
 \[ \begin{aligned}
      s \xrightarrow{\;\tau\;}\ \
      &\varepsilon\cdot\delta\bigl(s[\,mode := locked\,]\bigr)
@@ -1283,7 +1279,7 @@ The three masses are the image of the coin distribution of Definition~\ref{def:a
 No rule of the system reads a coin bit.
 
 \noindent\textbf{4.} \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide} (D13).
-Guard $val = \bot$, $SuppOK(s,b)$, $mode \neq dead$ and $quorum(s)$.
+Guard $val = \bot$, $SuppOK(s,b)$ and $mode \neq dead$.
 \[ s \xrightarrow{\;\tau\;}
    \delta\bigl(s[\,val := b,\ mode := idle\,]\bigr) \]
 
@@ -1302,29 +1298,26 @@ No guard.
    \end{cases} \]
 
 \medskip
-\noindent Two of the four guards on rule~4 are load-bearing for safety.
+\noindent Two of the three guards on rule~4 are load-bearing for safety.
 Without $val = \bot$ the specification violates Agreement: a second firing rewrites the decision value between two returns, and the two returns carry different bits.
 With it, rule~4 being the sole writer of $val$, the decision value is write-once by the shape of the system and not by an invariant.
 Without $SuppOK(s,b)$ the specification violates Validity.
 Take $n = 4$, $f = 1$, the recorded inputs $1,0,0,0$ and the sole holder of $1$ corrupted.
 A decision of $1$ there has every never-corrupted process inputting $0$, and the guard, demanding $f + 1 = 2$ recorded-or-corrupt supporters of $1$, is what rules that trace out.
-The other two guards carry no safety weight.
-The guard $quorum(s)$ is what \leandecl{PLTS.ABA.quorum_exists_suppOK} converts into a supported bit: the supporters of $0$ and the supporters of $1$, each set taken together with $F$, cover the quorum set, so their cardinalities sum to at least $n - f \ge 2f + 1$ and one of the two reaches $f + 1$.
-Rule~4 is therefore enabled wherever rule~3 is.
-The guard $mode \neq dead$ is the freeze of D17: a killed flip takes the decision away with every other $\tau$-rule.
+The third guard, $mode \neq dead$, carries no safety weight.
+It is the freeze of D17: a killed flip takes the decision away with every other $\tau$-rule.
 
 \dynamics{How a decision arises}{%
 Which rule fires is scheduler nondeterminism, resolved by the adversary; the
 flip is the only source of randomness.
-The flip is enabled at $mode = idle$ once the ghost record meets the quorum and
-nothing is decided.
+The flip is enabled at $mode = idle$ with nothing decided.
 One firing resolves into exactly one of three outcomes.
 A release leaves the state unchanged, so the flip is enabled again.
-A lock sets $mode := locked$, and there the decision is the only enabled
-$\tau$-rule: the flip asks for $mode = idle$, and the quorum that enabled the
-flip persists, since no rule sets a recorded input back to $\bot$ and no rule
-removes an identifier from $F$, so
-\leandecl{PLTS.ABA.quorum_exists_suppOK} supplies a bit with $f{+}1$ support.
+A lock sets $mode := locked$, and there the decision is the only $\tau$-rule
+the mode can enable, the flip asking for $mode = idle$.
+The decision is enabled whenever some bit carries $f{+}1$ support, and such a
+bit stays supported, since no rule sets a recorded input back to $\bot$ and no
+rule removes an identifier from $F$.
 A lock is therefore never discarded.
 A kill sets $mode := dead$, which enables no $\tau$-rule at all (D17), so a
 killed flip leaves the system with no decision and no return.
@@ -1337,6 +1330,9 @@ A run that keeps flipping therefore locks or dies almost surely, and under a
 scheduler that fires nothing but the flip it locks with probability
 $\varepsilon/(\varepsilon+\failmass)$.
 No safety argument uses either mass.
+The reading is conditional on support: a lock reached before any bit carries
+$f{+}1$ support enables no $\tau$-rule at all, and the system waits there until
+the calls that supply the support are recorded.
 The decision is \emph{enabled}, never forced, and the scheduler may decline it
 forever, so the claim that the protocol decides with probability $1$ under fair
 scheduling is a separate statement, not proved here.

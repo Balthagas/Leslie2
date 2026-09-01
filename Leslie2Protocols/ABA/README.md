@@ -63,7 +63,7 @@ the file is. The order is the dependency order.
 |---|---|---|
 | `Params.lean` | 125 | The parameters `P` — `n`, `f` with `n > 3f`, and the coin distribution `wccPMF` with its ε/δ bounds. |
 | `Labels.lean` | 141 | The shared label alphabet `Lab n`: the visible API, the hidden sub-protocol handshakes, `τ`. |
-| `Spec.lean` | 233 | **The top-level ABA specification**, the system all safety is measured against. Six rules over `SpecState`, whose control mode carries the flip (D21). |
+| `Spec.lean` | 196 | **The top-level ABA specification**, the system all safety is measured against. Six rules over `SpecState`, whose control mode carries the flip (D21). The decision is gated on the `f + 1` support guard `SuppOK` alone (D13). |
 | `WCCSpec.lean` | 163 | The weak common coin specification, per round, and the coin value domain `TVal`. Held at specification level by design. |
 | `GBCASpec.lean` | 268 | The graded binding crusader agreement specification, per round. Binding is negative (D19). |
 | `SpecSafety.lean` | 567 | `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. The trace predicates live here. |
@@ -76,11 +76,11 @@ the file is. The order is the dependency order.
 | `Protocol.lean` | 1379 | **The protocol as it runs**, and the subject of the whole chain: the programs, each holding its round loop beside its stage-side record (D22), the network adversary, and the pipeline that composes them beside the coin oracle. |
 | `GBCAInstances.lean` | 1635 | **The round's graded-agreement instance** and the licence to replace it, `subSim`. |
 | `Hybrid.lean` | 729 | **`composed`**, **`substSim`**: the same protocol read as four components, one round instance per round retained at every moment, and that graded-agreement component then replaced by its specification under the four congruences. |
-| `CoreSimRel.lean` | 688 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
+| `CoreSimRel.lean` | 667 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
 | `CoreSimInv.lean` | 3809 | Step inversion for `hybrid`, then preservation of `Inv` across every row. The bulk of the proof text. |
 | `CoreSimAbs.lean` | 335 | `Abs` preservation for the stutter rows, and the assembly `Inv.step`. |
 | `CoreSimBurst.lean` | 53 | The abstract-twin burst kit: `SpecStep.decide` as a τ-burst (`decide_step`), and a burst closed by a visible step (`weakStep_of_burst_then_step`). |
-| `CoreSim.lean` | 412 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
+| `CoreSim.lean` | 406 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
 | `ProtocolSim.lean` | 1004 | **`protocolSim`**, **`protocol_composed`**: the protocol carried into the composed reading along `ProtocolRel`, whose five unguarded conjuncts determine the composed state. |
 | `Results.lean` | 209 | The deliverables, gathered so every citable statement is in one file. Twelve `#guard_msgs` axiom firewalls. |
 | `NonVacuity.lean` | 623 | A concrete 21-step run of `hybrid P4` to a `retABA` decision, so the simulation about it is not vacuous. |

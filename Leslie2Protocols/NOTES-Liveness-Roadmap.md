@@ -213,10 +213,16 @@ the absorbed TS 3 instance does one level down. The two encodings agree on what 
 scheduler can be obliged to do, and no marking has anything to reconcile between them.
 
 The lock is the symmetric half. `flipPMF` puts mass `ε` on `lock`, whose post-state is
-`Mode.locked`; there `SpecStep.decide` is the only enabled `τ`-rule, since the flip
-demands `Mode.idle` and the quorum that enabled the flip already supplies a supported bit
-(`PLTS.ABA.quorum_exists_suppOK`). A lock is never discarded: at a locked state the one
-internal move a scheduler has is the decision. The release mass `1 − ε − δ_f` returns the
+`Mode.locked`; there the flip demands `Mode.idle`, so `SpecStep.decide` is the only
+`τ`-rule that can be enabled at all. It is enabled exactly when some bit carries `f + 1`
+support, and support once established is permanent, the ghost record and the corrupted
+set both being monotone. A lock is never discarded: at a locked state the one internal
+move a scheduler has is the decision. A lock reached before any bit is supported is a
+transient stall — no `τ`-rule is enabled until the recorded inputs supply the count — and
+a liveness proof rules that case out at its hypothesis: once the `n − f` honest processes
+have called, the recorded-or-corrupt identifiers number at least `n − f ≥ 2f + 1` and fall
+on two bits, so one bit carries `f + 1` of them for the rest of the run. The release mass
+`1 − ε − δ_f` returns the
 state to `Mode.idle`, where the flip is enabled again, so a flip-only scheduler runs the
 `ε`-versus-`δ_f` race to absorption and locks with probability `ε / (ε + δ_f)`. That is
 the bound §1 records.

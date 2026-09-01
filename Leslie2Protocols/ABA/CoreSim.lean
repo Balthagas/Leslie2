@@ -313,18 +313,12 @@ theorem coreSim (P : Params) :
       have hCF : c'.F = ABAState.F (C, A) := ABAState.setProc_F _ _ _
       rcases hAbs.phase with ⟨hv, hghost⟩ | ⟨v, hv2, ⟨r0, hcv0⟩, hpin⟩
       · -- phase 1: the `decide` τ-step, then `SpecStep.ret`
-        have hq : a.quorum P := abstract_quorum_of_input (aF := a.F) (aInput := a.input) hI
-          hAbs.F_eq (fun id0 _ hin0 => by
-            rcases hin1 : (ABAState.procs (C, A) id0).input with _ | b0
-            · exact absurd hin1 hin0
-            · rw [hghost id0 b0 hin1]; simp) (r := rA)
-          (fun hemp => absurd (hemp ▸ hrA_cert.2.1) (Finset.notMem_empty _))
         have hsup : SuppOK P a b :=
           suppOK_of_inputSupp hAbs.F_eq hghost (hI.bind_supp rA b hrA_cert.2.1)
         have hmode : a.mode ≠ .dead := by rw [hAbs.mode_idle]; exact fun h => by cases h
         set a1 : SpecState P.n := { a with val := some b, mode := .idle } with ha1def
         have hburst : weakTau (spec P) (PMF.pure a) (PMF.pure a1) :=
-          decide_step hv hsup hmode hq
+          decide_step hv hsup hmode
         have hval1 : a1.val = some b := rfl
         have hretid : a1.ret id = false := hretfalse
         set a'' : SpecState P.n := { a1 with ret := Function.update a1.ret id true } with ha''def

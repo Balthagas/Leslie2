@@ -33,10 +33,10 @@ variable {P : Params}
 /-- `SpecStep.decide` as a `weakTau` burst. The rule is Dirac, so the burst is
 a single step: `val` takes `b` and the mode returns to `Mode.idle`. -/
 theorem decide_step {a : SpecState P.n} {b : Bool} (hv : a.val = none)
-    (hs : SuppOK P a b) (hm : a.mode ≠ .dead) (hq : a.quorum P) :
+    (hs : SuppOK P a b) (hm : a.mode ≠ .dead) :
     weakTau (spec P) (PMF.pure a)
       (PMF.pure { a with val := some b, mode := .idle }) :=
-  weakTau_of_step rfl (SpecStep.decide a b hv hs hm hq)
+  weakTau_of_step rfl (SpecStep.decide a b hv hs hm)
 
 /-! ### Convenience: closing a burst with a visible step -/
 

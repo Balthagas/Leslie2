@@ -157,18 +157,14 @@ its four components; each class is one row of `CoreSim.lean`.
 | `fail id` | `fail id` | `SpecStep.fail` (same corrupt guard via `F_eq`; robust in both phases) |
 
 The single burst is `decide_step` (`CoreSimBurst.lean`), fired at the phase-1 `retABA`.
-`SpecStep.decide` is Dirac, so the burst is one step; what the row supplies is its four
+`SpecStep.decide` is Dirac, so the burst is one step; what the row supplies is its three
 guards, each read off the concrete state at the round `rA` of the `ACert` harvested from a
 never-corrupted DECIDED sender of `b`.
 
 - `hv : a.val = none` — phase 1 itself.
 - `hm : a.mode ≠ .dead` — the `mode_idle` field: a twin that never flips is never killed.
-- `hq : a.quorum P` — `abstract_quorum_of_input` (`CoreSimRel.lean`) reads
-  `Inv.bound_quorum` at `rA`, whose exclusion set is non-empty off the certificate's
-  permanent residue `(!b) ∈ (g rA).dead`, and carries the count onto the twin through
-  `Inv.input_called` and phase 1's ghost sync.
 - `hs : SuppOK P a b` — `suppOK_of_inputSupp` (`CoreSimRel.lean`) reads the concrete
-  input-or-`F` pool `Inv.bind_supp rA b` through that same sync.
+  input-or-`F` pool `Inv.bind_supp rA b` through phase 1's ghost sync.
 
 The step writes `val := some b` and returns the mode to `Mode.idle`, so `mode_idle`
 survives it and phase 2 is entered with the certificate at `rA` in hand. The trailing
@@ -201,20 +197,17 @@ What `Spec.lean` carries:
   overwrite is load-bearing: it is what keeps the record revisable while the twin is
   undecided (§ Why this shape, item 7). No honesty guards anywhere; every support count
   is `F`-blind, hence immune to later `fail`s.
-- **`SpecStep.decide`** is the sole writer of `val`, and its two provenance guards are
-  the entire constraint on the value decided: `hs : SuppOK P s b`, the `f + 1`
-  recorded-or-corrupt supporters of `b`, and `hq : s.quorum P`, a quorum of recorded
-  inputs. The support guard restricts which bit may be decided, and does so by design:
-  `n − 2f` honest callers can split as low as `⌈(f+1)/2⌉` per bit, so a given bit need not
-  be supported. `quorum_exists_suppOK` shows that under the quorum some bit always is —
-  the two supporter sets cover the quorum set and their cards sum to `n − f ≥ 2f + 1`, so
-  one of them reaches `f + 1`. Spec liveness is unclaimed beyond that.
+- **`SpecStep.decide`** is the sole writer of `val`, and its provenance guard
+  `hs : SuppOK P s b`, the `f + 1` recorded-or-corrupt supporters of `b`, is the entire
+  constraint on the value decided. It restricts which bit may be decided, and does so by
+  design: `n − 2f` honest callers can split as low as `⌈(f+1)/2⌉` per bit, so a given bit
+  need not be supported. The rule is enabled at `Mode.locked`, where it is the only
+  enabled `τ`-rule, exactly when some bit is supported; support is permanent, the ghost
+  record and `F` both being monotone. Spec liveness is unclaimed beyond that.
 - **The mode loop (D21) carries no value.** `SpecStep.coinFlip` names no coin bit and
   writes nothing but `mode`, so no bit can enter the system through the one probabilistic
   rule; licensing a coin bit would re-admit a Validity-breaking decision at probability
-  `ε`. `quorum_exists_suppOK` is also why `SpecStep.decide` is enabled at `Mode.locked`,
-  where it is the only enabled `τ`-rule: the flip's own quorum guard already supplies the
-  supported bit the decision needs.
+  `ε`.
 - **No spec-side fill rule.** The concrete adversary fills GBCA call slots through hidden
   byz `callG` drivers that carry no `callABA` event. Those slots are paid for by the
   `F` budget inside the count itself — the `id ∈ s.F` disjunct of `SuppOK` — rather than
@@ -363,8 +356,7 @@ fields), grouped:
   exclusion set — a `C`-return reads no pair and constrains none), `grade_A_src` and
   `decided_src` (both producing an `ACert`, the pair-free form), `recv_sound` (D12′
   per-bit and honesty-free — see above), `bound_quorum` (a round with a non-empty
-  exclusion set has met the quorum, which `abstract_quorum_of_input` reads onto the twin
-  as `SpecStep.decide`'s `hq`).
+  exclusion set has met the quorum).
 - **Certificates**: `dead_supp` (I28), `carrier_agree` (I29), `alock_agree` (I30) — the
   three conjuncts that state a round's value without the live pair; see § Certificates.
 - **Support pools**: `bind_supp` (I26) — a round whose exclusion set names `!v` carries a
@@ -430,7 +422,7 @@ recording them is what pins the design.
    `mode_idle`: the twin stutters at every flip and keeps `SpecStep.decide` enabled.
 3. **Unconditional honest-unanimity fails.** Requiring pairwise agreement of honest
    inputs whenever the twin is undecided is too strong: two opposite fresh inputs with
-   nothing decided yet are reachable and would force a decision no quorum supports. The
+   nothing decided yet are reachable and would force a decision no support count backs. The
    lazy twin sidesteps the question entirely — it carries no unanimity constraint,
    because phase 1 decides nothing.
 4. **Free re-propose loses provenance (TS 1).** In the source blueprint's TS 1, the free

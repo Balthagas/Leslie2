@@ -165,7 +165,7 @@ Each departure from~\cite{LeslieBP} carries a label, cited at the point where it
   \item D19: the GBCA specification state carries an exclusion set $dead \subseteq \{0,1\}$, the bits the instance is barred from handing out, in place of the source's bound value $bind \in \{0,1,\bot\}$, which makes Binding negative and monotone.
   \item D21: Transition System~1 is six rules over the record $\{input, ret, F, val, mode\}$, in place of the source's per-process call row and five-valued coin.
     The coin is an abstract flip, \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}, which resolves once per firing into a lock, a release or a kill and names no bit.
-    The decision is a single guarded write, \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}, of a bit carrying $f+1$ $F$-blind support under an $n-f$ quorum on the recorded inputs.
+    The decision is a single guarded write, \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}, of a bit carrying $f+1$ $F$-blind support.
   \item D22: retention with termination.
     A process record retains the graded-agreement stage record of every round it has touched, in a finite map \leandecl{PLTS.ABA.Net.StageSideRec} on which a round never touched reads as the initial stage record.
     The stage-side rules are round-indexed and guarded by the stage record their label tags rather than by the round loop, so a process answers the traffic of a round its round loop has passed.

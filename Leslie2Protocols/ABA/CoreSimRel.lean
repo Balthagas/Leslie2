@@ -413,8 +413,7 @@ structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAState P)
   wcalled_residue : ∀ r id, id ∉ c.F → (w r).called id = true →
     (g r).grade ≠ none ∨ DissentResidue P g c r
   /-- I25 : every bound round permanently retains its firing quorum (`bindUnset`'s
-  guard, monotone under later call-growth and `F`-growth). Transfers to the abstract's
-  rule-3/4 quorum guard via `abstract_quorum`. -/
+  guard, monotone under later call-growth and `F`-growth). -/
   bound_quorum : ∀ r, (g r).dead ≠ ∅ → (g r).quorum P
   /-- I26 (D13) : every bound round's surviving value carries a permanent `f + 1`
   input-or-`F` support pool — the concrete mirror of TS 1's V-P1 `SuppOK`.
@@ -506,26 +505,6 @@ theorem GBCA.callSupp_mono {P : Params} {s s' : GBCA.SpecState P.n} {b : Bool}
   intro x hx
   simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hx ⊢
   exact hx.imp (hcall x) (fun h' => hF h')
-
-/-- **Quorum transfer** : a bound concrete round's firing quorum (`Inv.bound_quorum`)
-transfers to the abstract's quorum guard, for any abstract `F`/`input` that agrees with `c.F`
-and is non-`⊥` on every honest process holding a committed external input. Stated on raw
-`aF`/`aInput` so it reads the ghost record of the twin at any phase. -/
-theorem abstract_quorum_of_input {P : Params} {g : ℕ → GBCA.SpecState P.n}
-    {c : ABAState P} {w : ℕ → WCC.SpecState P.n} {aF : Finset (Fin P.n)}
-    {aInput : Fin P.n → Option Bool} (hI : Inv P g c w) (haF : aF = c.F)
-    (hin : ∀ id, id ∉ c.F → (c.procs id).input ≠ none → aInput id ≠ none)
-    {r : ℕ} (hr : (g r).dead ≠ ∅) :
-    P.n - P.f ≤
-      ((Finset.univ.filter (fun id => id ∉ aF ∧ aInput id ≠ none)) ∪ aF).card := by
-  refine le_trans (hI.bound_quorum r hr) (Finset.card_le_card ?_)
-  intro x hx
-  have hFgr : (g r).F = c.F := hI.F_g r
-  simp only [Finset.mem_union, Finset.mem_filter, Finset.mem_univ, true_and] at hx ⊢
-  rcases hx with ⟨hxF, hxc⟩ | hxF
-  · have hxc' : x ∉ c.F := hFgr ▸ hxF
-    exact Or.inl ⟨by rw [haF]; exact hxc', hin x hxc' (hI.input_called r x hxc' hxc)⟩
-  · exact Or.inr (by rw [haF, ← hFgr]; exact hxF)
 
 /-- **Support transfer (D13)** : the concrete input-or-`F` pool for `b`
 (`Inv.bind_supp`) reads on the twin as the `SpecStep.decide` guard `SuppOK`,
