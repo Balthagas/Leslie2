@@ -135,3 +135,11 @@ pseudocode and the proof bodies).
   preceding `callABA id' b`; the proof yields a stronger ghost-backed witness. Care: while
   nothing is decided the D13 ghost record holds the bit of the *last* `SpecStep.callSet`
   (D16 overwrite), so a "first call" restatement is not immediate.
+- **By-type finiteness of the environment coordinates** (not pursued): the process types
+  enforce finitely many variables by construction — the finite map of stage records, one
+  round counter — where the network's round-indexed pools, the coin family, and the
+  composed reading's instance family are `ℕ`-indexed types whose reachable states have
+  finite support. The by-type form is available throughout, by finite maps at the pools
+  and a finitely-supported family combinator in `Framework/`. The finite-program
+  principle does not ask for it: the network is the adversary, the coin an assumed
+  oracle, and the instance family a specification-side reading.
