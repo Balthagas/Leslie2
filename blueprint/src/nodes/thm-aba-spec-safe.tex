@@ -3,15 +3,17 @@
   \lean{PLTS.ABA.spec_safe}\leanok
   \uses{def:aba-spec, thm:trace-support}
   Every trace in the support of every achievable trace distribution of the repaired specification satisfies Validity and Agreement.\lean{PLTS.ABA.ValidityTrace}\leanok\lean{PLTS.ABA.AgreementTrace}\leanok{}
-  Validity is the paper form: every return $\mathrm{retABA}\,id\,b$ at trace position $m$ is preceded by a call $\mathrm{callABA}\,id'\,b$ at some $k < m$ whose caller $id'$ is never corrupted anywhere along the trace.
-  Agreement is that any two returns carry the same bit.
-  Both predicates quantify over all returns, corrupted returners included, and are on that axis stronger than the contracts' correct-process phrasing.
+  Both predicates are read at never-corrupted returners, which is the quantification of the papers' own contracts: a corrupted process returns an arbitrary bit at an arbitrary time (D23), which no property of the system constrains.
+  Validity is the paper form: every return $\mathrm{retABA}\,id\,b$ at trace position $m$ by a never-corrupted $id$ is preceded by a call $\mathrm{callABA}\,id'\,b$ at some $k < m$ whose caller $id'$ is never corrupted anywhere along the trace.
+  Agreement is that any two returns by never-corrupted processes carry the same bit.
+  Corruption is read at the trace level, as non-membership in every stage of the fold of the D1 transform over the $\mathrm{fail}$ labels seen so far.
 \end{theorem}
 
 \begin{proof}\leanok
   \uses{def:aba-spec, thm:trace-support}
-  By Theorem~\ref{thm:trace-support} it suffices to prove the two predicates on the events of every genuine execution, which we do by induction over the six rules with the invariants $\mathrm{SpecInv}$ and $\mathrm{ValInv}$.
-  For Agreement, the decision value $val$ is write-once by the shape of the system: \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide} is its only writer and fires only from $val = \bot$, so two returns read the same bit.
+  By Theorem~\ref{thm:trace-support} it suffices to prove the two predicates on the events of every genuine execution, which we do by induction over the eight rules with the invariants $\mathrm{SpecInv}$ and $\mathrm{ValInv}$.
+  For Agreement, the decision value $val$ is write-once by the shape of the system: \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide} is its only writer and fires only from $val = \bot$.
+  A never-corrupted returner lies outside the corruption fold at its own position, hence outside the pre-state's corrupted set, so \leandeclnamed{retByz}{PLTS.ABA.SpecStep.retByz} is unavailable to it and its return reads that one value.
   For Validity, $\mathrm{SpecInv}$ ties $val$ to an $f{+}1$ $F$-blind support, each member of which is either ghost-recorded as inputting the value or corrupted, and $\mathrm{ValInv}$ attributes each ghost record to a $\mathrm{callABA}$ event of the label history.
   The at most $f$ ever-corrupted processes, obtained as a trace-level fold of the $\mathrm{failSet}$, leave one of the $f{+}1$ supporters a never-corrupted recorded caller by a budget pigeonhole.
   Positionality of that caller, a call at some $k < m$, is read off the same label-history fold.

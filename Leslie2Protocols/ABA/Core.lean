@@ -81,6 +81,14 @@ diffusion state (conjunct 6), and input coherence (conjunct 5 — the honest
   The per-process pools (D12′) let a corrupted process equivocate in the
   DECIDED pools; a single-slot model would bar that — an under-approximation
   inconsistent with graded agreement.
+* **D23 (the corrupted process's replaced program).** A corruption replaces the
+  program of the process it names. `CoreRec.corrupted` carries the
+  replacement: the process's own half of `fail` writes the flag, every row
+  that reads or writes the process's own record is guarded by
+  `corrupted = false`, and the replaced program self-loops on every label of
+  the alphabet other than `τ` and the labels on which the process would act on
+  its own sub-protocol traffic. That traffic is the business of the Byzantine
+  drives (D11), which carry it with no round-loop row of the driven process.
 
 Two further notes: the return rule has **no** honesty check — corrupted
 returns must pass the same `n − f` DECIDED count as honest ones, and the
@@ -184,16 +192,24 @@ structure CoreRec (n : ℕ) : Type where
   proc : ProcCore n
   /-- The DECIDED payloads delivered to this process, indexed by sender. -/
   decIn : Fin n → Finset Bool
+  /-- Whether this process's program has been replaced (D23). The process's own
+  half of `fail` writes the flag, and the guard of every honest row reads it.
+  The record beneath the flag stands still from that point on. -/
+  corrupted : Bool
   deriving DecidableEq
 
 namespace CoreRec
 
 variable {n : ℕ}
 
-/-- The initial round-loop record: idle control record, no receipts. -/
+/-- The initial round-loop record: idle control record, no receipts, program
+not replaced. -/
 def initial (n : ℕ) : CoreRec n where
   proc := ProcCore.initial n
   decIn := fun _ => ∅
+  corrupted := false
+
+@[simp] theorem initial_corrupted (n : ℕ) : (initial n).corrupted = false := rfl
 
 /-- The number of distinct senders whose `⟨DECIDED, b⟩` this process holds. -/
 def decidedCount (q : CoreRec n) (b : Bool) : ℕ :=
@@ -202,9 +218,15 @@ def decidedCount (q : CoreRec n) (b : Bool) : ℕ :=
 /-- Update the control record. -/
 def setProc (q : CoreRec n) (p : ProcCore n) : CoreRec n := { q with proc := p }
 
+@[simp] theorem setProc_corrupted (q : CoreRec n) (p : ProcCore n) :
+    (q.setProc p).corrupted = q.corrupted := rfl
+
 /-- Record a delivered `⟨DECIDED, b⟩` from sender `k`. -/
 def recvDec (q : CoreRec n) (k : Fin n) (b : Bool) : CoreRec n :=
   { q with decIn := Function.update q.decIn k (insert b (q.decIn k)) }
+
+@[simp] theorem recvDec_corrupted (q : CoreRec n) (k : Fin n) (b : Bool) :
+    (q.recvDec k b).corrupted = q.corrupted := rfl
 
 /-- The round advance on receiving the coin `c`: adopt the coin if the
 estimate is `⊥`, clear the grade, open the next round. The `⟨DECIDED, b⟩`
@@ -217,6 +239,9 @@ def stepRound (q : CoreRec n) (c : Bool) : CoreRec n :=
       lastGrade := none,
       round := q.proc.round + 1,
       phase := .toCallG }
+
+@[simp] theorem stepRound_corrupted (q : CoreRec n) (c : Bool) :
+    (q.stepRound c).corrupted = q.corrupted := rfl
 
 end CoreRec
 

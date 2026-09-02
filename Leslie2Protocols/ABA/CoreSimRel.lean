@@ -19,8 +19,9 @@ that leads the first `retABA` row.
 
 * `Abs` — the abstract-state constraints (C1 `F_eq`, C2 `ret_eq`, `mode_idle`,
   and C3/C7 `phase`).
-* `Inv` — the concrete invariant (thirty-nine fields, docstring-numbered
-  I1–I30, a few numbers covering a small group of fields: F-lockstep, input
+* `Inv` — the concrete invariant (forty fields, docstring-numbered
+  I0–I30, a few numbers covering a small group of fields: the replacement
+  flag against the corrupted set, F-lockstep, input
   coherence, the `Closed`-keyed round skeleton with quiescence, DECIDED
   coherence, A-grade commitment, delivery soundness, round/phase coherence,
   support pools, and the burn-proof certificate conjuncts I28–I30).
@@ -70,8 +71,8 @@ def Carrier (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAState P)
           ((c.procs id).phase = .idle ∨ (c.procs id).phase = .toCallG ∨
             (c.procs id).phase = .awaitG))))
 
-/-- The permanent commitments of an `A`-locked round (the old `a_commit`
-conclusions, plus the round's own honest carriers). Carried *inside* every
+/-- The permanent commitments of an `A`-locked round (what `Inv.a_commit`
+concludes of it, together with the round's own honest carriers). Carried *inside* every
 `A`-certificate: a later `bindUnset` may *burn* the round — kill its surviving
 bit as well, reaching `dead = {0, 1}` — after which the exclusion set alone no
 longer names the decided value. Every component is monotone-stable: the pair
@@ -261,6 +262,11 @@ theorem AbsFrame.refl (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAStat
 about the concrete `(g, c, w)` only. -/
 structure Inv (P : Params) (g : ℕ → GBCA.SpecState P.n) (c : ABAState P)
     (w : ℕ → WCC.SpecState P.n) : Prop where
+  /-- I0 (D23): the replacement flag and the corrupted set name the same
+  processes. The two are written by the two halves of one `fail` row, whose
+  network guard `id ∉ F` and round-loop guard `corrupted = false` are the two
+  sides of this equivalence. -/
+  corrupted_F : ∀ id, c.corrupted id = true ↔ id ∈ c.F
   /-- I1: F-lockstep across every component copy. -/
   F_g : ∀ r, (g r).F = c.F
   F_w : ∀ r, (w r).F = c.F
@@ -603,6 +609,7 @@ theorem Inv.no_cgrade_succ {P : Params} {g : ℕ → GBCA.SpecState P.n}
 theorem Inv.initial (P : Params) :
     Inv P (fun _ => GBCA.SpecState.initial P.n) (ABAState.initial P)
       (fun _ => WCC.SpecState.initial P.n) where
+  corrupted_F := fun id => by simp [ABAState.initial]
   F_g := fun _ => rfl
   F_w := fun _ => rfl
   F_card := by simp [ABAState.initial]

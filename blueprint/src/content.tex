@@ -144,13 +144,17 @@ A rule is cited by its Lean constructor name, a deviation label in parentheses m
 \paragraph{Deviations.}
 Each departure from~\cite{LeslieBP} carries a label, cited at the point where it applies; the labels D2, D3, D6, D7 and D20 are not in use.
 \begin{itemize}
-  \item D1: corruption is a total deterministic transform.
+  \item D1: corruption is a guarded deterministic transform, broadcast to every component.
+    The label $\mathrm{fail}(id)$ fires only under $id \notin F \wedge |F| < f$, the guard sitting on the row of the component that owns the corrupted set, so a corruption fires exactly where it takes effect.
+    The transform is $\mathrm{corrupt}$, which inserts $id$ into $F$ and writes nothing else.
+    The half of the broadcast taken at the process the label names replaces that process's program, the replacement itself being D23.
   \item D4: the WCC \texttt{guess} label and the \texttt{guess} state field are omitted.
   \item D5: a set-based authenticated network with per-sender message pools.
   \item D8: protocol sends gated on prior participation.
   \item D9: $0$-based round indexing.
   \item D10: the per-round bookkeeping between the coin return and the next call fused into the $retW$ step, which multicasts DECIDED on an $A$ grade.
   \item D11: Byzantine call- and return-driver rules at each handshake.
+    A replaced program's sub-protocol traffic is the drives' business; its interface traffic is D23's.
   \item D12$'$: per-process DECIDED sent and received pools, delivery per (receiver, sender, bit), and Byzantine equivocation in those pools.
   \item D13: the Validity provenance apparatus on Transition System~1, namely a ghost record $input$ of the genuine $\mathrm{callABA}$ events and an $f+1$ support guard \leandecl{PLTS.ABA.SuppOK} on the decision.
     The record has two writers, the interface rules \leandeclnamed{callSet}{PLTS.ABA.SpecStep.callSet} and \leandeclnamed{callLoop}{PLTS.ABA.SpecStep.callLoop}, and the support guard on the decision is what turns it into provenance.
@@ -163,8 +167,9 @@ Each departure from~\cite{LeslieBP} carries a label, cited at the point where it
     At Transition System~1 it is the kill outcome of the flip, which drives the system into the terminal mode $dead$, and $dead$ enables no $\tau$-rule.
   \item D18: the GBCA implementation transcribes ABDY22's Algorithm~6 in full, six rounds over the message levels INPUT, ECHO, VOTE, BIND and SEAL, in place of the source's four-round compression of it, which elides the SEAL level and takes $f{+}1$ $\mathrm{VOTE}\,v$ receipts as the grade-$1$ witness and thereby violates Binding.
   \item D19: the GBCA specification state carries an exclusion set $dead \subseteq \{0,1\}$, the bits the instance is barred from handing out, in place of the source's bound value $bind \in \{0,1,\bot\}$, which makes Binding negative and monotone.
-  \item D21: Transition System~1 is six rules over the record $\{input, ret, F, val, mode\}$, in place of the source's per-process call row and five-valued coin.
+  \item D21: Transition System~1 is eight rules over the record $\{input, ret, F, val, mode\}$, in place of the source's per-process call row and five-valued coin.
     The coin is an abstract flip, \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}, which resolves once per firing into a lock, a release or a kill and names no bit.
+    Its guards are $mode = idle$, $val = \bot$ and the mixedness gate, which asks $f+1$ support of each of the two bits.
     The decision is a single guarded write, \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}, of a bit carrying $f+1$ $F$-blind support.
   \item D22: retention with termination.
     A process record retains the graded-agreement stage record of every round it has touched, in a finite map \leandecl{PLTS.ABA.Net.StageSideRec} on which a round never touched reads as the initial stage record.
@@ -172,6 +177,14 @@ Each departure from~\cite{LeslieBP} carries a label, cited at the point where it
     That indefinite participation is the regime of ABDY22's Lemmas~4.6 and~E.5, which are stated under the hypothesis that no non-faulty process has terminated.
     Termination is the rule \leandeclnamed{terminate}{PLTS.ABA.Net.ABAProcStepN.terminate}, which fires once the process's own return has fired and $2f+1$ DECIDED receipts are on its record (ABDY22's Definitions~3.1 and~3.2 and its note on termination), and whose effect is to set the flag alone.
     It stops the stage-side rules only: the DECIDED rules carry no termination guard, so a process that has terminated keeps relaying the payloads it holds.
+    The rule carries the replacement guard of D23, so a process whose program has been replaced never terminates.
+  \item D23: when a process is corrupted its program is replaced.
+    The round-loop record carries the flag \leandecl{PLTS.ABA.CoreRec.corrupted}, written by the process's own half of the corruption broadcast, \leandeclnamed{failSelf}{PLTS.ABA.Net.ABAProcStepN.failSelf}, and the record beneath the flag stands still from that point.
+    Every honest row is enabled only at an unreplaced program, and in place of those rows the replaced program is the single self-loop \leandeclnamed{corruptedIdle}{PLTS.ABA.Net.ABAProcStepN.corruptedIdle}, taken on every label other than $\tau$ and the labels on which the process would act on its own sub-protocol traffic, where it has no row at all.
+    That traffic runs through the drives of D11.
+    The two networks carry the Byzantine visible return, $\mathrm{retABA}(id,b)$ at a corrupted process for either bit under the authorisation $id \in F$ alone.
+    The specification's corrupted interface rules are the image of the replacement: \leandeclnamed{callByz}{PLTS.ABA.SpecStep.callByz} records a bit unrelated to the one its label declares, and \leandeclnamed{retByz}{PLTS.ABA.SpecStep.retByz} returns any bit at any time without moving the state.
+    The honest rules stay available to a corrupted process, so the two rules add behaviour and remove none.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -199,7 +212,8 @@ The stage record is in \leanmodule{Leslie2Protocols/ABA/GBCAImpl} and the contro
 
 \subsection{The protocol}
 
-What runs is $n$ corruption-blind programs, a network adversary holding the message pools and the corrupted set with its budget, and a coin oracle held at specification level.
+What runs is $n$ programs, a network adversary holding the message pools and the corrupted set with its budget, and a coin oracle held at specification level.
+A program reads its own replacement flag and nothing else about corruption: not the corrupted set, not the budget, not another process's status (D23).
 The rendezvous the shared alphabet cannot name are carried by an extended alphabet, hidden to $\tau$ and then discharged by the restriction, so what leaves the outermost frame is the alphabet the ABA specification speaks.
 See \leanmodule{Leslie2Protocols/ABA/Protocol}.
 
@@ -231,25 +245,28 @@ See \leanmodule{Leslie2Protocols/ABA/Core} and \leanmodule{Leslie2Protocols/ABA/
 
 \input{nodes-min/def-aba-core}
 
-\blueprintfig{fig-core-phases}{The round loop \leandecl{PLTS.ABA.Comp.coreProcN}: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pools gating $\mathrm{retABA}$.}
+\blueprintfig{fig-core-phases}{The round loop \leandecl{PLTS.ABA.Comp.coreProcN}: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pools gating $\mathrm{retABA}$.
+A corruption leaves the machine at whatever phase it reaches: every edge drawn carries the guard that the program is unreplaced, so the phase field stands still from the corruption on (D23).}
 
 \subsection{The ABA specification and its safety}
 
 The three specification systems locate the adversary differently from the implementations they stand for.
-An implementation pairs corruption-blind processes with an explicit network-adversary PLTS, which owns the corrupted set together with its budget and authorises every Byzantine action by the guard $k \in F$ of a component; a specification carries no network component at all, and its adversarial transitions are bare nondeterministic choices resolved by the scheduler.
+An implementation pairs processes that read only their own replacement flag with an explicit network-adversary PLTS, which owns the corrupted set together with its budget and authorises every Byzantine action by the guard $k \in F$ of a component; a specification carries no network component at all, and its adversarial transitions are bare nondeterministic choices resolved by the scheduler.
 Leaving those choices unstructured is sound because a specification constrains from above: an unstructured adversary makes the specification more permissive, never less, and trace-distribution inclusion asks only that every behaviour of the implementation be matched by some resolution of the specification's nondeterminism.
 
-Transition System~1 is six rules over the record \leandecl{PLTS.ABA.SpecState}, and its flip rule is the only probabilistic transition of the system.
-Safety is proved by induction over those six rules under two invariants, one on the state and one reading the label history.
+Transition System~1 is eight rules over the record \leandecl{PLTS.ABA.SpecState}, and its flip rule is the only probabilistic transition of the system.
+Safety is proved by induction over those eight rules under two invariants, one on the state and one reading the label history.
 The decision value $val$ is written once, by one rule guarded on $val = \bot$, and the $f+1$ $F$-blind support of the bit it writes is that same rule's guard, so provenance needs no separate invariant conjunct.
 The budget pigeonhole then leaves one supporter never corrupted and ghost-recorded as having called the value, which is the caller Validity names.
+Both trace predicates quantify over never-corrupted returners: a corrupted process returns an arbitrary bit at an arbitrary time (D23), which no property of the system constrains.
 See \leanmodule{Leslie2Protocols/ABA/Spec} and \leanmodule{Leslie2Protocols/ABA/SpecSafety}.
 
 \input{nodes-min/def-aba-spec}
 
 \blueprintfig{fig-ts1-rules}{Transition System 1, the ABA specification \leandecl{PLTS.ABA.spec}: the four control states, keyed on the mode, and the flip branch of \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}, whose $\tau$-step is drawn with an undirected stem and one edge per outcome — lock, release and kill, naming no coin bit.
 The state $dead$ enables no $\tau$-rule.
-Rules 1 and 2 are drawn on $idle$ alone; rule 1 is enabled wherever no value is decided, rule 2 everywhere; the total corruption rule \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} (D1) is not drawn.}
+Rules 1 and 2 are drawn on $idle$ alone; rule 1 is enabled wherever no value is decided, rule 2 everywhere.
+Three of the eight rules are not drawn: the guarded corruption rule \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} (D1) and the two corrupted interface rules \leandeclnamed{callByz}{PLTS.ABA.SpecStep.callByz} and \leandeclnamed{retByz}{PLTS.ABA.SpecStep.retByz} (D23), each of which is enabled in every state at a corrupted process and none of which changes the mode.}
 
 \input{nodes-min/thm-aba-spec-safe}
 
@@ -342,7 +359,7 @@ Three steps separate the protocol from the ABA specification:
   \;\overset{\text{(3)}}{\sqsubseteq}\; \mathrm{spec}(P),
 \]
 where (1) is the composition inclusion of Theorem~\ref{thm:aba-protocol-composed}, along the Dirac lift of $\mathrm{ProtocolRel}(P)$; (2) the substitution of Theorem~\ref{thm:aba-substitution}; and (3) the refinement of Theorem~\ref{thm:aba-hybrid-spec}, whose proof is the hand-built core simulation, read in the coordinates of $\mathrm{hybrid}(P)$.
-Safety then transfers by Theorem~\ref{thm:trace-support}, with no hypothesis on the trace beyond positive probability, and both properties are stated on all returns, corrupted returners included.
+Safety then transfers by Theorem~\ref{thm:trace-support}, with no hypothesis on the trace beyond positive probability, and both properties are stated on the returns of never-corrupted processes.
 The chain is assembled in \leanmodule{Leslie2Protocols/ABA/Results}.
 
 \input{nodes-min/thm-aba-protocol}

@@ -11,13 +11,15 @@ import Leslie2Protocols.ABA.Hybrid
 /-!
 # The main theorems of the ABA case study
 
-The subject is the protocol `protocol P`: `n` corruption-blind
-programs, one per process, beside two boxes that are not processes — the
-network adversary, which owns the message pools, the DECIDED pools and the
-corrupted set with its budget, and the common-coin oracle, the only component
-whose transitions are not Dirac. A program reads nothing but its own records
-and its own inbox; whether a process may be driven off-protocol is decided by
-the network's `k ∈ F` guard, never by the program. A program holds its
+The subject is the protocol `protocol P`: `n` programs, one per process, beside
+two boxes that are not processes — the network adversary, which owns the
+message pools, the DECIDED pools and the corrupted set with its budget, and the
+common-coin oracle, the only component whose transitions are not Dirac. A
+program reads its own records, its own inbox and its own replacement flag, and
+nothing else about corruption: not the corrupted set, not the budget, not
+another process's status. A corruption replaces the program of the process it
+names (D23); whether another process may be driven off-protocol is decided by
+the network's `k ∈ F` guard. A program holds its
 round loop beside its stage-side record — the stage record of every round it
 has touched, in a finite map — and terminates at `2f + 1` DECIDED receipts
 (D22).
@@ -98,7 +100,7 @@ execution is in budget by construction and nothing is assumed of the
 traces. -/
 theorem protocol_safe (P : Params) :
     ∀ D ∈ achievableTraceDists (protocol P), ∀ t, D t ≠ 0 →
-      ValidityTrace P t ∧ AgreementTrace t :=
+      ValidityTrace P t ∧ AgreementTrace P t :=
   safety_transfer
     (Set.Subset.trans (protocol_composed P)
       (Set.Subset.trans (substitution P) (hybrid_spec P)))
@@ -118,7 +120,7 @@ simulation carry the composed reading to the specification, so it inherits the
 same guarantee. -/
 theorem composed_safe (P : Params) :
     ∀ D ∈ achievableTraceDists (composed P), ∀ t, D t ≠ 0 →
-      ValidityTrace P t ∧ AgreementTrace t :=
+      ValidityTrace P t ∧ AgreementTrace P t :=
   safety_transfer (Set.Subset.trans (substitution P) (hybrid_spec P)) (spec_safe P)
 
 /-! ### The two routes -/
@@ -139,7 +141,7 @@ guard of the network adversary's own `fail` row, so every protocol execution
 is in budget by construction. -/
 theorem main (P : Params) :
     ∀ D ∈ achievableTraceDists (protocol P), ∀ t, D t ≠ 0 →
-      ValidityTrace P t ∧ AgreementTrace t :=
+      ValidityTrace P t ∧ AgreementTrace P t :=
   safety_transfer (refines P) (spec_safe P)
 
 /-- **The composed simulation** `protocol ⊑ ABA.spec`: the three simulations of

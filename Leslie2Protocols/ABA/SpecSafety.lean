@@ -14,15 +14,17 @@ Validity and Agreement, stated as predicates on traces and proven for every
 trace in the support of every achievable trace distribution of `ABA.spec`
 (`ABA.spec_safe`).
 
-`AgreementTrace` requires *any* two returns (honest or not) to agree —
-stronger than the blueprint's correct-process phrasing, since `ABA.spec`'s
-return rule does not inspect `F`. `ValidityTrace` is the paper-form statement
-(D13): every return of `b` is *preceded* (positionally) by a `callABA _ b`
-event whose caller is never corrupted anywhere along the trace
-(`NeverCorrupted`, via the trace-level corruption fold `failSet`) —
-returner-unconditional, hence stronger than the papers on the returns axis and
-faithful on the witness axis: the witnessing caller must be never corrupted,
-not merely a member of some support set that a later `fail` could taint.
+Both predicates are read at never-corrupted returners. `SpecStep.retByz` lets
+a corrupted process return an arbitrary bit at an arbitrary time, so nothing
+constrains such a return and the unconditional forms are false. Corruption is
+the trace-level notion `NeverCorrupted`, non-membership in every stage of the
+corruption fold `failSet`. `AgreementTrace` requires two returns by
+never-corrupted processes to carry the same bit. `ValidityTrace` is the
+paper-form statement (D13): a return of `b` by a never-corrupted process is
+*preceded* (positionally) by a `callABA _ b` event whose caller is itself
+never corrupted. The witness axis is faithful to the papers: the witnessing
+caller must be never corrupted, not merely a member of some support set that a
+later `fail` could taint.
 
 The proof is invariant reasoning along genuine executions (via
 `TraceSupport`), on two invariants:
@@ -30,24 +32,40 @@ The proof is invariant reasoning along genuine executions (via
 * `SpecInv` — the state invariant, in two clauses: the corrupted set respects
   the budget (`F_le`), and the decision value carries `f + 1` F-blind
   supporters (`val_supp`). The second clause is `SpecStep.decide`'s own guard
-  at the one rule that writes `val`, and every other rule carries it by
-  `SuppOK.mono`, the ghost record and the corrupted set being monotone.
-* `ValInv` — the label-history-aware invariant: ghost-recorded inputs are
-  attributed to `callABA` events in the history (`input_src`), and the
-  corrupted set is exactly the fold of D1-`corrupt` over the labels seen so
-  far (`F_eq`). The `callABA` rules record the bit their own label carries,
-  which is what restores `input_src` under the D16 overwrite.
+  at the one rule that writes `val`. Every rule that only grows the ghost
+  record carries it by `SuppOK.mono`; `SpecStep.callByz`, whose write may
+  replace a recorded bit, carries it by `SuppOK.callByz` instead, the writer
+  being counted through the `F` disjunct.
+* `ValInv` — the label-history-aware invariant: a ghost-recorded input is
+  attributed either to a `callABA` event in the history or to the corruption
+  of its own slot (`input_src`), and the corrupted set is exactly the fold of
+  D1-`corrupt` over the labels seen so far (`F_eq`). The honest `callABA`
+  rules record the bit their own label carries, which is what restores the
+  first disjunct under the D16 overwrite; `SpecStep.callByz` takes the second.
+
+Both branches run off one locator, `exists_retSite`: a `retABA` at trace
+position `m` sits at an execution position whose pre-state carries `ValInv`
+over the label prefix, has corrupted set the fold at `m`, and whose prefix
+`callABA` events reappear below `m` in the trace.
 
 Agreement rests on `SpecInv.val_stable`: `SpecStep.decide` is the sole writer
 of `val` and fires only from `val = ⊥`, so the decision value never changes
-once written and two returns read the same one.
+once written. A never-corrupted returner is outside the fold at `m`, hence
+outside the pre-state's corrupted set, so `retABA_inv`'s second disjunct is
+impossible and both returns read that one value.
 
 Validity is a budget pigeonhole at the return. `retABA_inv` reads the returned
 bit off the pre-state's decision value and `SpecInv.val_supp` yields `f + 1`
-supporters of that bit. Every supporter is either ghost-recorded — hence a
-genuine preceding `callABA`, by `ValInv.input_src` — or ever-corrupted, and at
-most `f` ids are ever corrupted (`failSet` never exceeds the budget), so some
-recorded supporter is never corrupted (`exists_neverCorrupted_supporter`).
+supporters of that bit. Every supporter is either ghost-recorded or
+ever-corrupted, and at most `f` ids are ever corrupted (`failSet` never
+exceeds the budget), so some recorded supporter is never corrupted
+(`exists_neverCorrupted_supporter`). Such a supporter lies in no prefix fold,
+so `ValInv.input_src` yields its `callABA` event.
+
+The same pigeonhole in the state alone is `SuppOK.honest_supporter`: a
+supported bit has an uncorrupted recorded inputter. It is what makes the
+mixedness gate on `SpecStep.coinFlip` unsatisfiable under honest unanimity,
+which is where the specification holds the liveness half of Validity.
 -/
 
 open Stream'
@@ -89,17 +107,18 @@ def NeverCorrupted (P : Params) (t : Seq (Lab P.n)) (id : Fin P.n) : Prop :=
 /-! ### The trace-level safety predicates -/
 
 /-- **Validity** (paper form, D13): every return of `b` (at any trace
-position `m`) is preceded by a `callABA id' b` event whose caller `id'` is
-never corrupted anywhere along the trace. Returner-unconditional: the
-returning process is not required to be honest. -/
+position `m`) by a never-corrupted process is preceded by a `callABA id' b`
+event whose caller `id'` is also never corrupted anywhere along the trace. -/
 def ValidityTrace (P : Params) (t : Seq (Lab P.n)) : Prop :=
-  ∀ m id b, t.get? m = some (Lab.retABA id b) →
+  ∀ m id b, t.get? m = some (Lab.retABA id b) → NeverCorrupted P t id →
     ∃ k, k < m ∧ ∃ id', t.get? k = some (Lab.callABA id' b) ∧
       NeverCorrupted P t id'
 
-/-- **Agreement** (trace form): any two returns carry the same bit. -/
-def AgreementTrace {n : ℕ} (t : Seq (Lab n)) : Prop :=
-  ∀ id b id' b', Lab.retABA id b ∈ t → Lab.retABA id' b' ∈ t → b = b'
+/-- **Agreement** (trace form): any two returns by never-corrupted processes
+carry the same bit. -/
+def AgreementTrace (P : Params) (t : Seq (Lab P.n)) : Prop :=
+  ∀ id b id' b', Lab.retABA id b ∈ t → Lab.retABA id' b' ∈ t →
+    NeverCorrupted P t id → NeverCorrupted P t id' → b = b'
 
 /-! ### Budget and monotonicity of the corruption fold -/
 
@@ -165,6 +184,12 @@ theorem failSetL_append (L : List (Lab P.n)) (l : Lab P.n) :
   unfold failSetL
   rw [List.foldl_append, List.foldl_cons, List.foldl_nil]
 
+/-- The list-level fold is monotone under extending the list by one label. -/
+theorem failSetL_subset_append (L : List (Lab P.n)) (l : Lab P.n) :
+    failSetL P L ⊆ failSetL P (L ++ [l]) := by
+  rw [failSetL_append]
+  exact subset_failStep _ l
+
 /-- Folding over a filtered list agrees with folding over the original when
 the filter keeps every `fail` label. -/
 theorem foldl_failStep_filter {p : Lab P.n → Bool}
@@ -225,6 +250,45 @@ theorem exists_uniform_stage (t : Seq (Lab P.n)) (S : Finset (Fin P.n)) :
     rcases Finset.mem_insert.mp hid with rfl | hid
     · exact failSet_mono t (le_max_left ka K) hka
     · exact failSet_mono t (le_max_right ka K) (hK id hid)
+
+/-! ### Two readings of the support count -/
+
+/-- A corrupted call preserves support. The write at `id` may replace a
+recorded `v` by the other bit, so `SuppOK.mono` does not apply. The count is
+`F`-blind, however, and `id ∈ s.F`, so `id` is counted through the second
+disjunct whatever its slot holds; every other slot is untouched. -/
+theorem SuppOK.callByz {s : SpecState P.n} {id : Fin P.n} {b v : Bool}
+    (h : SuppOK P s v) (hF : id ∈ s.F) :
+    SuppOK P { s with input := Function.update s.input id (some b) } v := by
+  refine le_trans h (Finset.card_le_card ?_)
+  intro i hi
+  rw [Finset.mem_filter] at hi ⊢
+  refine ⟨hi.1, ?_⟩
+  by_cases h_eq : i = id
+  · subst h_eq; exact Or.inr hF
+  · refine hi.2.imp (fun hin => ?_) (fun hm => hm)
+    change Function.update s.input id (some b) i = some v
+    rwa [Function.update_of_ne h_eq]
+
+/-- **The budget pigeonhole on a single bit.** A bit with `f + 1` supporters
+has one that is not corrupted in the state, and that one is recorded. This is
+what makes the mixedness gate `SpecStep.coinFlip`'s `hmix` unsatisfiable under
+honest unanimity: were both bits supported, each would carry a recorded
+uncorrupted inputter, and the two inputters disagree. -/
+theorem SuppOK.honest_supporter {s : SpecState P.n} {b : Bool}
+    (h : SuppOK P s b) (hF : s.F.card ≤ P.f) :
+    ∃ id, id ∉ s.F ∧ s.input id = some b := by
+  by_contra hc
+  push_neg at hc
+  have hsub : Finset.univ.filter (fun id => s.input id = some b ∨ id ∈ s.F) ⊆ s.F := by
+    intro i hi
+    rcases (Finset.mem_filter.mp hi).2 with hin | hmem
+    · by_contra hnot
+      exact hc i hnot hin
+    · exact hmem
+  have h1 := Finset.card_le_card hsub
+  unfold SuppOK at h
+  omega
 
 /-! ### The state invariant -/
 
@@ -305,7 +369,7 @@ theorem SpecInv.step {s : SpecState P.n} {l : Lab P.n} {μ : PMF (SpecState P.n)
       · rw [if_neg hcond]; exact hv
     exact ⟨hI.F_le, fun v hv =>
       (hI.val_supp v hv).mono (fun i => hnew i v) (Finset.Subset.refl _)⟩
-  | coinFlip hm hv =>
+  | coinFlip hm hv hmix =>
     -- every branch writes `mode` alone
     rw [PMF.mem_support_map_iff] at hs'
     obtain ⟨o, -, rfl⟩ := hs'
@@ -319,13 +383,20 @@ theorem SpecInv.step {s : SpecState P.n} {l : Lab P.n} {μ : PMF (SpecState P.n)
   | ret id b h₁ h₂ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     exact ⟨hI.F_le, hI.val_supp⟩
-  | fail id =>
+  | fail id hnew hbud =>
     -- `F` grows inside the budget, and `SuppOK` is monotone in it
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     refine ⟨corrupt_card_le s id hI.F_le, fun v hv => ?_⟩
     rw [corrupt_val] at hv
     exact (hI.val_supp v hv).mono
       (fun i hh => by rw [corrupt_input]; exact hh) (corrupt_F_subset s id)
+  | callByz id b b' hF =>
+    -- `val` and `F` are untouched; `id ∈ F` keeps the overwritten slot counted
+    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
+    exact ⟨hI.F_le, fun v hv => (hI.val_supp v hv).callByz hF⟩
+  | retByz id b hF =>
+    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
+    exact hI
 
 /-- **Write-once decision.** `SpecStep.decide` is the sole writer of `val` and
 fires only from `val = ⊥`, so `val = some b` is preserved by every step. -/
@@ -338,7 +409,7 @@ theorem SpecInv.val_stable {s : SpecState P.n} {l : Lab P.n}
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
   | callLoop id b' =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
-  | coinFlip hm hv' =>
+  | coinFlip hm hv' hmix =>
     rw [PMF.mem_support_map_iff] at hs'
     obtain ⟨o, -, rfl⟩ := hs'
     cases o <;> exact hv
@@ -346,18 +417,26 @@ theorem SpecInv.val_stable {s : SpecState P.n} {l : Lab P.n}
     exact absurd hv (by rw [hv']; simp)
   | ret id b' h₁ h₂ =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
-  | fail id =>
+  | fail id hnew hbud =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     rw [corrupt_val]; exact hv
+  | callByz id b' b'' hF =>
+    rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
+  | retByz id b' hF =>
+    rw [PMF.mem_support_pure_iff] at hs'; subst hs'; exact hv
 
 /-! ### The label-history-aware invariant (for Validity) -/
 
-/-- The history-aware invariant: ghost-recorded inputs are attributed to
-`callABA` events in the label history, and the corrupted set is exactly the
-fold of D1-`corrupt` over the labels seen so far. -/
+/-- The history-aware invariant: a ghost-recorded input is attributed either to
+a `callABA` event in the label history or to the corruption of its own slot,
+and the corrupted set is exactly the fold of D1-`corrupt` over the labels seen
+so far. The second disjunct of `input_src` is what `SpecStep.callByz` takes:
+its write is unrelated to the label it carries, and its guard puts the writer
+in the corrupted set. -/
 structure ValInv (P : Params) (pre : List (Lab P.n)) (s : SpecState P.n) : Prop where
   inv : SpecInv P s
-  input_src : ∀ id b, s.input id = some b → Lab.callABA id b ∈ pre
+  input_src : ∀ id b, s.input id = some b →
+    Lab.callABA id b ∈ pre ∨ id ∈ failSetL P pre
   F_eq : s.F = failSetL P pre
 
 theorem ValInv.initial (P : Params) : ValInv P [] (SpecState.initial P.n) where
@@ -370,8 +449,10 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
     {μ : PMF (SpecState P.n)} {s' : SpecState P.n}
     (hI : ValInv P pre s) (hstep : SpecStep P s l μ) (hs' : s' ∈ μ.support) :
     ValInv P (pre ++ [l]) s' := by
-  have mono : ∀ {l' : Lab P.n}, l' ∈ pre → l' ∈ pre ++ [l] :=
-    fun h => List.mem_append_left _ h
+  have mono : ∀ {id' : Fin P.n} {b' : Bool},
+      (Lab.callABA id' b' ∈ pre ∨ id' ∈ failSetL P pre) →
+      (Lab.callABA id' b' ∈ pre ++ [l] ∨ id' ∈ failSetL P (pre ++ [l])) :=
+    fun h => h.imp (List.mem_append_left _) (fun hm => failSetL_subset_append pre l hm)
   have h_inv' := hI.inv.step hstep hs'
   cases hstep with
   | callSet id b hv =>
@@ -384,7 +465,7 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
       · subst h_eq
         rw [Function.update_self] at h_in
         obtain rfl := Option.some.inj h_in
-        exact List.mem_append_right _ (List.mem_singleton.mpr rfl)
+        exact Or.inl (List.mem_append_right _ (List.mem_singleton.mpr rfl))
       · rw [Function.update_of_ne h_eq] at h_in
         exact mono (hI.input_src id' b' h_in)
     · change s.F = failSetL P (pre ++ [Lab.callABA id b])
@@ -402,7 +483,7 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
         · subst h_eq
           rw [Function.update_self] at h_in
           obtain rfl := Option.some.inj h_in
-          exact List.mem_append_right _ (List.mem_singleton.mpr rfl)
+          exact Or.inl (List.mem_append_right _ (List.mem_singleton.mpr rfl))
         · rw [Function.update_of_ne h_eq] at h_in
           exact mono (hI.input_src id' b' h_in)
       · rw [if_neg hcond] at h_in
@@ -410,7 +491,7 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
     · change s.F = failSetL P (pre ++ [Lab.callABA id b])
       rw [failSetL_append]
       exact hI.F_eq
-  | coinFlip hm hv =>
+  | coinFlip hm hv hmix =>
     rw [PMF.mem_support_map_iff] at hs'
     obtain ⟨o, -, rfl⟩ := hs'
     have hFeq : s.F = failSetL P (pre ++ [Lab.tau]) := by
@@ -429,7 +510,7 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
     change s.F = failSetL P (pre ++ [Lab.retABA id b])
     rw [failSetL_append]
     exact hI.F_eq
-  | fail id =>
+  | fail id hnew hbud =>
     rw [PMF.mem_support_pure_iff] at hs'; subst hs'
     refine ⟨h_inv', ?_, ?_⟩
     · intro id' b' h_in
@@ -437,17 +518,40 @@ theorem ValInv.step {pre : List (Lab P.n)} {s : SpecState P.n} {l : Lab P.n}
       exact mono (hI.input_src id' b' h_in)
     · rw [failSetL_append, corrupt_F, hI.F_eq]
       rfl
+  | callByz id b b' hF =>
+    -- the write is unrelated to the label, and the guard puts `id` in `F`
+    rw [PMF.mem_support_pure_iff] at hs'; subst hs'
+    have hFeq : s.F = failSetL P (pre ++ [Lab.callABA id b]) := by
+      rw [failSetL_append]; exact hI.F_eq
+    refine ⟨h_inv', ?_, hFeq⟩
+    intro id' b'' h_in
+    replace h_in : Function.update s.input id (some b') id' = some b'' := h_in
+    by_cases h_eq : id' = id
+    · subst h_eq
+      exact Or.inr (hFeq ▸ hF)
+    · rw [Function.update_of_ne h_eq] at h_in
+      exact mono (hI.input_src id' b'' h_in)
+  | retByz id b hF =>
+    -- the rule is a no-op, so the invariant only has to absorb the new label
+    rw [PMF.mem_support_pure_iff] at hs'
+    rw [hs'] at h_inv' ⊢
+    refine ⟨h_inv', fun id' b' h_in => mono (hI.input_src id' b' h_in), ?_⟩
+    rw [failSetL_append]
+    exact hI.F_eq
 
 
 /-! ### The safety theorem -/
 
-/-- Inverting a `retABA` event: the pre-state's decision value is the
-returned bit. -/
+/-- Inverting a `retABA` event: either the pre-state's decision value is the
+returned bit, or the returning process is corrupted in the pre-state. The two
+disjuncts are the two rules that carry the label, `SpecStep.ret` and
+`SpecStep.retByz`. -/
 private theorem retABA_inv {s : SpecState P.n} {id : Fin P.n} {b : Bool}
     {μ : PMF (SpecState P.n)} (hstep : SpecStep P s (.retABA id b) μ) :
-    s.val = some b :=
+    s.val = some b ∨ id ∈ s.F :=
   match hstep with
-  | .ret _ _ _ h₁ _ => h₁
+  | .ret _ _ _ h₁ _ => Or.inl h₁
+  | .retByz _ _ _ hF => Or.inr hF
 
 /-- Two decision values read along one genuine execution agree
 (`k₁ ≤ k₂` case). -/
@@ -487,81 +591,127 @@ theorem exists_neverCorrupted_supporter {t : Seq (Lab P.n)} {s : SpecState P.n}
   unfold SuppOK at h3
   omega
 
+/-- **The return locator.** A trace of positive probability is the external
+filter of a genuine execution, and every `retABA` event at trace position `m`
+sits at some execution position `j`. The pre-state `s` of that event carries
+the history invariant over the label prefix, its corrupted set is the
+trace-level fold at `m`, and every `callABA` of that prefix reappears at a
+trace position below `m`. Both safety predicates are read off this one
+statement: Validity needs the invariant and the pushback, Agreement needs the
+execution position and the fold. -/
+private theorem exists_retSite (P : Params) {pe : ProbabilisticExecution (spec P)}
+    (h_init : pe.initState = PMF.pure (spec P).init) (t : Seq (Lab P.n))
+    (h_ne : (spec P).traceProb pe t ≠ 0) :
+    ∃ e : AlterSeq (SpecState P.n) (Lab P.n), is_exec e (spec P) ∧
+      ∀ m id b, t.get? m = some (Lab.retABA id b) →
+        ∃ (j : ℕ) (s : SpecState P.n) (μ : PMF (SpecState P.n))
+          (pre : List (Lab P.n)),
+          e.stateAt j = some s ∧ SpecStep P s (Lab.retABA id b) μ ∧
+          ValInv P pre s ∧ s.F = failSet P t m ∧
+          ∀ id' b', Lab.callABA id' b' ∈ pre →
+            ∃ k, k < m ∧ t.get? k = some (Lab.callABA id' b') := by
+  obtain ⟨e, labs, h_exec, h_map, h_t⟩ :=
+    exists_exec_of_traceProb_ne_zero_ord pe h_init t h_ne
+  rw [Seq.ofList_filter] at h_t
+  -- generalise the external-label filter to an opaque Boolean predicate
+  obtain ⟨p, hpfail, hpcall, h_t⟩ : ∃ p : Lab P.n → Bool,
+      (∀ id : Fin P.n, p (.fail id) = true) ∧
+      (∀ (id : Fin P.n) (b : Bool), p (.callABA id b) = true) ∧
+      Seq.ofList (labs.filter p) = t :=
+    ⟨_, fun id => by simp, fun id b => by simp, h_t⟩
+  refine ⟨e, h_exec, ?_⟩
+  intro m id b h_ret
+  -- trace position `m` pulls back to an execution event `j`
+  rw [← h_t, Seq.ofList_get?] at h_ret
+  obtain ⟨j, hj, hlen⟩ := filter_getElem?_pullback p labs m _ h_ret
+  obtain ⟨s'', h_get⟩ : ∃ s'', e.trans.get? j = some (Lab.retABA id b, s'') := by
+    have hk : (e.trans.get? j).map Prod.fst = labs[j]? := by
+      rw [← Seq.map_get?, h_map, Seq.ofList_get?]
+    rw [hj] at hk
+    cases hg : e.trans.get? j with
+    | none => rw [hg] at hk; exact absurd hk (by simp)
+    | some q =>
+      rw [hg] at hk
+      simp only [Option.map_some, Option.some.injEq] at hk
+      exact ⟨q.2, by rw [← hk]⟩
+  obtain ⟨s, μ, h_state, h_step, -⟩ := h_exec.1 j _ _ h_get
+  have h_VI := is_exec_induction_labels (sys := spec P)
+    (fun pre s => ValInv P pre s) (ValInv.initial P)
+    (fun pre s l μ s' hI hstep hs' => hI.step hstep hs') h_exec j s h_state
+  rw [AlterSeq.labelsUpTo_eq_take h_map j] at h_VI
+  -- the trace-prefix bridge: `s.F` is the trace-level fold at position `m`
+  have h_take : (labs.take j).filter p = (labs.filter p).take m :=
+    take_filter_eq_take p labs hlen
+  have h_bridge : s.F = failSet P t m := by
+    rw [h_VI.F_eq, ← failSetL_filter hpfail (labs.take j), h_take,
+      ← failSet_ofList, h_t]
+  refine ⟨j, s, μ, labs.take j, h_state, h_step, h_VI, h_bridge, ?_⟩
+  -- a `callABA` of the prefix sits at a trace position below `m`
+  intro id' b' h_mem
+  have h_memf : Lab.callABA id' b' ∈ (labs.filter p).take m := by
+    rw [← h_take]
+    exact List.mem_filter.mpr ⟨h_mem, hpcall id' b'⟩
+  obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp h_memf
+  have hk_lt : k < m := by
+    have h1 := (List.getElem?_eq_some_iff.mp hk).1
+    have h2 : ((labs.filter p).take m).length ≤ m := by
+      rw [List.length_take]; omega
+    omega
+  rw [List.getElem?_take_of_lt hk_lt] at hk
+  refine ⟨k, hk_lt, ?_⟩
+  rw [← h_t, Seq.ofList_get?]
+  exact hk
+
 /-- **Safety of the ABA specification**: every trace in the support of every
 achievable trace distribution of `ABA.spec` satisfies Validity (paper form,
-ordered, with a never-corrupted witness) and Agreement. -/
+ordered, with a never-corrupted witness) and Agreement, both read at
+never-corrupted returners. -/
 theorem spec_safe (P : Params) :
     ∀ D ∈ achievableTraceDists (spec P), ∀ t, D t ≠ 0 →
-      ValidityTrace P t ∧ AgreementTrace t := by
+      ValidityTrace P t ∧ AgreementTrace P t := by
   rintro D ⟨pe, h_init, h_D⟩ t h_ne
   rw [← h_D t] at h_ne
+  obtain ⟨e, h_exec, hloc⟩ := exists_retSite P h_init t h_ne
+  -- a never-corrupted returner is outside the fold at `m`, so `retABA_inv`'s
+  -- second disjunct is impossible and the honest rule read `val`
+  have h_honest : ∀ m id b, t.get? m = some (Lab.retABA id b) →
+      NeverCorrupted P t id →
+      ∃ (j : ℕ) (s : SpecState P.n) (pre : List (Lab P.n)),
+        e.stateAt j = some s ∧ ValInv P pre s ∧ s.val = some b ∧
+        s.F = failSet P t m ∧
+        ∀ id' b', Lab.callABA id' b' ∈ pre →
+          ∃ k, k < m ∧ t.get? k = some (Lab.callABA id' b') := by
+    intro m id b h_ret h_nc
+    obtain ⟨j, s, μ, pre, h_state, h_step, h_VI, h_bridge, h_push⟩ := hloc m id b h_ret
+    refine ⟨j, s, pre, h_state, h_VI, ?_, h_bridge, h_push⟩
+    rcases retABA_inv h_step with hv | hmem
+    · exact hv
+    · refine absurd ?_ (h_nc m)
+      rw [← h_bridge]
+      exact hmem
   constructor
-  · -- Validity
-    obtain ⟨e, labs, h_exec, h_map, h_t⟩ :=
-      exists_exec_of_traceProb_ne_zero_ord pe h_init t h_ne
-    rw [Seq.ofList_filter] at h_t
-    -- generalise the external-label filter to an opaque Boolean predicate
-    obtain ⟨p, hpfail, hpcall, h_t⟩ : ∃ p : Lab P.n → Bool,
-        (∀ id : Fin P.n, p (.fail id) = true) ∧
-        (∀ (id : Fin P.n) (b : Bool), p (.callABA id b) = true) ∧
-        Seq.ofList (labs.filter p) = t :=
-      ⟨_, fun id => by simp, fun id b => by simp, h_t⟩
-    intro m id b h_ret
-    -- trace position `m` pulls back to an execution event `j`
-    rw [← h_t, Seq.ofList_get?] at h_ret
-    obtain ⟨j, hj, hlen⟩ := filter_getElem?_pullback p labs m _ h_ret
-    obtain ⟨s'', h_get⟩ : ∃ s'', e.trans.get? j = some (Lab.retABA id b, s'') := by
-      have hk : (e.trans.get? j).map Prod.fst = labs[j]? := by
-        rw [← Seq.map_get?, h_map, Seq.ofList_get?]
-      rw [hj] at hk
-      cases hg : e.trans.get? j with
-      | none => rw [hg] at hk; exact absurd hk (by simp)
-      | some q =>
-        rw [hg] at hk
-        simp only [Option.map_some, Option.some.injEq] at hk
-        exact ⟨q.2, by rw [← hk]⟩
-    obtain ⟨s, μ, h_state, h_step, -⟩ := h_exec.1 j _ _ h_get
-    have h_val : s.val = some b := retABA_inv h_step
-    have h_VI := is_exec_induction_labels (sys := spec P)
-      (fun pre s => ValInv P pre s) (ValInv.initial P)
-      (fun pre s l μ s' hI hstep hs' => hI.step hstep hs') h_exec j s h_state
-    rw [AlterSeq.labelsUpTo_eq_take h_map j] at h_VI
-    -- the trace-prefix bridge: `s.F` is the trace-level fold at position `m`
-    have h_take : (labs.take j).filter p = (labs.filter p).take m :=
-      take_filter_eq_take p labs hlen
-    have h_bridge : s.F = failSet P t m := by
-      rw [h_VI.F_eq, ← failSetL_filter hpfail (labs.take j), h_take,
-        ← failSet_ofList, h_t]
-    -- the pigeonhole witness, pushed back to a preceding trace position
-    obtain ⟨id', h_in, h_nc⟩ :=
+  · -- Validity: the pigeonhole witness, pushed back to a preceding position
+    intro m id b h_ret h_nc
+    obtain ⟨j, s, pre, h_state, h_VI, h_val, h_bridge, h_push⟩ :=
+      h_honest m id b h_ret h_nc
+    obtain ⟨id', h_in, h_nc'⟩ :=
       exists_neverCorrupted_supporter (h_VI.inv.val_supp b h_val) h_bridge
-    have h_memf : Lab.callABA id' b ∈ (labs.filter p).take m := by
-      rw [← h_take]
-      exact List.mem_filter.mpr ⟨h_VI.input_src id' b h_in, hpcall id' b⟩
-    obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp h_memf
-    have hk_lt : k < m := by
-      have h1 := (List.getElem?_eq_some_iff.mp hk).1
-      have h2 : ((labs.filter p).take m).length ≤ m := by
-        rw [List.length_take]; omega
-      omega
-    rw [List.getElem?_take_of_lt hk_lt] at hk
-    refine ⟨k, hk_lt, id', ?_, h_nc⟩
-    rw [← h_t, Seq.ofList_get?]
-    exact hk
-  · -- Agreement
-    obtain ⟨e, h_exec, h_char⟩ :=
-      exists_exec_of_traceProb_ne_zero pe h_init t h_ne
-    intro id b id' b' h₁ h₂
-    obtain ⟨-, k₁, s₁', hg₁⟩ := (h_char _).mp h₁
-    obtain ⟨-, k₂, s₂', hg₂⟩ := (h_char _).mp h₂
-    obtain ⟨s₁, μ₁, hst₁, hstep₁, -⟩ := h_exec.1 k₁ _ _ hg₁
-    obtain ⟨s₂, μ₂, hst₂, hstep₂, -⟩ := h_exec.1 k₂ _ _ hg₂
-    have hv₁ : s₁.val = some b := retABA_inv hstep₁
-    have hv₂ : s₂.val = some b' := retABA_inv hstep₂
-    rcases le_total k₁ k₂ with h | h
+    rcases h_VI.input_src id' b h_in with hcall | hmem
+    · obtain ⟨k, hk_lt, hk⟩ := h_push id' b hcall
+      exact ⟨k, hk_lt, id', hk, h_nc'⟩
+    · -- a never-corrupted supporter is in no prefix fold
+      refine absurd ?_ (h_nc' m)
+      rw [← h_bridge, h_VI.F_eq]
+      exact hmem
+  · -- Agreement: two honest returns read the write-once decision value
+    intro id b id' b' h₁ h₂ h_nc h_nc'
+    obtain ⟨m₁, hm₁⟩ := Seq.mem_iff_exists_get?.mp h₁
+    obtain ⟨m₂, hm₂⟩ := Seq.mem_iff_exists_get?.mp h₂
+    obtain ⟨j₁, s₁, pre₁, hst₁, -, hv₁, -, -⟩ := h_honest m₁ id b hm₁.symm h_nc
+    obtain ⟨j₂, s₂, pre₂, hst₂, -, hv₂, -, -⟩ := h_honest m₂ id' b' hm₂.symm h_nc'
+    rcases le_total j₁ j₂ with h | h
     · exact val_agree_le h_exec h hst₁ hst₂ hv₁ hv₂
     · exact (val_agree_le h_exec h hst₂ hst₁ hv₂ hv₁).symm
-
 
 end ABA
 end PLTS

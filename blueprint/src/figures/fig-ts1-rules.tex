@@ -1,7 +1,9 @@
 % ABA specification, Transition System 1 rule graph (PLTS.ABA.SpecStep).
 % Four control states keyed on (mode, val). Rule 3 is drawn as a
 % probabilistic branch: the undirected stem carries the tau-step, and the
-% three outcome edges carry the flip masses.
+% three outcome edges carry the flip masses. Five of the eight rules are
+% drawn; fail (D1) and the corrupted interface callByz/retByz (D23) are not,
+% none of them writing the mode. See the caption.
 \begin{tikzpicture}[
     ->, >={Stealth[round]}, auto, semithick, on grid,
     every state/.style={draw, minimum size=1.15cm, align=center, font=\small},

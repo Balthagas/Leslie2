@@ -14,11 +14,20 @@ This module is the account of record for what the ABA development specifies.
 The state is the record `SpecState`: a ghost record `input` of genuine
 `callABA` events (D13), the flags `ret` of the processes that have returned,
 the corrupted set `F`, the decision value `val`, and a control mode
-`mode ∈ {idle, locked, dead}` (D21). Six rules act on it. `SpecStep.callSet`
-and `SpecStep.callLoop` carry the interface call, `SpecStep.coinFlip` is the
-mode loop, `SpecStep.decide` writes the decision value, `SpecStep.ret` carries
-the interface return, and `SpecStep.fail` is corruption (D1). Every transition
-is Dirac except `SpecStep.coinFlip`.
+`mode ∈ {idle, locked, dead}` (D21). Eight rules act on it.
+`SpecStep.callSet` and `SpecStep.callLoop` carry the honest interface call,
+`SpecStep.coinFlip` is the mode loop, `SpecStep.decide` writes the decision
+value, `SpecStep.ret` carries the honest interface return, `SpecStep.fail` is
+corruption (D1), and `SpecStep.callByz` and `SpecStep.retByz` are the
+corrupted interface. Every transition is Dirac except `SpecStep.coinFlip`.
+
+The interface is the full adversary's. A corrupted process's call records a
+bit unrelated to the one its label declares, and a corrupted process returns
+any value at any time without moving the state. The honest rules stay
+available to a corrupted process, so the two corrupted rules add behaviour and
+remove none. The trace predicates of `SpecSafety.lean` therefore quantify over
+never-corrupted returners: a corrupted return carries an arbitrary bit, which
+no property of the system can constrain.
 
 The mode loop is the specification's liveness reading. From `Mode.idle` a
 flip locks with probability `ε`, kills with probability `δ`, and releases back
@@ -27,6 +36,12 @@ only `τ`-rule the mode can enable, so a lock is never discarded; `Mode.dead`
 enables no `τ`-rule at all (D17). The flip names no coin bit. Reading `lock` as the coin
 agreeing with a round's reference value is an outcome coupling of a
 refinement, not a component of this system.
+
+The flip is gated on both bits carrying `f + 1` support, and the sum of the
+two support counts never decreases (an overwrite moves a supporter from one
+count to the other, a first write or a corruption adds to one), so a state
+passing that gate leaves some bit supported ever after and the decision stays
+enabled at `Mode.locked`; the Lean lemma is deferred.
 
 Provenance rests on the ghost record and the support guard `SuppOK` (D13).
 `SpecStep.decide` is the sole writer of `val`. Its guards are `val = ⊥`,
@@ -145,8 +160,16 @@ inductive SpecStep (P : Params) :
   `Mode.locked` with probability `ε`, back into `Mode.idle` with probability
   `1 − ε − δ`, and into `Mode.dead` with probability `δ` (D17). It is
   one-shot: the three outcomes are the three modes, and the rule names no coin
-  bit. -/
-  | coinFlip (s : SpecState P.n) (hm : s.mode = .idle) (hv : s.val = none) :
+  bit.
+
+  The guard `hmix` is the mixedness gate: the flip fires only from a state
+  where both bits carry `f + 1` support. Under honest unanimity on one bit the
+  other bit is never supported, so the guard fails at every state such a run
+  reaches. The flip is then unreachable, and with it every probabilistic
+  branch of the system, so the unanimous path is Dirac. This is the liveness
+  half of Validity, held structurally by the guard rather than proven. -/
+  | coinFlip (s : SpecState P.n) (hm : s.mode = .idle) (hv : s.val = none)
+      (hmix : ∀ b, SuppOK P s b) :
       SpecStep P s .tau
         ((flipPMF P).map (fun o => match o with
           | .lock => { s with mode := .locked }
@@ -167,9 +190,25 @@ inductive SpecStep (P : Params) :
       (h₁ : s.val = some b) (h₂ : s.ret id = false) :
       SpecStep P s (.retABA id b)
         (PMF.pure { s with ret := Function.update s.ret id true })
-  /-- Rule 6 (corruption, deviation D1): total and Dirac. -/
-  | fail (s : SpecState P.n) (id : Fin P.n) :
+  /-- Rule 6 (corruption, deviation D1): a guarded deterministic transform.
+  The guards `hnew` and `hbud` are the Failure rule's own: `id` is not already
+  corrupted, and the budget has room. They are exactly the condition tested by
+  the `if` inside `SpecState.corrupt`, so the effect is unchanged and only the
+  enabledness moves into the rule. -/
+  | fail (s : SpecState P.n) (id : Fin P.n) (hnew : id ∉ s.F)
+      (hbud : s.F.card < P.f) :
       SpecStep P s (.fail id) (PMF.pure (s.corrupt P id))
+  /-- Rule 7 (corrupted call): the recorded bit is independent of the label's.
+  A corrupted caller's declared input need not be what is recorded, so the rule
+  writes an arbitrary `b'` under the sole guard `id ∈ s.F` (D23). -/
+  | callByz (s : SpecState P.n) (id : Fin P.n) (b b' : Bool) (hF : id ∈ s.F) :
+      SpecStep P s (.callABA id b)
+        (PMF.pure { s with input := Function.update s.input id (some b') })
+  /-- Rule 8 (corrupted return): a corrupted process returns anything at any
+  time. The state does not move, and the honest return rule `SpecStep.ret`
+  remains available to it (D23). -/
+  | retByz (s : SpecState P.n) (id : Fin P.n) (b : Bool) (hF : id ∈ s.F) :
+      SpecStep P s (.retABA id b) (PMF.pure s)
 
 /-- **Counterexample check (D13).** The Validity-violating trace dies at
 `SpecStep.decide (b := true)`: with the inputs `1,0,0,0` recorded at

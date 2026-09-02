@@ -2,5 +2,5 @@
   \label{def:aba-netadv}
   \lean{PLTS.ABA.Net.NetState}\lean{PLTS.ABA.Net.NetState.corrupt}\lean{PLTS.ABA.Net.NetStep}\lean{PLTS.ABA.Net.netAdv}\leanok
   \uses{def:aba-procnet, def:aba-labels, def:aba-params}
-  The one box holding what no process may see: the per-sender pools of the stage messages and of the DECIDED payloads, and the corrupted set with its budget: \leandecl{PLTS.ABA.Net.netAdv}.
+  The one box holding what no process may see: the per-sender pools of the stage messages and of the DECIDED payloads, and the corrupted set with its budget, which guards its $\mathrm{fail}$ row (D1) and authorises the five Byzantine drives (D11), the two injections and the Byzantine return $\mathrm{retByz}$ (D23): \leandecl{PLTS.ABA.Net.netAdv}.
 \end{definition}

@@ -16,12 +16,21 @@ simulation `hybrid P ⊑ spec P` along `coreRel P`.
 
 The rows dispatch as follows. A visible `callABA` is answered by
 `SpecStep.callSet` while nothing is decided and by `SpecStep.callLoop`
-afterwards. A visible `retABA` is answered by `SpecStep.decide` followed by
+afterwards. A never-corrupted process's visible `retABA` is answered by
+`SpecStep.decide` followed by
 `SpecStep.ret` on the first such row, and by `SpecStep.ret` alone on every
 later one. Every hidden row, the concrete coin flip included, is answered by a
 stutter: the twin's mode stays `Mode.idle`, so it never fires
 `SpecStep.coinFlip` and `SpecStep.decide` remains enabled when the first
-return arrives. A `fail` is answered by `SpecStep.fail`.
+return arrives. A `fail` is answered by `SpecStep.fail`, whose two guards are
+the concrete row's own, read across `Abs.F_eq`.
+
+A corruption replaces the program of the process it names (D23), and the
+replacement is answered on both sides of the interface. The corrupted
+process's `retABA` is answered by `SpecStep.retByz`: neither the concrete
+state nor the twin moves. On every other label the replaced program
+self-loops, and the concrete row it contributes is the corrupted branch the
+inversion already carries.
 -/
 
 namespace PLTS
@@ -119,7 +128,7 @@ theorem coreSim (P : Params) :
     dsimp only [HybridState.aba, HybridState.wcc] at hI hAbs
     cases l with
     | tau =>
-      rcases hybrid_step_tau P g C A w μ_C hstep with
+      rcases hybrid_step_tau P g C A w hI.corrupted_F μ_C hstep with
         ⟨r, μr, hstepG, rfl⟩ | ⟨μc, hstepC, rfl⟩ | ⟨r, μw', hstepW, rfl⟩ |
         ⟨r, id, b, μr, μc, hstepG, hstepC, rfl⟩ |
         ⟨r, id, out, μr, μc, hstepG, hstepC, rfl⟩ |
@@ -194,10 +203,10 @@ theorem coreSim (P : Params) :
           exact ⟨hI', hAbs.step_retW hI r id b hstepW hstepC hwr' hc2⟩)
         exact ⟨ω, hRel, Or.inl ⟨rfl, hWeak⟩⟩
     | callABA id b =>
-      rw [hybrid_step_callABA] at hstep
+      rw [hybrid_step_callABA P g C A w id b hI.corrupted_F] at hstep
       obtain ⟨μc, hstepC, rfl⟩ := hstep
       have hdisj := hstepC
-      rcases hdisj with ⟨hin, rfl⟩ | rfl
+      rcases hdisj with ⟨-, hin, rfl⟩ | rfl
       · -- genuine fresh input: `callSet` in phase 1 (an overwrite of any self-loop-banked
         -- junk), `callLoop` in phase 2 (first-write-wins ghost)
         set c' := ABAState.setProc (C, A) id { ABAState.procs (C, A) id with
@@ -278,95 +287,103 @@ theorem coreSim (P : Params) :
         rw [hbid]
         exact weakStep_strong (SpecStep.callLoop a id b)
     | retABA id b =>
-      rw [hybrid_step_retABA] at hstep
+      rw [hybrid_step_retABA P g C A w id b hI.corrupted_F] at hstep
       obtain ⟨μc, hstepC, rfl⟩ := hstep
       have hdisj := hstepC
-      obtain ⟨hcnt, hs, hret, rfl⟩ := hdisj
-      set c' := ABAState.setProc (C, A) id { ABAState.procs (C, A) id with returned := true }
-        with hc'def
-      have hc'mem : c' ∈ (PMF.pure c').support := by rw [PMF.mem_support_pure_iff]
-      have hIAF := Inv.step_retABA hI id b hstepC hc'mem
-      have hIA' : Inv P g c' w := hIAF.1
-      -- Honest DECIDED-sender pigeonhole: `n − f` distinct senders of `b` delivered to `id`,
-      -- only `f` corrupted — equivocating byzantine senders may count toward the tally, but
-      -- at least one counted sender is never-corrupted (D12′).
-      have hex : ∃ j, j ∉ ABAState.F (C, A) ∧ b ∈ ABAState.decidedRecv (C, A) id j := by
-        by_contra hcon; push Not at hcon
-        have hsub : (Finset.univ.filter (fun j => b ∈ ABAState.decidedRecv (C, A) id j))
-            ⊆ ABAState.F (C, A) := by
-          intro j hj
-          simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hj
-          by_contra hnf; exact hcon j hnf hj
-        have hcard := Finset.card_le_card hsub
-        have hfc := hI.F_card
-        have hf3 := P.hf
-        unfold ABAState.decidedCount at hcnt
-        omega
-      obtain ⟨j, hjF, hjrecv⟩ := hex
-      have hjsent : b ∈ ABAState.decidedSent (C, A) j := hI.recv_sound id j b hjrecv
-      obtain ⟨rA, hrA_cert⟩ := hI.decided_src j b hjF hjsent
-      -- the twin-level holder pin for `b`: every honest `A`-decision holder agrees with the
-      -- harvested sender's pooled bit (I30)
-      have hpinb : ∀ j0 b0', j0 ∉ ABAState.F (C, A) → AHolder P (C, A) j0 b0' → b0' = b :=
-        fun j0 b0' hj0 hh0 => hI.alock_agree j0 j b0' b hj0 hjF hh0 (Or.inr hjsent)
-      have hretfalse : a.ret id = false := by rw [hAbs.ret_eq id]; exact hret
-      have hCF : c'.F = ABAState.F (C, A) := ABAState.setProc_F _ _ _
-      rcases hAbs.phase with ⟨hv, hghost⟩ | ⟨v, hv2, ⟨r0, hcv0⟩, hpin⟩
-      · -- phase 1: the `decide` τ-step, then `SpecStep.ret`
-        have hsup : SuppOK P a b :=
-          suppOK_of_inputSupp hAbs.F_eq hghost (hI.bind_supp rA b hrA_cert.2.1)
-        have hmode : a.mode ≠ .dead := by rw [hAbs.mode_idle]; exact fun h => by cases h
-        set a1 : SpecState P.n := { a with val := some b, mode := .idle } with ha1def
-        have hburst : weakTau (spec P) (PMF.pure a) (PMF.pure a1) :=
-          decide_step hv hsup hmode
-        have hval1 : a1.val = some b := rfl
-        have hretid : a1.ret id = false := hretfalse
-        set a'' : SpecState P.n := { a1 with ret := Function.update a1.ret id true } with ha''def
-        have hAbs'' : Abs P g c' w a'' := by
-          refine ⟨?_, ?_, rfl, Or.inr ⟨b, rfl, hIAF.2.1 rA b hrA_cert,
-            hIAF.2.2 b ⟨rA, hrA_cert⟩ hpinb⟩⟩
-          · show a.F = c'.F
-            rw [hAbs.F_eq, hCF]
-          · intro id'
-            show Function.update a1.ret id true id' = (c'.procs id').returned
-            by_cases h : id' = id
-            · rw [h, Function.update_self, hc'def, ABAState.setProc_procs_self]
-            · rw [Function.update_of_ne h, hc'def, ABAState.setProc_procs_ne _ _ _ h]
-              exact hAbs.ret_eq id'
+      rcases hdisj with ⟨-, hcnt, hs, hret, rfl⟩ | ⟨hFbyz, rfl⟩
+      · -- a never-corrupted process's return: the twin decides and returns
+        set c' := ABAState.setProc (C, A) id { ABAState.procs (C, A) id with returned := true }
+          with hc'def
+        have hc'mem : c' ∈ (PMF.pure c').support := by rw [PMF.mem_support_pure_iff]
+        have hIAF := Inv.step_retABA hI id b hstepC hc'mem
+        have hIA' : Inv P g c' w := hIAF.1
+        -- Honest DECIDED-sender pigeonhole: `n − f` distinct senders of `b` delivered to `id`,
+        -- only `f` corrupted — equivocating byzantine senders may count toward the tally, but
+        -- at least one counted sender is never-corrupted (D12′).
+        have hex : ∃ j, j ∉ ABAState.F (C, A) ∧ b ∈ ABAState.decidedRecv (C, A) id j := by
+          by_contra hcon; push Not at hcon
+          have hsub : (Finset.univ.filter (fun j => b ∈ ABAState.decidedRecv (C, A) id j))
+              ⊆ ABAState.F (C, A) := by
+            intro j hj
+            simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hj
+            by_contra hnf; exact hcon j hnf hj
+          have hcard := Finset.card_le_card hsub
+          have hfc := hI.F_card
+          have hf3 := P.hf
+          unfold ABAState.decidedCount at hcnt
+          omega
+        obtain ⟨j, hjF, hjrecv⟩ := hex
+        have hjsent : b ∈ ABAState.decidedSent (C, A) j := hI.recv_sound id j b hjrecv
+        obtain ⟨rA, hrA_cert⟩ := hI.decided_src j b hjF hjsent
+        -- the twin-level holder pin for `b`: every honest `A`-decision holder agrees with the
+        -- harvested sender's pooled bit (I30)
+        have hpinb : ∀ j0 b0', j0 ∉ ABAState.F (C, A) → AHolder P (C, A) j0 b0' → b0' = b :=
+          fun j0 b0' hj0 hh0 => hI.alock_agree j0 j b0' b hj0 hjF hh0 (Or.inr hjsent)
+        have hretfalse : a.ret id = false := by rw [hAbs.ret_eq id]; exact hret
+        have hCF : c'.F = ABAState.F (C, A) := ABAState.setProc_F _ _ _
+        rcases hAbs.phase with ⟨hv, hghost⟩ | ⟨v, hv2, ⟨r0, hcv0⟩, hpin⟩
+        · -- phase 1: the `decide` τ-step, then `SpecStep.ret`
+          have hsup : SuppOK P a b :=
+            suppOK_of_inputSupp hAbs.F_eq hghost (hI.bind_supp rA b hrA_cert.2.1)
+          have hmode : a.mode ≠ .dead := by rw [hAbs.mode_idle]; exact fun h => by cases h
+          set a1 : SpecState P.n := { a with val := some b, mode := .idle } with ha1def
+          have hburst : weakTau (spec P) (PMF.pure a) (PMF.pure a1) :=
+            decide_step hv hsup hmode
+          have hval1 : a1.val = some b := rfl
+          have hretid : a1.ret id = false := hretfalse
+          set a'' : SpecState P.n := { a1 with ret := Function.update a1.ret id true } with ha''def
+          have hAbs'' : Abs P g c' w a'' := by
+            refine ⟨?_, ?_, rfl, Or.inr ⟨b, rfl, hIAF.2.1 rA b hrA_cert,
+              hIAF.2.2 b ⟨rA, hrA_cert⟩ hpinb⟩⟩
+            · show a.F = c'.F
+              rw [hAbs.F_eq, hCF]
+            · intro id'
+              show Function.update a1.ret id true id' = (c'.procs id').returned
+              by_cases h : id' = id
+              · rw [h, Function.update_self, hc'def, ABAState.setProc_procs_self]
+              · rw [Function.update_of_ne h, hc'def, ABAState.setProc_procs_ne _ _ _ h]
+                exact hAbs.ret_eq id'
+          simp only [prodPMF_pure_abaRow]
+          obtain ⟨ω, hRel, hbid⟩ := dirac_step (g, c'.1, c'.2, w) a'' ⟨hIA', hAbs''⟩
+          refine ⟨ω, hRel, Or.inr ⟨by simp, ?_⟩⟩
+          rw [hbid]
+          exact weakStep_of_burst_then_step hburst (SpecStep.ret a1 id b hval1 hretid)
+        · -- phase 2: `b` agrees with the certified value through the twin's holder pin
+          -- (I30 pins the harvested sender's pooled `b` against every honest holder, and the
+          -- twin's pin names `v`; `SpecStep.ret` fires alone)
+          have hD3 : v = b := (hpin j b hjF (Or.inr hjsent)).symm
+          have hvalb : a.val = some b := by rw [hv2, hD3]
+          set a'' : SpecState P.n := { a with ret := Function.update a.ret id true } with ha''def
+          have hAbs'' : Abs P g c' w a'' := by
+            refine ⟨?_, ?_, hAbs.mode_idle, Or.inr ⟨v, hv2, hIAF.2.1 r0 v hcv0,
+              hIAF.2.2 v ⟨r0, hcv0⟩ hpin⟩⟩
+            · show a.F = c'.F
+              rw [hAbs.F_eq, hCF]
+            · intro id'
+              show Function.update a.ret id true id' = (c'.procs id').returned
+              by_cases h : id' = id
+              · rw [h, Function.update_self, hc'def, ABAState.setProc_procs_self]
+              · rw [Function.update_of_ne h, hc'def, ABAState.setProc_procs_ne _ _ _ h]
+                exact hAbs.ret_eq id'
+          simp only [prodPMF_pure_abaRow]
+          obtain ⟨ω, hRel, hbid⟩ := dirac_step (g, c'.1, c'.2, w) a'' ⟨hIA', hAbs''⟩
+          refine ⟨ω, hRel, Or.inr ⟨by simp, ?_⟩⟩
+          rw [hbid]
+          exact weakStep_strong (SpecStep.ret a id b hvalb hretfalse)
+      · -- a corrupted process's return (D23): neither side moves, and the twin answers
+        -- with its own corrupted-return rule
         simp only [prodPMF_pure_abaRow]
-        obtain ⟨ω, hRel, hbid⟩ := dirac_step (g, c'.1, c'.2, w) a'' ⟨hIA', hAbs''⟩
+        obtain ⟨ω, hRel, hbid⟩ := dirac_step (g, C, A, w) a ⟨hI, hAbs⟩
         refine ⟨ω, hRel, Or.inr ⟨by simp, ?_⟩⟩
         rw [hbid]
-        exact weakStep_of_burst_then_step hburst (SpecStep.ret a1 id b hval1 hretid)
-      · -- phase 2: `b` agrees with the certified value through the twin's holder pin
-        -- (I30 pins the harvested sender's pooled `b` against every honest holder, and the
-        -- twin's pin names `v`; `SpecStep.ret` fires alone)
-        have hD3 : v = b := (hpin j b hjF (Or.inr hjsent)).symm
-        have hvalb : a.val = some b := by rw [hv2, hD3]
-        set a'' : SpecState P.n := { a with ret := Function.update a.ret id true } with ha''def
-        have hAbs'' : Abs P g c' w a'' := by
-          refine ⟨?_, ?_, hAbs.mode_idle, Or.inr ⟨v, hv2, hIAF.2.1 r0 v hcv0,
-            hIAF.2.2 v ⟨r0, hcv0⟩ hpin⟩⟩
-          · show a.F = c'.F
-            rw [hAbs.F_eq, hCF]
-          · intro id'
-            show Function.update a.ret id true id' = (c'.procs id').returned
-            by_cases h : id' = id
-            · rw [h, Function.update_self, hc'def, ABAState.setProc_procs_self]
-            · rw [Function.update_of_ne h, hc'def, ABAState.setProc_procs_ne _ _ _ h]
-              exact hAbs.ret_eq id'
-        simp only [prodPMF_pure_abaRow]
-        obtain ⟨ω, hRel, hbid⟩ := dirac_step (g, c'.1, c'.2, w) a'' ⟨hIA', hAbs''⟩
-        refine ⟨ω, hRel, Or.inr ⟨by simp, ?_⟩⟩
-        rw [hbid]
-        exact weakStep_strong (SpecStep.ret a id b hvalb hretfalse)
+        exact weakStep_strong (SpecStep.retByz a id b (hAbs.F_eq ▸ hFbyz))
     | callG r id b => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | retG r id out => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | callW r id => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | retW r id b => exact (hidden_label_impossible (by simp) (by simp) hstep).elim
     | fail id =>
-      rw [hybrid_step_fail] at hstep
-      subst hstep
+      rw [hybrid_step_fail P g C A w id hI.corrupted_F] at hstep
+      obtain ⟨hnew, hbud, rfl⟩ := hstep
       set c' : ABAState P := ABAState.corrupt P id (C, A) with hc'def
       simp only [prodPMF_pure_abaRow]
       have hFsub := ABAState.corrupt_F_subset (C, A) id
@@ -387,9 +404,10 @@ theorem coreSim (P : Params) :
             rw [hc'def, ABAState.corrupt_procs] at h
             rw [corrupt_input]; exact hghost id' b' h
           · exact Or.inr ⟨v, by rw [corrupt_val]; exact hv,
-              (hI.step_fail id).2.1 r0 v hcv0, (hI.step_fail id).2.2 v ⟨r0, hcv0⟩ hpin⟩
+              (hI.step_fail id hnew hbud).2.1 r0 v hcv0,
+              (hI.step_fail id hnew hbud).2.2 v ⟨r0, hcv0⟩ hpin⟩
       have hIA' : Inv P (fun r => (g r).corrupt P id) c'
-          (fun r => (w r).corrupt P id) := (hI.step_fail id).1
+          (fun r => (w r).corrupt P id) := (hI.step_fail id hnew hbud).1
       refine ⟨PMF.pure (PMF.pure (a.corrupt P id)), ⟨PMF.pure
         ((fun r => (g r).corrupt P id, c'.1, c'.2, fun r => (w r).corrupt P id),
           PMF.pure (a.corrupt P id)), ?_, ?_, ?_⟩, Or.inr ⟨by simp, ?_⟩⟩
@@ -400,7 +418,8 @@ theorem coreSim (P : Params) :
         subst hp
         exact ⟨a.corrupt P id, rfl, hIA', hAbs'⟩
       · rw [PMF.pure_bind]
-        exact weakStep_strong (SpecStep.fail a id)
+        exact weakStep_strong (SpecStep.fail a id (hAbs.F_eq ▸ hnew)
+          (by rw [hAbs.F_eq]; exact hbud))
 
 end ABA
 end PLTS

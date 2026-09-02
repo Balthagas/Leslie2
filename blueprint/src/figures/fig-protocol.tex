@@ -1,5 +1,6 @@
 % The protocol (PLTS.ABA.Net.ABAProcN, PLTS.ABA.Net.netAdv, PLTS.ABA.protocol):
-% n corruption-blind programs, the network adversary, the coin oracle.
+% n programs, the network adversary, the coin oracle. A program reads its own
+% replacement flag (D23) and nothing else about corruption.
 \begin{tikzpicture}[
     >={Stealth[round]}, semithick,
     prog/.style={draw, rounded corners, align=center, font=\footnotesize,
@@ -58,5 +59,7 @@
     {$\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$,
      $\mathrm{retWPub}$, $\mathrm{gcallLoop}$, the five drives $\to \tau$:\\
      one half at the named program, the other at the adversary,\\
-     save $\mathrm{byzCallG}$ and $\mathrm{byzRetG}$, which have no program half (D11)};
+     save $\mathrm{byzCallG}$ and $\mathrm{byzRetG}$, which have no program half (D11).\\
+     $\mathrm{fail}$ fires under $k \notin F$ and $|F| < f$ and replaces the program it names;\\
+     the replaced program self-loops, and $\mathrm{retByz}$ is the adversary's half of its return (D23)};
 \end{tikzpicture}

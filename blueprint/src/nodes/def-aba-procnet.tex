@@ -18,11 +18,17 @@
   The return $retABA$ and the DECIDED relay are gated on the round-loop record holding an input, so a process that was never called neither returns nor relays (D8).
   The row $gcallLoop$ reads the stage record of round $r$ without writing it, asking that the record holds an input, and carries no termination guard.
   A process that has terminated at phase $toCallG$ over an uncalled stage record therefore has a row on neither call label and takes no further round-loop step, a dead region this reading accepts.
-  There is no outbox, no copy of the corrupted set and no corruption flag, so every guard of the automaton $\mathrm{ABAProcN}(P,j)$ reads $j$'s own record.
+  There is no outbox and no copy of the corrupted set or its budget, so every guard of the automaton $\mathrm{ABAProcN}(P,j)$ reads $j$'s own record.
+  A corruption replaces $j$'s program (D23).
+  The round-loop record carries the flag \leandecl{PLTS.ABA.CoreRec.corrupted}, written by $j$'s own half of the corruption broadcast, \leandeclnamed{failSelf}{PLTS.ABA.Net.ABAProcStepN.failSelf}; every other row above is enabled only while that flag is down, so the record freezes at the corruption and $terminate$ in particular never fires afterwards.
+  In place of those rows the replaced program is the single self-loop \leandeclnamed{corruptedIdle}{PLTS.ABA.Net.ABAProcStepN.corruptedIdle}, taken on every label other than $\tau$ and the labels of $\mathrm{actsAt}\,j$ --- the labels on which $j$ would act on its own sub-protocol traffic --- where it has no row at all.
+  That traffic enters through the drives of D11 and the injections $\mathrm{byzG}$ and $\mathrm{byzD}$.
+  The visible return is the exception: the network's own $\mathrm{retByz}$ row asks for $j \in F$ and no DECIDED evidence, and the self-loop is its other half.
   It runs over the extended alphabet $\mathrm{NLab}(n) = \mathrm{Lab}(n) \oplus \mathrm{NetEvt}(n)$, where $\mathrm{NetEvt}$ names the rendezvous the shared alphabet cannot: the stage multicast $\mathrm{gsnd}(r,j,m)$ and the stage delivery $\mathrm{gdlv}(r,i,j,m)$; the DECIDED relay $\mathrm{dsnd}(j,b)$ and the DECIDED delivery $\mathrm{ddlv}(i,j,b)$; the fused coin return $\mathrm{retWPub}(r,id,c,b)$, which carries beside the coin the payload to be published (D10); the graded-agreement call $\mathrm{gcallLoop}(r,id,b)$ against an already-opened stage record; and the five Byzantine drives $\mathrm{byzCallG}$, $\mathrm{byzCallGLoop}$, $\mathrm{byzRetG}$, $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ (D11).
   The set $\mathrm{netEvtLabels}(n)$ of these labels is what the composition hides, the silent label of $\mathrm{NLab}(n)$ being that of $\mathrm{Lab}(n)$.
   Every transition is Dirac, and $terminate$ is the one row of the table that fires on $\tau$.
-  Every label of either alphabet has a row of process $j$, the participant's or an idle self-loop, with two exceptions: $\mathrm{byzCallG}(r,k,b)$ and $\mathrm{byzRetG}(r,k,out)$ have no row at the process $k$ they name (D11, D22), and a corrupted process's stage traffic enters through the network's own $\mathrm{byzG}$ injection instead.
+  While $j$'s program stands unreplaced, every label of either alphabet has a row of process $j$, the participant's or an idle self-loop, with two exceptions: $\mathrm{byzCallG}(r,k,b)$ and $\mathrm{byzRetG}(r,k,out)$ have no row at the process $k$ they name (D11, D22), and a corrupted process's stage traffic enters through the network's own $\mathrm{byzG}$ injection instead.
+  Once the program is replaced the labels of $\mathrm{actsAt}\,j$ join those two (D23).
   Full synchronisation therefore lets a label's owner move while every other program stands.
-  Full rule table, forty-one rows: \leandecl{PLTS.ABA.Net.ABAProcN}.
+  Full rule table, forty-three rows: \leandecl{PLTS.ABA.Net.ABAProcN}.
 \end{definition}

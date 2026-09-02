@@ -30,9 +30,10 @@ compound over the round sequence depends on the fairness constraint chosen and o
 round structure the proof exposes.
 
 The specification pins the target the race is measured against. `ABA.spec` runs that race
-at one point, in the mode loop of §5: from `Mode.idle` a flip locks with probability `ε`
-and kills with probability `δ_f`, the release mass `1 − ε − δ_f` returns to `Mode.idle`,
-and a lock is never discarded. A flip-only scheduler therefore reaches the terminal mode
+at one point, in the mode loop of §5: from `Mode.idle`, and only where both bits carry
+`f + 1` support, a flip locks with probability `ε` and kills with probability `δ_f`, the
+release mass `1 − ε − δ_f` returns to `Mode.idle`, and a lock is never discarded. A
+flip-only scheduler from such a state therefore reaches the terminal mode
 `Mode.dead` with probability `δ_f / (ε + δ_f)`, and that is the specification-level bound
 a transfer would carry:
 
@@ -77,7 +78,7 @@ over the trace distributions of the including system.
 
 **Leslie2 (this repo)** — probabilistic simulation, *complete*:
 - Weak probabilistic forward simulation with proven soundness AND transitivity
-  (`Results.lean`; the ω-composition `weakTau_flatten` closed 2026-07-22).
+  (`Results.lean`; the ω-composition is `weakTau_flatten`).
 - The full ABA safety chain, stated in the protocol's own coordinates: the protocol
   carried into its reading as a composition of components, the substitution of each
   round's graded-agreement instance by its specification (`GBCA impl ⊑ spec` under one
@@ -188,8 +189,8 @@ Ordered by expected value-for-effort:
    stack meet without duplication.
 
 One cost note, on any of the three. The achievability item of `ABA/README.md` — an
-explicit scheduler driving `protocol P4` to a two-return trace of positive mass — has
-grown more expensive under the wait-until order and the case denials: every stage send now
+explicit scheduler driving `protocol P4` to a two-return trace of positive mass — is
+expensive under the wait-until order and the case denials: every stage send
 waits on the sender's own send at the level below, and every return but `retA` discharges
 the denials of the cases above it, so a witness has to schedule the full five-level
 exchange at each participating process and then exhibit those denials at each returner.
@@ -215,17 +216,42 @@ scheduler can be obliged to do, and no marking has anything to reconcile between
 The lock is the symmetric half. `flipPMF` puts mass `ε` on `lock`, whose post-state is
 `Mode.locked`; there the flip demands `Mode.idle`, so `SpecStep.decide` is the only
 `τ`-rule that can be enabled at all. It is enabled exactly when some bit carries `f + 1`
-support, and support once established is permanent, the ghost record and the corrupted
-set both being monotone. A lock is never discarded: at a locked state the one internal
-move a scheduler has is the decision. A lock reached before any bit is supported is a
-transient stall — no `τ`-rule is enabled until the recorded inputs supply the count — and
-a liveness proof rules that case out at its hypothesis: once the `n − f` honest processes
-have called, the recorded-or-corrupt identifiers number at least `n − f ≥ 2f + 1` and fall
-on two bits, so one bit carries `f + 1` of them for the rest of the run. The release mass
+support, and a state that has passed the flip's own guard leaves some bit supported ever
+after. The forcing runs on the *sum* of the two support counts. Neither count is monotone
+by itself: `SpecStep.callSet`'s overwrite takes its writer out of one of the two supporter
+sets. The sum is. An overwrite moves a supporter from one set to the other and leaves the
+sum where it was; a write into an empty slot raises it by one; a `fail` puts its
+identifier into both sets through the `id ∈ s.F` disjunct and raises it by one or two;
+`SpecStep.callByz` writes only at identifiers that disjunct already counts at both bits,
+so it moves neither count. The flip's `hmix` guard asks `f + 1` at each bit, so the sum
+stands at `2f + 2` or above at every lock, hence at every later state one of the two counts
+is `f + 1` or above and `SpecStep.decide` is enabled. A lock is never discarded: at a
+locked state the one internal move a scheduler has is the decision. The release mass
 `1 − ε − δ_f` returns the
 state to `Mode.idle`, where the flip is enabled again, so a flip-only scheduler runs the
 `ε`-versus-`δ_f` race to absorption and locks with probability `ε / (ε + δ_f)`. That is
 the bound §1 records.
+
+**The gate and the liveness half of Validity.** `hmix` also settles the unanimous case
+structurally, at the specification and with no proof obligation. A supported bit has a
+never-corrupted recorded inputter (`SuppOK.honest_supporter`, `SpecSafety.lean`), so under
+honest unanimity on `v` the bit `!v` is supported by corrupted identifiers alone, at most
+`f` of them, and `hmix` fails at every state such a run reaches. The flip is then
+unreachable, and with it every probabilistic branch of the system: the unanimous path is
+Dirac, and `SpecStep.decide` can write only `v`. That is the liveness half of Validity —
+"if all correct processes input `v` then all correct processes return `v`" — held by the
+shape of the guard rather than by an argument.
+
+**Transfer caveat: the δ-exposure of the unanimous path.** The spec-level guarantee
+transfers to the protocol only at `δ_f = 0`, or under a protocol-side reordering. With
+`δ_f > 0` the implementation consults the coin under unanimity: the round loop's phase
+machine calls `WCC_r` after every graded-agreement return, the coin adoption being a later
+line of ABDY22's Algorithm 2 than the call, so a unanimous round still runs a resolution
+that carries mass `δ_f` on the outcome that delivers to nothing and strands the processes
+awaiting it. The specification's unanimous path has no such branch, so the two agree on
+the unanimous case only when `δ_f = 0` or when the protocol is reordered to skip the coin
+call on a grade the round has already settled. This is the campaign's transfer caveat and
+is recorded here rather than repaired.
 
 **The transfer hook.** The specification names no coin bit. `flipPMF` is `Params.wccPMF`
 pushed forward along a map that forgets which bit was delivered: one bit to `lock`, the
@@ -292,7 +318,8 @@ the sub-protocol slot.
 - PLTS + adapters in Leslie: `Leslie_LTS/Framework/Probabilistic.lean:34-70`
 - Certificates: `Leslie/Prob/Liveness.lean` (`FairASTCertificate`, `sound` at :1719)
 - This repo's fairness line: `Leslie2Extra/Fairness/Simulation/{Defs,Soundness}.lean`
-- Corruption-blind model of the protocol: `ABA/Protocol.lean` (`protocol`, `netAdv`), with
+- The protocol, whose programs read their own replacement flag and nothing else about
+  corruption (D23): `ABA/Protocol.lean` (`protocol`, `netAdv`), with
   its reading as a composition of components in `ABA/Hybrid.lean` (`composed`) and the
   inclusion into it in `ABA/ProtocolSim.lean` (`ProtocolRel`, `protocolSim`,
   `protocol_composed`) — the presentation to state fair

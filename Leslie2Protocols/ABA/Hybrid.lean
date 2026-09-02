@@ -16,8 +16,10 @@ they introduce. The headlines that chain these links with the earlier ones are
 in `ABA/Results.lean`.
 
 The first link is the composed reading. The protocol reading of
-`ABA/Protocol.lean` presents the protocol as `n` corruption-blind programs
-beside one network adversary and the coin oracle; each program runs its round
+`ABA/Protocol.lean` presents the protocol as `n` programs beside one network
+adversary and the coin oracle. A program reads its own replacement flag and
+nothing else about corruption: not the corrupted set, not the budget, not
+another process's status (D23). Each program runs its round
 loop and a graded-agreement stage at once, and the single adversary holds both
 kinds of message pool. The composed reading reads the same protocol as a
 composition of components:

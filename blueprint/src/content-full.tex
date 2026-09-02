@@ -145,9 +145,8 @@ simulation into ordinary states --- and, crucially,
 Theorems~\ref{thm:weakclosure-eq} and~\ref{thm:dist-eq} guarantee that neither
 transformation changes the observable trace distributions. The analogous soundness
 statement for \emph{weak} simulation
-% NOTE: PLTS.WeakProbabilisticSimulation is described in SimDefs.lean docstrings but
-% not (yet) declared in the code; the \lean{} cross-link is demoted to \texttt{} so
-% checkdecls stays green. Restore the \lean{} macro when the declaration lands.
+% PLTS.WeakProbabilisticSimulation is described in SimDefs.lean docstrings and is not
+% a declaration; the cross-link is \texttt{}, not \lean{}, so checkdecls resolves.
 (\texttt{PLTS.WeakProbabilisticSimulation.achievableTraceDists\_subset}) is the same
 argument using only $\cdot^w$ (Theorem~\ref{thm:weakclosure-eq}), since a weak
 simulation is a strong simulation into $sys_A^w$.
@@ -268,9 +267,9 @@ WCC is left at specification level.
 The subject of the argument is the protocol: $n$ programs beside a
 network adversary and a coin oracle, given in that form in
 Section~\ref{sec:aba-perproc} --- one automaton per process, carrying that
-process's round loop beside its stage-side record, and nothing that names
-corruption, and one automaton holding the message pools, the corrupted set and
-the corruption budget.
+process's round loop beside its stage-side record and a flag saying whether its
+own program has been replaced, and one automaton holding the message pools, the
+corrupted set and the corruption budget.
 Substitution needs the sub-protocol it replaces to be a component, so the first
 step of the argument reads that system as a composition of components
 (Theorem~\ref{thm:aba-protocol-composed}).
@@ -308,7 +307,19 @@ The encodings depart from~\cite{LeslieBP} in catalogued ways.
 Each departure carries a label and is cited at the point where it applies.
 The labels D2, D3, D6, D7 and D20 are not in use.
 \begin{itemize}
-  \item D1: corruption is a total deterministic transform.
+  \item D1: corruption is a guarded deterministic transform, broadcast to every
+    component.
+    The label $\mathrm{fail}(id)$ fires only under $id \notin F \wedge |F| < f$,
+    so a corruption fires exactly where it takes effect.
+    The guard sits on the row of the component that owns the corrupted set:
+    rule~6 of Transition System~1, and the network adversary in the
+    implementations.
+    The sub-protocol specifications take the label totally, their own copies of
+    $F$ kept in lockstep by the broadcast.
+    The transform is $\mathrm{corrupt}$, which inserts $id$ into $F$ and writes
+    nothing else.
+    The half of the broadcast taken at the process the label names replaces
+    that process's program, the replacement itself being D23.
   \item D4: the WCC \texttt{guess} label and the \texttt{guess} state field are
     omitted.
   \item D5: a set-based authenticated network with per-sender message pools.
@@ -317,6 +328,8 @@ The labels D2, D3, D6, D7 and D20 are not in use.
   \item D10: the per-round bookkeeping between the coin return and the next
     call fused into the $retW$ step, which multicasts DECIDED on an $A$ grade.
   \item D11: Byzantine call- and return-driver rules at each handshake.
+    A replaced program's sub-protocol traffic is the drives' business; its
+    interface traffic is D23's.
   \item D12$'$: per-process DECIDED sent and received pools, delivery per
     (receiver, sender, bit), and Byzantine equivocation in those pools.
   \item D13: the Validity provenance apparatus on Transition System~1, namely a
@@ -385,7 +398,7 @@ The labels D2, D3, D6, D7 and D20 are not in use.
     structural rather than invariants of the specification
     (Theorem~\ref{thm:gbca-spec-binding}) and carries the safety half of
     Validity (Theorem~\ref{thm:gbca-spec-validity}).
-  \item D21: Transition System~1 is six rules over the record
+  \item D21: Transition System~1 is eight rules over the record
     $\{input, ret, F, val, mode\}$, in place of the source's per-process call
     row and five-valued coin.
     The coin is an abstract flip, rule~3, which resolves once per firing into a
@@ -393,6 +406,9 @@ The labels D2, D3, D6, D7 and D20 are not in use.
     $mode \in \{idle, locked, dead\}$ it writes is the whole of the round
     structure the source spreads over a call row, a bound value and a coin
     field.
+    The flip carries the mixedness gate beside $mode = idle$ and $val = \bot$:
+    it fires only from a state where each of the two bits carries $f+1$
+    support.
     The decision is a single guarded write, rule~4, of a bit carrying $f+1$
     $F$-blind support.
   \item D22: retention with termination.
@@ -430,6 +446,40 @@ The labels D2, D3, D6, D7 and D20 are not in use.
     The Byzantine stage drives keep their labels and their network rows but have
     no row at the process they name, and a corrupted process's stage traffic
     enters through the network's own $\mathrm{byzG}$ injection.
+    The rule $terminate$ carries the replacement guard of D23, so a process
+    whose program has been replaced never terminates.
+  \item D23: when a process is corrupted its program is replaced.
+    The round-loop record carries the flag \leandecl{PLTS.ABA.CoreRec.corrupted},
+    and the process's own half of the corruption broadcast,
+    \leandeclnamed{failSelf}{PLTS.ABA.Net.ABAProcStepN.failSelf}, is the row
+    that writes it.
+    Every honest row of the program is enabled only at an unreplaced program,
+    so the record beneath the flag stands still from the corruption on: the
+    phase, the estimate, the round, the receipt rows and the retained stage
+    records all freeze where they stand.
+    In place of those rows the replaced program is the single self-loop
+    \leandeclnamed{corruptedIdle}{PLTS.ABA.Net.ABAProcStepN.corruptedIdle},
+    taken on every label other than $\tau$ and the labels on which the process
+    would act on its own sub-protocol traffic.
+    On the latter the replaced program has no row at all, so under full
+    synchronisation those labels cannot fire.
+    What the corrupted process does on its sub-protocol interfaces runs instead
+    through the drives of D11, what it multicasts through the injections
+    $\mathrm{byzG}$ and $\mathrm{byzD}$, and neither has a row at the process it
+    names; a delivery addressed to a corrupted process fires nowhere.
+    The visible interface is the exception.
+    Both networks carry a Byzantine return row, $\mathrm{retABA}(id,b)$ at a
+    corrupted process for either bit under the authorisation $id \in F$ alone
+    and with none of the DECIDED evidence the honest row demands, and the
+    replaced program's self-loop is the other half of it.
+    At Transition System~1 the image of the replacement is the pair of
+    corrupted interface rules, rules~7 and~8.
+    Rule~7 records a bit unrelated to the one its label declares; rule~8 returns
+    any bit at any time without moving the state.
+    The honest rules stay available to a corrupted process, so the two rules add
+    behaviour and remove none.
+    The trace predicates accordingly quantify over never-corrupted returners,
+    which is the quantification of the papers' own contracts.
 \end{itemize}
 
 \paragraph{Outside the model.}
@@ -485,10 +535,12 @@ below.
 What runs is $n$ programs, a network adversary and a coin oracle.
 Each program is one process: its round loop, the graded-agreement stage record
 of the round that loop is in, and the messages that have been delivered to it.
-It is corruption-blind.
-No field of its record is a copy of the corrupted set, none is a corruption flag,
-and none records what the process has multicast, so no guard of its rule table
-can ask whether the process is honest or what it has sent.
+What it holds of corruption is one flag, saying whether its own program has been
+replaced (D23).
+No field of its record is a copy of the corrupted set, none is the corruption
+budget, none names another process's status, and none records what the process
+has multicast, so no guard of its rule table can ask whether another process is
+honest or what this one has sent.
 The network adversary holds exactly what a process may not see: the message
 pools of every sender, the DECIDED pools, and the corrupted set together with
 the corruption budget.
@@ -643,8 +695,8 @@ so locality sits in the state shape and not in the guards alone.
 \input{nodes/def-aba-protocol}
 
 \blueprintfig{fig-protocol}{The protocol \leandecl{PLTS.ABA.protocol}: the $n$ programs $\mathrm{ABAProcN}(P,j)$, \leandecl{PLTS.ABA.Net.ABAProcN}, under $\mathrm{syncProduct}$, the network adversary \leandecl{PLTS.ABA.Net.netAdv} and the coin oracle beside the group.
-Each program holds one process's round loop beside its stage-side record, the stage record of every round it has touched and its termination flag (D22); every guard of its forty-one rules reads that program's own record, and none of them names corruption.
-Its state \leandecl{PLTS.ABA.Net.NetState} holds the pools $pool(r,j)$ and $dpool(j)$ and the corrupted set $F$, and its twenty rules supply the other half of every send, every delivery and every Byzantine drive; the corruption budget is the guard on its own $\mathrm{fail}$ row.
+Each program holds one process's round loop beside its stage-side record, the stage record of every round it has touched and its termination flag (D22); every guard of its forty-three rules reads that program's own record, and what any of them reads of corruption is that record's own replacement flag (D23).
+Its state \leandecl{PLTS.ABA.Net.NetState} holds the pools $pool(r,j)$ and $dpool(j)$ and the corrupted set $F$, and its twenty-one rules supply the other half of every send, every delivery, every Byzantine drive and the Byzantine return; the corruption budget is the guard on its own $\mathrm{fail}$ row.
 The inner dashed frame is $\mathrm{relabel} \circ \mathrm{abstract}\,\mathrm{netEvtLabels}$: every $\mathrm{gsnd}$, $\mathrm{gdlv}$, $\mathrm{dsnd}$, $\mathrm{ddlv}$, $\mathrm{retWPub}$, $\mathrm{gcallLoop}$ and Byzantine drive becomes $\tau$.
 The coin oracle is joined through the partial map $\mathrm{wccPull}$, so the drives $\mathrm{byzCallW}$ and $\mathrm{byzRetW}$ and the fused return $\mathrm{retWPub}$ reach it as coin handshakes while the network labels leave it idle.
 The outer dashed frame is $\mathrm{abstract}_H$, which hides the coin handshake $\mathrm{callW}/\mathrm{retW}$; what leaves it is the API $\mathrm{callABA}/\mathrm{retABA}/\mathrm{fail}$ together with $\tau$.
@@ -656,12 +708,13 @@ rule is allowed to read, and the presentation states it in its sharpest form.
 Every implemented part of the protocol is $n$ programs: the round loop, the
 graded-agreement stage of each round, the DECIDED gossip and the receipt
 bookkeeping of both sit inside $\mathrm{ABAProcN}(P,j)$, and every guard
-of its forty-one rules is a function of $j$'s record.
+of its forty-three rules is a function of $j$'s record.
 Nothing of the protocol is shared.
-The receipt rows and the control records each belong to one process, every
-quorum count is taken over one process's rows, and a process knows nothing at all
-about corruption --- not even its own status, which no guard of its table can
-name.
+The receipt rows and the control records each belong to one process, and every
+quorum count is taken over one process's rows.
+What a process knows of corruption is one bit of its own record, saying whether
+its own program has been replaced (D23); the corrupted set, the budget and every
+other process's status are outside its table.
 Two components are not programs, and each is centralized for its own reason.
 The first is the network adversary.
 It is not part of the protocol: it is the environment the protocol runs in, and
@@ -963,7 +1016,8 @@ The DECIDED pools are round-agnostic, carrying no round index.
 A delivery pairs the network's authenticity guard \leandeclnamed{ddlv}{PLTS.ABA.Comp.ANetStep.ddlv} with the receiver's write \leandeclnamed{ddlvRecv}{PLTS.ABA.Comp.CoreProcStepN.ddlvRecv}; a relay pairs the sender's $f{+}1$ receipt count \leandeclnamed{dsndRelay}{PLTS.ABA.Comp.CoreProcStepN.dsndRelay} with the network's write-once insert \leandeclnamed{dsnd}{PLTS.ABA.Comp.ANetStep.dsnd}; and \leandeclnamed{byzD}{PLTS.ABA.Comp.ANetStep.byzD} is the network's own $\tau$-loop, by which $id \in F$ pools either bit (D12$'$).
 The exit \texttt{retABA}\,$id\,b$ fires once $n-f$ distinct senders of $b$ have been delivered to $id$, the count read at \leandeclnamed{ret}{PLTS.ABA.Comp.CoreProcStepN.ret}, and $b$ lies in $id$'s own sent pool, read at \leandeclnamed{retABA}{PLTS.ABA.Comp.ANetStep.retABA}.
 
-\blueprintfig{fig-core-phases}{The round loop \leandecl{PLTS.ABA.Comp.coreProcN}: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pools gating $\mathrm{retABA}$.}
+\blueprintfig{fig-core-phases}{The round loop \leandecl{PLTS.ABA.Comp.coreProcN}: the per-process five-phase handshake cycle, the fused DECIDED multicast at the $A$-grade coin return (D10), and the DECIDED pools gating $\mathrm{retABA}$.
+Every edge drawn carries the guard that the process's own program is unreplaced, so a corruption leaves the machine at the phase it has reached and the phase field stands still from there (D23).}
 
 The Lean encoding of Algorithm~\ref{alg:aba-core} is the round-loop program
 $\mathrm{coreProcN}(P,j)$ of each process together with the ABA-side network
@@ -1016,7 +1070,11 @@ The state a rule of the inventory moves is $\mathrm{ABAState}(P)$,
     with the other components by the $\mathrm{fail}$ broadcast.
 \end{itemize}
 The first two are process-local and the last two are the network's, which is
-what makes a process blind to its own sends and to corruption.
+what makes a process blind to its own sends, to the corrupted set and to the
+budget.
+What a round-loop record does hold of corruption is the flag
+\leandecl{PLTS.ABA.CoreRec.corrupted}, saying whether its own program has been
+replaced (D23).
 The pools are per process rather than per bit, so a corrupted process may hold
 both payloads at once and deliver them selectively (D12$'$).
 Write
@@ -1035,6 +1093,9 @@ rendezvous of one of each; where a row has two halves the table names both, and
 a guard is annotated with the component that reads it.
 A label of the extended alphabet is written with the $\to\tau$ the composition
 applies to it.
+Every round-loop row below other than $\mathrm{failSelf}$ and
+$\mathrm{corruptedIdle}$ carries in addition the guard that the acting process's
+own program is unreplaced (D23); the Guard column does not repeat it.
 
 \begin{center}
 \footnotesize
@@ -1122,22 +1183,42 @@ Rule & Label & Guard & Effect \\
 \leandeclnamed{retABA}{PLTS.ABA.Comp.ANetStep.retABA} & & \quad (returner),
   $b \in \mathit{decidedSent}_i$ (network) & \\
 \hline
-\leandeclnamed{fail}{PLTS.ABA.Comp.ANetStep.fail} & $\mathrm{fail}(i)$ & ---
-  & $F \gets F \cup \{i\}$ if $i \notin F$ \\
- & & & and $|F| < f$; else identity \\
+\leandeclnamed{corruptedIdle}{PLTS.ABA.Comp.CoreProcStepN.corruptedIdle}, & $\mathrm{retABA}(i,b)$
+  & program of $i$ replaced (returner),
+  & identity (D23) \\
+\leandeclnamed{retByz}{PLTS.ABA.Comp.ANetStep.retByz} & & $i \in F$ (network) & \\
+\hline
+\leandeclnamed{failSelf}{PLTS.ABA.Comp.CoreProcStepN.failSelf}, & $\mathrm{fail}(i)$
+  & $i \notin F$, $|F| < f$ (network),
+  & $F \gets F \cup \{i\}$; \\
+\leandeclnamed{fail}{PLTS.ABA.Comp.ANetStep.fail} & & program of $i$ unreplaced (D23)
+  & replace the program of $i$ \\
+\hline
+\leandeclnamed{corruptedIdle}{PLTS.ABA.Comp.CoreProcStepN.corruptedIdle} & any label but $\tau$
+  & program of $i$ replaced, & identity (D23) \\
+ & \quad and but $\mathrm{actsAt}(i)$ & \quad the label outside $\mathrm{actsAt}(i)$ & \\
 \hline
 \end{tabular}
 \end{center}
 
-Only the four Byzantine drives test membership of $F$, and each of them tests
-it at the network; no rule of a round loop names corruption at all, so the
-remaining rules apply to corrupted and honest processes alike.
-The return row is the notable case:
-a corrupted process must pass the same $n - f$ DECIDED count as an honest one,
-and the specification's return rule is likewise blind to honesty.
+Membership of $F$ is tested at the network alone: by the four Byzantine drives,
+by $\mathrm{byzD}$, and by the Byzantine return row.
+A round loop reads its own replacement flag and no more, so no rule of it names
+the corrupted set, the budget, or another process's status (D23).
+The honest return row is the notable case:
+an unreplaced program must pass the same $n - f$ DECIDED count whether or not
+its process is in $F$, and the specification's rule~5 is likewise blind to
+honesty.
+What a corruption buys at the interface is the row beneath it, which asks for no
+DECIDED evidence at all.
 The corruption rule \leandeclnamed{fail}{PLTS.ABA.Comp.ANetStep.fail} is a synchronisation of every component of the
-composition, each keeping its own copy of $F$; the round loops' half is
-\leandeclnamed{failIdle}{PLTS.ABA.Comp.CoreProcStepN.failIdle}, corruption being no business of theirs.
+composition, each keeping its own copy of $F$; at the process it names the round
+loop's half is \leandeclnamed{failSelf}{PLTS.ABA.Comp.CoreProcStepN.failSelf}, which writes the replacement flag, and at every
+other process it is \leandeclnamed{failIdle}{PLTS.ABA.Comp.CoreProcStepN.failIdle}, another process's corruption being no
+business of theirs.
+Since every honest row carries the replacement guard, the record of a corrupted
+process stands still from that point: its phase, estimate, round, grade and
+receipt rows are what they were at the corruption.
 The $\mathrm{est}$-update of \leandeclnamed{retW}{PLTS.ABA.Comp.CoreProcStepN.retW} is Algorithm~\ref{alg:aba-core}'s
 branch \textbf{if} $b = \bot$ \textbf{then} $b \gets c$, and the conditional
 multicast is its branch \textbf{elif} $g = A$; the branch is taken by choosing
@@ -1188,14 +1269,16 @@ the DECIDED pools share a component with the stage pools.
 
 The three specification systems locate the adversary differently from the
 implementations they stand for.
-An implementation pairs corruption-blind processes with an explicit
-network-adversary PLTS, which owns the corrupted set together with its budget
-and authorises every Byzantine action by the guard $k \in F$ of a component.
+An implementation pairs processes that read only their own replacement flag with
+an explicit network-adversary PLTS, which owns the corrupted set together with
+its budget and authorises every Byzantine action by the guard $k \in F$ of a
+component.
 A specification carries no network component at all.
 Its adversarial transitions are bare nondeterministic choices, resolved by the
-scheduler: the total corruption rule of Transition System~1, the
-adversary-chosen returns under $\top$ at Transition System~3, and the disjunct
-$id \in F$ in the $F$-blind support counts of Transition Systems~1 and~2.
+scheduler: the corruption rule of Transition System~1, its two corrupted
+interface rules (D23), the adversary-chosen returns under $\top$ at Transition
+System~3, and the disjunct $id \in F$ in the $F$-blind support counts of
+Transition Systems~1 and~2.
 Leaving those choices unstructured is sound, because a specification constrains
 from above.
 An unstructured adversary makes the specification more permissive, never less.
@@ -1212,15 +1295,18 @@ Rule 3 (\leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip}) is the branch out 
 Its three outcomes carry $\varepsilon$, $1-\varepsilon-\failmass$ and $\failmass$: the flip locks, leaves the state unchanged, or kills (D17).
 Rule 4 (\leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}) is the sole writer of $val$, and it is the only $\tau$-rule that \emph{locked} can enable.
 Enabledness is wider than the control graph shows.
-Rules 2 and 6 fire in every state, and rule 1 wherever $val = \bot$.
+Rule 2 fires in every state and rule 1 wherever $val = \bot$; rule 6 fires wherever the identifier it names is uncorrupted and the budget has room, and rules 7 and 8 wherever the identifier it names is corrupted.
+Rule 3 asks the mixedness gate beside $mode = idle$ and $val = \bot$: both bits must carry $f{+}1$ support, so a run on which one bit is never supported never flips.
 Rule 4 is enabled at every state with $val = \bot$, $mode \neq dead$ and some bit carrying $f{+}1$ support, hence at \emph{idle} as well as at \emph{locked}.
-At \emph{decided} the enabled rules are 2, 5 and 6, and at \emph{dead} they are 1, 2 and 6; neither state enables a $\tau$-rule.
+At \emph{decided} the enabled rules are 2, 5, 6, 7 and 8, and at \emph{dead} they are 1, 2, 6, 7 and 8; neither state enables a $\tau$-rule.
 The guards on rule 4 are the entire constraint on the value decided (D13).
 
 \blueprintfig{fig-ts1-rules}{Transition System 1, the ABA specification \leandecl{PLTS.ABA.spec}: the four control states, keyed on the mode, and the flip branch of rule 3, whose $\tau$-step is drawn with an undirected stem and one edge per outcome — lock, release and kill, naming no coin bit.
 A locked flip cannot be discarded: at $locked$ the decision is the only $\tau$-rule the mode can enable.
 The kill branch of mass $\failmass$ (D17) is terminal: $dead$ enables no $\tau$-rule.
-Rules 1 and 2 are drawn on $idle$ alone; rule 1 is enabled wherever no value is decided, rule 2 everywhere; rule 6 (\leandeclnamed{fail}{PLTS.ABA.SpecStep.fail}), the total corruption rule (D1), is not drawn.}
+The flip carries the mixedness gate, so the branch is reachable only from a state where both bits carry $f{+}1$ support.
+Rules 1 and 2 are drawn on $idle$ alone; rule 1 is enabled wherever no value is decided, rule 2 everywhere.
+Three of the eight rules are not drawn: rule 6 (\leandeclnamed{fail}{PLTS.ABA.SpecStep.fail}), the guarded corruption rule (D1), and rules 7 and 8 (\leandeclnamed{callByz}{PLTS.ABA.SpecStep.callByz} and \leandeclnamed{retByz}{PLTS.ABA.SpecStep.retByz}), the corrupted interface (D23), each enabled at a corrupted process in every state and none of them writing the mode.}
 
 \noindent\textbf{Transition System 1: the ABA specification.}
 
@@ -1241,7 +1327,8 @@ The source blueprint's $Initial$ clause mentions an undeclared $out$ field; the 
 $\mathrm{callABA}(id,b)$, $\mathrm{retABA}(id,b)$, $\mathrm{fail}(id)$ and $\tau$, for $id \in [n]$ and $b \in \mathbb{B}$.
 
 \noindent\textbf{Input-enabled labels.}
-$\mathrm{callABA}(id,b)$, by the unconditional loop rule~2, and $\mathrm{fail}(id)$, whose rule~6 is total (D1).
+$\mathrm{callABA}(id,b)$, by the unconditional loop rule~2.
+The label $\mathrm{fail}(id)$ is enabled where $id \notin F$ and $|F| < f$, the guards of rule~6 (D1).
 
 \noindent\textbf{Initial.}
 $input = \bot^{[n]}$, $ret = \mathrm{false}^{[n]}$, $F = \emptyset$, $val = \bot$ and $mode = idle$, the superscript marking a constant map on $[n]$.
@@ -1268,7 +1355,7 @@ No guard.
    \end{cases} \]
 
 \noindent\textbf{3.} \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip} (D17, D21).
-Guard $mode = idle$ and $val = \bot$.
+Guard $mode = idle$, $val = \bot$ and $SuppOK(s,b)$ for each of the two bits $b$, the mixedness gate.
 \[ \begin{aligned}
      s \xrightarrow{\;\tau\;}\ \
      &\varepsilon\cdot\delta\bigl(s[\,mode := locked\,]\bigr)
@@ -1289,13 +1376,23 @@ Guard $val = b$ and $ret[id] = \mathrm{false}$.
    \delta\bigl(s[\,ret[id] := \mathrm{true}\,]\bigr) \]
 
 \noindent\textbf{6.} \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} (D1).
-No guard.
+Guard $id \notin F$ and $|F| < f$.
 \[ s \xrightarrow{\;\mathrm{fail}(id)\;}
-   \begin{cases}
-     \delta\bigl(s[\,F := F \cup \{id\}\,]\bigr)
-       & \text{if } id \notin F \text{ and } |F| < f,\\
-     \delta(s) & \text{otherwise.}
-   \end{cases} \]
+   \delta\bigl(s[\,F := F \cup \{id\}\,]\bigr) \]
+The guards are the condition under which the transform $\mathrm{corrupt}$ has an effect, so moving them onto the row leaves the effect unchanged and narrows the enabledness alone.
+
+\noindent\textbf{7.} \leandeclnamed{callByz}{PLTS.ABA.SpecStep.callByz} (D23).
+Guard $id \in F$.
+\[ s \xrightarrow{\;\mathrm{callABA}(id,b)\;}
+   \delta\bigl(s[\,input[id] := b'\,]\bigr),
+   \qquad b' \in \mathbb{B} \text{ arbitrary} \]
+The recorded bit is independent of the one the label declares: a corrupted caller's declared input need not be what is recorded.
+
+\noindent\textbf{8.} \leandeclnamed{retByz}{PLTS.ABA.SpecStep.retByz} (D23).
+Guard $id \in F$.
+\[ s \xrightarrow{\;\mathrm{retABA}(id,b)\;} \delta(s) \]
+A corrupted process returns any bit at any time and the state does not move.
+Rule~5 stays available to it, so the two corrupted rules add behaviour and remove none.
 
 \medskip
 \noindent Two of the three guards on rule~4 are load-bearing for safety.
@@ -1307,18 +1404,41 @@ A decision of $1$ there has every never-corrupted process inputting $0$, and the
 The third guard, $mode \neq dead$, carries no safety weight.
 It is the freeze of D17: a killed flip takes the decision away with every other $\tau$-rule.
 
+\noindent The mixedness gate on rule~3 carries no safety weight either.
+It is where the specification holds the liveness half of Validity.
+A supported bit has a never-corrupted recorded inputter, by the budget pigeonhole \leandecl{PLTS.ABA.SuppOK.honest_supporter}, so under honest unanimity on one bit the other bit is supported by corrupted identifiers alone, at most $f$ of them, and the gate fails at every state such a run reaches.
+The flip is then unreachable, and with it every probabilistic branch of the system, so the unanimous path is Dirac and rule~4 can write only the input.
+The gate holds that structurally, in the guard rather than in a proof.
+
+\noindent Rules~7 and~8 constrain nothing.
+The bit a corrupted process returns is arbitrary and the state does not move, so no property of the system can constrain such a return; the trace predicates of Theorem~\ref{thm:aba-spec-safe} accordingly quantify over never-corrupted returners.
+The write of rule~7 is the one place a recorded bit is replaced.
+The support of the value decided survives it, by \leandecl{PLTS.ABA.SuppOK.callByz}: the writer $id$ lies in $F$, so the $F$ disjunct of $SuppOK$ counts it whichever bit it now records.
+
 \dynamics{How a decision arises}{%
 Which rule fires is scheduler nondeterminism, resolved by the adversary; the
 flip is the only source of randomness.
-The flip is enabled at $mode = idle$ with nothing decided.
+The flip is enabled at $mode = idle$, with nothing decided, and with each of the
+two bits carrying $f{+}1$ support.
 One firing resolves into exactly one of three outcomes.
 A release leaves the state unchanged, so the flip is enabled again.
 A lock sets $mode := locked$, and there the decision is the only $\tau$-rule
 the mode can enable, the flip asking for $mode = idle$.
-The decision is enabled whenever some bit carries $f{+}1$ support, and such a
-bit stays supported, since no rule sets a recorded input back to $\bot$ and no
-rule removes an identifier from $F$.
-A lock is therefore never discarded.
+The decision is enabled whenever some bit carries $f{+}1$ support, and a state
+that has passed the mixedness gate leaves some bit supported ever after.
+The argument runs on the sum of the two support counts and not on either one,
+since neither is monotone by itself: rule~1 may overwrite the record of an
+uncorrupted identifier, which takes that identifier out of one of the two
+supporter sets.
+It puts it into the other in the same write, so the sum is unchanged; a write
+into an empty slot raises the sum by one; a corruption puts its identifier into
+both sets through the $F$ disjunct and raises the sum by one or two; rule~7
+writes only at identifiers the $F$ disjunct already counts in both sets, so it
+moves neither count.
+The sum therefore never decreases.
+At the flip it stands at $2f{+}2$ or above, hence at every later state one of
+the two counts is $f{+}1$ or above and the decision is enabled at $locked$.
+A lock is never discarded.
 A kill sets $mode := dead$, which enables no $\tau$-rule at all (D17), so a
 killed flip leaves the system with no decision and no return.
 
@@ -1330,12 +1450,22 @@ A run that keeps flipping therefore locks or dies almost surely, and under a
 scheduler that fires nothing but the flip it locks with probability
 $\varepsilon/(\varepsilon+\failmass)$.
 No safety argument uses either mass.
-The reading is conditional on support: a lock reached before any bit carries
-$f{+}1$ support enables no $\tau$-rule at all, and the system waits there until
-the calls that supply the support are recorded.
+The reading is conditional on the gate: a run on which one bit is never
+supported never flips at all, and every state it reaches has a Dirac successor
+distribution.
+That is the unanimous case, and it is the liveness half of Validity: under
+honest unanimity on $v$ the run cannot flip, cannot lock, cannot die, and rule~4
+can write only $v$.
 The decision is \emph{enabled}, never forced, and the scheduler may decline it
 forever, so the claim that the protocol decides with probability $1$ under fair
 scheduling is a separate statement, not proved here.
+
+The corrupted interface is arbitrary and influences nothing.
+Rule~8 leaves the state fixed, and rule~7 writes only where the $F$ disjunct
+already counts its identifier at both bits, so neither rule changes which bits
+are supported, which mode the system is in, or what value rule~4 may write.
+What they add is trace behaviour, which is why the properties are read at
+never-corrupted returners.
 
 The flip names no coin bit.
 Reading a lock as the coin agreeing with the round's reference value is an
@@ -1803,6 +1933,8 @@ The subject of the chain is the protocol.
 No step of it leaves the protocol's vocabulary for the sake of the argument,
 and neither does the proof of any step: all three are read in the protocol's
 coordinates throughout, the relation of (3) included.
+The safety carried along the chain is the pair of predicates of
+Theorem~\ref{thm:aba-spec-safe}, read at never-corrupted returners (D23).
 
 \input{nodes/thm-aba-protocol}
 

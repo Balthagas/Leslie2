@@ -17,8 +17,8 @@ file are the source blueprint's. The encoding follows the
 source blueprint; where the source blueprint departs from ABDY22 the encoding inherits
 the departure, with the single exception of §1.
 
-**The D-registry is elsewhere.** The catalogued deviations — D1, D4, D5, D8–D19, D21
-and D22, with D12 refined to D12′ — are cited at the point of use in the ABA module
+**The D-registry is elsewhere.** The catalogued deviations — D1, D4, D5, D8–D19, D21,
+D22 and D23, with D12 refined to D12′ — are cited at the point of use in the ABA module
 docstrings and glossed one by one in the blueprint chapter (the Deviations paragraph of
 `blueprint/src/content.tex`), which is the registry of record.
 
@@ -182,10 +182,11 @@ repaired at the rule; the sixth entry is a cross-reference.
   gate their `ABAProcStepN` counterparts carry. The composed reading is the abstraction
   the protocol is carried into, and gating there would ripple through `ProtocolRel` and
   the core simulation.
-- **`SpecStep.ret` (chosen).** The top-level return guards are `val = some b` and
-  `ret id = false`, and nothing about the returner. `ValidityTrace` is
-  returner-unconditional (§6), so the specification is deliberately the weaker of the two
-  on that axis.
+- **`SpecStep.ret` without an honesty guard (chosen).** The honest return's guards are
+  `val = some b` and `ret id = false`, and nothing about the returner, so a corrupted
+  process may take it as an honest one does. `SpecStep.retByz` (D23) sits beside it and
+  carries the arbitrary return, so the rule pair adds behaviour where an honesty guard on
+  `SpecStep.ret` would only remove it.
 - **The `2f + 1` commit read as a relay threshold (cross-reference).**
   `ABAProcStepN.terminate` reads `2f + 1` DECIDED receipts where the paper's condition is
   that the process may stop without holding another back. That delta is the third D22
@@ -203,8 +204,8 @@ repaired at the rule; the sixth entry is a cross-reference.
   guard `PLTS.ABA.SuppOK`, which is where the Validity trace dies —
   the counterexample check in `Spec.lean` records it, with inputs `1,0,0,0` at
   `n = 4, f = 1` and the sole `1`-inputter corrupted leaving one supporter of `1` against
-  the `f + 1 = 2` the guard demands. The six-rule shape this leaves, with the control mode
-  carrying the flip, is deviation **D21**.
+  the `f + 1 = 2` the guard demands. The eight-rule shape this leaves, with the control
+  mode carrying the flip, is deviation **D21**.
 - **TS 2's singular binding witness** (`∃ id ∉ F, call[id] = b`, source p. 19) loses
   provenance one level down, and `hybrid` over it violates Validity; the
   deterministic trace is in `GBCASpec.lean`'s module docstring, under D14.
@@ -252,17 +253,6 @@ Unpredictability, inexpressible once the guess is dropped.
   is then enabled already and no injection is wanted. So the bit-valued injection reaches
   every guard the non-bit one would, and no safety- or termination-relevant behaviour is
   lost.
-- **Byzantine drives at the ABA interface.** The stage and coin interfaces carry drives
-  for a corrupted process — `NetStep.byzCallG`, `byzCallGLoop`, `byzRetG`, `byzCallW` and
-  `byzRetW`, each under a `k ∈ F` guard (D11) — and the ABA interface carries none.
-  `ABAProcStepN.input` and `ABAProcStepN.ret` are the only rows at the process a
-  `callABA` or `retABA` names, and a corrupted process takes them under the guards an
-  honest one takes: `ret` asks for the call record, `n − f` DECIDED receipts and an
-  unfired return, and reads `F` nowhere, while `NetStep.retABA` adds the pool conjunct
-  `b ∈ s.dpool id`. The arbitrary outputs ABDY22 permits a faulty party are therefore
-  absent from the trace set. Nothing claimed turns on it: the paper's properties quantify
-  over non-faulty parties, and the encoding proves `AgreementTrace` and `ValidityTrace`
-  of every return, corrupted returners included — the divergence this section closes on.
 - **Termination.** ABA's ε-sure Termination, GBCA's Termination and WCC's ε′-sure
   Termination (pp. 6–7) are unclaimed — `ABA.main` is Validity ∧
   Agreement. See `NOTES-Liveness-Roadmap.md`.
@@ -303,12 +293,25 @@ Unpredictability, inexpressible once the guess is dropped.
   participating in graded agreement, and the D12′ broadcast it keeps carrying is what
   lets the processes still running cross the relay threshold without it.
 
-One divergence runs in the safe direction. The source's Validity restricts to correct
-processes ("if a correct process returns `b` then a correct process had `b` as input",
-p. 6), where `ValidityTrace` is returner-unconditional — every return, corrupted
-returners included, is witnessed by a preceding `callABA` from a `NeverCorrupted`
-caller — and `AgreementTrace` is stronger on the same axis. `ABA.spec`'s return rule
-does not inspect `F`, so the stronger statement is what `spec_safe` proves.
+The returner axis carries no divergence. The ABA interface is modelled for a corrupted
+process at every level of the chain (D23). At the protocol and in the composed reading, a
+corruption replaces the process's program: the honest rows are guarded by the replacement
+flag, the replaced program self-loops on `callABA` and `retABA`, and the network's own
+`retByz` row authorises the return under `k ∈ F` with none of the DECIDED evidence
+`ABAProcStepN.ret` demands. At the specification the same behaviour is `SpecStep.callByz`,
+which records a bit unrelated to the one its label declares, and `SpecStep.retByz`, which
+returns any bit at any time without moving the state.
+
+`ValidityTrace` and `AgreementTrace` are accordingly read at never-corrupted returners,
+which is the quantification of the source's own contracts ("if a correct process returns
+`b` then a correct process had `b` as input", p. 6) and of ABDY22's. It is also the only
+quantification the model admits: a corrupted return carries an arbitrary bit, so the
+unconditional forms are false of the system. Corruption is read at the trace level, as
+non-membership in every stage of `failSet`, the fold of the D1 transform over the `fail`
+labels seen so far, so a process corrupted at any point of the trace is excluded at every
+point of it. The witness axis stays as strong as the papers': the caller `ValidityTrace`
+produces must itself be never corrupted, not merely a member of a support set a later
+`fail` could taint.
 
 ## 7. Adjacent open items
 

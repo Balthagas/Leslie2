@@ -2,7 +2,7 @@
   \label{thm:aba-main}
   \lean{PLTS.ABA.refines}\lean{PLTS.ABA.main}\leanok
   \uses{thm:aba-protocol, thm:aba-protocol-composed, thm:aba-substitution, thm:aba-hybrid-spec, thm:aba-spec-safe}
-  Every trace distribution achievable by the protocol is achievable by the ABA specification, and hence every positive-probability trace of the protocol satisfies Validity and Agreement.
+  Every trace distribution achievable by the protocol is achievable by the ABA specification, and hence every positive-probability trace of the protocol satisfies Validity and Agreement, both in the form of Theorem~\ref{thm:aba-spec-safe} and so read at never-corrupted returners.
   The steps of the chain enter as inclusions chained by transitivity of set inclusion; transitivity of probabilistic forward simulation is not used.
   The chained simulation is additionally provided, along the composite of the three relations: the Dirac lift of $\mathrm{ProtocolRel}$, the pointwise round substitution, and the core relation.\lean{PLTS.ABA.chainSim}
   \leandeclnamed{refines}{PLTS.ABA.refines}, \leandeclnamed{main}{PLTS.ABA.main} and \leandeclnamed{chainSim}{PLTS.ABA.chainSim} are machine-checked axiom-clean, documented by pinned axiom guards.

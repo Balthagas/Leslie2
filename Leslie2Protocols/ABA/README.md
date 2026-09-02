@@ -12,9 +12,12 @@ The architecture in one line, all of it in the protocol's own coordinates:
 protocol  ⊑  composed  ⊑  hybrid  ⊑  ABA.spec
 ```
 
-- `protocol` — the protocol as it runs: `n` corruption-blind programs beside the network
+- `protocol` — the protocol as it runs: `n` programs beside the network
   adversary, which owns the message pools and the corrupted set, and the coin oracle,
-  the only component whose transitions are not Dirac. A program holds its round loop beside
+  the only component whose transitions are not Dirac. A program reads its own replacement
+  flag and nothing else about corruption: not the corrupted set, not the budget, not
+  another process's status. A corruption replaces the program of the process it names
+  (D23). A program holds its round loop beside
   its stage-side record — the stage record of every round the process has touched, in a
   finite map — and terminates once its own return has fired and `2f + 1` DECIDED receipts
   are on record (D22).
@@ -39,16 +42,21 @@ Why the cut sits there, and what it buys, is `../DESIGN-Composition.md`.
 ## Scope
 
 GBCA is verified to **implementation** level; WCC is **assumed** at specification level
-(its coin is `wccPMF`). `ValidityTrace` is the paper-form predicate (D13): every return of
-`b` is preceded by a `callABA _ b` from a caller that is never corrupted anywhere in the
-trace. The `f + 1` `SuppOK` support counts are the invariant machinery that makes this
-provable, not the predicate itself. Safety only — no termination, liveness,
-unpredictability or fairness. The protocol's `terminate` rule is a rule of the model, not a
-result: no theorem says when it fires, or that it ever does.
+(its coin is `wccPMF`). Both trace predicates are read at never-corrupted returners.
+`ValidityTrace` is the paper-form predicate (D13): every return of `b` by a never-corrupted
+process is preceded by a `callABA _ b` from a caller that is never corrupted anywhere in the
+trace, and `AgreementTrace` asks two such returns to carry the same bit. That is the
+quantification of the papers' own contracts, and it is what the model forces: the model
+contains the corrupted interface, so a corrupted process may call one bit and record
+another, and may return either bit at any time (D23). The `f + 1` `SuppOK` support counts
+are the invariant machinery that makes this provable, not the predicate itself. Safety
+only — no termination, liveness, unpredictability or fairness. The protocol's `terminate`
+rule is a rule of the model, not a result: no theorem says when it fires, or that it ever
+does.
 
 ## Deviations
 
-Each departure from the source blueprint carries a label D1–D22, cited at the point where
+Each departure from the source blueprint carries a label D1–D23, cited at the point where
 it applies. The registry — every active label glossed — is the Deviations paragraph of
 `../../blueprint/src/content.tex`.
 `../NOTES-Fidelity.md` covers how the encoding stands against its two sources beyond that
@@ -63,27 +71,27 @@ the file is. The order is the dependency order.
 |---|---|---|
 | `Params.lean` | 125 | The parameters `P` — `n`, `f` with `n > 3f`, and the coin distribution `wccPMF` with its ε/δ bounds. |
 | `Labels.lean` | 141 | The shared label alphabet `Lab n`: the visible API, the hidden sub-protocol handshakes, `τ`. |
-| `Spec.lean` | 196 | **The top-level ABA specification**, the system all safety is measured against. Six rules over `SpecState`, whose control mode carries the flip (D21). The decision is gated on the `f + 1` support guard `SuppOK` alone (D13). |
+| `Spec.lean` | 235 | **The top-level ABA specification**, the system all safety is measured against. Eight rules over `SpecState`, whose control mode carries the flip (D21) and two of which are the corrupted interface (D23). The decision is gated on the `f + 1` support guard `SuppOK` alone (D13). |
 | `WCCSpec.lean` | 163 | The weak common coin specification, per round, and the coin value domain `TVal`. Held at specification level by design. |
 | `GBCASpec.lean` | 268 | The graded binding crusader agreement specification, per round. Binding is negative (D19). |
-| `SpecSafety.lean` | 567 | `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. The trace predicates live here. |
+| `SpecSafety.lean` | 717 | `spec_safe`: every positive-mass trace of `ABA.spec` is valid and agreeing. The trace predicates live here. |
 | `GBCASafety.lean` | 590 | Binding, graded agreement and Validity's safety half for the GBCA specification instance. |
 | `GBCAImpl.lean` | 748 | **The GBCA implementation**, ABDY22's Algorithm 6 in full (D18). Its state is the stage records beside the round's fabric. |
 | `GBCASim.lean` | 1808 | The per-instance refinement `implRefines`, by kill-on-demand: `dead` carried as a receipt-pattern certificate; and the broadcast compatibility of its relation with the `fail` act (`instRel_corrupt`), which the family lifting consumes. |
-| `Core.lean` | 223 | **The ABA round loop**, per process and nothing else: the phase machine, the control record, the round-loop record. |
-| `Components.lean` | 838 | The extended alphabet `NLab n`, the coin oracle read along its label pullback, the round loop of one process, and the ABA-side network — the pieces the two compositions are built from. |
-| `ABAState.lean` | 327 | The ABA-side state as one object: the round-loop records beside the DECIDED network, with the accessors the invariant is stated in. |
-| `Protocol.lean` | 1379 | **The protocol as it runs**, and the subject of the whole chain: the programs, each holding its round loop beside its stage-side record (D22), the network adversary, and the pipeline that composes them beside the coin oracle. |
+| `Core.lean` | 249 | **The ABA round loop**, per process and nothing else: the phase machine, the control record, the round-loop record. |
+| `Components.lean` | 974 | The extended alphabet `NLab n`, the coin oracle read along its label pullback, the round loop of one process, and the ABA-side network — the pieces the two compositions are built from. |
+| `ABAState.lean` | 380 | The ABA-side state as one object: the round-loop records beside the DECIDED network, with the accessors the invariant is stated in. |
+| `Protocol.lean` | 1527 | **The protocol as it runs**, and the subject of the whole chain: the programs, each holding its round loop beside its stage-side record (D22), the network adversary, and the pipeline that composes them beside the coin oracle. |
 | `GBCAInstances.lean` | 1635 | **The round's graded-agreement instance** and the licence to replace it, `subSim`. |
-| `Hybrid.lean` | 729 | **`composed`**, **`substSim`**: the same protocol read as four components, one round instance per round retained at every moment, and that graded-agreement component then replaced by its specification under the four congruences. |
-| `CoreSimRel.lean` | 667 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
-| `CoreSimInv.lean` | 3809 | Step inversion for `hybrid`, then preservation of `Inv` across every row. The bulk of the proof text. |
+| `Hybrid.lean` | 731 | **`composed`**, **`substSim`**: the same protocol read as four components, one round instance per round retained at every moment, and that graded-agreement component then replaced by its specification under the four congruences. |
+| `CoreSimRel.lean` | 674 | The core simulation's relation: the lazy abstract twin `Abs` and the concrete invariant `Inv`. |
+| `CoreSimInv.lean` | 3947 | Step inversion for `hybrid`, then preservation of `Inv` across every row. The bulk of the proof text. |
 | `CoreSimAbs.lean` | 335 | `Abs` preservation for the stutter rows, and the assembly `Inv.step`. |
 | `CoreSimBurst.lean` | 53 | The abstract-twin burst kit: `SpecStep.decide` as a τ-burst (`decide_step`), and a burst closed by a visible step (`weakStep_of_burst_then_step`). |
-| `CoreSim.lean` | 406 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
-| `ProtocolSim.lean` | 1004 | **`protocolSim`**, **`protocol_composed`**: the protocol carried into the composed reading along `ProtocolRel`, whose five unguarded conjuncts determine the composed state. |
-| `Results.lean` | 209 | The deliverables, gathered so every citable statement is in one file. Twelve `#guard_msgs` axiom firewalls. |
-| `NonVacuity.lean` | 623 | A concrete 21-step run of `hybrid P4` to a `retABA` decision, so the simulation about it is not vacuous. |
+| `CoreSim.lean` | 425 | **`coreSim`**: the simulation proof itself, one row per concrete step class. |
+| `ProtocolSim.lean` | 1071 | **`protocolSim`**, **`protocol_composed`**: the protocol carried into the composed reading along `ProtocolRel`, whose five unguarded conjuncts determine the composed state. |
+| `Results.lean` | 211 | The deliverables, gathered so every citable statement is in one file. Twelve `#guard_msgs` axiom firewalls. |
+| `NonVacuity.lean` | 629 | A concrete 21-step run of `hybrid P4` to a `retABA` decision, so the simulation about it is not vacuous. |
 
 The pieces both compositions are built from are in `Components.lean`. `Protocol.lean` and
 `GBCAInstances.lean` each import it and neither imports the other, so the two readings of

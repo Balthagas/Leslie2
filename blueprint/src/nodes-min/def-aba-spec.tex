@@ -2,5 +2,5 @@
   \label{def:aba-spec}
   \lean{PLTS.ABA.SpecStep}\lean{PLTS.ABA.spec}\leanok
   \uses{def:aba-labels}
-  Transition System 1 is the repaired ABA specification, six rules over the ABA interface on a state carrying a ghost record of the genuine calls, the processes that have returned, the corrupted set, the decision value and a control mode $mode \in \{idle, locked, dead\}$ (D1, D13, D17, D21): \leandecl{PLTS.ABA.SpecStep} and \leandecl{PLTS.ABA.spec}.
+  Transition System 1 is the repaired ABA specification, eight rules over the ABA interface on a state carrying a ghost record of the genuine calls, the processes that have returned, the corrupted set, the decision value and a control mode $mode \in \{idle, locked, dead\}$ (D1, D13, D17, D21, D23), among them the corrupted interface \leandeclnamed{callByz}{PLTS.ABA.SpecStep.callByz} and \leandeclnamed{retByz}{PLTS.ABA.SpecStep.retByz} and the flip \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip} under its mixedness gate: \leandecl{PLTS.ABA.SpecStep} and \leandecl{PLTS.ABA.spec}.
 \end{definition}

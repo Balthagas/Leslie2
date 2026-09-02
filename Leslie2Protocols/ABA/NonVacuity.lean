@@ -213,7 +213,8 @@ noncomputable def Sd2 : ABAState P4 := Sd1.deliverDecided 0 2 true
 /-- The ABA-side state after process `0` fires `retABA 0 true`. -/
 noncomputable def Sfin : ABAState P4 := Sd2.setProc 0 { Sd2.procs 0 with returned := true }
 
-/-- The four components after a synchronised `fail 0` broadcast. -/
+/-- The four components after a synchronised `fail 0` broadcast; the ABA-side
+state carries the replacement flag of process `0` beside the corrupted set. -/
 noncomputable def Gf : ℕ → GBCA.SpecState 4 := fun r => (G0 r).corrupt P4 (0 : Fin 4)
 noncomputable def Wf : ℕ → WCC.SpecState 4 := fun r => (W0 r).corrupt P4 (0 : Fin 4)
 noncomputable def Sf : ABAState P4 := ABAState.corrupt P4 (0 : Fin 4) S0
@@ -233,7 +234,7 @@ theorem step_callABA₀ :
   have h := hybridPre_vis_step P4 (G := G0) (C := S0.1) (A := S0.2) (o := W0)
     (L := Sum.inl (Lab.callABA (0 : Fin 4) true)) (by simp)
     (specSide_idle P4 G0 (by simp) rfl not_false)
-    (coreLoops_at 0 (CoreProcStepN.input (P := P4) (S0.1 0) true rfl)
+    (coreLoops_at 0 (CoreProcStepN.input (P := P4) (S0.1 0) true rfl rfl)
       (fun j hj => CoreProcStepN.callABAIdle (P := P4) (S0.1 j) 0 true (Ne.symm hj)))
     (ANetStep.callABAIdle (P := P4) S0.2 0 true)
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -248,7 +249,7 @@ theorem step_callABA₁ :
   have h := hybridPre_vis_step P4 (G := G0) (C := S1.1) (A := S1.2) (o := W0)
     (L := Sum.inl (Lab.callABA (1 : Fin 4) true)) (by simp)
     (specSide_idle P4 G0 (by simp) rfl not_false)
-    (coreLoops_at 1 (CoreProcStepN.input (P := P4) (S1.1 1) true (by decide))
+    (coreLoops_at 1 (CoreProcStepN.input (P := P4) (S1.1 1) true (by decide) (by decide))
       (fun j hj => CoreProcStepN.callABAIdle (P := P4) (S1.1 j) 1 true (Ne.symm hj)))
     (ANetStep.callABAIdle (P := P4) S1.2 1 true)
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -263,7 +264,7 @@ theorem step_callABA₂ :
   have h := hybridPre_vis_step P4 (G := G0) (C := S2.1) (A := S2.2) (o := W0)
     (L := Sum.inl (Lab.callABA (2 : Fin 4) true)) (by simp)
     (specSide_idle P4 G0 (by simp) rfl not_false)
-    (coreLoops_at 2 (CoreProcStepN.input (P := P4) (S2.1 2) true (by decide))
+    (coreLoops_at 2 (CoreProcStepN.input (P := P4) (S2.1 2) true (by decide) (by decide))
       (fun j hj => CoreProcStepN.callABAIdle (P := P4) (S2.1 j) 2 true (Ne.symm hj)))
     (ANetStep.callABAIdle (P := P4) S2.2 2 true)
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -281,7 +282,7 @@ theorem step_callG₀ :
     (L := Sum.inl (Lab.callG 0 (0 : Fin 4) true)) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G0 0) 0 true rfl))
     (coreLoops_at 0 (CoreProcStepN.callG (P := P4) (S3.1 0) 0 true (by decide) (by decide)
-        (by decide))
+        (by decide) (by decide))
       (fun j hj => CoreProcStepN.callGIdle (P := P4) (S3.1 j) 0 0 true (Ne.symm hj)))
     (ANetStep.callGIdle (P := P4) S3.2 0 0 true)
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -296,7 +297,7 @@ theorem step_callG₁ :
     (L := Sum.inl (Lab.callG 0 (1 : Fin 4) true)) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G1 0) 1 true (by decide)))
     (coreLoops_at 1 (CoreProcStepN.callG (P := P4) (Sc1.1 1) 0 true (by decide) (by decide)
-        (by decide))
+        (by decide) (by decide))
       (fun j hj => CoreProcStepN.callGIdle (P := P4) (Sc1.1 j) 0 1 true (Ne.symm hj)))
     (ANetStep.callGIdle (P := P4) Sc1.2 0 1 true)
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -312,7 +313,7 @@ theorem step_callG₂ :
     (L := Sum.inl (Lab.callG 0 (2 : Fin 4) true)) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.call (P := P4) (r := 0) (G2 0) 2 true (by decide)))
     (coreLoops_at 2 (CoreProcStepN.callG (P := P4) (Sc2.1 2) 0 true (by decide) (by decide)
-        (by decide))
+        (by decide) (by decide))
       (fun j hj => CoreProcStepN.callGIdle (P := P4) (Sc2.1 j) 0 2 true (Ne.symm hj)))
     (ANetStep.callGIdle (P := P4) Sc2.2 0 2 true)
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -345,7 +346,8 @@ theorem step_retG₀ :
     (L := Sum.inl (Lab.retG 0 (0 : Fin 4) (.A true))) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Gb 0) 0 true
       (by decide) (by decide) (Or.inl rfl) rfl))
-    (coreLoops_at 0 (CoreProcStepN.retG (P := P4) (Sc3.1 0) 0 (.A true) (by decide) (by decide))
+    (coreLoops_at 0 (CoreProcStepN.retG (P := P4) (Sc3.1 0) 0 (.A true) (by decide)
+        (by decide) (by decide))
       (fun j hj => CoreProcStepN.retGIdle (P := P4) (Sc3.1 j) 0 0 (.A true) (Ne.symm hj)))
     (ANetStep.retGIdle (P := P4) Sc3.2 0 0 (.A true))
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -360,7 +362,8 @@ theorem step_retG₁ :
     (L := Sum.inl (Lab.retG 0 (1 : Fin 4) (.A true))) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Gr 0) 1 true
       (by decide) (by decide) (Or.inr rfl) (by decide)))
-    (coreLoops_at 1 (CoreProcStepN.retG (P := P4) (Sr.1 1) 0 (.A true) (by decide) (by decide))
+    (coreLoops_at 1 (CoreProcStepN.retG (P := P4) (Sr.1 1) 0 (.A true) (by decide)
+        (by decide) (by decide))
       (fun j hj => CoreProcStepN.retGIdle (P := P4) (Sr.1 j) 0 1 (.A true) (Ne.symm hj)))
     (ANetStep.retGIdle (P := P4) Sr.2 0 1 (.A true))
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -375,7 +378,8 @@ theorem step_retG₂ :
     (L := Sum.inl (Lab.retG 0 (2 : Fin 4) (.A true))) (by simp)
     (specSide_owned P4 rfl rfl (GBCA.Step.retA (P := P4) (r := 0) (Ga1 0) 2 true
       (by decide) (by decide) (Or.inr rfl) (by decide)))
-    (coreLoops_at 2 (CoreProcStepN.retG (P := P4) (Sq1.1 2) 0 (.A true) (by decide) (by decide))
+    (coreLoops_at 2 (CoreProcStepN.retG (P := P4) (Sq1.1 2) 0 (.A true) (by decide)
+        (by decide) (by decide))
       (fun j hj => CoreProcStepN.retGIdle (P := P4) (Sq1.1 j) 0 2 (.A true) (Ne.symm hj)))
     (ANetStep.retGIdle (P := P4) Sq1.2 0 2 (.A true))
     (wccIdle W0 (by simp) rfl (by simp [Lab.isFail]))
@@ -391,7 +395,7 @@ theorem step_callW₀ :
   have h := hybridPre_vis_step P4 (G := Ga2) (C := Sq2.1) (A := Sq2.2) (o := W0)
     (L := Sum.inl (Lab.callW 0 (0 : Fin 4))) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
-    (coreLoops_at 0 (CoreProcStepN.callW (P := P4) (Sq2.1 0) 0 (by decide) (by decide))
+    (coreLoops_at 0 (CoreProcStepN.callW (P := P4) (Sq2.1 0) 0 (by decide) (by decide) (by decide))
       (fun j hj => CoreProcStepN.callWIdle (P := P4) (Sq2.1 j) 0 0 (Ne.symm hj)))
     (ANetStep.callWIdle (P := P4) Sq2.2 0 0)
     ((System.mapIdle_step_some (wccPull_inl (Lab.callW 0 (0 : Fin 4))) _).mpr
@@ -406,7 +410,7 @@ theorem step_callW₁ :
   have h := hybridPre_vis_step P4 (G := Ga2) (C := Sw0.1) (A := Sw0.2) (o := Wc0)
     (L := Sum.inl (Lab.callW 0 (1 : Fin 4))) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
-    (coreLoops_at 1 (CoreProcStepN.callW (P := P4) (Sw0.1 1) 0 (by decide) (by decide))
+    (coreLoops_at 1 (CoreProcStepN.callW (P := P4) (Sw0.1 1) 0 (by decide) (by decide) (by decide))
       (fun j hj => CoreProcStepN.callWIdle (P := P4) (Sw0.1 j) 0 1 (Ne.symm hj)))
     (ANetStep.callWIdle (P := P4) Sw0.2 0 1)
     ((System.mapIdle_step_some (wccPull_inl (Lab.callW 0 (1 : Fin 4))) _).mpr
@@ -422,7 +426,7 @@ theorem step_callW₂ :
   have h := hybridPre_vis_step P4 (G := Ga2) (C := Sw1.1) (A := Sw1.2) (o := Wc1)
     (L := Sum.inl (Lab.callW 0 (2 : Fin 4))) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
-    (coreLoops_at 2 (CoreProcStepN.callW (P := P4) (Sw1.1 2) 0 (by decide) (by decide))
+    (coreLoops_at 2 (CoreProcStepN.callW (P := P4) (Sw1.1 2) 0 (by decide) (by decide) (by decide))
       (fun j hj => CoreProcStepN.callWIdle (P := P4) (Sw1.1 j) 0 2 (Ne.symm hj)))
     (ANetStep.callWIdle (P := P4) Sw1.2 0 2)
     ((System.mapIdle_step_some (wccPull_inl (Lab.callW 0 (2 : Fin 4))) _).mpr
@@ -485,7 +489,7 @@ theorem step_retW₀ :
     (L := Sum.inr (.retWPub 0 (0 : Fin 4) true true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 0 (CoreProcStepN.retWPub (P := P4) (Sw2.1 0) 0 true true (by decide)
-        (by decide) (by decide))
+        (by decide) (by decide) (by decide))
       (fun j hj => CoreProcStepN.retWPubIdle (P := P4) (Sw2.1 j) 0 0 true true (Ne.symm hj)))
     (ANetStep.retWPub (P := P4) Sw2.2 0 0 true true)
     ((System.mapIdle_step_some (wccPull_retWPub 0 (0 : Fin 4) true true) _).mpr
@@ -502,7 +506,7 @@ theorem step_retW₁ :
     (L := Sum.inr (.retWPub 0 (1 : Fin 4) true true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 1 (CoreProcStepN.retWPub (P := P4) (Ss0.1 1) 0 true true (by decide)
-        (by decide) (by decide))
+        (by decide) (by decide) (by decide))
       (fun j hj => CoreProcStepN.retWPubIdle (P := P4) (Ss0.1 j) 0 1 true true (Ne.symm hj)))
     (ANetStep.retWPub (P := P4) Ss0.2 0 1 true true)
     ((System.mapIdle_step_some (wccPull_retWPub 0 (1 : Fin 4) true true) _).mpr
@@ -520,7 +524,7 @@ theorem step_retW₂ :
     (L := Sum.inr (.retWPub 0 (2 : Fin 4) true true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
     (coreLoops_at 2 (CoreProcStepN.retWPub (P := P4) (Ss1.1 2) 0 true true (by decide)
-        (by decide) (by decide))
+        (by decide) (by decide) (by decide))
       (fun j hj => CoreProcStepN.retWPubIdle (P := P4) (Ss1.1 j) 0 2 true true (Ne.symm hj)))
     (ANetStep.retWPub (P := P4) Ss1.2 0 2 true true)
     ((System.mapIdle_step_some (wccPull_retWPub 0 (2 : Fin 4) true true) _).mpr
@@ -540,7 +544,7 @@ theorem step_deliver₀ :
   have h := hybridPre_vis_step P4 (G := Ga2) (C := Ss2.1) (A := Ss2.2) (o := Wr2)
     (L := Sum.inr (.ddlv (0 : Fin 4) (0 : Fin 4) true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
-    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Ss2.1 0) 0 true (by decide))
+    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Ss2.1 0) 0 true (by decide) (by decide))
       (fun j hj => CoreProcStepN.ddlvIdle (P := P4) (Ss2.1 j) 0 0 true (Ne.symm hj)))
     (ANetStep.ddlv (P := P4) Ss2.2 0 0 true (by decide))
     ((System.mapIdle_step_none (wccPull_ddlv (0 : Fin 4) (0 : Fin 4) true) _).mpr rfl)
@@ -554,7 +558,7 @@ theorem step_deliver₁ :
   have h := hybridPre_vis_step P4 (G := Ga2) (C := Sd0.1) (A := Sd0.2) (o := Wr2)
     (L := Sum.inr (.ddlv (0 : Fin 4) (1 : Fin 4) true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
-    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Sd0.1 0) 1 true (by decide))
+    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Sd0.1 0) 1 true (by decide) (by decide))
       (fun j hj => CoreProcStepN.ddlvIdle (P := P4) (Sd0.1 j) 0 1 true (Ne.symm hj)))
     (ANetStep.ddlv (P := P4) Sd0.2 0 1 true (by decide))
     ((System.mapIdle_step_none (wccPull_ddlv (0 : Fin 4) (1 : Fin 4) true) _).mpr rfl)
@@ -569,7 +573,7 @@ theorem step_deliver₂ :
   have h := hybridPre_vis_step P4 (G := Ga2) (C := Sd1.1) (A := Sd1.2) (o := Wr2)
     (L := Sum.inr (.ddlv (0 : Fin 4) (2 : Fin 4) true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
-    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Sd1.1 0) 2 true (by decide))
+    (coreLoops_at 0 (CoreProcStepN.ddlvRecv (P := P4) (Sd1.1 0) 2 true (by decide) (by decide))
       (fun j hj => CoreProcStepN.ddlvIdle (P := P4) (Sd1.1 j) 0 2 true (Ne.symm hj)))
     (ANetStep.ddlv (P := P4) Sd1.2 0 2 true (by decide))
     ((System.mapIdle_step_none (wccPull_ddlv (0 : Fin 4) (2 : Fin 4) true) _).mpr rfl)
@@ -590,7 +594,7 @@ theorem step_retABA :
   have h := hybridPre_vis_step P4 (G := Ga2) (C := Sd2.1) (A := Sd2.2) (o := Wr2)
     (L := Sum.inl (Lab.retABA (0 : Fin 4) true)) (by simp)
     (specSide_idle P4 Ga2 (by simp) rfl not_false)
-    (coreLoops_at 0 (CoreProcStepN.ret (P := P4) (Sd2.1 0) true (by decide) (by decide))
+    (coreLoops_at 0 (CoreProcStepN.ret (P := P4) (Sd2.1 0) true (by decide) (by decide) (by decide))
       (fun j hj => CoreProcStepN.retABAIdle (P := P4) (Sd2.1 j) 0 true (Ne.symm hj)))
     (ANetStep.retABA (P := P4) Sd2.2 0 true (by decide))
     (wccIdle Wr2 (by simp) rfl (by simp [Lab.isFail]))
@@ -601,8 +605,9 @@ theorem step_retABA :
 
 /-- Corruption of process `0`: the visible `fail 0` synchronises every component —
 the round specifications and the coin oracle by global broadcast, the ABA-side
-network by its own `fail` row, which carries the budget guard, and the round
-loops by standing still (deviation D1). -/
+network by its own `fail` row, which carries the guards, the named round loop
+by replacing its own program (deviation D23), and the other three round loops
+by standing still (deviation D1). -/
 theorem step_fail :
     (hybrid P4).step (st G0 S0 W0) (Lab.fail (0 : Fin 4))
       (PMF.pure (st Gf Sf Wf)) := by
@@ -610,8 +615,9 @@ theorem step_fail :
   have h := hybridPre_vis_step P4 (G := G0) (C := S0.1) (A := S0.2) (o := W0)
     (L := Sum.inl (Lab.fail (0 : Fin 4))) (by simp)
     (specSide_fail P4 G0 0)
-    (fun i => CoreProcStepN.failIdle (P := P4) (S0.1 i) 0)
-    (ANetStep.fail (P := P4) S0.2 0)
+    (coreLoops_at 0 (CoreProcStepN.failSelf (P := P4) (S0.1 0) rfl)
+      (fun j hj => CoreProcStepN.failIdle (P := P4) (S0.1 j) 0 (Ne.symm hj)))
+    (ANetStep.fail (P := P4) S0.2 0 (by decide) (by decide))
     ((System.mapIdle_step_some (wccPull_inl (Lab.fail (0 : Fin 4))) _).mpr
       (wccFamily_fail P4 W0 0))
   rw [prodPMF_pure_pure, prodPMF_pure_pure, prodPMF_pure_pure] at h

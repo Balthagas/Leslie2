@@ -9,7 +9,7 @@
   \]
   The two presentations hold the same stage data indexed two ways, by process on the protocol side and by round on the composed one.
   $\mathrm{ProtocolRel}(P)$ pins, of a composed state, everything a state of the protocol determines, and it has five conjuncts, none of them guarded.
-  The round loops agree.
+  The round loops agree, replacement flags included (D23).
   The coin oracle is the same component on both sides.
   The ABA-side network is the network adversary's DECIDED pools beside its corrupted set, and the fabric of round $r$ is that adversary's round-$r$ pools beside the same corrupted set, corruption being one broadcast on both sides.
   The entry of process $j$ in the instance of round $r$ is the stage record of round $r$ that $j$ holds, one equation for each pair $(j,r)$.
@@ -28,6 +28,8 @@
   The rows are answered by label class: the rendezvous labels of the two networks and of the drives, the visible labels of the ABA interface, and the silent label.
   A stage-side row writes the stage record of the round its label tags and no other, and the round instance of that round writes the entry of the acting process and no other, so the fifth conjunct is preserved pair by pair.
   The round advance writes no stage record on either side, and the row $terminate$ writes a field no conjunct reads, so the composed answer to it is a stutter.
+  A corrupted process's replaced program is matched loop for loop (D23): where the protocol program takes its self-loop, the composed round loop takes the same one, the two tables carrying the row under the same guard, and the flag itself is the first conjunct's own field.
+  The corrupted return is answered on the composed side by the ABA-side network's Byzantine row, which asks for $id \in F$ and no DECIDED evidence, as the protocol adversary's does.
   The Byzantine graded-agreement call and return name a process whose program has no row for them (D11, D22), and the process group is a full synchronisation, so no transition of the protocol carries either label, while the round instance has a row for each.
   The stage rules of a round instance carry no termination guard either, so the instance answers a send or a delivery at a process the protocol has terminated.
   The inclusion is one-directional for those two reasons.

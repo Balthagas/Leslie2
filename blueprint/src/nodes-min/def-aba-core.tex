@@ -1,6 +1,6 @@
 \begin{definition}[The per-process records beside the ABA-side network]
   \label{def:aba-core}
-  \lean{PLTS.ABA.ABAState}\lean{PLTS.ABA.ABAState.procs}\lean{PLTS.ABA.ABAState.decidedSent}\lean{PLTS.ABA.ABAState.decidedRecv}\lean{PLTS.ABA.ABAState.F}\lean{PLTS.ABA.ABAState.decidedCount}\lean{PLTS.ABA.ABAState.setProc}\lean{PLTS.ABA.ABAState.stepRound}\lean{PLTS.ABA.ABAState.sendDecided}\lean{PLTS.ABA.ABAState.deliverDecided}\lean{PLTS.ABA.ABAState.corrupt}\leanok
+  \lean{PLTS.ABA.ABAState}\lean{PLTS.ABA.ABAState.procs}\lean{PLTS.ABA.ABAState.decidedSent}\lean{PLTS.ABA.ABAState.decidedRecv}\lean{PLTS.ABA.ABAState.corrupted}\lean{PLTS.ABA.ABAState.F}\lean{PLTS.ABA.ABAState.decidedCount}\lean{PLTS.ABA.ABAState.setProc}\lean{PLTS.ABA.ABAState.stepRound}\lean{PLTS.ABA.ABAState.sendDecided}\lean{PLTS.ABA.ABAState.deliverDecided}\lean{PLTS.ABA.ABAState.corrupt}\leanok
   \uses{def:aba-labels, def:aba-core-vocab, def:aba-procnet, def:aba-composed}
-  The $n$ round-loop records beside the ABA-side network, read as one object by four accessors that gather the control records, the DECIDED receipts, the multicast pools and the corrupted set the two components hold apart: \leandecl{PLTS.ABA.ABAState}.
+  The $n$ round-loop records beside the ABA-side network, read as one object by five accessors that gather the control records, the DECIDED receipts, the replacement flags (D23), the multicast pools and the corrupted set the two components hold apart: \leandecl{PLTS.ABA.ABAState}.
 \end{definition}

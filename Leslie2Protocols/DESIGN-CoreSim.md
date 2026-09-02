@@ -88,11 +88,10 @@ is written by `bindUnset`, and a value-bearing return needs the *live pair*
 `(!v) ∈ (g r).dead ∧ v ∉ (g r).dead`. The relation does not state decided values through
 that pair. It states them through certificates, which name their bit off a single
 permanent membership `(!b) ∈ (g r).dead` plus commitments that only `call`, `F` and the
-honest `procs` fields can affect. That is the landed design and it is sound as it
-stands; the certificates are what `Inv.decided_src`, `Inv.grade_A_src` and phase 2 of
+honest `procs` fields can affect. That is the design, and it is sound; the certificates are what `Inv.decided_src`, `Inv.grade_A_src` and phase 2 of
 `Abs` carry.
 
-The certificate form is also stronger than the specification now requires. `bindUnset`
+The certificate form is stronger than the specification requires. `bindUnset`
 carries the guard `dead = ∅`, so a round kills at most once
 (`GBCASafety.dead_card_le_one`) and `dead = {0,1}` is unreachable: a live pair
 established by a return is in fact permanent, and pair-form invariants are maintainable.
@@ -146,15 +145,23 @@ Concrete steps are read through the Stage-A inversion lemmas of `CoreSimInv.lean
 which take a `hybrid` transition back through the two hiding frames to the rows of
 its four components; each class is one row of `CoreSim.lean`.
 
+Three of the four Stage-A lemmas — `hybrid_step_callABA`, `hybrid_step_retABA`,
+`hybrid_step_tau` — take I0 as a hypothesis. A round loop's row is guarded by its own
+replacement flag and the ABA-side network's row by the corrupted set; the two live in
+separate components, and I0 is what identifies them, so that the reading each lemma
+delivers speaks of `F` alone (D23). `corrupted_eq_false_iff` is the one-line form of that
+translation.
+
 | concrete row | label | abstract answer |
 |---|---|---|
 | every hidden handshake (`callG`/`retG`/`callW`/`retW`), `bindUnset`, DECIDED gossip τ | τ | stutter (`Abs.frame`; only `Inv` moves) |
 | **every** `WCC_r` coin flip | τ | constant-coupled stutter via the generic `stutter_step` (`CoreSim.lean`): coupling `Ω := μ_C.map (·, pure a)`, so `ω = pure (pure a)` and `ω.bind id = pure a` (`Abs.w_swap`; the twin never flips) |
 | `callABA id b`, phase 1, genuine (idle-exit input) | `callABA id b` | `SpecStep.callSet` (the overwrite banks the concrete input and restores the ghost sync) |
 | `callABA id b`, otherwise (phase 2, or a concrete self-loop) | `callABA id b` | `SpecStep.callLoop` (first-write-wins; no `Abs`-field change) |
-| `retABA id b`, phase 1 | `retABA id b` | `decide_step` then `SpecStep.ret` (`weakStep_of_burst_then_step`) — see below |
-| `retABA id b`, phase 2 | `retABA id b` | `SpecStep.ret` directly (phase 2's holder universal, applied to the harvested honest DECIDED sender, pins `b = v`) |
-| `fail id` | `fail id` | `SpecStep.fail` (same corrupt guard via `F_eq`; robust in both phases) |
+| `retABA id b`, `id ∉ F`, phase 1 | `retABA id b` | `decide_step` then `SpecStep.ret` (`weakStep_of_burst_then_step`) — see below |
+| `retABA id b`, `id ∉ F`, phase 2 | `retABA id b` | `SpecStep.ret` directly (phase 2's holder universal, applied to the harvested honest DECIDED sender, pins `b = v`) |
+| `retABA id b`, `id ∈ F` | `retABA id b` | `SpecStep.retByz` (D23): neither side moves, in either phase |
+| `fail id` | `fail id` | `SpecStep.fail` (same two guards via `F_eq`; robust in both phases) |
 
 The single burst is `decide_step` (`CoreSimBurst.lean`), fired at the phase-1 `retABA`.
 `SpecStep.decide` is Dirac, so the burst is one step; what the row supplies is its three
@@ -202,12 +209,20 @@ What `Spec.lean` carries:
   constraint on the value decided. It restricts which bit may be decided, and does so by
   design: `n − 2f` honest callers can split as low as `⌈(f+1)/2⌉` per bit, so a given bit
   need not be supported. The rule is enabled at `Mode.locked`, where it is the only
-  enabled `τ`-rule, exactly when some bit is supported; support is permanent, the ghost
-  record and `F` both being monotone. Spec liveness is unclaimed beyond that.
+  enabled `τ`-rule, exactly when some bit is supported. No individual count is monotone —
+  `SpecStep.callSet`'s overwrite takes its writer out of one of the two supporter sets —
+  but the sum of the two counts is, so a state that has passed the flip's mixedness gate
+  leaves some bit supported ever after. Spec liveness is unclaimed beyond that.
 - **The mode loop (D21) carries no value.** `SpecStep.coinFlip` names no coin bit and
   writes nothing but `mode`, so no bit can enter the system through the one probabilistic
   rule; licensing a coin bit would re-admit a Validity-breaking decision at probability
-  `ε`.
+  `ε`. Its `hmix` guard, `f + 1` support at *each* bit, is where the specification holds
+  the liveness half of Validity: under honest unanimity the other bit is never supported
+  (`SuppOK.honest_supporter`), so the flip is unreachable and the unanimous path is Dirac.
+- **The corrupted interface (D23) constrains nothing.** `SpecStep.retByz` moves no field,
+  and `SpecStep.callByz` writes only at ids the `id ∈ s.F` disjunct already counts at both
+  bits, so neither changes which bits are supported. What they add is trace behaviour,
+  which is why both trace predicates are read at never-corrupted returners.
 - **No spec-side fill rule.** The concrete adversary fills GBCA call slots through hidden
   byz `callG` drivers that carry no `callABA` event. Those slots are paid for by the
   `F` budget inside the count itself — the `id ∈ s.F` disjunct of `SuppOK` — rather than
@@ -219,14 +234,17 @@ Provenance invariant (`SpecSafety.SpecInv`), with
 `SuppOK s v := f + 1 ≤ #{id | s.input id = some v ∨ id ∈ s.F}` (monotone in `F` and
 `input`, `SuppOK.mono`), in two clauses: `F_le`, the corrupted set within budget, and
 `val_supp`, `val = some v → SuppOK s v`. The second is `SpecStep.decide`'s own guard at
-the one rule that writes `val`; every other rule carries it by `SuppOK.mono`, the ghost
-record and the corrupted set being monotone. Attribution of the record to genuine trace
-events is the separate label-history invariant `SpecSafety.ValInv`, whose `input_src`
-clause both `callABA` rules restore by recording the bit their own label carries.
-Validity endgame (the budget pigeonhole): at any `retABA _ v`, `val_supp` gives `f + 1`
-supporters; they cannot all lie in the final `F` (`|F| ≤ f`), so some supporter is never
-corrupted (`exists_neverCorrupted_supporter`) and its recorded input is a genuine prior
-`callABA`.
+the one rule that writes `val`; every rule that only grows the ghost record carries it by
+`SuppOK.mono`, and `SpecStep.callByz`, whose write may replace a recorded bit, carries it
+by `SuppOK.callByz`, the writer being counted through the `F` disjunct. Attribution of the
+record to genuine trace events is the separate label-history invariant `SpecSafety.ValInv`,
+whose `input_src` clause the two honest `callABA` rules restore by recording the bit their
+own label carries; `SpecStep.callByz` takes that clause's second disjunct, the corruption
+of its own slot.
+Validity endgame (the budget pigeonhole): at any `retABA _ v` by a never-corrupted
+returner, `val_supp` gives `f + 1` supporters; they cannot all lie in the final `F`
+(`|F| ≤ f`), so some supporter is never corrupted
+(`exists_neverCorrupted_supporter`) and its recorded input is a genuine prior `callABA`.
 
 ### D14 — TS 2 Validity (SuppOK guards)
 
@@ -330,9 +348,13 @@ sender of `b`, whose pooled `b` carries the A-lock certificate that the phase-1
 
 ## `Inv`: the concrete invariant (`CoreSimRel.lean`)
 
-Thirty-nine fields, docstring-numbered I1–I30 (a few numbers cover a small group of
+Forty fields, docstring-numbered I0–I30 (a few numbers cover a small group of
 fields), grouped:
 
+- **The replacement flag against the corrupted set (I0)**: `corrupted_F`, the first field —
+  `c.corrupted id = true ↔ id ∈ c.F`. The flag and the corrupted set live in separate
+  components, written by the two halves of one `fail` row, and this conjunct is what ties
+  them (D23).
 - **F-lockstep**: `F_g`, `F_w` (every instance's `F` equals `c.F`), `F_card`.
 - **Round structure**, keyed throughout on
   `Closed g r := (g r).dead ≠ ∅ ∨ (g r).grade = some false` — "round `r` is finished",

@@ -16,7 +16,7 @@ import Leslie2Protocols.Framework.SyncProduct
 # The extended alphabet and the components composed over it
 
 The protocol is composed twice in this development. The protocol reading
-(`ABA/Protocol.lean`) puts `n` corruption-blind programs beside a network
+(`ABA/Protocol.lean`) puts `n` per-process programs beside a network
 adversary and the coin oracle. The composed reading (`ABA/Hybrid.lean`) cuts
 the same protocol into its components. Both compositions speak one
 alphabet, and some of what they compose is the same object on both sides.
@@ -51,21 +51,33 @@ automata (`coreProcN`) under a full-synchronisation product. The protocol
 composition fuses each round loop with the stage-side record into one program
 (`Net.ABAProcStepN`), whose record is the pair.
 
+A corruption replaces the program of the process it names (D23). The flag
+`CoreRec.corrupted` goes up on the process's own half of `fail`, every
+participant's row is guarded by `corrupted = false`, and the replaced program
+is the single self-loop `corruptedIdle`. The replaced program has no row on the
+labels of `actsAt j` — the labels on which the process would act on its own
+sub-protocol traffic — so that traffic enters only through the Byzantine drives
+(D11).
+
 ## The ABA-side network
 
 `ANetStep` is what the network adversary retains once the round fabrics have
 taken the stage pools: the DECIDED pools `dpool j`, the corrupted set `F` with
 its budget, and the authorisation of every Byzantine drive. `aNet` is that
-automaton.
+automaton. Its `fail` row carries the budget guard `k ∉ F ∧ |F| < f`, so a
+corruption fires exactly when it takes effect, and its `retByz` row lets a
+corrupted process return without DECIDED evidence, pairing with the replaced
+program's self-loop on `retABA` (D23).
 
 ## What this file supplies
 
 The two rule tables above, the two automata they carry, the determinacy of
 both tables, and the inversion tables that read a row of each off its label
-(`stepC_*`, `aStep_*`). It also supplies the readings of the synchronised
-round-loop group in both directions (`syncCore_inv`, `syncCore_pure`) and the
-lemmas that pin a round-loop tuple down from its per-process rows
-(`coresN_*`).
+(`stepC_*`, `aStep_*`) — among them `stepC_inert`, which reads every row of a
+replaced program as a self-loop. It also supplies the readings of the
+synchronised round-loop group in both directions (`syncCore_inv`,
+`syncCore_pure`) and the lemmas that pin a round-loop tuple down from its
+per-process rows (`coresN_*`).
 -/
 
 namespace PLTS
@@ -121,6 +133,37 @@ def netEvtLabels (n : ℕ) : Set (NLab n) := {l | ∃ e : NetEvt n, l = Sum.inr 
     Sum.inr e ∈ netEvtLabels n := ⟨e, rfl⟩
 
 @[simp] theorem nlab_tau (n : ℕ) : (Silent.τ : NLab n) = Sum.inl Lab.tau := rfl
+
+/-! ### The labels a process acts on
+
+A corruption replaces the program of the process it names (D23). The replaced
+program stands still on every label it can take at all, and it can take every
+label except the ones below: those on which the process would act on its own
+sub-protocol traffic. That traffic is the business of the Byzantine drives
+(D11), which carry it with no row at the process they name. -/
+
+/-- The labels on which process `j` acts on its own sub-protocol traffic: its
+own graded-agreement call and return, its own stage multicast, the stage and
+DECIDED deliveries addressed to it, its own call against an already-called
+stage record, its own fused coin return, and the graded-agreement drives that
+name it. -/
+def actsAt {n : ℕ} (j : Fin n) : NLab n → Prop
+  | Sum.inl (.callG _ id _) => id = j
+  | Sum.inl (.retG _ id _) => id = j
+  | Sum.inr (.gsnd _ k _) => k = j
+  | Sum.inr (.gdlv _ i _ _) => i = j
+  | Sum.inr (.ddlv i _ _) => i = j
+  | Sum.inr (.gcallLoop _ id _) => id = j
+  | Sum.inr (.retWPub _ id _ _) => id = j
+  | Sum.inr (.byzCallG _ k _) => k = j
+  | Sum.inr (.byzCallGLoop _ k _) => k = j
+  | Sum.inr (.byzRetG _ k _) => k = j
+  | _ => False
+
+instance {n : ℕ} (j : Fin n) : DecidablePred (actsAt j) := fun l => by
+  match l with
+  | Sum.inl l => cases l <;> unfold actsAt <;> infer_instance
+  | Sum.inr e => cases e <;> unfold actsAt <;> infer_instance
 
 /-! ### The label pullback of the coin oracle -/
 
@@ -225,25 +268,36 @@ The programs sit under a full-synchronisation product, so every label that can
 fire in the composite has a row: the participant's, or an idle one. Unlike the
 round-indexed families, these programs are not round-filtered. A round loop
 must answer every round's `callG`, its own as a participant and every other
-process's as a bystander. -/
+process's as a bystander.
+
+A corruption replaces the program of the process it names (D23). The
+replacement is carried by the flag `CoreRec.corrupted`, which `failSelf` writes
+on the process's own `fail`; every participant's row is guarded by
+`corrupted = false`, so the record freezes at the corruption. In place of those
+rows the replaced program has the single row `corruptedIdle`: a self-loop on
+every label other than `τ` and the labels of `actsAt j`. On the latter the
+replaced program has no row at all, so those labels cannot fire; the corrupted
+process's graded-agreement traffic enters through the Byzantine drives (D11)
+and its DECIDED traffic through `byzD`. -/
 
 /-- The step relation of the round-loop program of process `j`. -/
 inductive CoreProcStepN (P : Params) (j : Fin P.n) :
     CoreRec P.n → NLab P.n → PMF (CoreRec P.n) → Prop
   /-- `upon ABA(b)`: record input and estimate, open round `0`. -/
-  | input (c : CoreRec P.n) (b : Bool) (h : c.proc.input = none) :
+  | input (c : CoreRec P.n) (b : Bool) (hh : c.corrupted = false)
+      (h : c.proc.input = none) :
       CoreProcStepN P j c (Sum.inl (.callABA j b))
         (PMF.pure (c.setProc { c.proc with
           input := some b, est := some b, round := 0, phase := .toCallG }))
   /-- Input-enabledness loop on `j`'s own `callABA`. -/
-  | inputLoop (c : CoreRec P.n) (b : Bool) :
+  | inputLoop (c : CoreRec P.n) (b : Bool) (hh : c.corrupted = false) :
       CoreProcStepN P j c (Sum.inl (.callABA j b)) (PMF.pure c)
   /-- An input addressed elsewhere: not `j`'s business. -/
   | callABAIdle (c : CoreRec P.n) (id : Fin P.n) (b : Bool) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.callABA id b)) (PMF.pure c)
   /-- Return `b` on an `n − f` DECIDED quorum. Having multicast `b` oneself is
   a condition on the DECIDED pools, hence `aNet`'s conjunct. -/
-  | ret (c : CoreRec P.n) (b : Bool)
+  | ret (c : CoreRec P.n) (b : Bool) (hh : c.corrupted = false)
       (hcnt : P.n - P.f ≤ c.decidedCount b) (hret : c.proc.returned = false) :
       CoreProcStepN P j c (Sum.inl (.retABA j b))
         (PMF.pure (c.setProc { c.proc with returned := true }))
@@ -252,7 +306,7 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
       CoreProcStepN P j c (Sum.inl (.retABA id b)) (PMF.pure c)
   /-- The graded-agreement call, round-loop half: hand the estimate over and
   wait. Opening the stage record is the round instance's half. -/
-  | callG (c : CoreRec P.n) (r : ℕ) (b : Bool)
+  | callG (c : CoreRec P.n) (r : ℕ) (b : Bool) (hh : c.corrupted = false)
       (hph : c.proc.phase = .toCallG) (hr : c.proc.round = r)
       (hest : c.proc.est = some b) :
       CoreProcStepN P j c (Sum.inl (.callG r j b))
@@ -262,7 +316,7 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
       CoreProcStepN P j c (Sum.inl (.callG r id b)) (PMF.pure c)
   /-- The graded-agreement return, round-loop half: record the grade and head
   for the coin. The evidence for the grade is the round instance's conjunct. -/
-  | retG (c : CoreRec P.n) (r : ℕ) (out : GbcaOut)
+  | retG (c : CoreRec P.n) (r : ℕ) (out : GbcaOut) (hh : c.corrupted = false)
       (hph : c.proc.phase = .awaitG) (hr : c.proc.round = r) :
       CoreProcStepN P j c (Sum.inl (.retG r j out))
         (PMF.pure (c.setProc { c.proc with
@@ -272,7 +326,7 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
       (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.retG r id out)) (PMF.pure c)
   /-- `c ← WCC_r()`, the call half. -/
-  | callW (c : CoreRec P.n) (r : ℕ)
+  | callW (c : CoreRec P.n) (r : ℕ) (hh : c.corrupted = false)
       (hph : c.proc.phase = .toCallW) (hr : c.proc.round = r) :
       CoreProcStepN P j c (Sum.inl (.callW r j))
         (PMF.pure (c.setProc { c.proc with phase := .awaitW }))
@@ -281,19 +335,29 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
       CoreProcStepN P j c (Sum.inl (.callW r id)) (PMF.pure c)
   /-- The coin return without a publication: the round advances and nothing is
   multicast, the round's grade not being an `A` (D10). -/
-  | retW (c : CoreRec P.n) (r : ℕ) (co : Bool)
+  | retW (c : CoreRec P.n) (r : ℕ) (co : Bool) (hh : c.corrupted = false)
       (hph : c.proc.phase = .awaitW) (hr : c.proc.round = r)
       (hgr : ∀ v : Bool, c.proc.lastGrade ≠ some (.A v)) :
       CoreProcStepN P j c (Sum.inl (.retW r j co)) (PMF.pure (c.stepRound co))
   /-- A coin return to another process: not `j`'s business. -/
   | retWIdle (c : CoreRec P.n) (r : ℕ) (id : Fin P.n) (co : Bool) (hid : id ≠ j) :
       CoreProcStepN P j c (Sum.inl (.retW r id co)) (PMF.pure c)
-  /-- Corruption is not the round loop's business (D1). -/
-  | failIdle (c : CoreRec P.n) (k : Fin P.n) :
+  /-- The process's own corruption: the program is replaced, and the flag that
+  carries the replacement is the one write of the row (D23). -/
+  | failSelf (c : CoreRec P.n) (hh : c.corrupted = false) :
+      CoreProcStepN P j c (Sum.inl (.fail j))
+        (PMF.pure { c with corrupted := true })
+  /-- Another process's corruption is not the round loop's business (D1). -/
+  | failIdle (c : CoreRec P.n) (k : Fin P.n) (hk : k ≠ j) :
       CoreProcStepN P j c (Sum.inl (.fail k)) (PMF.pure c)
+  /-- The replaced program (D23): a self-loop on every label other than `τ` and
+  the labels of `actsAt j`, on which the process has no row at all. -/
+  | corruptedIdle (c : CoreRec P.n) (L : NLab P.n) (hh : c.corrupted = true)
+      (hτ : L ≠ Sum.inl Lab.tau) (hown : ¬ actsAt j L) :
+      CoreProcStepN P j c L (PMF.pure c)
   /-- The DECIDED relay on an `f + 1` quorum (D12′): the quorum is a condition
   on the record, the write-once condition and the pool insert are `aNet`'s. -/
-  | dsndRelay (c : CoreRec P.n) (b : Bool)
+  | dsndRelay (c : CoreRec P.n) (b : Bool) (hh : c.corrupted = false)
       (hcnt : P.f + 1 ≤ c.decidedCount b) :
       CoreProcStepN P j c (Sum.inr (.dsnd j b)) (PMF.pure c)
   /-- A DECIDED relay by another process: not `j`'s business. -/
@@ -301,7 +365,8 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
       CoreProcStepN P j c (Sum.inr (.dsnd k b)) (PMF.pure c)
   /-- DECIDED delivery, receiver's half: at most one receipt per (sender, bit)
   (D12′). Authenticity is `aNet`'s conjunct. -/
-  | ddlvRecv (c : CoreRec P.n) (k : Fin P.n) (b : Bool) (hr : b ∉ c.decIn k) :
+  | ddlvRecv (c : CoreRec P.n) (k : Fin P.n) (b : Bool) (hh : c.corrupted = false)
+      (hr : b ∉ c.decIn k) :
       CoreProcStepN P j c (Sum.inr (.ddlv j k b)) (PMF.pure (c.recvDec k b))
   /-- A DECIDED delivery to another process: not `j`'s business. -/
   | ddlvIdle (c : CoreRec P.n) (i k : Fin P.n) (b : Bool) (hi : i ≠ j) :
@@ -310,6 +375,7 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
   round's grade was `A b`, so the round advance publishes `b`, the pool insert
   being `aNet`'s half. -/
   | retWPub (c : CoreRec P.n) (r : ℕ) (co : Bool) (b : Bool)
+      (hh : c.corrupted = false)
       (hph : c.proc.phase = .awaitW) (hr : c.proc.round = r)
       (hgr : c.proc.lastGrade = some (.A b)) :
       CoreProcStepN P j c (Sum.inr (.retWPub r j co b)) (PMF.pure (c.stepRound co))
@@ -319,7 +385,7 @@ inductive CoreProcStepN (P : Params) (j : Fin P.n) :
       CoreProcStepN P j c (Sum.inr (.retWPub r id co b)) (PMF.pure c)
   /-- The graded-agreement call against an already-called stage record: the
   round loop moves and nothing else does — the whole row is core content. -/
-  | gcallLoop (c : CoreRec P.n) (r : ℕ) (b : Bool)
+  | gcallLoop (c : CoreRec P.n) (r : ℕ) (b : Bool) (hh : c.corrupted = false)
       (hph : c.proc.phase = .toCallG) (hr : c.proc.round = r)
       (hest : c.proc.est = some b) :
       CoreProcStepN P j c (Sum.inr (.gcallLoop r j b))
@@ -429,6 +495,12 @@ inductive ANetStep (P : Params) :
   a condition on its DECIDED pool (D12′). -/
   | retABA (a : ANetState P.n) (id : Fin P.n) (b : Bool) (h : b ∈ a.dpool id) :
       ANetStep P a (Sum.inl (.retABA id b)) (PMF.pure a)
+  /-- A corrupted process returns whatever it likes (D23): its program has been
+  replaced, so the DECIDED evidence the honest row asks for is not required of
+  it. The authorisation is this component's `id ∈ F`, and the round loop's half
+  is the replaced program's self-loop. -/
+  | retByz (a : ANetState P.n) (id : Fin P.n) (b : Bool) (hF : id ∈ a.F) :
+      ANetStep P a (Sum.inl (.retABA id b)) (PMF.pure a)
   /-- The graded-agreement call's `⟨INPUT, b⟩` is pooled in the round's fabric,
   not here. -/
   | callGIdle (a : ANetState P.n) (r : ℕ) (id : Fin P.n) (b : Bool) :
@@ -442,9 +514,11 @@ inductive ANetStep (P : Params) :
   /-- An unfused coin return publishes nothing. -/
   | retWIdle (a : ANetState P.n) (r : ℕ) (id : Fin P.n) (c : Bool) :
       ANetStep P a (Sum.inl (.retW r id c)) (PMF.pure a)
-  /-- Corruption (deviation D1): total, Dirac, budget-guarded. The budget is
-  this component's own guard. -/
-  | fail (a : ANetState P.n) (k : Fin P.n) :
+  /-- Corruption (deviations D1, D23): Dirac, and guarded by the budget. The
+  guard sits on the row rather than inside `ANetState.corrupt` alone, so that a
+  corruption fires exactly when it takes effect and the round loop's half may
+  write the replacement flag outright. -/
+  | fail (a : ANetState P.n) (k : Fin P.n) (hnew : k ∉ a.F) (hbud : a.F.card < P.f) :
       ANetStep P a (Sum.inl (.fail k)) (PMF.pure (ANetState.corrupt P k a))
   /-- Byzantine DECIDED injection (D12′): either or both bits, at any time, so
   a corrupted process may equivocate in the DECIDED pools. -/
@@ -476,7 +550,7 @@ noncomputable def aNet (P : Params) : System (ANetState P.n) (NLab P.n) where
 @[simp] theorem aNet_step (P : Params) (a : ANetState P.n) (l : NLab P.n)
     (μ : PMF (ANetState P.n)) : (aNet P).step a l μ ↔ ANetStep P a l μ := Iff.rfl
 
-/-! ### Determinacy of the two new rule tables -/
+/-! ### Determinacy of the two rule tables -/
 
 /-- Every round-loop transition is Dirac. -/
 theorem coreProcStepN_dirac {P : Params} {j : Fin P.n} {c : CoreRec P.n}
@@ -494,7 +568,10 @@ rendezvous or on a shared API label. -/
 theorem coreProcStepN_no_tau {P : Params} {j : Fin P.n} {c : CoreRec P.n}
     {ν : PMF (CoreRec P.n)} (h : CoreProcStepN P j c (Silent.τ : NLab P.n) ν) :
     False := by
-  rw [nlab_tau] at h; cases h
+  rw [nlab_tau] at h
+  cases h
+  rename_i hτ _
+  exact hτ rfl
 
 /-! ### Reading and building a transition of the round-loop group -/
 
@@ -536,7 +613,9 @@ theorem syncCore_no_tau {P : Params} {C : ∀ _ : Fin P.n, CoreRec P.n}
 
 Each lemma reads a row of `CoreProcStepN` off its label: the participant's row
 as its guards together with the Dirac it produces, and the idle row of a
-non-participant as the identity. -/
+non-participant as the identity. A participant's row carries the health guard
+`corrupted = false`, and on a label outside `actsAt j` the replaced program's
+self-loop is a second reading of the same label (D23). -/
 
 section CoreInversion
 
@@ -544,14 +623,15 @@ variable {P : Params} {j : Fin P.n} {c : CoreRec P.n} {ν : PMF (CoreRec P.n)}
 
 theorem stepC_callABA_own {b : Bool}
     (h : CoreProcStepN P j c (Sum.inl (.callABA j b)) ν) :
-    (c.proc.input = none ∧
+    (c.corrupted = false ∧ c.proc.input = none ∧
       ν = PMF.pure (c.setProc { c.proc with
         input := some b, est := some b, round := 0, phase := .toCallG })) ∨
     ν = PMF.pure c := by
   cases h
-  case input => exact Or.inl ⟨by assumption, rfl⟩
+  case input => exact Or.inl ⟨by assumption, by assumption, rfl⟩
   case inputLoop => exact Or.inr rfl
   case callABAIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => exact Or.inr rfl
 
 theorem stepC_callABA_foreign {id : Fin P.n} {b : Bool} (hid : id ≠ j)
     (h : CoreProcStepN P j c (Sum.inl (.callABA id b)) ν) : ν = PMF.pure c := by
@@ -559,156 +639,207 @@ theorem stepC_callABA_foreign {id : Fin P.n} {b : Bool} (hid : id ≠ j)
   case input => exact absurd rfl hid
   case inputLoop => exact absurd rfl hid
   case callABAIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_retABA_own {b : Bool}
     (h : CoreProcStepN P j c (Sum.inl (.retABA j b)) ν) :
-    P.n - P.f ≤ c.decidedCount b ∧ c.proc.returned = false ∧
-      ν = PMF.pure (c.setProc { c.proc with returned := true }) := by
+    (c.corrupted = false ∧ P.n - P.f ≤ c.decidedCount b ∧
+      c.proc.returned = false ∧
+      ν = PMF.pure (c.setProc { c.proc with returned := true })) ∨
+    (c.corrupted = true ∧ ν = PMF.pure c) := by
   cases h
-  case ret => exact ⟨by assumption, by assumption, rfl⟩
+  case ret => exact Or.inl ⟨by assumption, by assumption, by assumption, rfl⟩
   case retABAIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => exact Or.inr ⟨by assumption, rfl⟩
 
 theorem stepC_retABA_foreign {id : Fin P.n} {b : Bool} (hid : id ≠ j)
     (h : CoreProcStepN P j c (Sum.inl (.retABA id b)) ν) : ν = PMF.pure c := by
   cases h
   case ret => exact absurd rfl hid
   case retABAIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_callG_own {r : ℕ} {b : Bool}
     (h : CoreProcStepN P j c (Sum.inl (.callG r j b)) ν) :
-    c.proc.phase = .toCallG ∧ c.proc.round = r ∧ c.proc.est = some b ∧
+    c.corrupted = false ∧ c.proc.phase = .toCallG ∧ c.proc.round = r ∧
+      c.proc.est = some b ∧
       ν = PMF.pure (c.setProc { c.proc with phase := .awaitG }) := by
   cases h
-  case callG => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case callG =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
   case callGIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => rename_i hown; exact absurd rfl hown
 
 theorem stepC_callG_foreign {r : ℕ} {id : Fin P.n} {b : Bool} (hid : id ≠ j)
     (h : CoreProcStepN P j c (Sum.inl (.callG r id b)) ν) : ν = PMF.pure c := by
   cases h
   case callG => exact absurd rfl hid
   case callGIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_retG_own {r : ℕ} {out : GbcaOut}
     (h : CoreProcStepN P j c (Sum.inl (.retG r j out)) ν) :
-    c.proc.phase = .awaitG ∧ c.proc.round = r ∧
+    c.corrupted = false ∧ c.proc.phase = .awaitG ∧ c.proc.round = r ∧
       ν = PMF.pure (c.setProc { c.proc with
         est := out.est, lastGrade := some out, phase := .toCallW }) := by
   cases h
-  case retG => exact ⟨by assumption, by assumption, rfl⟩
+  case retG => exact ⟨by assumption, by assumption, by assumption, rfl⟩
   case retGIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => rename_i hown; exact absurd rfl hown
 
 theorem stepC_retG_foreign {r : ℕ} {id : Fin P.n} {out : GbcaOut} (hid : id ≠ j)
     (h : CoreProcStepN P j c (Sum.inl (.retG r id out)) ν) : ν = PMF.pure c := by
   cases h
   case retG => exact absurd rfl hid
   case retGIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_callW_own {r : ℕ}
     (h : CoreProcStepN P j c (Sum.inl (.callW r j)) ν) :
-    c.proc.phase = .toCallW ∧ c.proc.round = r ∧
-      ν = PMF.pure (c.setProc { c.proc with phase := .awaitW }) := by
+    (c.corrupted = false ∧ c.proc.phase = .toCallW ∧ c.proc.round = r ∧
+      ν = PMF.pure (c.setProc { c.proc with phase := .awaitW })) ∨
+    (c.corrupted = true ∧ ν = PMF.pure c) := by
   cases h
-  case callW => exact ⟨by assumption, by assumption, rfl⟩
+  case callW => exact Or.inl ⟨by assumption, by assumption, by assumption, rfl⟩
   case callWIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => exact Or.inr ⟨by assumption, rfl⟩
 
 theorem stepC_callW_foreign {r : ℕ} {id : Fin P.n} (hid : id ≠ j)
     (h : CoreProcStepN P j c (Sum.inl (.callW r id)) ν) : ν = PMF.pure c := by
   cases h
   case callW => exact absurd rfl hid
   case callWIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_retW_own {r : ℕ} {co : Bool}
     (h : CoreProcStepN P j c (Sum.inl (.retW r j co)) ν) :
-    c.proc.phase = .awaitW ∧ c.proc.round = r ∧
+    (c.corrupted = false ∧ c.proc.phase = .awaitW ∧ c.proc.round = r ∧
       (∀ v : Bool, c.proc.lastGrade ≠ some (.A v)) ∧
-      ν = PMF.pure (c.stepRound co) := by
+      ν = PMF.pure (c.stepRound co)) ∨
+    (c.corrupted = true ∧ ν = PMF.pure c) := by
   cases h
-  case retW => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case retW =>
+    exact Or.inl ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
   case retWIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => exact Or.inr ⟨by assumption, rfl⟩
 
 theorem stepC_retW_foreign {r : ℕ} {id : Fin P.n} {co : Bool} (hid : id ≠ j)
     (h : CoreProcStepN P j c (Sum.inl (.retW r id co)) ν) : ν = PMF.pure c := by
   cases h
   case retW => exact absurd rfl hid
   case retWIdle => rfl
+  case corruptedIdle => rfl
 
-theorem stepC_fail {k : Fin P.n}
+/-- The process's own corruption (D23): the flag goes up on a program not yet
+replaced, and a replaced program stands still. -/
+theorem stepC_fail_own (h : CoreProcStepN P j c (Sum.inl (.fail j)) ν) :
+    (c.corrupted = false ∧ ν = PMF.pure { c with corrupted := true }) ∨
+    (c.corrupted = true ∧ ν = PMF.pure c) := by
+  cases h
+  case failSelf => exact Or.inl ⟨by assumption, rfl⟩
+  case failIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => exact Or.inr ⟨by assumption, rfl⟩
+
+theorem stepC_fail_foreign {k : Fin P.n} (hk : k ≠ j)
     (h : CoreProcStepN P j c (Sum.inl (.fail k)) ν) : ν = PMF.pure c := by
-  cases h; rfl
+  cases h
+  case failSelf => exact absurd rfl hk
+  case failIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_dsnd_self {b : Bool}
     (h : CoreProcStepN P j c (Sum.inr (.dsnd j b)) ν) :
-    P.f + 1 ≤ c.decidedCount b ∧ ν = PMF.pure c := by
+    (c.corrupted = false ∧ P.f + 1 ≤ c.decidedCount b ∧ ν = PMF.pure c) ∨
+    (c.corrupted = true ∧ ν = PMF.pure c) := by
   cases h
-  case dsndRelay => exact ⟨by assumption, rfl⟩
+  case dsndRelay => exact Or.inl ⟨by assumption, by assumption, rfl⟩
   case dsndIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => exact Or.inr ⟨by assumption, rfl⟩
 
 theorem stepC_dsnd_foreign {k : Fin P.n} {b : Bool} (hk : k ≠ j)
     (h : CoreProcStepN P j c (Sum.inr (.dsnd k b)) ν) : ν = PMF.pure c := by
   cases h
   case dsndRelay => exact absurd rfl hk
   case dsndIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_ddlv_self {k : Fin P.n} {b : Bool}
     (h : CoreProcStepN P j c (Sum.inr (.ddlv j k b)) ν) :
-    b ∉ c.decIn k ∧ ν = PMF.pure (c.recvDec k b) := by
+    c.corrupted = false ∧ b ∉ c.decIn k ∧ ν = PMF.pure (c.recvDec k b) := by
   cases h
-  case ddlvRecv => exact ⟨by assumption, rfl⟩
+  case ddlvRecv => exact ⟨by assumption, by assumption, rfl⟩
   case ddlvIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => rename_i hown; exact absurd rfl hown
 
 theorem stepC_ddlv_foreign {i k : Fin P.n} {b : Bool} (hi : i ≠ j)
     (h : CoreProcStepN P j c (Sum.inr (.ddlv i k b)) ν) : ν = PMF.pure c := by
   cases h
   case ddlvRecv => exact absurd rfl hi
   case ddlvIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_retWPub_self {r : ℕ} {co b : Bool}
     (h : CoreProcStepN P j c (Sum.inr (.retWPub r j co b)) ν) :
-    c.proc.phase = .awaitW ∧ c.proc.round = r ∧
+    c.corrupted = false ∧ c.proc.phase = .awaitW ∧ c.proc.round = r ∧
       c.proc.lastGrade = some (.A b) ∧ ν = PMF.pure (c.stepRound co) := by
   cases h
-  case retWPub => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case retWPub =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
   case retWPubIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => rename_i hown; exact absurd rfl hown
 
 theorem stepC_retWPub_foreign {r : ℕ} {id : Fin P.n} {co b : Bool} (hid : id ≠ j)
     (h : CoreProcStepN P j c (Sum.inr (.retWPub r id co b)) ν) : ν = PMF.pure c := by
   cases h
   case retWPub => exact absurd rfl hid
   case retWPubIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_gcallLoop_self {r : ℕ} {b : Bool}
     (h : CoreProcStepN P j c (Sum.inr (.gcallLoop r j b)) ν) :
-    c.proc.phase = .toCallG ∧ c.proc.round = r ∧ c.proc.est = some b ∧
+    c.corrupted = false ∧ c.proc.phase = .toCallG ∧ c.proc.round = r ∧
+      c.proc.est = some b ∧
       ν = PMF.pure (c.setProc { c.proc with phase := .awaitG }) := by
   cases h
-  case gcallLoop => exact ⟨by assumption, by assumption, by assumption, rfl⟩
+  case gcallLoop =>
+    exact ⟨by assumption, by assumption, by assumption, by assumption, rfl⟩
   case gcallLoopIdle => exact absurd rfl ‹_ ≠ j›
+  case corruptedIdle => rename_i hown; exact absurd rfl hown
 
 theorem stepC_gcallLoop_foreign {r : ℕ} {id : Fin P.n} {b : Bool} (hid : id ≠ j)
     (h : CoreProcStepN P j c (Sum.inr (.gcallLoop r id b)) ν) : ν = PMF.pure c := by
   cases h
   case gcallLoop => exact absurd rfl hid
   case gcallLoopIdle => rfl
+  case corruptedIdle => rfl
 
 theorem stepC_byzCallG {r : ℕ} {k : Fin P.n} {b : Bool}
     (h : CoreProcStepN P j c (Sum.inr (.byzCallG r k b)) ν) : ν = PMF.pure c := by
-  cases h; rfl
+  cases h <;> rfl
 
 theorem stepC_byzCallGLoop {r : ℕ} {k : Fin P.n} {b : Bool}
     (h : CoreProcStepN P j c (Sum.inr (.byzCallGLoop r k b)) ν) : ν = PMF.pure c := by
-  cases h; rfl
+  cases h <;> rfl
 
 theorem stepC_byzRetG {r : ℕ} {k : Fin P.n} {out : GbcaOut}
     (h : CoreProcStepN P j c (Sum.inr (.byzRetG r k out)) ν) : ν = PMF.pure c := by
-  cases h; rfl
+  cases h <;> rfl
 
 theorem stepC_byzCallW {r : ℕ} {k : Fin P.n}
     (h : CoreProcStepN P j c (Sum.inr (.byzCallW r k)) ν) : ν = PMF.pure c := by
-  cases h; rfl
+  cases h <;> rfl
 
 theorem stepC_byzRetW {r : ℕ} {k : Fin P.n} {b : Bool}
     (h : CoreProcStepN P j c (Sum.inr (.byzRetW r k b)) ν) : ν = PMF.pure c := by
-  cases h; rfl
+  cases h <;> rfl
+
+/-- **The replaced program writes nothing** (D23). Whatever the label, a round
+loop whose flag is up leaves its record where it stands. The proof is by cases
+on the table: every row that writes carries the health guard, so no row of a
+replaced program survives except a self-loop. -/
+theorem stepC_inert {L : NLab P.n} (hc : c.corrupted = true)
+    (h : CoreProcStepN P j c L ν) : ν = PMF.pure c := by
+  cases h <;> simp_all
 
 end CoreInversion
 
@@ -766,10 +897,15 @@ theorem aStep_callABA {id : Fin P.n} {b : Bool}
     (h : ANetStep P a (Sum.inl (.callABA id b)) μ) : μ = PMF.pure a := by
   cases h; rfl
 
+/-- A return is authorised either by the DECIDED pool of the returning process
+or by its corruption (D23); the two rows share the label and the identity
+successor. -/
 theorem aStep_retABA {id : Fin P.n} {b : Bool}
     (h : ANetStep P a (Sum.inl (.retABA id b)) μ) :
-    b ∈ a.dpool id ∧ μ = PMF.pure a := by
-  cases h; exact ⟨by assumption, rfl⟩
+    (b ∈ a.dpool id ∨ id ∈ a.F) ∧ μ = PMF.pure a := by
+  cases h
+  case retABA => exact ⟨Or.inl (by assumption), rfl⟩
+  case retByz => exact ⟨Or.inr (by assumption), rfl⟩
 
 theorem aStep_callG {r : ℕ} {id : Fin P.n} {b : Bool}
     (h : ANetStep P a (Sum.inl (.callG r id b)) μ) : μ = PMF.pure a := by
@@ -789,8 +925,8 @@ theorem aStep_retW {r : ℕ} {id : Fin P.n} {c : Bool}
 
 theorem aStep_fail {k : Fin P.n}
     (h : ANetStep P a (Sum.inl (.fail k)) μ) :
-    μ = PMF.pure (ANetState.corrupt P k a) := by
-  cases h; rfl
+    k ∉ a.F ∧ a.F.card < P.f ∧ μ = PMF.pure (ANetState.corrupt P k a) := by
+  cases h; exact ⟨by assumption, by assumption, rfl⟩
 
 theorem aStep_tau (h : ANetStep P a (Sum.inl .tau) μ) :
     ∃ (k : Fin P.n) (b : Bool), k ∈ a.F ∧ μ = PMF.pure (a.dput k b) := by

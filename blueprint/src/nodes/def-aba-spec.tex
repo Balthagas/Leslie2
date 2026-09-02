@@ -2,9 +2,12 @@
   \label{def:aba-spec}
   \lean{PLTS.ABA.SpecStep}\lean{PLTS.ABA.spec}\leanok
   \uses{def:aba-labels}
-  Transition System 1 of~\cite{LeslieBP}, the ABA specification $\mathrm{spec}(P)$: six rules over the ABA interface, on a state carrying a ghost record $input$ of the genuine $\mathrm{callABA}$ events, the processes that have returned, the corrupted set $F$, the decision value $val$ and a control mode $mode \in \{idle, locked, dead\}$, with four deviations.
-  Corruption is a total deterministic transform (D1).
+  Transition System 1 of~\cite{LeslieBP}, the ABA specification $\mathrm{spec}(P)$: eight rules over the ABA interface, on a state carrying a ghost record $input$ of the genuine $\mathrm{callABA}$ events, the processes that have returned, the corrupted set $F$, the decision value $val$ and a control mode $mode \in \{idle, locked, dead\}$, with five deviations.
+  Corruption is a guarded deterministic transform, \leandeclnamed{fail}{PLTS.ABA.SpecStep.fail} firing under $id \notin F$ and $|F| < f$ alone (D1).
+  The corrupted interface is the pair \leandeclnamed{callByz}{PLTS.ABA.SpecStep.callByz} and \leandeclnamed{retByz}{PLTS.ABA.SpecStep.retByz} (D23): a corrupted process's call records a bit unrelated to the one its label declares, and a corrupted process returns any bit at any time without moving the state.
+  The honest rules stay available to it, so the two rules add behaviour and remove none.
   The mode carries the round structure (D21): \leandeclnamed{coinFlip}{PLTS.ABA.SpecStep.coinFlip} is an abstract flip, resolving once per firing into a lock, a release or a kill, and it names no coin bit; the kill outcome, of mass $\failmass$, lands in the terminal mode $dead$, which enables no $\tau$-rule (D17).
+  The flip carries the mixedness gate, firing only where each of the two bits carries $f{+}1$ support, so under honest unanimity it is unreachable and the whole run is Dirac.
   The Validity provenance apparatus (D13) is the ghost record, written by \leandeclnamed{callSet}{PLTS.ABA.SpecStep.callSet} and \leandeclnamed{callLoop}{PLTS.ABA.SpecStep.callLoop}, together with the $f{+}1$ $F$-blind support guard \leandecl{PLTS.ABA.SuppOK} on \leandeclnamed{decide}{PLTS.ABA.SpecStep.decide}, the sole writer of $val$.
   Full rule table: \leandecl{PLTS.ABA.spec}.
 \end{definition}

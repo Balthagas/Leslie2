@@ -3,4 +3,5 @@
   \lean{PLTS.ABA.P4}\leanok
   \uses{thm:aba-hybrid-spec}
   Machine-checked witnesses that $\mathrm{hybrid}(P)$, the system Theorem~\ref{thm:aba-hybrid-spec} is proved of, executes and reaches a return on a connected run of positive probability, at the parameters $n = 4$ and $f = 1$ of \leandecl{PLTS.ABA.P4}: \leanmodule{Leslie2Protocols/ABA/NonVacuity}.
+  A synchronised $\mathrm{fail}\,0$ broadcast is witnessed separately, its network half discharging the two guards $0 \notin F$ and $|F| < f$ (D1) and its round-loop half writing the replacement flag (D23).
 \end{definition}

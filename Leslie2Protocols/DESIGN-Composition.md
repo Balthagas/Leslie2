@@ -7,8 +7,10 @@ four systems:
 protocol  ⊑  composed  ⊑  hybrid  ⊑  ABA.spec
 ```
 
-`protocol` is what runs: `n` corruption-blind programs beside a network adversary and a
-coin oracle. `composed` is the same protocol read as a composition of components.
+`protocol` is what runs: `n` programs beside a network adversary and a coin oracle. A
+program reads its own replacement flag and nothing else about corruption: not the corrupted
+set, not the budget, not another process's status (D23). `composed` is the same protocol
+read as a composition of components.
 `hybrid` replaces each round's graded-agreement instance by the graded agreement
 specification. `ABA.spec` is the single-automaton reading of agreement.
 
@@ -99,6 +101,9 @@ away.
 
 No rule forces a delivery, so any subset of the multicasts may be lost. `byzD` injects
 either bit for any `k ∈ F`, so a corrupted process may equivocate in the DECIDED pools.
+`Comp.ANetStep.retByz` lets a corrupted process return either bit at any time with no
+DECIDED evidence at all, its round-loop half being the self-loop of the replaced program
+(D23), so the DECIDED quorum is a condition on honest returns alone.
 
 What remains assumed is unforgeability of an honest process's DECIDED multicast. The
 delivery guard `b ∈ dpool j` attributes every receipt to a genuine send by the named

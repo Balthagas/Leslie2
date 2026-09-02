@@ -3,6 +3,6 @@
   \lean{PLTS.ABA.P4}\leanok
   \uses{thm:aba-hybrid-spec}
   Machine-checked witnesses, at $n = 4$ and $f = 1$, that $\mathrm{hybrid}(P)$, the system Theorem~\ref{thm:aba-hybrid-spec} is proved of, executes: a connected $21$-step run of it of positive probability reaching $\mathrm{retABA}\,0\,\mathrm{true}$, every step of it Dirac but the single coin flip, whose chosen branch carries mass $\varepsilon > 0$.
-  A synchronised corruption broadcast is witnessed separately.
+  A synchronised corruption broadcast is witnessed separately, at $\mathrm{fail}\,0$ from the initial state: the ABA-side network's row discharges its two guards, $0 \notin F$ and $|F| < f$ (D1), the named round loop takes $\mathrm{failSelf}$ and writes the replacement flag (D23), the other three take $\mathrm{failIdle}$, and the round specifications and the coin oracle take their own $\mathrm{fail}$ rows.
   Parameters: \leandecl{PLTS.ABA.P4}; the witnesses are in \leanmodule{Leslie2Protocols/ABA/NonVacuity}.
 \end{definition}

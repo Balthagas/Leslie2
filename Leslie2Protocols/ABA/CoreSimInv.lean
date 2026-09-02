@@ -21,7 +21,7 @@ Stages A and B of the proof that `coreR` is a simulation relation
   τ has more sources than the visible labels do, the whole rendezvous alphabet
   being hidden, and each of those sources collapses into one of the seven.
 * **Stage B** — preservation of `Inv`: one `Inv.step_*` lemma per row of Stage
-  A's inversion, each carrying all thirty-nine invariant fields across that
+  A's inversion, each carrying all forty invariant fields across that
   row.
 
 The assembly of the two into `Inv.step` is in `CoreSimAbs.lean`, beside the
@@ -40,18 +40,37 @@ variable {P : Params}
 Each lemma reads a transition of the protocol-shaped specification back into
 the rows of its four components, delivering the ABA-side content in the view's own
 coordinates: the pair `(C, A)` of the round loops beside the ABA-side network,
-read through `ABAState`'s accessors. -/
+read through `ABAState`'s accessors.
+
+Three of the four take the invariant's I0 conjunct as a hypothesis. The
+honesty guard a round loop's row carries reads its own replacement flag, and
+the guard the ABA-side network's row carries reads the corrupted set; I0 is
+what identifies the two, so that the reading speaks of `F` alone (D23). -/
+
+/-- The round loop's honesty guard read on the corrupted set: under I0 the
+replacement flag is down exactly at the processes outside `F`. -/
+theorem corrupted_eq_false_iff {P : Params} {C : ∀ _ : Fin P.n, CoreRec P.n}
+    {A : ANetState P.n}
+    (hcorr : ∀ k, ABAState.corrupted (C, A) k = true ↔ k ∈ ABAState.F (C, A))
+    (id : Fin P.n) : (C id).corrupted = false ↔ id ∉ ABAState.F (C, A) := by
+  have h := hcorr id
+  rw [ABAState.corrupted_apply] at h
+  cases hb : (C id).corrupted <;> rw [hb] at h <;> simp_all
 
 /-- `hybrid` inversion, `callABA`: the round specifications and the coin
 oracle idle on a label outside their own API and the ABA-side network has no
-row of its own, so the whole transition is the addressed round loop's — either
-the genuine input, guarded by `input = ⊥`, or the input-enabledness loop. -/
+row of its own, so the whole transition is the addressed round loop's — the
+genuine input of a never-corrupted process, guarded by `input = ⊥`, or a
+self-loop, which is the input-enabledness row of a process whose program
+stands and the replaced program's own row otherwise (D23). -/
 theorem hybrid_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
     (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
-    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (b : Bool) (μ : PMF (HybridState P)) :
+    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (b : Bool)
+    (hcorr : ∀ k, ABAState.corrupted (C, A) k = true ↔ k ∈ ABAState.F (C, A))
+    (μ : PMF (HybridState P)) :
     (hybrid P).step (G, C, A, o) (.callABA id b) μ ↔
       ∃ μc : PMF (ABAState P),
-        (((ABAState.procs (C, A) id).input = none ∧
+        ((id ∉ ABAState.F (C, A) ∧ (ABAState.procs (C, A) id).input = none ∧
             μc = PMF.pure (ABAState.setProc (C, A) id
               { ABAState.procs (C, A) id with
                 input := some b, est := some b, round := 0, phase := .toCallG })) ∨
@@ -75,14 +94,15 @@ theorem hybrid_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
         obtain rfl : A = A' := (pureN_inj (aStep_callABA hA)).symm
         obtain rfl : ω = PMF.pure o := wccFamily_idle_inv P (by simp) rfl (by simp [Lab.isFail])
           ((System.mapIdle_step_some (wccPull_inl (Lab.callABA id b)) _).mp hW)
-        rcases stepC_callABA_own (hall id) with ⟨hin, hx0⟩ | hx0
+        rcases stepC_callABA_own (hall id) with ⟨hh, hin, hx0⟩ | hx0
         · obtain rfl : C' = Function.update C id ((C id).setProc { (C id).proc with
               input := some b, est := some b, round := 0, phase := .toCallG }) :=
             coresN_update hx0 (fun i hi => stepC_callABA_foreign (Ne.symm hi) (hall i))
           exact ⟨PMF.pure (ABAState.setProc (C, A) id
               { ABAState.procs (C, A) id with
                 input := some b, est := some b, round := 0, phase := .toCallG }),
-            Or.inl ⟨hin, rfl⟩, by simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩
+            Or.inl ⟨(corrupted_eq_false_iff hcorr id).mp hh, hin, rfl⟩, by
+              simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩
         · obtain rfl : C = C' := (coresN_id fun i => by
             by_cases hi : i = id
             · subst hi; exact hx0
@@ -94,12 +114,12 @@ theorem hybrid_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
     refine Or.inr ⟨by simp, ?_⟩
     rw [hybridGroup_step_iff]
     refine Or.inr ?_
-    rcases hdisj with ⟨hin, rfl⟩ | rfl
+    rcases hdisj with ⟨hnF, hin, rfl⟩ | rfl
     · have h := hybridPre_vis_step P (L := Sum.inl (Lab.callABA id b)) (by simp)
         (specSide_idle P G (by simp) rfl not_false)
         (coresN_family id ((C id).setProc { (C id).proc with
             input := some b, est := some b, round := 0, phase := .toCallG })
-          (CoreProcStepN.input (C id) b hin)
+          (CoreProcStepN.input (C id) b ((corrupted_eq_false_iff hcorr id).mpr hnF) hin)
           (fun i hi => CoreProcStepN.callABAIdle (C i) id b (Ne.symm hi)))
         (ANetStep.callABAIdle A id b) hWlift
       simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
@@ -108,25 +128,35 @@ theorem hybrid_step_callABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
         (specSide_idle P G (by simp) rfl not_false)
         (fun i => by
           by_cases hi : i = id
-          · subst hi; exact CoreProcStepN.inputLoop (C i) b
+          · subst hi
+            cases hb : (C i).corrupted
+            · exact CoreProcStepN.inputLoop (C i) b hb
+            · exact CoreProcStepN.corruptedIdle (C i) _ hb (by simp) (by simp [actsAt])
           · exact CoreProcStepN.callABAIdle (C i) id b (Ne.symm hi))
         (ANetStep.callABAIdle A id b) hWlift
       simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
       exact h
 
-/-- `hybrid` inversion, `retABA`: the return's two guards are split across
-two components — the `n − f` quorum is the round loop's, having multicast
-`⟨DECIDED, b⟩` oneself is the network's — and rejoin on `ABAState`. -/
+/-- `hybrid` inversion, `retABA`: a never-corrupted process's return has its
+two guards split across two components — the `n − f` quorum is the round
+loop's, having multicast `⟨DECIDED, b⟩` oneself is the network's — and they
+rejoin on `ABAState`. A corrupted process returns any bit at any time and the
+state does not move: the network's visible-return row asks for nothing beyond
+`id ∈ F`, and the replaced program's half is its self-loop (D23). -/
 theorem hybrid_step_retABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
     (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
-    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (b : Bool) (μ : PMF (HybridState P)) :
+    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (b : Bool)
+    (hcorr : ∀ k, ABAState.corrupted (C, A) k = true ↔ k ∈ ABAState.F (C, A))
+    (μ : PMF (HybridState P)) :
     (hybrid P).step (G, C, A, o) (.retABA id b) μ ↔
       ∃ μc : PMF (ABAState P),
-        (P.n - P.f ≤ ABAState.decidedCount (C, A) id b ∧
-          b ∈ ABAState.decidedSent (C, A) id ∧
-          (ABAState.procs (C, A) id).returned = false ∧
-          μc = PMF.pure (ABAState.setProc (C, A) id
-            { ABAState.procs (C, A) id with returned := true })) ∧
+        ((id ∉ ABAState.F (C, A) ∧
+            P.n - P.f ≤ ABAState.decidedCount (C, A) id b ∧
+            b ∈ ABAState.decidedSent (C, A) id ∧
+            (ABAState.procs (C, A) id).returned = false ∧
+            μc = PMF.pure (ABAState.setProc (C, A) id
+              { ABAState.procs (C, A) id with returned := true })) ∨
+          (id ∈ ABAState.F (C, A) ∧ μc = PMF.pure (C, A))) ∧
         μ = prodPMF (PMF.pure G) (μc.map fun c => (c.1, c.2, o)) := by
   have hWlift : (wccLift P).step o (Sum.inl (Lab.retABA id b)) (PMF.pure o) :=
     (System.mapIdle_step_some (wccPull_inl (Lab.retABA id b)) (PMF.pure o)).mpr
@@ -147,35 +177,61 @@ theorem hybrid_step_retABA (P : Params) (G : ℕ → GBCA.SpecState P.n)
         obtain rfl : A = A' := (pureN_inj hA').symm
         obtain rfl : ω = PMF.pure o := wccFamily_idle_inv P (by simp) rfl (by simp [Lab.isFail])
           ((System.mapIdle_step_some (wccPull_inl (Lab.retABA id b)) _).mp hW)
-        obtain ⟨hcnt, hret, hx0⟩ := stepC_retABA_own (hall id)
-        obtain rfl : C' = Function.update C id
-            ((C id).setProc { (C id).proc with returned := true }) :=
-          coresN_update hx0 (fun i hi => stepC_retABA_foreign (Ne.symm hi) (hall i))
-        exact ⟨PMF.pure (ABAState.setProc (C, A) id
-            { ABAState.procs (C, A) id with returned := true }),
-          ⟨hcnt, hpool, hret, rfl⟩, by simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩
-  · rintro ⟨μc, ⟨hcnt, hpool, hret, rfl⟩, rfl⟩
+        rcases stepC_retABA_own (hall id) with ⟨hh, hcnt, hret, hx0⟩ | ⟨hh, hx0⟩
+        · have hnF : id ∉ ABAState.F (C, A) := (corrupted_eq_false_iff hcorr id).mp hh
+          obtain rfl : C' = Function.update C id
+              ((C id).setProc { (C id).proc with returned := true }) :=
+            coresN_update hx0 (fun i hi => stepC_retABA_foreign (Ne.symm hi) (hall i))
+          exact ⟨PMF.pure (ABAState.setProc (C, A) id
+              { ABAState.procs (C, A) id with returned := true }),
+            Or.inl ⟨hnF, hcnt, hpool.resolve_right hnF, hret, rfl⟩, by
+              simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩
+        · obtain rfl : C = C' := (coresN_id fun i => by
+            by_cases hi : i = id
+            · subst hi; exact hx0
+            · exact stepC_retABA_foreign (Ne.symm hi) (hall i)).symm
+          exact ⟨PMF.pure (C, A), Or.inr ⟨(hcorr id).mp hh, rfl⟩, by
+            simp only [PMF.pure_map, prodPMF_pure_pure]⟩
+  · rintro ⟨μc, hdisj, rfl⟩
     rw [hybrid_step_iff]
     refine Or.inr ⟨by simp, ?_⟩
     rw [hybridGroup_step_iff]
     refine Or.inr ?_
-    have h := hybridPre_vis_step P (L := Sum.inl (Lab.retABA id b)) (by simp)
-      (specSide_idle P G (by simp) rfl not_false)
-      (coresN_family id ((C id).setProc { (C id).proc with returned := true })
-        (CoreProcStepN.ret (C id) b hcnt hret)
-        (fun i hi => CoreProcStepN.retABAIdle (C i) id b (Ne.symm hi)))
-      (ANetStep.retABA A id b hpool) hWlift
-    simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
-    exact h
+    rcases hdisj with ⟨hnF, hcnt, hpool, hret, rfl⟩ | ⟨hF, rfl⟩
+    · have h := hybridPre_vis_step P (L := Sum.inl (Lab.retABA id b)) (by simp)
+        (specSide_idle P G (by simp) rfl not_false)
+        (coresN_family id ((C id).setProc { (C id).proc with returned := true })
+          (CoreProcStepN.ret (C id) b ((corrupted_eq_false_iff hcorr id).mpr hnF) hcnt hret)
+          (fun i hi => CoreProcStepN.retABAIdle (C i) id b (Ne.symm hi)))
+        (ANetStep.retABA A id b hpool) hWlift
+      simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
+      exact h
+    · have h := hybridPre_vis_step P (L := Sum.inl (Lab.retABA id b)) (by simp)
+        (specSide_idle P G (by simp) rfl not_false)
+        (fun i => by
+          by_cases hi : i = id
+          · subst hi
+            exact CoreProcStepN.corruptedIdle (C i) _ ((hcorr i).mpr hF) (by simp)
+              (by simp [actsAt])
+          · exact CoreProcStepN.retABAIdle (C i) id b (Ne.symm hi))
+        (ANetStep.retByz A id b hF) hWlift
+      simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
+      exact h
 
 /-- `hybrid` inversion, `fail`: a genuine synchronisation of all four
-components. Corruption is the round loops' one blind spot (D1): the round
-specifications and the coin oracle each corrupt their own copy of `F`, the
-ABA-side network corrupts the view's, and the round loops stand still. -/
+components, under the two guards the ABA-side network's row carries — the
+named process is not corrupted yet and the budget has room. The round
+specifications and the coin oracle each corrupt their own copy of `F` and the
+ABA-side network corrupts the view's; the named round loop replaces its own
+program by writing the flag (D23), and every other round loop stands still
+(D1). -/
 theorem hybrid_step_fail (P : Params) (G : ℕ → GBCA.SpecState P.n)
     (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
-    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n) (μ : PMF (HybridState P)) :
+    (o : ℕ → WCC.SpecState P.n) (id : Fin P.n)
+    (hcorr : ∀ k, ABAState.corrupted (C, A) k = true ↔ k ∈ ABAState.F (C, A))
+    (μ : PMF (HybridState P)) :
     (hybrid P).step (G, C, A, o) (.fail id) μ ↔
+      id ∉ ABAState.F (C, A) ∧ (ABAState.F (C, A)).card < P.f ∧
       μ = prodPMF (PMF.pure fun r => (G r).corrupt P id)
         ((PMF.pure (ABAState.corrupt P id (C, A))).map
           fun c => (c.1, c.2, fun r => (o r).corrupt P id)) := by
@@ -191,21 +247,30 @@ theorem hybrid_step_fail (P : Params) (G : ℕ → GBCA.SpecState P.n)
           hybridPre_vis_inv P (by simp) hpre
         obtain rfl : G' = fun r => (G r).corrupt P id :=
           pureN_inj (specSide_fail_inv P id hG)
-        obtain rfl : C = C' := (coresN_id fun i => stepC_fail (hall i)).symm
-        obtain rfl : A' = ANetState.corrupt P id A := pureN_inj (aStep_fail hA)
+        obtain ⟨hnew, hbud, hA'⟩ := aStep_fail hA
+        obtain rfl : A' = ANetState.corrupt P id A := pureN_inj hA'
         obtain rfl : ω = PMF.pure (fun r => (o r).corrupt P id) := wccFamily_fail_inv P id
           ((System.mapIdle_step_some (wccPull_inl (Lab.fail id)) _).mp hW)
+        have hh : (C id).corrupted = false := (corrupted_eq_false_iff hcorr id).mpr hnew
+        obtain rfl : C' = Function.update C id { C id with corrupted := true } := by
+          refine coresN_update ?_ (fun i hi => stepC_fail_foreign (Ne.symm hi) (hall i))
+          rcases stepC_fail_own (hall id) with ⟨-, hx0⟩ | ⟨habs, -⟩
+          · exact hx0
+          · rw [hh] at habs; exact absurd habs (by simp)
+        refine ⟨hnew, hbud, ?_⟩
         simp only [PMF.pure_map, prodPMF_pure_pure]
         rfl
-  · rintro rfl
+  · rintro ⟨hnew, hbud, rfl⟩
     rw [hybrid_step_iff]
     refine Or.inr ⟨by simp, ?_⟩
     rw [hybridGroup_step_iff]
     refine Or.inr ?_
     have h := hybridPre_vis_step P (L := Sum.inl (Lab.fail id)) (by simp)
       (specSide_fail P G id)
-      (fun i => CoreProcStepN.failIdle (C i) id)
-      (ANetStep.fail A id)
+      (coresN_family id { C id with corrupted := true }
+        (CoreProcStepN.failSelf (C id) ((corrupted_eq_false_iff hcorr id).mpr hnew))
+        (fun i hi => CoreProcStepN.failIdle (C i) id (Ne.symm hi)))
+      (ANetStep.fail A id hnew hbud)
       ((System.mapIdle_step_some (wccPull_inl (Lab.fail id)) _).mpr (wccFamily_fail P o id))
     simp only [PMF.pure_map, prodPMF_pure_pure] at h ⊢
     exact h
@@ -217,10 +282,15 @@ the specification family's binding kill, the view's own DECIDED traffic
 handshakes — `callG`/`retG` against a round specification, `callW`/`retW`
 against the coin oracle — each reached either by the shared label under the
 sub-protocol hiding or by the rendezvous that stands for it (`gcallLoop`, the
-Byzantine drives, and the fused coin return `retWPub`). -/
+Byzantine drives, and the fused coin return `retWPub`). A replaced program
+contributes no source of its own: its self-loop on `callG`, `retG`, `callW`,
+`retW` and `dsnd` reads as the corrupted branch already present at those rows,
+`id ∈ F` being supplied by I0 (D23). -/
 theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
     (C : ∀ _ : Fin P.n, CoreRec P.n) (A : ANetState P.n)
-    (o : ℕ → WCC.SpecState P.n) (μ : PMF (HybridState P))
+    (o : ℕ → WCC.SpecState P.n)
+    (hcorr : ∀ k, ABAState.corrupted (C, A) k = true ↔ k ∈ ABAState.F (C, A))
+    (μ : PMF (HybridState P))
     (hstep : (hybrid P).step (G, C, A, o) .tau μ) :
     (∃ r μr, GBCA.Step P r (G r) .tau μr ∧
         μ = prodPMF (μr.map (Function.update G r)) (PMF.pure (C, A, o))) ∨
@@ -290,7 +360,7 @@ theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
         obtain rfl : A = A' := (pureN_inj (aStep_callG hA)).symm
         obtain rfl : ω = PMF.pure o := wccFamily_idle_inv P (by simp) rfl (by simp [Lab.isFail])
           ((System.mapIdle_step_some (wccPull_inl (Lab.callG r id b)) _).mp hW)
-        obtain ⟨hph, hr, hest, hx0⟩ := stepC_callG_own (hall id)
+        obtain ⟨-, hph, hr, hest, hx0⟩ := stepC_callG_own (hall id)
         obtain rfl : C' = Function.update C id
             ((C id).setProc { (C id).proc with phase := .awaitG }) :=
           coresN_update hx0 (fun i hi => stepC_callG_foreign (Ne.symm hi) (hall i))
@@ -306,7 +376,7 @@ theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
         obtain rfl : A = A' := (pureN_inj (aStep_retG hA)).symm
         obtain rfl : ω = PMF.pure o := wccFamily_idle_inv P (by simp) rfl (by simp [Lab.isFail])
           ((System.mapIdle_step_some (wccPull_inl (Lab.retG r id out)) _).mp hW)
-        obtain ⟨hph, hr, hx0⟩ := stepC_retG_own (hall id)
+        obtain ⟨-, hph, hr, hx0⟩ := stepC_retG_own (hall id)
         obtain rfl : C' = Function.update C id ((C id).setProc
             { (C id).proc with est := out.est, lastGrade := some out, phase := .toCallW }) :=
           coresN_update hx0 (fun i hi => stepC_retG_foreign (Ne.symm hi) (hall i))
@@ -324,14 +394,21 @@ theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
         obtain rfl : A = A' := (pureN_inj (aStep_callW hA)).symm
         obtain ⟨μw', hstepW, rfl⟩ := wccFamily_owned_inv P (by simp) rfl
           ((System.mapIdle_step_some (wccPull_inl (Lab.callW r id)) _).mp hW)
-        obtain ⟨hph, hr, hx0⟩ := stepC_callW_own (hall id)
-        obtain rfl : C' = Function.update C id
-            ((C id).setProc { (C id).proc with phase := .awaitW }) :=
-          coresN_update hx0 (fun i hi => stepC_callW_foreign (Ne.symm hi) (hall i))
-        exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨r, id, μw',
-          PMF.pure (ABAState.setProc (C, A) id
-            { ABAState.procs (C, A) id with phase := .awaitW }),
-          hstepW, Or.inl ⟨hph, hr, rfl⟩, by rw [PMF.pure_bind]; rfl⟩)))))
+        rcases stepC_callW_own (hall id) with ⟨-, hph, hr, hx0⟩ | ⟨hh, hx0⟩
+        · obtain rfl : C' = Function.update C id
+              ((C id).setProc { (C id).proc with phase := .awaitW }) :=
+            coresN_update hx0 (fun i hi => stepC_callW_foreign (Ne.symm hi) (hall i))
+          exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨r, id, μw',
+            PMF.pure (ABAState.setProc (C, A) id
+              { ABAState.procs (C, A) id with phase := .awaitW }),
+            hstepW, Or.inl ⟨hph, hr, rfl⟩, by rw [PMF.pure_bind]; rfl⟩)))))
+        · obtain rfl : C = C' := (coresN_id fun i => by
+            by_cases hi : i = id
+            · subst hi; exact hx0
+            · exact stepC_callW_foreign (Ne.symm hi) (hall i)).symm
+          exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨r, id, μw',
+            PMF.pure (C, A), hstepW, Or.inr ⟨(hcorr id).mp hh, rfl⟩,
+            by rw [PMF.pure_bind]⟩)))))
       | retW r id c =>
         obtain ⟨G', C', A', ω, hG, hall, hA, hW, rfl⟩ :=
           hybridPre_vis_inv P (by simp) hpre
@@ -340,13 +417,20 @@ theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
         obtain rfl : A = A' := (pureN_inj (aStep_retW hA)).symm
         obtain ⟨μw', hstepW, rfl⟩ := wccFamily_owned_inv P (by simp) rfl
           ((System.mapIdle_step_some (wccPull_inl (Lab.retW r id c)) _).mp hW)
-        obtain ⟨hph, hr, hgr, hx0⟩ := stepC_retW_own (hall id)
-        obtain rfl : C' = Function.update C id ((C id).stepRound c) :=
-          coresN_update hx0 (fun i hi => stepC_retW_foreign (Ne.symm hi) (hall i))
-        refine Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨r, id, c, μw',
-          PMF.pure (ABAState.stepRound (C, A) id c), hstepW,
-          Or.inl ⟨hph, hr, rfl⟩, ?_⟩)))))
-        rw [PMF.pure_bind, ABAState.stepRound_plain C A id c hgr]
+        rcases stepC_retW_own (hall id) with ⟨-, hph, hr, hgr, hx0⟩ | ⟨hh, hx0⟩
+        · obtain rfl : C' = Function.update C id ((C id).stepRound c) :=
+            coresN_update hx0 (fun i hi => stepC_retW_foreign (Ne.symm hi) (hall i))
+          refine Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨r, id, c, μw',
+            PMF.pure (ABAState.stepRound (C, A) id c), hstepW,
+            Or.inl ⟨hph, hr, rfl⟩, ?_⟩)))))
+          rw [PMF.pure_bind, ABAState.stepRound_plain C A id c hgr]
+        · obtain rfl : C = C' := (coresN_id fun i => by
+            by_cases hi : i = id
+            · subst hi; exact hx0
+            · exact stepC_retW_foreign (Ne.symm hi) (hall i)).symm
+          exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨r, id, c, μw',
+            PMF.pure (C, A), hstepW, Or.inr ⟨(hcorr id).mp hh, rfl⟩,
+            by rw [PMF.pure_bind]⟩)))))
   · rw [hybridGroup_step_iff] at hg
     rcases hg with ⟨-, e, hpre⟩ | hpre
     · -- a rendezvous of the hidden alphabet
@@ -358,7 +442,8 @@ theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
       | dsnd j b =>
         obtain rfl : G = G' :=
           (pureN_inj (specSide_idle_inv P hG (by simp) rfl not_false)).symm
-        obtain ⟨hcnt, hx0⟩ := stepC_dsnd_self (hall j)
+        have hx0 : (PMF.pure (C' j) : PMF (CoreRec P.n)) = PMF.pure (C j) := by
+          rcases stepC_dsnd_self (hall j) with ⟨-, -, h⟩ | ⟨-, h⟩ <;> exact h
         obtain rfl : C = C' := (coresN_id fun i => by
           by_cases hi : i = j
           · subst hi; exact hx0
@@ -367,13 +452,15 @@ theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
         obtain rfl : A' = A.dput j b := pureN_inj hA'
         obtain rfl : ω = PMF.pure o :=
           (System.mapIdle_step_none (wccPull_dsnd j b) ω).mp hW
-        exact Or.inr (Or.inl ⟨PMF.pure (ABAState.sendDecided (C, A) j b),
-          Or.inr (Or.inl ⟨j, b, hcnt, hpool, rfl⟩), by
-            simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩)
+        refine Or.inr (Or.inl ⟨PMF.pure (ABAState.sendDecided (C, A) j b), ?_, by
+          simp only [PMF.pure_map, prodPMF_pure_pure]; rfl⟩)
+        rcases stepC_dsnd_self (hall j) with ⟨-, hcnt, -⟩ | ⟨hh, -⟩
+        · exact Or.inr (Or.inl ⟨j, b, hcnt, hpool, rfl⟩)
+        · exact Or.inr (Or.inr ⟨j, b, (hcorr j).mp hh, rfl⟩)
       | ddlv i j b =>
         obtain rfl : G = G' :=
           (pureN_inj (specSide_idle_inv P hG (by simp) rfl not_false)).symm
-        obtain ⟨hnr, hx0⟩ := stepC_ddlv_self (hall i)
+        obtain ⟨-, hnr, hx0⟩ := stepC_ddlv_self (hall i)
         obtain rfl : C' = Function.update C i ((C i).recvDec j b) :=
           coresN_update hx0 (fun k hk => stepC_ddlv_foreign (Ne.symm hk) (hall k))
         obtain ⟨hmem, hA'⟩ := aStep_ddlv hA
@@ -388,7 +475,7 @@ theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
           (pureN_inj (specSide_idle_inv P hG (by simp) rfl not_false)).symm
         obtain ⟨μw', hstepW, rfl⟩ := wccFamily_owned_inv P (by simp) rfl
           ((System.mapIdle_step_some (wccPull_retWPub r id c b) ω).mp hW)
-        obtain ⟨hph, hr, hgA, hx0⟩ := stepC_retWPub_self (hall id)
+        obtain ⟨-, hph, hr, hgA, hx0⟩ := stepC_retWPub_self (hall id)
         obtain rfl : C' = Function.update C id ((C id).stepRound c) :=
           coresN_update hx0 (fun k hk => stepC_retWPub_foreign (Ne.symm hk) (hall k))
         obtain rfl : A' = A.dput id b := pureN_inj (aStep_retWPub hA)
@@ -398,7 +485,7 @@ theorem hybrid_step_tau (P : Params) (G : ℕ → GBCA.SpecState P.n)
         rw [PMF.pure_bind, ABAState.stepRound_pub C A id c b hgA]
       | gcallLoop r id b =>
         obtain ⟨X, hstepG, rfl⟩ := specSide_owned_step P rfl (by simp) rfl hG
-        obtain ⟨hph, hr, hest, hx0⟩ := stepC_gcallLoop_self (hall id)
+        obtain ⟨-, hph, hr, hest, hx0⟩ := stepC_gcallLoop_self (hall id)
         obtain rfl : C' = Function.update C id
             ((C id).setProc { (C id).proc with phase := .awaitG }) :=
           coresN_update hx0 (fun k hk => stepC_gcallLoop_foreign (Ne.symm hk) (hall k))
@@ -505,138 +592,148 @@ theorem WCC.corrupt_F_eq {P : Params} (id : Fin P.n) (s : WCC.SpecState P.n)
   unfold WCC.SpecState.corrupt
   rw [ABAState.corrupt_F, h]; split_ifs <;> simp [h]
 
-/-- `retABA` only sets `returned`, a field `Inv` never inspects: `Inv` transfers verbatim
-modulo the pointwise-unchanged projections of `procs`. -/
+/-- `retABA`: a never-corrupted process's return only sets `returned`, a field `Inv` never
+inspects, so `Inv` transfers verbatim modulo the pointwise-unchanged projections of `procs`.
+A corrupted process's return is a state identity, and `Inv` transfers outright. -/
 theorem Inv.step_retABA {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAState P}
     {w : ℕ → WCC.SpecState P.n} (hI : Inv P g c w) (id : Fin P.n) (b : Bool)
     {μc : PMF (ABAState P)}
-    (hstep : P.n - P.f ≤ c.decidedCount id b ∧ b ∈ c.decidedSent id ∧
-      (c.procs id).returned = false ∧
-      μc = PMF.pure (c.setProc id { c.procs id with returned := true }))
+    (hstep : (id ∉ c.F ∧ P.n - P.f ≤ c.decidedCount id b ∧ b ∈ c.decidedSent id ∧
+        (c.procs id).returned = false ∧
+        μc = PMF.pure (c.setProc id { c.procs id with returned := true })) ∨
+      (id ∈ c.F ∧ μc = PMF.pure c))
     {c' : ABAState P} (hc' : c' ∈ μc.support) :
     Inv P g c' w ∧ AbsFrame P g g c c' := by
-  obtain ⟨-, -, -, rfl⟩ := hstep
-  rw [PMF.mem_support_pure_iff] at hc'
-  subst hc'
-  set c' := c.setProc id { c.procs id with returned := true } with hc'def
-  have hF : c'.F = c.F := ABAState.setProc_F _ _ _
-  have hDS : c'.decidedSent = c.decidedSent := ABAState.setProc_decidedSent _ _ _
-  have hDR : c'.decidedRecv = c.decidedRecv := ABAState.setProc_decidedRecv _ _ _
-  have hDC : ∀ i b', c'.decidedCount i b' = c.decidedCount i b' :=
-    fun i b' => ABAState.setProc_decidedCount _ _ _ _ _
-  have hInput : ∀ id', (c'.procs id').input = (c.procs id').input := by
-    intro id'; by_cases h : id' = id
-    · subst h; rw [hc'def, ABAState.setProc_procs_self]
-    · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
-  have hEst : ∀ id', (c'.procs id').est = (c.procs id').est := by
-    intro id'; by_cases h : id' = id
-    · subst h; rw [hc'def, ABAState.setProc_procs_self]
-    · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
-  have hRound : ∀ id', (c'.procs id').round = (c.procs id').round := by
-    intro id'; by_cases h : id' = id
-    · subst h; rw [hc'def, ABAState.setProc_procs_self]
-    · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
-  have hPhase : ∀ id', (c'.procs id').phase = (c.procs id').phase := by
-    intro id'; by_cases h : id' = id
-    · subst h; rw [hc'def, ABAState.setProc_procs_self]
-    · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
-  have hLastGrade : ∀ id', (c'.procs id').lastGrade = (c.procs id').lastGrade := by
-    intro id'; by_cases h : id' = id
-    · subst h; rw [hc'def, ABAState.setProc_procs_self]
-    · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
-  have hCarr : ∀ r' id' v, Carrier P g c' r' id' v → Carrier P g c r' id' v := by
-    intro r' id' v hc
-    unfold Carrier at hc ⊢
-    rwa [hEst, hRound, hPhase] at hc
-  have hCert : ∀ r' b', ACert P g c r' b' → ACert P g c' r' b' := fun r' b' =>
-    ACert.of_frame rfl (fun _ => rfl) (fun _ _ => rfl)
-      (by rw [hF] : c.F ⊆ c'.F) hRound hEst (fun id0 v => hCarr r' id0 v)
-  have hHold : ∀ id' b', AHolder P c' id' b' → AHolder P c id' b' := by
-    intro id' b' h
-    unfold AHolder at h ⊢
-    rwa [hLastGrade, hDS] at h
-  refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCert r0 b0 hc⟩,
-    fun v _ hpin j b' hj hh => hpin j b' (hF ▸ hj) (hHold j b' hh)⟩
-  refine ⟨fun r => (hI.F_g r).trans hF.symm, fun r => ?_, ?_, ?_, ?_, ?_,
-    hI.down_closed, hI.quiescent, hI.w_bound, ?_, ?_, ?_, ?_, ?_,
-    hI.gradeA_needs_bind, ?_, ?_, ?_, ?_, ?_, ?_, hI.bind_succ, ?_, ?_, hI.c_chain, ?_,
-    hI.w_order, ?_, ?_, ?_, ?_, ?_, ?_, hI.bound_quorum,
-    fun r v hb => (hI.bind_supp r v hb).mono
-      (fun id' b' h => by rw [hInput]; exact h) (fun x hx => by rw [hF]; exact hx),
-    hI.clock_supp, hI.dead_supp,
-    fun r' i j v v' hm hm' h h' => hI.carrier_agree r' i j v v' (hF ▸ hm) (hF ▸ hm')
-      (hCarr _ _ _ h) (hCarr _ _ _ h'),
-    fun i j b₀ b₀' hm hm' h h' => hI.alock_agree i j b₀ b₀' (hF ▸ hm) (hF ▸ hm')
-      (hHold _ _ h) (hHold _ _ h')⟩
-  · rw [hF]; exact hI.F_w r
-  · rw [hF]; exact hI.F_card
-  · intro id' b' hmem hcall; rw [hInput]; exact hI.input_g0 id' b' (hF ▸ hmem) hcall
-  · intro r id' hmem hcall; rw [hInput]; exact hI.input_called r id' (hF ▸ hmem) hcall
-  · intro id' hmem hne; rw [hPhase] at hne; rw [hInput]; exact hI.phase_input id' (hF ▸ hmem) hne
-  · intro i j b' h; rw [hDR] at h; rw [hDS]; exact hI.recv_sound i j b' h
-  · intro id' b' hmem h; rw [hDS] at h
-    exact (hI.decided_src id' b' (hF ▸ hmem) h).imp (fun r => hCert r b')
-  · intro r b' hg hb
-    exact ACommit.of_frame (fun _ => rfl) (fun _ _ => rfl)
-      (by rw [hF]) hRound hEst (fun id0 v => hCarr r id0 v) (hI.a_commit r b' hg hb)
-  · intro id' hmem r hr; exact hI.round_bound id' (hF ▸ hmem) r (hRound id' ▸ hr)
-  · intro r v hlast hb hcoin id' hmem hr
-    rw [hEst]; exact hI.agree_locked r v hlast hb hcoin id' (hF ▸ hmem) (hRound id' ▸ hr)
-  · intro r id' hmem hcall; rw [hRound]; exact hI.call_round r id' (hF ▸ hmem) hcall
-  · intro r id' hmem hcalled; exact hI.w_called r id' (hF ▸ hmem) hcalled
-  · intro r id' hmem hr; rw [hRound] at hr; exact hI.round_flip r id' (hF ▸ hmem) hr
-  · intro id' hmem hround hphase
-    rw [hRound] at hround; rw [hPhase] at hphase
-    rw [hEst, hInput]; exact hI.est0 id' (hF ▸ hmem) hround hphase
-  · intro id' b' hlg; rw [hLastGrade] at hlg
-    exact (hI.grade_A_src id' b' hlg).imp (fun r => hCert r b')
-  · intro r id' hmem hround hphase
-    rw [hRound] at hround; rw [hPhase] at hphase
-    rw [hEst]; exact hI.est_ret r id' (hF ▸ hmem) hround hphase
-  · intro r id' v hmem hcall; exact hI.call_prov r id' v (hF ▸ hmem) hcall
-  · intro r id' hmem hround hphase v hest
-    rw [hRound] at hround; rw [hPhase] at hphase; rw [hEst] at hest
-    exact hI.est_prev r id' (hF ▸ hmem) hround hphase v hest
-  · intro id' hmem hround hphase
-    rw [hRound] at hround; rw [hPhase] at hphase; rw [hEst]
-    exact hI.est_prev_ne id' (hF ▸ hmem) hround hphase
-  · intro id' b' h
-    rcases hI.input_g0_perm id' b' h with hin | hf
-    · left; rw [hInput]; exact hin
-    · right; rw [hF]; exact hf
-  · intro r id' hmem hcalled; rw [hRound]; exact hI.w_call_round r id' (hF ▸ hmem) hcalled
-  · intro r h
-    rcases hI.flip_alock r h with hg | hd
-    · left; exact hg
-    · right; exact DissentResidue.transport rfl rfl (fun hh => hh) (fun id' => hInput id') hd
-  · intro id' hmem hin r'; rw [hInput] at hin; exact hI.idle_no_wcall id' (hF ▸ hmem) hin r'
-  · intro r id' hmem h
-    rw [hRound] at h; rw [hPhase] at h
-    rcases hI.retg_residue r id' (hF ▸ hmem) h with hg | hd
-    · left; exact hg
-    · right; exact DissentResidue.transport rfl rfl (fun hh => hh) (fun id'' => hInput id'') hd
-  · intro r id' hmem hcalled
-    rcases hI.wcalled_residue r id' (hF ▸ hmem) hcalled with hg | hd
-    · left; exact hg
-    · right; exact DissentResidue.transport rfl rfl (fun hh => hh) (fun id'' => hInput id'') hd
+  rcases hstep with hstep | ⟨-, rfl⟩
+  · obtain ⟨-, -, -, -, rfl⟩ := hstep
+    rw [PMF.mem_support_pure_iff] at hc'
+    subst hc'
+    set c' := c.setProc id { c.procs id with returned := true } with hc'def
+    have hF : c'.F = c.F := ABAState.setProc_F _ _ _
+    have hCorr : c'.corrupted = c.corrupted := ABAState.setProc_corrupted _ _ _
+    have hDS : c'.decidedSent = c.decidedSent := ABAState.setProc_decidedSent _ _ _
+    have hDR : c'.decidedRecv = c.decidedRecv := ABAState.setProc_decidedRecv _ _ _
+    have hDC : ∀ i b', c'.decidedCount i b' = c.decidedCount i b' :=
+      fun i b' => ABAState.setProc_decidedCount _ _ _ _ _
+    have hInput : ∀ id', (c'.procs id').input = (c.procs id').input := by
+      intro id'; by_cases h : id' = id
+      · subst h; rw [hc'def, ABAState.setProc_procs_self]
+      · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
+    have hEst : ∀ id', (c'.procs id').est = (c.procs id').est := by
+      intro id'; by_cases h : id' = id
+      · subst h; rw [hc'def, ABAState.setProc_procs_self]
+      · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
+    have hRound : ∀ id', (c'.procs id').round = (c.procs id').round := by
+      intro id'; by_cases h : id' = id
+      · subst h; rw [hc'def, ABAState.setProc_procs_self]
+      · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
+    have hPhase : ∀ id', (c'.procs id').phase = (c.procs id').phase := by
+      intro id'; by_cases h : id' = id
+      · subst h; rw [hc'def, ABAState.setProc_procs_self]
+      · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
+    have hLastGrade : ∀ id', (c'.procs id').lastGrade = (c.procs id').lastGrade := by
+      intro id'; by_cases h : id' = id
+      · subst h; rw [hc'def, ABAState.setProc_procs_self]
+      · rw [hc'def, ABAState.setProc_procs_ne _ _ _ h]
+    have hCarr : ∀ r' id' v, Carrier P g c' r' id' v → Carrier P g c r' id' v := by
+      intro r' id' v hc
+      unfold Carrier at hc ⊢
+      rwa [hEst, hRound, hPhase] at hc
+    have hCert : ∀ r' b', ACert P g c r' b' → ACert P g c' r' b' := fun r' b' =>
+      ACert.of_frame rfl (fun _ => rfl) (fun _ _ => rfl)
+        (by rw [hF] : c.F ⊆ c'.F) hRound hEst (fun id0 v => hCarr r' id0 v)
+    have hHold : ∀ id' b', AHolder P c' id' b' → AHolder P c id' b' := by
+      intro id' b' h
+      unfold AHolder at h ⊢
+      rwa [hLastGrade, hDS] at h
+    refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCert r0 b0 hc⟩,
+      fun v _ hpin j b' hj hh => hpin j b' (hF ▸ hj) (hHold j b' hh)⟩
+    refine ⟨fun id' => by rw [hCorr, hF]; exact hI.corrupted_F id',
+      fun r => (hI.F_g r).trans hF.symm, fun r => ?_, ?_, ?_, ?_, ?_,
+      hI.down_closed, hI.quiescent, hI.w_bound, ?_, ?_, ?_, ?_, ?_,
+      hI.gradeA_needs_bind, ?_, ?_, ?_, ?_, ?_, ?_, hI.bind_succ, ?_, ?_, hI.c_chain, ?_,
+      hI.w_order, ?_, ?_, ?_, ?_, ?_, ?_, hI.bound_quorum,
+      fun r v hb => (hI.bind_supp r v hb).mono
+        (fun id' b' h => by rw [hInput]; exact h) (fun x hx => by rw [hF]; exact hx),
+      hI.clock_supp, hI.dead_supp,
+      fun r' i j v v' hm hm' h h' => hI.carrier_agree r' i j v v' (hF ▸ hm) (hF ▸ hm')
+        (hCarr _ _ _ h) (hCarr _ _ _ h'),
+      fun i j b₀ b₀' hm hm' h h' => hI.alock_agree i j b₀ b₀' (hF ▸ hm) (hF ▸ hm')
+        (hHold _ _ h) (hHold _ _ h')⟩
+    · rw [hF]; exact hI.F_w r
+    · rw [hF]; exact hI.F_card
+    · intro id' b' hmem hcall; rw [hInput]; exact hI.input_g0 id' b' (hF ▸ hmem) hcall
+    · intro r id' hmem hcall; rw [hInput]; exact hI.input_called r id' (hF ▸ hmem) hcall
+    · intro id' hmem hne; rw [hPhase] at hne; rw [hInput]; exact hI.phase_input id' (hF ▸ hmem) hne
+    · intro i j b' h; rw [hDR] at h; rw [hDS]; exact hI.recv_sound i j b' h
+    · intro id' b' hmem h; rw [hDS] at h
+      exact (hI.decided_src id' b' (hF ▸ hmem) h).imp (fun r => hCert r b')
+    · intro r b' hg hb
+      exact ACommit.of_frame (fun _ => rfl) (fun _ _ => rfl)
+        (by rw [hF]) hRound hEst (fun id0 v => hCarr r id0 v) (hI.a_commit r b' hg hb)
+    · intro id' hmem r hr; exact hI.round_bound id' (hF ▸ hmem) r (hRound id' ▸ hr)
+    · intro r v hlast hb hcoin id' hmem hr
+      rw [hEst]; exact hI.agree_locked r v hlast hb hcoin id' (hF ▸ hmem) (hRound id' ▸ hr)
+    · intro r id' hmem hcall; rw [hRound]; exact hI.call_round r id' (hF ▸ hmem) hcall
+    · intro r id' hmem hcalled; exact hI.w_called r id' (hF ▸ hmem) hcalled
+    · intro r id' hmem hr; rw [hRound] at hr; exact hI.round_flip r id' (hF ▸ hmem) hr
+    · intro id' hmem hround hphase
+      rw [hRound] at hround; rw [hPhase] at hphase
+      rw [hEst, hInput]; exact hI.est0 id' (hF ▸ hmem) hround hphase
+    · intro id' b' hlg; rw [hLastGrade] at hlg
+      exact (hI.grade_A_src id' b' hlg).imp (fun r => hCert r b')
+    · intro r id' hmem hround hphase
+      rw [hRound] at hround; rw [hPhase] at hphase
+      rw [hEst]; exact hI.est_ret r id' (hF ▸ hmem) hround hphase
+    · intro r id' v hmem hcall; exact hI.call_prov r id' v (hF ▸ hmem) hcall
+    · intro r id' hmem hround hphase v hest
+      rw [hRound] at hround; rw [hPhase] at hphase; rw [hEst] at hest
+      exact hI.est_prev r id' (hF ▸ hmem) hround hphase v hest
+    · intro id' hmem hround hphase
+      rw [hRound] at hround; rw [hPhase] at hphase; rw [hEst]
+      exact hI.est_prev_ne id' (hF ▸ hmem) hround hphase
+    · intro id' b' h
+      rcases hI.input_g0_perm id' b' h with hin | hf
+      · left; rw [hInput]; exact hin
+      · right; rw [hF]; exact hf
+    · intro r id' hmem hcalled; rw [hRound]; exact hI.w_call_round r id' (hF ▸ hmem) hcalled
+    · intro r h
+      rcases hI.flip_alock r h with hg | hd
+      · left; exact hg
+      · right; exact DissentResidue.transport rfl rfl (fun hh => hh) (fun id' => hInput id') hd
+    · intro id' hmem hin r'; rw [hInput] at hin; exact hI.idle_no_wcall id' (hF ▸ hmem) hin r'
+    · intro r id' hmem h
+      rw [hRound] at h; rw [hPhase] at h
+      rcases hI.retg_residue r id' (hF ▸ hmem) h with hg | hd
+      · left; exact hg
+      · right; exact DissentResidue.transport rfl rfl (fun hh => hh) (fun id'' => hInput id'') hd
+    · intro r id' hmem hcalled
+      rcases hI.wcalled_residue r id' (hF ▸ hmem) hcalled with hg | hd
+      · left; exact hg
+      · right; exact DissentResidue.transport rfl rfl (fun hh => hh) (fun id'' => hInput id'') hd
+  · rw [PMF.mem_support_pure_iff] at hc'
+    subst hc'
+    exact ⟨hI, AbsFrame.refl P g _⟩
 
-/-- `callABA`: either a genuine external input (guarded by `input = none`, so `input_called`
-rules out the "already called GBCA" corner) or the idle self-loop. -/
+/-- `callABA`: either a never-corrupted process's genuine external input (guarded by
+`input = none`, so `input_called` rules out the "already called GBCA" corner) or the idle
+self-loop. -/
 theorem Inv.step_callABA {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAState P}
     {w : ℕ → WCC.SpecState P.n} (hI : Inv P g c w) (id : Fin P.n) (b : Bool)
     {μc : PMF (ABAState P)}
     (hstep :
-      ((c.procs id).input = none ∧
+      (id ∉ c.F ∧ (c.procs id).input = none ∧
           μc = PMF.pure (c.setProc id { c.procs id with
             input := some b, est := some b, round := 0, phase := .toCallG })) ∨
         μc = PMF.pure c)
     {c' : ABAState P} (hc' : c' ∈ μc.support) :
     Inv P g c' w ∧ AbsFrame P g g c c' := by
-  rcases hstep with ⟨hin, rfl⟩ | rfl
+  rcases hstep with ⟨-, hin, rfl⟩ | rfl
   · rw [PMF.mem_support_pure_iff] at hc'; subst hc'
     set c' := c.setProc id { c.procs id with
       input := some b, est := some b, round := 0, phase := .toCallG } with hc'def
     have hF : c'.F = c.F := ABAState.setProc_F _ _ _
+    have hCorr : c'.corrupted = c.corrupted := ABAState.setProc_corrupted _ _ _
     have hDS : c'.decidedSent = c.decidedSent := ABAState.setProc_decidedSent _ _ _
     have hDR : c'.decidedRecv = c.decidedRecv := ABAState.setProc_decidedRecv _ _ _
     have hSelf : c'.procs id = { c.procs id with
@@ -687,7 +784,8 @@ theorem Inv.step_callABA {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAS
       rwa [hLG, hDS] at h
     refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCertTrans r0 b0 hc⟩,
       fun v _ hpin j b' hj hh => hpin j b' (hF ▸ hj) (hHold j b' hh)⟩
-    refine ⟨fun r => (hI.F_g r).trans hF.symm, fun r => hF ▸ hI.F_w r, hF ▸ hI.F_card,
+    refine ⟨fun id' => by rw [hCorr, hF]; exact hI.corrupted_F id',
+      fun r => (hI.F_g r).trans hF.symm, fun r => hF ▸ hI.F_w r, hF ▸ hI.F_card,
       ?_, ?_, ?_, hI.down_closed, hI.quiescent, hI.w_bound, ?_, ?_, ?_, ?_, ?_,
       hI.gradeA_needs_bind, ?_, ?_, ?_, ?_, ?_, ?_, hI.bind_succ, ?_, ?_, hI.c_chain, ?_,
       hI.w_order, ?_, ?_, ?_, ?_, ?_, ?_, hI.bound_quorum,
@@ -812,10 +910,14 @@ theorem Inv.step_callABA {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAS
   · rw [PMF.mem_support_pure_iff] at hc'; subst hc'
     exact ⟨hI, AbsFrame.refl P g _⟩
 
-/-- `fail`: a genuine synchronised corruption of all three components; `F` only grows, and
-every other projection is untouched, so honesty hypotheses transfer via `F`-monotonicity. -/
+/-- `fail`: a genuine synchronised corruption of all three components, under the row's own
+guards — the named process is not corrupted yet and the budget has room. `F` only grows, and
+every other projection is untouched, so honesty hypotheses transfer via `F`-monotonicity. The
+two guards are what puts the replacement flag and the corrupted set in lockstep (I0, D23):
+the flag goes up at `id` and `F` gains exactly `id`. -/
 theorem Inv.step_fail {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAState P}
-    {w : ℕ → WCC.SpecState P.n} (hI : Inv P g c w) (id : Fin P.n) :
+    {w : ℕ → WCC.SpecState P.n} (hI : Inv P g c w) (id : Fin P.n)
+    (hnew : id ∉ c.F) (hbud : c.F.card < P.f) :
     Inv P (fun r => (g r).corrupt P id) (c.corrupt P id) (fun r => (w r).corrupt P id) ∧
       AbsFrame P g (fun r => (g r).corrupt P id) c (c.corrupt P id) := by
   set g' := fun r => (g r).corrupt P id with hg'def
@@ -858,7 +960,15 @@ theorem Inv.step_fail {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAStat
     rwa [hprocs, hDS] at h
   refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCertTrans r0 b0 hc⟩,
     fun v _ hpin j b' hj hh => hpin j b' (fun h0 => hj (hFsub h0)) (hHold j b' hh)⟩
-  refine ⟨fun r => hFg r, fun r => hFw r, hFcard, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+  have hFins : c'.F = insert id c.F := by
+    rw [hc'def, ABAState.corrupt_F, if_pos ⟨hnew, hbud⟩]
+  have hCorr : ∀ id', c'.corrupted id' = true ↔ id' ∈ c'.F := by
+    intro id'
+    rw [hFins, Finset.mem_insert]
+    by_cases h : id' = id
+    · subst h; rw [hc'def, ABAState.corrupt_corrupted_self]; simp
+    · rw [hc'def, ABAState.corrupt_corrupted_ne c id h, hI.corrupted_F id']; simp [h]
+  refine ⟨hCorr, fun r => hFg r, fun r => hFw r, hFcard, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     fun r v hb => (hI.bind_supp r v (by rw [← hbind r]; exact hb)).mono
       (fun id' b' h => by rw [hprocs]; exact h) hFsub,
@@ -1072,7 +1182,8 @@ theorem Inv.step_gbcaTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAS
       exact ⟨(hGradeeq r'').trans hg1, hDeadMono r'' _ hd1, hCommitTrans r'' b'' hd1 hcm⟩
     refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCertTrans r0 b0 hc⟩,
       fun v _ hpin => hpin⟩
-    refine ⟨fun r' => (hFeq r').trans (hI.F_g r'), hI.F_w, hI.F_card, ?_, ?_, hI.phase_input,
+    refine ⟨hI.corrupted_F, fun r' => (hFeq r').trans (hI.F_g r'), hI.F_w, hI.F_card,
+      ?_, ?_, hI.phase_input,
       ?_, ?_, ?_,
       hI.recv_sound, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.round_flip, hI.est0, ?_, ?_,
       ?_, ?_, ?_, ?_, hI.est_prev_ne, hI.w_order, ?_, hI.w_call_round, ?_,
@@ -1324,7 +1435,8 @@ theorem Inv.step_wccTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABASt
       · subst h; rw [hw'def, Function.update_self]
       · rw [hw'def, Function.update_of_ne h]
     refine And.intro ?_ (AbsFrame.refl P g c)
-    refine ⟨hI.F_g, fun r' => (hFeq r').trans (hI.F_w r'), hI.F_card, hI.input_g0,
+    refine ⟨hI.corrupted_F, hI.F_g, fun r' => (hFeq r').trans (hI.F_w r'), hI.F_card,
+      hI.input_g0,
       hI.input_called, hI.phase_input, hI.down_closed, hI.quiescent, ?_, hI.recv_sound,
       hI.decided_src, hI.a_commit, hI.round_bound, ?_, hI.gradeA_needs_bind, hI.call_round, ?_, ?_,
       hI.est0, hI.grade_A_src, hI.est_ret, ?_, ?_, ?_, hI.c_chain, hI.est_prev_ne,
@@ -1460,7 +1572,9 @@ theorem Inv.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAS
     refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCert r0 b0 hc⟩,
       fun v _ hpin j b' hj hh => hpin j b' (hFeq ▸ hj)
         (by unfold AHolder at hh ⊢; rwa [hProcs, hDS] at hh)⟩
-    refine ⟨fun r => by rw [hFeq]; exact hI.F_g r, fun r => by rw [hFeq]; exact hI.F_w r,
+    refine ⟨fun id' => by
+        rw [ABAState.deliverDecided_corrupted, hFeq]; exact hI.corrupted_F id',
+      fun r => by rw [hFeq]; exact hI.F_g r, fun r => by rw [hFeq]; exact hI.F_w r,
       hFeq ▸ hI.F_card, ?_, ?_, ?_, hI.down_closed, hI.quiescent, hI.w_bound, ?_, ?_, ?_, ?_, ?_,
       hI.gradeA_needs_bind, ?_, ?_, ?_, ?_, ?_, ?_, hI.bind_succ, ?_, ?_, hI.c_chain, ?_,
       hI.w_order, ?_, ?_, ?_, ?_, ?_, ?_, hI.bound_quorum,
@@ -1569,7 +1683,9 @@ theorem Inv.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAS
       fun v _ hpin j b' hj hh => by
         obtain ⟨j0, hj0, hh0⟩ := hHold j b' (hFeq ▸ hj) hh
         exact hpin j0 b' hj0 hh0⟩
-    refine ⟨fun r => by rw [hFeq]; exact hI.F_g r, fun r => by rw [hFeq]; exact hI.F_w r,
+    refine ⟨fun id' => by
+        rw [ABAState.sendDecided_corrupted, hFeq]; exact hI.corrupted_F id',
+      fun r => by rw [hFeq]; exact hI.F_g r, fun r => by rw [hFeq]; exact hI.F_w r,
       hFeq ▸ hI.F_card, ?_, ?_, ?_, hI.down_closed, hI.quiescent, hI.w_bound, ?_, ?_, ?_, ?_, ?_,
       hI.gradeA_needs_bind, ?_, ?_, ?_, ?_, ?_, ?_, hI.bind_succ, ?_, ?_, hI.c_chain, ?_,
       hI.w_order, ?_, ?_, ?_, ?_, ?_, ?_, hI.bound_quorum,
@@ -1665,7 +1781,9 @@ theorem Inv.step_coreTau {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAS
         · exact Or.inr h
     refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCert r0 b0 hc⟩,
       fun v _ hpin j b' hj hh => hpin j b' (hFeq ▸ hj) (hHold j b' (hFeq ▸ hj) hh)⟩
-    refine ⟨fun r => by rw [hFeq]; exact hI.F_g r, fun r => by rw [hFeq]; exact hI.F_w r,
+    refine ⟨fun id' => by
+        rw [ABAState.sendDecided_corrupted, hFeq]; exact hI.corrupted_F id',
+      fun r => by rw [hFeq]; exact hI.F_g r, fun r => by rw [hFeq]; exact hI.F_w r,
       hFeq ▸ hI.F_card, ?_, ?_, ?_, hI.down_closed, hI.quiescent, hI.w_bound, ?_, ?_, ?_, ?_, ?_,
       hI.gradeA_needs_bind, ?_, ?_, ?_, ?_, ?_, ?_, hI.bind_succ, ?_, ?_, hI.c_chain, ?_,
       hI.w_order, ?_, ?_, ?_, ?_, ?_, ?_, hI.bound_quorum,
@@ -1816,7 +1934,13 @@ theorem Inv.step_callW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABASta
     rwa [hLastGrade, hCDS] at h
   refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCert r0 b0 hc⟩,
     fun v _ hpin j b' hj hh => hpin j b' (hCF ▸ hj) (hHold j b' hh)⟩
-  refine ⟨fun r' => hCF ▸ hI.F_g r', fun r' => (hFweq r').trans (hCF ▸ hI.F_w r'), hCF ▸ hI.F_card,
+  have hCcorr : c'.corrupted = c.corrupted := by
+    rcases hCstep with ⟨-, -, hc'eq⟩ | ⟨-, hc'eq⟩
+    · rw [hc'eq]; exact ABAState.setProc_corrupted _ _ _
+    · rw [hc'eq]
+  refine ⟨fun id' => by rw [hCcorr, hCF]; exact hI.corrupted_F id',
+    fun r' => hCF ▸ hI.F_g r', fun r' => (hFweq r').trans (hCF ▸ hI.F_w r'),
+    hCF ▸ hI.F_card,
     ?_, ?_, ?_, hI.down_closed, hI.quiescent, ?_, ?_, ?_, ?_, ?_, ?_,
     hI.gradeA_needs_bind, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.c_chain, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.bound_quorum,
@@ -2216,7 +2340,13 @@ theorem Inv.step_callG {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABASta
     rwa [hLastGradeG, hCDS] at h
   refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCertTrans r0 b0 hc⟩,
     fun v _ hpin j b' hj hh => hpin j b' (hCF ▸ hj) (hHold j b' hh)⟩
-  refine ⟨fun r' => (hFgeq r').trans (hCF ▸ hI.F_g r'), fun r' => hCF ▸ hI.F_w r', hCF ▸ hI.F_card,
+  have hCcorr : c'.corrupted = c.corrupted := by
+    rcases hCcall with ⟨-, -, -, hc'eq⟩ | ⟨-, hc'eq⟩
+    · rw [hc'eq]; exact ABAState.setProc_corrupted _ _ _
+    · rw [hc'eq]
+  refine ⟨fun id' => by rw [hCcorr, hCF]; exact hI.corrupted_F id',
+    fun r' => (hFgeq r').trans (hCF ▸ hI.F_g r'), fun r' => hCF ▸ hI.F_w r',
+    hCF ▸ hI.F_card,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, fun r' h => by rw [hGradeeq] at h ⊢; exact hI.c_chain r' h, ?_,
     hI.w_order, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
@@ -2923,7 +3053,13 @@ theorem Inv.step_retG {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAStat
     · exact hpin j b' (hCF ▸ hj) hold
     · obtain ⟨r1, hcv1⟩ := hcv
       exact (hpinCert b' hout r1 v hcv1).symm
-  refine ⟨fun r' => (hFgeq r').trans (hCF ▸ hI.F_g r'), fun r' => hCF ▸ hI.F_w r', hCF ▸ hI.F_card,
+  have hCcorr : c'.corrupted = c.corrupted := by
+    rcases hCstepG with ⟨-, -, hc'eq⟩ | ⟨-, hc'eq⟩
+    · rw [hc'eq]; exact ABAState.setProc_corrupted _ _ _
+    · rw [hc'eq]
+  refine ⟨fun id' => by rw [hCcorr, hCF]; exact hI.corrupted_F id',
+    fun r' => (hFgeq r').trans (hCF ▸ hI.F_g r'), fun r' => hCF ▸ hI.F_w r',
+    hCF ▸ hI.F_card,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, hI.w_order, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro id' b' hmem hcall
@@ -3538,7 +3674,9 @@ theorem Inv.step_retW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAStat
     rw [hc']
     refine And.intro ?_ ⟨fun r0 b0 hc => ⟨r0, hCertW r0 b0 hc⟩,
       fun v _ hpin j b' hj hh => hpin j b' (hFeq ▸ hj) (hRedHW j b' hh)⟩
-    refine ⟨fun r' => hFeq ▸ hI.F_g r', fun r' => (hFweq r').trans (hFeq ▸ hI.F_w r'),
+    refine ⟨fun id' => by
+        rw [ABAState.stepRound_corrupted, hFeq]; exact hI.corrupted_F id',
+      fun r' => hFeq ▸ hI.F_g r', fun r' => (hFweq r').trans (hFeq ▸ hI.F_w r'),
       hFeq ▸ hI.F_card, ?_, ?_, ?_, hI.down_closed, hI.quiescent,
       fun r' h => hI.w_bound r' (by rw [← hValeq r']; exact h),
       ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hI.c_chain, ?_,
@@ -3778,7 +3916,7 @@ theorem Inv.step_retW {P : Params} {g : ℕ → GBCA.SpecState P.n} {c : ABAStat
       · right; exact hDR2 r' hd
   · rw [PMF.mem_support_pure_iff] at hc'; subst hc'
     refine And.intro ?_ (AbsFrame.refl P g _)
-    refine ⟨hI.F_g, fun r' => (hFweq r').trans (hI.F_w r'), hI.F_card,
+    refine ⟨hI.corrupted_F, hI.F_g, fun r' => (hFweq r').trans (hI.F_w r'), hI.F_card,
       hI.input_g0, hI.input_called, hI.phase_input, hI.down_closed, hI.quiescent,
       fun r' h => hI.w_bound r' (by rw [← hValeq r']; exact h),
       hI.recv_sound, hI.decided_src, hI.a_commit, hI.round_bound, ?_,

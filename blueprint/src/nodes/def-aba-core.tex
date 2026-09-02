@@ -1,6 +1,6 @@
 \begin{definition}[The per-process records beside the ABA-side network]
   \label{def:aba-core}
-  \lean{PLTS.ABA.ABAState}\lean{PLTS.ABA.ABAState.procs}\lean{PLTS.ABA.ABAState.decidedSent}\lean{PLTS.ABA.ABAState.decidedRecv}\lean{PLTS.ABA.ABAState.F}\lean{PLTS.ABA.ABAState.decidedCount}\lean{PLTS.ABA.ABAState.setProc}\lean{PLTS.ABA.ABAState.stepRound}\lean{PLTS.ABA.ABAState.sendDecided}\lean{PLTS.ABA.ABAState.deliverDecided}\lean{PLTS.ABA.ABAState.corrupt}\leanok
+  \lean{PLTS.ABA.ABAState}\lean{PLTS.ABA.ABAState.procs}\lean{PLTS.ABA.ABAState.decidedSent}\lean{PLTS.ABA.ABAState.decidedRecv}\lean{PLTS.ABA.ABAState.corrupted}\lean{PLTS.ABA.ABAState.F}\lean{PLTS.ABA.ABAState.decidedCount}\lean{PLTS.ABA.ABAState.setProc}\lean{PLTS.ABA.ABAState.stepRound}\lean{PLTS.ABA.ABAState.sendDecided}\lean{PLTS.ABA.ABAState.deliverDecided}\lean{PLTS.ABA.ABAState.corrupt}\leanok
   \uses{def:aba-labels, def:aba-core-vocab, def:aba-procnet, def:aba-composed}
   The round loop is carried by two components, and $\mathrm{ABAState}$ reads them as one object:
   \[
@@ -8,8 +8,9 @@
       \bigl([n] \to \mathrm{CoreRec}(n)\bigr) \times \mathrm{ANetState}(n),
   \]
   the round-loop record of each process --- the control record of Definition~\ref{def:aba-core-vocab} together with its DECIDED receipt rows --- beside the ABA-side network of Definition~\ref{def:aba-composed}, which holds the DECIDED pools and the corrupted set with its budget.
-  Four accessors gather what the two components hold apart.
-  $\mathrm{procs}$ reads a process's control record and $\mathrm{decidedRecv}$ its receipt rows, both at that process's record; $\mathrm{decidedSent}$ reads the multicast pools and $F$ the corrupted set, both at the network.
+  Five accessors gather what the two components hold apart.
+  $\mathrm{procs}$ reads a process's control record, $\mathrm{decidedRecv}$ its receipt rows and $\mathrm{corrupted}$ the flag saying whether its program has been replaced (D23), all three at that process's record; $\mathrm{decidedSent}$ reads the multicast pools and $F$ the corrupted set, both at the network.
+  The flag and the corrupted set live in different components, and the two are written by the two halves of one $\mathrm{fail}$ row; that they name the same processes is the first conjunct of the core simulation's invariant and not a fact of the state shape.
   Read through them, $\mathrm{decidedCount}\,i\,b$ is the number of distinct senders whose $\langle\mathrm{DECIDED},b\rangle$ has been delivered to $i$, which is the count the return guard reads, and the operations $\mathrm{setProc}$, $\mathrm{stepRound}$, $\mathrm{sendDecided}$, $\mathrm{deliverDecided}$ and $\mathrm{corrupt}$ name the effects of the rules below.
   An accessor is a projection of one component, so nothing of the two components is identified: the object is a reading of the pair and not a coarser state.
   Full record: \leandecl{PLTS.ABA.ABAState}.

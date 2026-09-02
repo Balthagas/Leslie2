@@ -231,7 +231,7 @@ theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
     Inv P g' (C', A') w' := by
   cases l with
   | tau =>
-    rcases hybrid_step_tau P g C A w μ hstep with
+    rcases hybrid_step_tau P g C A w hI.corrupted_F μ hstep with
       ⟨r, μr, hstepG, rfl⟩ | ⟨μc, hstepC, rfl⟩ | ⟨r, μw', hstepW, rfl⟩ |
       ⟨r, id, b, μr, μc, hstepG, hstepC, rfl⟩ |
       ⟨r, id, out, μr, μc, hstepG, hstepC, rfl⟩ |
@@ -283,7 +283,7 @@ theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
       rw [h1]
       exact (Inv.step_retW hI r id b hstepW hstepC hwr' hc2).1
   | callABA id b =>
-    rw [hybrid_step_callABA] at hstep
+    rw [hybrid_step_callABA P g C A w id b hI.corrupted_F] at hstep
     obtain ⟨μc, hstepC, rfl⟩ := hstep
     simp only [mem_support_prodPMF] at hmem
     obtain ⟨h1, h2⟩ := hmem
@@ -292,7 +292,7 @@ theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
     rw [h1]
     exact (Inv.step_callABA hI id b hstepC hc2).1
   | retABA id b =>
-    rw [hybrid_step_retABA] at hstep
+    rw [hybrid_step_retABA P g C A w id b hI.corrupted_F] at hstep
     obtain ⟨μc, hstepC, rfl⟩ := hstep
     simp only [mem_support_prodPMF] at hmem
     obtain ⟨h1, h2⟩ := hmem
@@ -301,15 +301,15 @@ theorem Inv.step {P : Params} {g : ℕ → GBCA.SpecState P.n}
     rw [h1]
     exact (Inv.step_retABA hI id b hstepC hc2).1
   | fail id =>
-    rw [hybrid_step_fail] at hstep
-    subst hstep
+    rw [hybrid_step_fail P g C A w id hI.corrupted_F] at hstep
+    obtain ⟨hnew, hbud, rfl⟩ := hstep
     simp only [mem_support_prodPMF] at hmem
     obtain ⟨h1, h2⟩ := hmem
     rw [PMF.mem_support_pure_iff] at h1
     obtain ⟨hc2, rfl⟩ := mem_support_abaRow h2
     rw [PMF.mem_support_pure_iff] at hc2
     rw [h1, hc2]
-    exact (Inv.step_fail hI id).1
+    exact (Inv.step_fail hI id hnew hbud).1
   | callG r id b =>
     exfalso; rw [hybrid_step_iff] at hstep
     rcases hstep with ⟨hτ, -⟩ | ⟨hnotmem, -⟩
